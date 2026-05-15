@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% from "base.html" import icon_button, window %}
+{% block title %}Indexers{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/window.css') }}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/window.js') }}" defer></script>
+	<script src="{{ url_for('static', filename='js/settings_indexers.js') }}" defer></script>
+{% endblock %}
+
+{% block windows %}
+	{% set add_content %}
+		<p class="error hidden" id="add-indexer-error"></p>
+		<form id="add-indexer-form">
+			<table>
+				<tr>
+					<th><label for="add-indexer-name">Name</label></th>
+					<td>
+						<input type="text" id="add-indexer-name" required>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="add-indexer-url">URL</label></th>
+					<td>
+						<input type="text" id="add-indexer-url" required>
+						<p>E.g. 'http://192.168.2.15:5076'</p>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="add-indexer-apikey">API Key</label></th>
+					<td>
+						<input type="text" id="add-indexer-apikey">
+					</td>
+				</tr>
+				<tr>
+					<th><label for="add-indexer-categories">Categories</label></th>
+					<td>
+						<input type="text" id="add-indexer-categories" value="7030,7020">
+						<p>Comma-separated Newznab category IDs (7030 = Comics, 7020 = Comics/Other)</p>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="add-indexer-enabled">Enabled</label></th>
+					<td>
+						<input type="checkbox" id="add-indexer-enabled" checked>
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set add_submit %}
+		<button id="test-indexer-add" class="test-button" type="button">
+			<div>Failed</div>
+			<div>Test</div>
+			<div>Success</div>
+		</button>
+		<button id="submit-indexer-add" type="submit" form="add-indexer-form">Add</button>
+	{% endset %}
+
+	{{ window(False, "add-indexer-window", "Add NZB Indexer", add_content, add_submit) }}
+
+	{% set edit_content %}
+		<p class="error hidden" id="edit-indexer-error"></p>
+		<form id="edit-indexer-form">
+			<table>
+				<tr>
+					<th><label for="edit-indexer-name">Name</label></th>
+					<td>
+						<input type="text" id="edit-indexer-name" required>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="edit-indexer-url">URL</label></th>
+					<td>
+						<input type="text" id="edit-indexer-url" required>
+						<p>E.g. 'http://192.168.2.15:5076'</p>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="edit-indexer-apikey">API Key</label></th>
+					<td>
+						<input type="text" id="edit-indexer-apikey">
+					</td>
+				</tr>
+				<tr>
+					<th><label for="edit-indexer-categories">Categories</label></th>
+					<td>
+						<input type="text" id="edit-indexer-categories">
+						<p>Comma-separated Newznab category IDs (7030 = Comics, 7020 = Comics/Other)</p>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="edit-indexer-enabled">Enabled</label></th>
+					<td>
+						<input type="checkbox" id="edit-indexer-enabled">
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set edit_submit %}
+		<button id="delete-indexer-edit" type="button">Delete</button>
+		<button id="test-indexer-edit" class="test-button" type="button">
+			<div>Failed</div>
+			<div>Test</div>
+			<div>Success</div>
+		</button>
+		<button id="submit-indexer-edit" type="submit" form="edit-indexer-form">Save</button>
+	{% endset %}
+
+	{{ window(False, "edit-indexer-window", "Edit NZB Indexer", edit_content, edit_submit) }}
+
+{% endblock windows %}
+
+{% block main %}
+<main>
+	<div class="settings-container">
+		<h2>NZB Indexers</h2>
+		<p class="description">
+			NZB indexers are Newznab-compatible APIs (such as
+			<a href="https://github.com/theotherp/nzbhydra2" target="_blank">NZBHydra2</a> or
+			<a href="https://prowlarr.com/" target="_blank">Prowlarr</a>) that Kapowarr uses to
+			search for NZB files of comics on Usenet.
+		</p>
+		<div id="indexer-list" class="client-list">
+			<button id="add-indexer-client" class="add-button icon-text-color" title="Add NZB indexer">
+				<img src="{{url_base}}/static/img/cancel.svg" alt="">
+			</button>
+		</div>
+	</div>
+</main>
+{% endblock main %}

@@ -631,6 +631,23 @@ class ExternalClientNotFound(KapowarrException):
         }
 
 
+class NZBIndexerNotFound(KapowarrException):
+    "NZB indexer with given ID not found"
+
+    def __init__(self, indexer_id: int) -> None:
+        self.indexer_id = indexer_id
+        LOGGER.warning(f"NZB indexer with given ID not found: {indexer_id}")
+        return
+
+    @property
+    def api_response(self) -> ApiResponse:
+        return {
+            "code": 404,
+            "error": self.__class__.__name__,
+            "result": {"indexer_id": self.indexer_id}
+        }
+
+
 class ExternalClientDownloading(KapowarrException):
     "External client is desired to be deleted but there is a download using it"
 

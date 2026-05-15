@@ -116,6 +116,11 @@ def ui_download_clients():
     return render('settings_download_clients.html')
 
 
+@ui.route('/settings/indexers', methods=methods)
+def ui_indexers():
+    return render('settings_indexers.html')
+
+
 @ui.route('/settings/metadata', methods=methods)
 def ui_metadata():
     return render('settings_metadata.html')

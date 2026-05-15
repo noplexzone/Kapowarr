@@ -37,6 +37,7 @@ from backend.implementations.conversion import preview_mass_convert
 from backend.implementations.converters import ConvertersManager
 from backend.implementations.credentials import Credentials
 from backend.implementations.external_clients import ExternalClients
+from backend.implementations.nzb_indexers import NZBIndexers
 from backend.implementations.file_matching import (get_file_matching,
                                                    set_file_matching)
 from backend.implementations.naming import (generate_volume_folder_name,
@@ -1344,7 +1345,10 @@ def api_external_clients():
 @auth
 def api_external_clients_keys():
     result = {
-        k: v.required_tokens
+        k: {
+            'tokens': list(v.required_tokens),
+            'download_type': v.download_type.value
+        }
         for k, v in ExternalClients.get_client_types().items()
     }
     return return_api(result)
@@ -1438,4 +1442,64 @@ def api_files(f_id: int):
 
     elif request.method == 'DELETE':
         delete_issue_file(f_id)
+        return return_api({})
+
+
+# =====================
+# NZB Indexers
+# =====================
+@api.route('/nzbindexers', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_nzb_indexers():
+    if request.method == 'GET':
+        result = [i.todict() for i in NZBIndexers.get_all()]
+        return return_api(result)
+
+    elif request.method == 'POST':
+        data: dict = request.get_json() or {}
+        result = NZBIndexers.add(
+            name=data.get('name', ''),
+            base_url=data.get('base_url', ''),
+            api_key=data.get('api_key', ''),
+            categories=data.get('categories', '7030,7020'),
+            enabled=bool(data.get('enabled', True))
+        ).todict()
+        return return_api(result, code=201)
+
+
+@api.route('/nzbindexers/test', methods=['POST'])
+@error_handler
+@auth
+def api_nzb_indexers_test():
+    data: dict = request.get_json() or {}
+    result = NZBIndexers.test(
+        base_url=data.get('base_url', ''),
+        api_key=data.get('api_key', '')
+    )
+    return return_api(result)
+
+
+@api.route('/nzbindexers/<int:id>', methods=['GET', 'PUT', 'DELETE'])
+@error_handler
+@auth
+def api_nzb_indexer(id: int):
+    if request.method == 'GET':
+        result = NZBIndexers.get(id).todict()
+        return return_api(result)
+
+    elif request.method == 'PUT':
+        data: dict = request.get_json() or {}
+        result = NZBIndexers.update(
+            indexer_id=id,
+            name=data.get('name', ''),
+            base_url=data.get('base_url', ''),
+            api_key=data.get('api_key', ''),
+            categories=data.get('categories', '7030,7020'),
+            enabled=bool(data.get('enabled', True))
+        ).todict()
+        return return_api(result)
+
+    elif request.method == 'DELETE':
+        NZBIndexers.delete(id)
         return return_api({})

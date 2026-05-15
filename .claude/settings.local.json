@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Caleb\\\\OneDrive\\\\Documents\\\\GitHub\\\\Kapowarr\" -Depth 0)",
+      "Bash(Select-Object -Property Name, PSIsContainer)",
+      "Bash(git -C \"c:/Users/Caleb/OneDrive/Documents/GitHub/Kapowarr\" status)",
+      "Bash(git -C \"c:/Users/Caleb/OneDrive/Documents/GitHub/Kapowarr\" ls-files --others --exclude-standard --directory)",
+      "Bash(Get-ChildItem \"c:\\\\Users\\\\Caleb\\\\OneDrive\\\\Documents\\\\GitHub\\\\Kapowarr\" -Recurse -Include \"*.db\",\"*.log\",\"*.sqlite\",\"*.sqlite3\")",
+      "Bash(Select-Object FullName)",
+      "Bash(git -C \"c:/Users/Caleb/OneDrive/Documents/GitHub/Kapowarr\" remote -v)",
+      "Bash(git -C \"c:/Users/Caleb/OneDrive/Documents/GitHub/Kapowarr\" diff --stat HEAD)"
+    ]
+  }
+}

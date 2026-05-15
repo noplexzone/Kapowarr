@@ -1184,3 +1184,18 @@ def _migrate_add_forced_file_match_column():
     """)
 
     return
+
+
+@DatabaseMigrationHandler.register_handler(45)
+def _migrate_add_nzb_indexers():
+    get_db().executescript("""
+        CREATE TABLE IF NOT EXISTS nzb_indexers(
+            id INTEGER PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            base_url TEXT NOT NULL,
+            api_key TEXT NOT NULL DEFAULT '',
+            categories VARCHAR(255) NOT NULL DEFAULT '7030,7020',
+            enabled BOOL NOT NULL DEFAULT 1
+        );
+    """)
+    return

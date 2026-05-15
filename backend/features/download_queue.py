@@ -14,6 +14,7 @@ from backend.base.custom_exceptions import (ClientNotWorking,
                                             DownloadNotFound,
                                             DownloadUnmovable,
                                             EnqueuingDownloadFailure,
+                                            ExternalClientNotFound,
                                             InvalidKeyValue, IssueNotFound,
                                             LinkBroken)
 from backend.base.definitions import (BlocklistReason, Constants, Download,
@@ -29,10 +30,12 @@ from backend.features.post_processing import (PostProcessor,
 from backend.implementations.blocklist import add_to_blocklist
 from backend.implementations.download_clients import (BaseDirectDownload,
                                                       MegaDownload,
+                                                      NZBDownload,
                                                       TorrentDownload)
 from backend.implementations.external_clients import ExternalClients
 from backend.implementations.getcomics import GetComicsPage
-from backend.implementations.volumes import Issue
+from backend.implementations.nzb_indexers import NZBIndexers
+from backend.implementations.volumes import Issue, Volume
 from backend.internals.db import get_db, iter_commit
 from backend.internals.server import (AddedToQueueEvent, QueueStatusEvent,
                                       RemovedFromQueueEvent, Server, WebSocket)
@@ -104,6 +107,52 @@ class DownloadHandler(metaclass=Singleton):
         ws.emit(RemovedFromQueueEvent(download))
 
         self._process_queue()
+        return
+
+    def __run_nzb_download(self, download: NZBDownload) -> None:
+        """Start a usenet NZB download. Intended to be run in a thread.
+
+        Args:
+            download (NZBDownload): The NZB download to run.
+                One of the entries in self.queue.
+        """
+        download.run()
+
+        ws = WebSocket()
+        status_event = QueueStatusEvent(download)
+
+        while True:
+            download.update_status()
+            ws.emit(status_event)
+
+            if download.state == DownloadState.CANCELED_STATE:
+                download.remove_from_client(delete_files=True)
+                PostProcessor.canceled(download)
+                self.queue.remove(download)
+                break
+
+            elif download.state == DownloadState.FAILED_STATE:
+                download.remove_from_client(delete_files=True)
+                PostProcessor.failed(download)
+                self.queue.remove(download)
+                break
+
+            elif download.state == DownloadState.SHUTDOWN_STATE:
+                break
+
+            elif download.state == DownloadState.IMPORTING_STATE:
+                if self.settings.sv.delete_completed_downloads:
+                    download.remove_from_client(delete_files=False)
+                PostProcessor.success(download)
+                self.queue.remove(download)
+                break
+
+            else:
+                download.sleep_event.wait(
+                    timeout=Constants.TORRENT_UPDATE_INTERVAL
+                )
+
+        ws.emit(RemovedFromQueueEvent(download))
         return
 
     def __run_torrent_download(self, download: TorrentDownload) -> None:
@@ -316,6 +365,15 @@ class DownloadHandler(metaclass=Singleton):
                 download.download_thread = thread
                 thread.start()
 
+            elif isinstance(download, NZBDownload):
+                thread = Server().get_db_thread(
+                    target=self.__run_nzb_download,
+                    args=(download,),
+                    name=f'NZBDownloadThread-{download.id}'
+                )
+                download.download_thread = thread
+                thread.start()
+
             WebSocket().emit(AddedToQueueEvent(download))
         return downloads
 
@@ -357,6 +415,9 @@ class DownloadHandler(metaclass=Singleton):
         """
         if link.startswith(Constants.GC_SITE_URL):
             return 'gc'
+        for indexer in NZBIndexers.get_all():
+            if link.startswith(indexer.base_url):
+                return 'nzb'
         return None
 
     def link_in_queue(self, link: str) -> bool:
@@ -471,6 +532,35 @@ class DownloadHandler(metaclass=Singleton):
                     f'Unable to extract download links from source; fail_reason="{e.reason.value}"'
                 )
                 return [], e.reason
+
+        elif link_type == 'nzb':
+            covered_issues: Union[float, Tuple[float, float], None] = None
+            if issue_id is not None:
+                covered_issues = Volume(volume_id).get_issue(issue_id).get_data().calculated_issue_number
+
+            source_name = ''
+            for indexer in NZBIndexers.get_all():
+                if link.startswith(indexer.base_url):
+                    source_name = indexer.name
+                    break
+
+            try:
+                downloads = [NZBDownload(
+                    download_link=link,
+                    volume_id=volume_id,
+                    covered_issues=covered_issues,
+                    source_type=DownloadSource.USENET,
+                    source_name=source_name,
+                    web_link=link,
+                    web_title=None,
+                    web_sub_title=None,
+                    forced_match=force_match,
+                )]
+
+            except (ClientNotWorking, ExternalClientNotFound,
+                    IssueNotFound, LinkBroken) as e:
+                LOGGER.warning('Unable to create NZB download: %s', e)
+                return [], EnqueuingDownloadFailureReason.NO_WORKING_LINKS
 
         result = self.__prepare_downloads_for_queue(
             downloads,

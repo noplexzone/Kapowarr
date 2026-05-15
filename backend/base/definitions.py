@@ -458,6 +458,7 @@ class DownloadType(BaseEnum):
 
     DIRECT = 1
     TORRENT = 2
+    USENET = 3
 
 
 class GCDownloadSource(BaseEnum):
@@ -505,6 +506,8 @@ class DownloadSource(BaseEnum):
     "A direct download link straight from their own servers"
     GETCOMICS_TORRENT = "GetComics (torrent)"
     "A torrent magnet link directly on the webpage"
+    USENET = "Usenet"
+    "An NZB download sourced from a Newznab indexer"
 
 
 class DownloadState(BaseEnum):

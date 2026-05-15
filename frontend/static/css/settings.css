@@ -373,18 +373,21 @@
 	left: 20%;
 }
 
-#choose-torrent-window > div:nth-child(2) {
+#choose-torrent-window > div:nth-child(2),
+#choose-usenet-window > div:nth-child(2) {
 	justify-content: flex-start;
 }
 
-#choose-torrent-list {
+#choose-torrent-list,
+#choose-usenet-list {
 	display: flex;
 	justify-content: center;
 	gap: 1rem;
 	flex-wrap: wrap;
 }
 
-#choose-torrent-list > button {
+#choose-torrent-list > button,
+#choose-usenet-list > button {
 	width: 10rem;
 	height: 4rem;
 

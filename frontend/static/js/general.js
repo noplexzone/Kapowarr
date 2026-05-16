@@ -24,7 +24,7 @@ function hide(to_hide, to_show=null) {
 async function fetchAPI(endpoint, api_key, params={}, json_return=true) {
 	let formatted_params = '';
 	if (Object.keys(params).length) {
-		formatted_params = '&' + Object.entries(params).map(p => p.join('=')).join('&');
+		formatted_params = '&' + Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
 	};
 
 	return fetch(`${url_base}/api${endpoint}?api_key=${api_key}${formatted_params}`)
@@ -48,7 +48,7 @@ async function fetchAPI(endpoint, api_key, params={}, json_return=true) {
 async function sendAPI(method, endpoint, api_key, params={}, body={}) {
 	let formatted_params = '';
 	if (Object.keys(params).length) {
-		formatted_params = '&' + Object.entries(params).map(p => p.join('=')).join('&');
+		formatted_params = '&' + Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
 	};
 
 	return fetch(`${url_base}/api${endpoint}?api_key=${api_key}${formatted_params}`, {

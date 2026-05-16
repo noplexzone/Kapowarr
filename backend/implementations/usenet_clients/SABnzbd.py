@@ -80,7 +80,7 @@ class SABnzbd(BaseExternalClient):
         params: Dict[str, Any] = {
             'mode': 'addurl',
             'name': download_link,
-            'cat': Constants.TORRENT_TAG,
+            'cat': self.category or Constants.TORRENT_TAG,
         }
         if download_name:
             params['nzbname'] = download_name
@@ -133,7 +133,17 @@ class SABnzbd(BaseExternalClient):
         return None
 
     def delete_download(self, download_id: str, delete_files: bool) -> None:
-        self._api(mode='queue', name='delete', value=download_id)
+        del_files = 1 if delete_files else 0
+        # Remove from active queue if still present (in-progress or pending)
+        try:
+            self._api(mode='queue', name='delete', value=download_id)
+        except ClientNotWorking:
+            pass  # Job may have completed and moved to history
+        # Remove from history if present (completed or failed)
+        try:
+            self._api(mode='history', name='delete', value=download_id, del_files=del_files)
+        except ClientNotWorking:
+            pass  # Job may not be in history either
         return
 
     @staticmethod

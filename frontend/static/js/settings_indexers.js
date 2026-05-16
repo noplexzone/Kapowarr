@@ -25,7 +25,7 @@ function loadEditIndexer(api_key, id) {
 		document.querySelector('#edit-indexer-name').value = data.result.name || '';
 		document.querySelector('#edit-indexer-url').value = data.result.base_url || '';
 		document.querySelector('#edit-indexer-apikey').value = data.result.api_key || '';
-		document.querySelector('#edit-indexer-categories').value = data.result.categories || '7030,7020';
+		document.querySelector('#edit-indexer-categories').value = data.result.categories ?? '';
 		document.querySelector('#edit-indexer-enabled').checked = data.result.enabled;
 
 		showWindow('edit-indexer-window');

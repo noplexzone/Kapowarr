@@ -25,6 +25,7 @@ from backend.base.files import create_folder, delete_file_folder
 from backend.base.helpers import CommaList, Singleton, get_subclasses
 from backend.base.logging import LOGGER
 from backend.features.post_processing import (PostProcessor,
+                                              PostProcessorNZB,
                                               PostProcessorTorrentsComplete,
                                               PostProcessorTorrentsCopy)
 from backend.implementations.blocklist import add_to_blocklist
@@ -143,7 +144,7 @@ class DownloadHandler(metaclass=Singleton):
             elif download.state == DownloadState.IMPORTING_STATE:
                 if self.settings.sv.delete_completed_downloads:
                     download.remove_from_client(delete_files=False)
-                PostProcessor.success(download)
+                PostProcessorNZB.success(download)
                 self.queue.remove(download)
                 break
 

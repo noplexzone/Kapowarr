@@ -440,7 +440,8 @@ CREATE TABLE IF NOT EXISTS external_download_clients(
     base_url TEXT NOT NULL,
     username VARCHAR(255),
     password VARCHAR(255),
-    api_token VARCHAR(255)
+    api_token VARCHAR(255),
+    category VARCHAR(255)
 );
 CREATE TABLE IF NOT EXISTS download_queue(
     id INTEGER PRIMARY KEY,

@@ -89,6 +89,12 @@ def add_file_to_database(download: Download) -> None:
     return
 
 
+def scan_volume_folder(download: Download) -> None:
+    "Scan the full volume folder for new files after an external client download"
+    scan_files(download.volume_id, update_websocket=True)
+    return
+
+
 # region Blocklist
 def add_dl_to_blocklist(download: Download) -> None:
     "Add the download to the blocklist in the database"
@@ -385,4 +391,16 @@ class PostProcessorTorrentsCopy(PostProcessor):
         convert_file,
         set_file_properties,
         reset_file_link
+    ]
+
+
+class PostProcessorNZB(PostProcessor):
+    actions_success = [
+        remove_from_queue,
+        add_to_history,
+        move_to_dest,
+        rename_with_proper_extension,
+        scan_volume_folder,
+        convert_file,
+        set_file_properties
     ]

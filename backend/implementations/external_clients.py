@@ -44,6 +44,10 @@ class BaseExternalClient(ExternalDownloadClient):
     def api_token(self) -> Union[str, None]:
         return self._api_token
 
+    @property
+    def category(self) -> Union[str, None]:
+        return self._category
+
     def __init__(self, client_id: int) -> None:
         self._id = client_id
         data = get_db().execute("""
@@ -51,7 +55,7 @@ class BaseExternalClient(ExternalDownloadClient):
                 download_type, client_type,
                 title, base_url,
                 username, password,
-                api_token
+                api_token, category
             FROM external_download_clients
             WHERE id = ?
             LIMIT 1;
@@ -63,6 +67,7 @@ class BaseExternalClient(ExternalDownloadClient):
         self._username = data['username']
         self._password = data['password']
         self._api_token = data['api_token']
+        self._category = data['category']
         return
 
     def get_client_data(self) -> Dict[str, Any]:
@@ -74,7 +79,8 @@ class BaseExternalClient(ExternalDownloadClient):
             'base_url': self._base_url,
             'username': self._username,
             'password': self._password,
-            'api_token': self._api_token
+            'api_token': self._api_token,
+            'category': self._category
         }
 
     def update_client(self, data: Mapping[str, Any]) -> None:
@@ -102,6 +108,8 @@ class BaseExternalClient(ExternalDownloadClient):
             else:
                 filtered_data[key] = None
 
+        filtered_data['category'] = data.get('category') or None
+
         if (
             filtered_data['username'] is not None
             and filtered_data['password'] is None
@@ -124,7 +132,8 @@ class BaseExternalClient(ExternalDownloadClient):
                 base_url = :base_url,
                 username = :username,
                 password = :password,
-                api_token = :api_token
+                api_token = :api_token,
+                category = :category
             WHERE id = :id;
             """,
             {
@@ -137,6 +146,7 @@ class BaseExternalClient(ExternalDownloadClient):
         self._username = filtered_data["username"]
         self._password = filtered_data["password"]
         self._api_token = filtered_data["api_token"]
+        self._category = filtered_data["category"]
 
         return
 
@@ -307,14 +317,15 @@ class ExternalClients:
             'base_url': normalise_base_url(base_url),
             'username': username,
             'password': password,
-            'api_token': api_token
+            'api_token': api_token,
+            'category': None
         }
         data = {
             k: (
                 v
                 if k in (
                     *ClientClass.required_tokens,
-                    'download_type', 'client_type'
+                    'download_type', 'client_type', 'category'
                 ) else
                 None
             )
@@ -326,11 +337,11 @@ class ExternalClients:
             INSERT INTO external_download_clients(
                 download_type, client_type,
                 title, base_url,
-                username, password, api_token
+                username, password, api_token, category
             ) VALUES (
                 :download_type, :client_type,
                 :title, :base_url,
-                :username, :password, :api_token
+                :username, :password, :api_token, :category
             );
             """,
             data

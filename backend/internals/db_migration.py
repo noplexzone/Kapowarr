@@ -1199,3 +1199,11 @@ def _migrate_add_nzb_indexers():
         );
     """)
     return
+
+
+@DatabaseMigrationHandler.register_handler(46)
+def _migrate_add_client_category():
+    get_db().executescript("""
+        ALTER TABLE external_download_clients ADD COLUMN category VARCHAR(255);
+    """)
+    return

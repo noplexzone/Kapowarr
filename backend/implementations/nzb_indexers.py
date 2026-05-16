@@ -5,7 +5,7 @@ NZB indexer management and Newznab API search source.
 """
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 from xml.etree import ElementTree
 
 from requests.exceptions import RequestException
@@ -93,7 +93,7 @@ class NZBIndexers:
             INSERT INTO nzb_indexers(name, base_url, api_key, categories, enabled)
             VALUES (?, ?, ?, ?, ?);
             """,
-            (name, base_url, api_key or '', categories or DEFAULT_CATEGORIES, int(enabled))
+            (name, base_url, api_key or '', categories or '', int(enabled))
         ).lastrowid
         return NZBIndexers.get(new_id)
 
@@ -106,7 +106,7 @@ class NZBIndexers:
         categories: str,
         enabled: bool
     ) -> NZBIndexer:
-        indexer = NZBIndexers.get(indexer_id)  # raises if not found
+        NZBIndexers.get(indexer_id)  # raises if not found
         if not name:
             raise InvalidKeyValue('name', name)
         if not base_url:
@@ -121,7 +121,7 @@ class NZBIndexers:
             SET name = ?, base_url = ?, api_key = ?, categories = ?, enabled = ?
             WHERE id = ?;
             """,
-            (name, base_url, api_key or '', categories or DEFAULT_CATEGORIES, int(enabled), indexer_id)
+            (name, base_url, api_key or '', categories or '', int(enabled), indexer_id)
         )
         return NZBIndexers.get(indexer_id)
 
@@ -161,55 +161,54 @@ class NZBIndexers:
             return ClientTestResult({'success': False, 'description': e.reason_text})
 
     @staticmethod
-    def search(query: str) -> List[SearchResultData]:
-        """Search all enabled NZB indexers with a Newznab query.
-
-        Args:
-            query (str): The search query string.
-
-        Returns:
-            List[SearchResultData]: Matching NZB results, each with a direct
-                NZB download URL as the ``link``.
-        """
-        indexers = [i for i in NZBIndexers.get_all() if i.enabled]
+    def search_indexers(
+        indexers: List['NZBIndexer'], query: str
+    ) -> List[SearchResultData]:
+        """Query a pre-fetched list of indexers — no DB access, safe for threads."""
         results: List[SearchResultData] = []
         ssn = Session()
 
         for indexer in indexers:
+            url = f'{indexer.base_url}/api'
+            LOGGER.info('Querying NZB indexer %s: %s q=%r cat=%s',
+                        indexer.name, url, query, indexer.categories)
             try:
-                r = ssn.get(
-                    f'{indexer.base_url}/api',
-                    params={
-                        't': 'search',
-                        'q': query,
-                        'apikey': indexer.api_key,
-                        'cat': indexer.categories,
-                    }
-                )
+                params: Dict[str, str] = {
+                    't': 'search',
+                    'q': query,
+                    'apikey': indexer.api_key,
+                }
+                if indexer.categories:
+                    params['cat'] = indexer.categories
+                r = ssn.get(url, params=params)
                 if not r.ok:
                     LOGGER.warning(
                         'NZB indexer %s returned HTTP %s', indexer.name, r.status_code
                     )
                     continue
 
-                results.extend(_parse_newznab_xml(r.text, indexer.name))
+                parsed = _parse_newznab_xml(r.text, indexer.name, indexer.base_url, indexer.api_key)
+                LOGGER.info('NZB indexer %s returned %d results for q=%r',
+                            indexer.name, len(parsed), query)
+                results.extend(parsed)
 
-            except RequestException:
-                LOGGER.warning('NZB indexer %s unreachable', indexer.name)
+            except RequestException as e:
+                LOGGER.warning('NZB indexer %s unreachable: %s', indexer.name, e)
 
         return results
 
+    @staticmethod
+    def search(query: str) -> List[SearchResultData]:
+        indexers = [i for i in NZBIndexers.get_all() if i.enabled]
+        return NZBIndexers.search_indexers(indexers, query)
 
-def _parse_newznab_xml(xml_text: str, source_name: str) -> List[SearchResultData]:
-    """Parse Newznab RSS/XML response and extract search results.
 
-    Args:
-        xml_text (str): Raw XML response from indexer.
-        source_name (str): Human-readable indexer name.
-
-    Returns:
-        List[SearchResultData]: Parsed results.
-    """
+def _parse_newznab_xml(
+    xml_text: str,
+    source_name: str,
+    base_url: str,
+    api_key: str
+) -> List[SearchResultData]:
     results: List[SearchResultData] = []
     try:
         root = ElementTree.fromstring(xml_text)
@@ -217,7 +216,6 @@ def _parse_newznab_xml(xml_text: str, source_name: str) -> List[SearchResultData
         LOGGER.warning('Failed to parse NZB indexer XML response')
         return results
 
-    ns = {'newznab': 'http://www.newznab.com/DTD/2010/feeds/attributes/'}
     channel = root.find('channel')
     if channel is None:
         return results
@@ -227,9 +225,29 @@ def _parse_newznab_xml(xml_text: str, source_name: str) -> List[SearchResultData
         title = title_el.text.strip() if title_el is not None and title_el.text else ''
 
         enclosure = item.find('enclosure')
-        if enclosure is None:
-            continue
-        link = enclosure.get('url', '')
+        link = enclosure.get('url', '') if enclosure is not None else ''
+
+        # Some indexers omit the NZB id/apikey from the enclosure URL.
+        # Reconstruct from the newznab:attr guid element in that case.
+        if 'id=' not in link:
+            guid = ''
+            for el in item.iter():
+                local = el.tag.split('}')[-1] if '}' in el.tag else el.tag
+                if local == 'attr' and el.get('name') == 'guid':
+                    guid = el.get('value', '')
+                    break
+            if guid:
+                qs = f't=get&id={guid}'
+                if api_key:
+                    qs += f'&apikey={api_key}'
+                link = f'{base_url}/api?{qs}'
+                LOGGER.info('Constructed NZB download URL from GUID: %s', link)
+            else:
+                LOGGER.warning(
+                    'NZB item "%s" has no usable download URL and no GUID, skipping', title
+                )
+                continue
+
         if not link:
             continue
 

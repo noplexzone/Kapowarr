@@ -49,6 +49,24 @@ function createApiTokenInput(id) {
 	return token_row;
 };
 
+function createCategoryInput(id) {
+	const row = document.createElement('tr');
+	const header = document.createElement('th');
+	const label = document.createElement('label');
+	label.innerText = 'Category';
+	label.setAttribute('for', id);
+	header.appendChild(label);
+	row.appendChild(header);
+	const cell = document.createElement('td');
+	const input = document.createElement('input');
+	input.type = 'text';
+	input.id = id;
+	input.placeholder = 'Optional';
+	cell.appendChild(input);
+	row.appendChild(cell);
+	return row;
+};
+
 function loadEditTorrent(api_key, id) {
 	const form = document.querySelector('#edit-torrent-form tbody');
 	form.dataset.id = id;
@@ -553,6 +571,8 @@ function loadAddUsenet(api_key, client_type) {
 		if (client_options.includes('api_token'))
 			form.appendChild(createApiTokenInput('add-usenet-token-input'));
 
+		form.appendChild(createCategoryInput('add-usenet-category-input'));
+
 		showWindow('add-usenet-window');
 	});
 };
@@ -570,7 +590,8 @@ function saveAddUsenet() {
 				base_url: form.querySelector('#add-usenet-baseurl-input').value,
 				username: form.querySelector('#add-usenet-username-input')?.value || null,
 				password: form.querySelector('#add-usenet-password-input')?.value || null,
-				api_token: form.querySelector('#add-usenet-token-input')?.value || null
+				api_token: form.querySelector('#add-usenet-token-input')?.value || null,
+				category: form.querySelector('#add-usenet-category-input')?.value || null
 			};
 			sendAPI('POST', '/externalclients', api_key, {}, data)
 			.then(response => {
@@ -658,6 +679,11 @@ function loadEditUsenet(api_key, id) {
 				form.appendChild(token_input);
 			}
 
+			const category_input = createCategoryInput('edit-usenet-category-input');
+			category_input.querySelector('input').value =
+				client_data.result.category || '';
+			form.appendChild(category_input);
+
 			showWindow('edit-usenet-window');
 		});
 	});
@@ -676,7 +702,8 @@ function saveEditUsenet() {
 				base_url: form.querySelector('#edit-usenet-baseurl-input').value,
 				username: form.querySelector('#edit-usenet-username-input')?.value || null,
 				password: form.querySelector('#edit-usenet-password-input')?.value || null,
-				api_token: form.querySelector('#edit-usenet-token-input')?.value || null
+				api_token: form.querySelector('#edit-usenet-token-input')?.value || null,
+				category: form.querySelector('#edit-usenet-category-input')?.value || null
 			};
 			sendAPI('PUT', `/externalclients/${id}`, api_key, {}, data)
 			.then(response => {

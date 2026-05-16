@@ -46,6 +46,7 @@ RUN groupadd -g 1000 kapowarr && \
     mkdir -p /app/db /app/logs /app/temp_downloads
 
 COPY --chmod=755 . .
+RUN find /app -name "*.sh" -exec sed -i 's/\r$//' {} +
 
 ENV PUID=0 \
     PGID=0 \

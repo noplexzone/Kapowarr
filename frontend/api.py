@@ -1333,7 +1333,8 @@ def api_external_clients():
             for k in (
                 'client_type',
                 'title', 'base_url',
-                'username', 'password', 'api_token'
+                'username', 'password', 'api_token',
+                'category'
             )
         }
         result = ExternalClients.add(**data).get_client_data()
@@ -1386,7 +1387,8 @@ def api_external_client(id: int):
             k: data.get(k)
             for k in (
                 'title', 'base_url',
-                'username', 'password', 'api_token'
+                'username', 'password', 'api_token',
+                'category'
             )
         }
         client.update_client(data)

@@ -960,6 +960,11 @@ class ExternalDownloadClient(ABC):
     def api_token(self) -> Union[str, None]:
         ...
 
+    @property
+    @abstractmethod
+    def category(self) -> Union[str, None]:
+        ...
+
     @abstractmethod
     def __init__(self, client_id: int) -> None:
         """Create a connection with a client.

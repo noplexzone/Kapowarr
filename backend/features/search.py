@@ -142,9 +142,16 @@ class SearchGetComics(SearchSource):
 
 
 class SearchNZBIndexers(SearchSource):
-    async def search(self, session: AsyncSession) -> List[SearchResultData]:
+    async def search(self, _session: AsyncSession) -> List[SearchResultData]:
+        # Fetch indexers here (Flask app context available in this thread)
+        indexers = [i for i in NZBIndexers.get_all() if i.enabled]
+        if not indexers:
+            return []
+        # Run HTTP requests in thread pool (no DB access, no app context needed)
         loop = get_running_loop()
-        return await loop.run_in_executor(None, NZBIndexers.search, self.query)
+        return await loop.run_in_executor(
+            None, NZBIndexers.search_indexers, indexers, self.query
+        )
 
 
 async def search_multiple_queries(*queries: str) -> List[SearchResultData]:

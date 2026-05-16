@@ -66,6 +66,11 @@ def ui_library_import():
     return render('library_import.html')
 
 
+@ui.route('/discovery', methods=methods)
+def ui_discovery():
+    return render('comic_discovery.html')
+
+
 @ui.route('/volumes/<id>', methods=methods)
 def ui_view_volume(id):
     return render('view_volume.html')

@@ -16,6 +16,7 @@
 	<td class="file-column"></td>
 	<td class="cv-id-column"></td>
 	<td class="status-column"></td>
+	<td class="delete-column"></td>
 </tr>
 <tr class="li-result" data-group_number="" data-rowid="">
 	<td>
@@ -196,6 +197,7 @@
 		<div class="action-container">
 			<button id="bulk-cancel-button">Cancel</button>
 			<button id="bulk-import-button" title="Import all checked volumes that have a ComicVine ID. Runs as a background task.">Import Selected</button>
+			<button id="bulk-delete-unmatched-button" title="Permanently delete all folders that have no ComicVine ID match">Delete All Unmatched</button>
 		</div>
 		<p id="bulk-summary"></p>
 		<div class="table-container icon-text-color">
@@ -207,6 +209,7 @@
 					<th>Folder</th>
 					<th>ComicVine ID</th>
 					<th>Status</th>
+					<th>Actions</th>
 				</thead>
 				<tbody class="bulk-proposal-list"></tbody>
 			</table>

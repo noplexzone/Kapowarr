@@ -22,6 +22,7 @@ from backend.base.logging import LOGGER, get_log_file_contents
 from backend.features.download_queue import (DownloadHandler,
                                              delete_download_history,
                                              get_download_history)
+from backend.base.files import delete_file_folder, folder_is_inside_folder
 from backend.features.library_import import (generate_bulk_scan,
                                              import_library,
                                              prepare_bulk_scan,
@@ -757,6 +758,51 @@ def api_library_import_bulk():
         task = BulkLibraryImport(data)
         task_id = TaskHandler().add(task)
         return return_api({'task_id': task_id}, code=201)
+
+@api.route('/libraryimport/delete', methods=['POST'])
+@error_handler
+@auth
+def api_library_import_delete():
+    folders = request.get_json()
+    if not isinstance(folders, list) or not all(isinstance(f, str) for f in folders):
+        raise InvalidKeyValue('folders', folders)
+
+    root_folders = RootFolders().get_folder_list()
+    for folder in folders:
+        # folder_is_inside_folder(base, child) — rf is the root (base), folder is the child
+        if any(folder_is_inside_folder(rf, folder) for rf in root_folders):
+            delete_file_folder(folder)
+
+    return return_api({})
+
+
+# =====================
+# Discovery
+# =====================
+
+
+@api.route('/discovery', methods=['GET'])
+@error_handler
+@auth
+def api_discovery():
+    discovery_type = extract_key(request, 'type')
+    cv = ComicVine()
+
+    if discovery_type == 'upcoming':
+        results = run(cv.get_upcoming_releases())
+    elif discovery_type == 'new':
+        results = run(cv.get_new_volumes())
+        for r in results:
+            del r['cover']
+    elif discovery_type == 'popular':
+        results = run(cv.get_popular_volumes())
+        for r in results:
+            del r['cover']
+    else:
+        raise InvalidKeyValue('type', discovery_type)
+
+    return return_api(results)
+
 
 # =====================
 # Library + Volumes

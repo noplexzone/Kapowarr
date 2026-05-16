@@ -632,6 +632,7 @@ class VolumeMetadata(TypedDict):
     translated: bool
     already_added: Union[int, None]
     issues: Union[List[IssueMetadata], None]
+    date_added: Union[str, None]
 
 
 class CVFileMapping(TypedDict):

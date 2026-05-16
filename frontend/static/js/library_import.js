@@ -30,7 +30,8 @@ const LIEls = {
 		import_rename: document.querySelector('#import-rename-button'),
 		bulk_scan: document.querySelector('#run-bulk-scan-button'),
 		bulk_import: document.querySelector('#bulk-import-button'),
-		bulk_cancel: document.querySelector('#bulk-cancel-button')
+		bulk_cancel: document.querySelector('#bulk-cancel-button'),
+		bulk_delete_unmatched: document.querySelector('#bulk-delete-unmatched-button')
 	},
 	tabs: {
 		standard: document.querySelector('#tab-standard'),
@@ -330,6 +331,17 @@ async function loadBulkProposal(api_key) {
 			row.querySelector('input[type="checkbox"]').checked = false;
 		}
 		row.querySelector('.status-column').innerText = result.cv_id ? 'Ready' : 'No ID found';
+
+		// Delete button — only shown for unmatched rows
+		if (!result.cv_id) {
+			const deleteBtn = document.createElement('button');
+			deleteBtn.innerText = 'Delete Folder';
+			deleteBtn.className = 'bulk-delete-btn';
+			deleteBtn.title = `Delete ${result.folder}`;
+			deleteBtn.onclick = () => deleteBulkFolder(result.folder, row, api_key);
+			row.querySelector('.delete-column').appendChild(deleteBtn);
+		}
+
 		LIEls.bulk_proposal_list.appendChild(row);
 	});
 
@@ -337,6 +349,51 @@ async function loadBulkProposal(api_key) {
 		`${count} folders found — ${matched} with ComicVine IDs, ${count - matched} without.`;
 
 	hide([LIEls.views.loading, progressEl], count > 0 ? [LIEls.views.bulk_list] : [LIEls.views.no_result]);
+};
+
+function deleteBulkFolder(folder, row, api_key) {
+	if (!confirm(`Permanently delete this folder and all its contents?\n\n${folder}`)) return;
+	const btn = row.querySelector('.bulk-delete-btn');
+	btn.disabled = true;
+	btn.innerText = 'Deleting…';
+	sendAPI('POST', '/libraryimport/delete', api_key, {}, [folder])
+	.then(() => {
+		row.remove();
+	})
+	.catch(() => {
+		btn.disabled = false;
+		btn.innerText = 'Delete Folder';
+	});
+};
+
+function deleteAllUnmatched(api_key) {
+	const rows = [...LIEls.bulk_proposal_list.querySelectorAll('tr')]
+		.filter(r => !r.dataset.cv_id);
+
+	if (!rows.length) return;
+
+	const count = rows.length;
+	if (!confirm(`Permanently delete ${count} unmatched folder${count !== 1 ? 's' : ''} and all their contents?`)) return;
+
+	rows.forEach(r => {
+		const btn = r.querySelector('.bulk-delete-btn');
+		if (btn) { btn.disabled = true; btn.innerText = 'Deleting…'; }
+	});
+	LIEls.buttons.bulk_delete_unmatched.disabled = true;
+
+	const folders = rows.map(r => r.dataset.folder);
+	sendAPI('POST', '/libraryimport/delete', api_key, {}, folders)
+	.then(() => {
+		rows.forEach(r => r.remove());
+		LIEls.buttons.bulk_delete_unmatched.disabled = false;
+	})
+	.catch(() => {
+		rows.forEach(r => {
+			const btn = r.querySelector('.bulk-delete-btn');
+			if (btn) { btn.disabled = false; btn.innerText = 'Delete Folder'; }
+		});
+		LIEls.buttons.bulk_delete_unmatched.disabled = false;
+	});
 };
 
 function startBulkImport(api_key) {
@@ -378,6 +435,7 @@ usingApiKey()
 	LIEls.buttons.bulk_import.onclick = e => startBulkImport(api_key);
 	LIEls.buttons.bulk_cancel.onclick = e =>
 		hide([LIEls.views.bulk_list], [LIEls.views.start]);
+	LIEls.buttons.bulk_delete_unmatched.onclick = e => deleteAllUnmatched(api_key);
 });
 
 LIEls.tabs.standard.onclick = e => switchTab('standard');

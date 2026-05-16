@@ -29,6 +29,109 @@ from backend.implementations.matching import select_best_volume_result_for_file
 from backend.internals.db import get_db
 from backend.internals.settings import Settings
 
+_NON_ENGLISH_PUBLISHERS = frozenset({
+    # Japanese publishers
+    'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
+    'media factory', 'kodansha', 'kodansha comics', 'kodansha usa',
+    'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
+    'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
+    'coamix', 'ascii media works', 'core magazine', 'nihon bungeisha',
+    'takeshobo', 'wani books', 'flex comix', 'ichijinsha', 'libre publishing',
+    'ohzora publishing', 'shinshkan', 'tokuma shoten', 'houbunsha',
+    'earth star entertainment', 'enterbrain', 'micro magazine',
+    'leed publishing', 'east press', 'shonengahosha', 'shonen gahosha',
+    'bamboo comics', 'square enix manga', 'jump comics', 'shueisha jump',
+    'champion red', 'sunday comics', 'big comics', 'evening', 'morning',
+    'afternoon', 'young animal', 'weekly shonen', 'shonen sunday',
+    'shonen magazine',
+    # English-language manga publishers / imprints
+    'viz media', 'viz', 'tokyopop', 'yen press', 'seven seas entertainment',
+    'vertical', 'vertical comics', 'udon entertainment',
+    'digital manga publishing', 'gen manga', 'aurora publishing',
+    # French/European manga publishers
+    'pika edition', 'pika', 'taifu comics', 'ki-oon', 'kana',
+    'kurokawa', 'tonkam', 'delcourt tonkam', 'glenat manga',
+    'soleil manga', 'kazé', 'kaze', 'panini manga', 'crunchyroll',
+    'crunchyroll manga', 'noeve grafx', 'akata', 'meian',
+    # French / Belgian publishers (bande dessinée)
+    'dupuis', 'le lombard', 'lombard', 'dargaud', 'glenat',
+    'editions glenat', 'casterman', 'humanoides associes',
+    'les humanoides associes', 'fluide glacial', 'soleil', 'delcourt',
+    'ankama', 'bamboo edition', 'glénat', 'editions du lombard',
+    'kaka', 'kaka editions',
+    # Dutch publishers
+    'uitgeverij l', 'don lawrence collection',
+    # German / Scandinavian publishers
+    'carlsen comics', 'carlsen', 'egmont', 'ehapa',
+    # Spanish / Latin American publishers
+    'planeta comics', 'norma editorial', 'ivrea',
+    # Italian publishers
+    'star comics', 'sergio bonelli editore', 'bonelli editore',
+    'panini italia', 'panini comics italy',
+})
+# Keep the old name as an alias so nothing else in the file needs changing
+_MANGA_PUBLISHERS = _NON_ENGLISH_PUBLISHERS
+
+# Whitelist of known English-language comic publishers used by the Popular tab.
+# A whitelist is more reliable than a blacklist because CV has thousands of
+# foreign publishers that can never be fully enumerated.
+_ENGLISH_COMIC_PUBLISHERS = frozenset({
+    # Marvel
+    'marvel', 'marvel comics', 'marvel max', 'marvel knights', 'icon comics',
+    # DC
+    'dc comics', 'vertigo', 'wildstorm', 'dc black label', 'milestone media',
+    'helix', 'abc comics',
+    # Image
+    'image comics', 'image',
+    # Dark Horse
+    'dark horse comics', 'dark horse',
+    # IDW
+    'idw publishing', 'idw',
+    # BOOM!
+    'boom! studios', 'boom studios', 'kaboom!',
+    # Valiant
+    'valiant entertainment', 'valiant comics', 'valiant',
+    # Dynamite
+    'dynamite entertainment', 'dynamite',
+    # Archie
+    'archie comics', 'archie comic publications', 'archie',
+    # Modern independents
+    'aftershock comics', 'awa studios', 'titan comics',
+    'titan publishing group', 'vault comics', 'oni press',
+    'zenescope entertainment', 'avatar press', 'scout comics',
+    'fantagraphics books', 'fantagraphics', 'drawn & quarterly',
+    'top shelf productions', 'humanoids', 'humanoids publishing',
+    'first second', 'graphix', 'top cow productions', 'top cow',
+    # Historical US
+    'charlton comics', 'charlton',
+    'gold key', 'gold key comics',
+    'harvey comics', 'harvey',
+    'ec comics', 'atlas comics', 'atlas',
+    'first comics', 'eclipse comics',
+    'harris comics', 'chaos! comics', 'chaos comics',
+    'malibu comics', 'crossgen comics', 'crossgen',
+    'comico', 'now comics', 'innovation comics',
+    'dell comics', 'dell', 'western publishing',
+    'quality comics', 'fawcett comics', 'fawcett',
+    'american comics group', 'acg',
+    'prize comics', 'whitman',
+    # British English-language
+    'ipc magazines', 'ipc magazines ltd',
+    'fleetway', 'fleetway publications',
+    '2000 ad', 'rebellion',
+    'd.c. thomson', 'd.c. thomson & co', 'dc thomson',
+    'titan books',
+})
+
+_NON_ENGLISH_TITLE_KEYWORDS = frozenset({
+    'manga action', 'young king', 'weekly shonen', 'shonen jump',
+    'weekly jump', 'young jump', 'big comic', 'shonen sunday',
+    'shonen magazine', 'weekly playboy', 'young magazine',
+    'sho-comi', 'hana to yume', 'sunday comics', 'morning comics',
+    'afternoon comics', 'evening comics', 'young animal',
+})
+_MANGA_TITLE_KEYWORDS = _NON_ENGLISH_TITLE_KEYWORDS
+
 translation_regex = compile(
     r'^<p>\s*\w+(?<!English) publication(\.?</p>$|,\s| \(in the \w+(?<!English) language\)|, translates )|' +
     r'^<p>\s*published by the \w+(?<!English) wing of|' +
@@ -135,6 +238,7 @@ class ComicVine:
     volume_field_list = ','.join((
         'aliases',
         'count_of_issues',
+        'date_added',
         'deck',
         'description',
         'id',
@@ -302,8 +406,9 @@ class ComicVine:
             'issue_count': int(volume_data['count_of_issues']),
 
             'translated': translated,
-            'already_added': None, # Only used when searching
-            'issues': None # Only used for certain fetches
+            'already_added': None,
+            'issues': None,
+            'date_added': (volume_data.get('date_added') or '')[:10] or None
         }
 
         return result
@@ -657,6 +762,243 @@ class ComicVine:
                     )
                     break
         return result
+
+    async def get_upcoming_releases(
+        self,
+        days: int = 30
+    ) -> List[Dict[str, Any]]:
+        """Get comic issues releasing in the next N days.
+
+        Args:
+            days: How many days ahead to look. Defaults to 30.
+
+        Returns:
+            List of dicts with keys: issue_id, issue_number, title,
+            cover_date, cover_link, site_url, volume_id, volume_title,
+            already_added (library volume id or None).
+        """
+        from datetime import date, timedelta
+        today = date.today()
+        end = today + timedelta(days=days)
+
+        async with AsyncSession() as session:
+            data = await self.__call_api(
+                session,
+                '/issues',
+                {
+                    'field_list': 'id,name,issue_number,cover_date,image,'
+                                  'site_detail_url,volume',
+                    'filter': f'cover_date:{today}|{end}',
+                    'sort': 'cover_date:asc',
+                    'limit': 100,
+                },
+                {'results': []}
+            )
+
+            results = data.get('results') or []
+
+            # Batch-fetch volume publisher data to filter out manga publishers
+            vol_id_strs = list({
+                str(r['volume']['id'])
+                for r in results
+                if (r.get('volume') or {}).get('id')
+            })
+            manga_vol_ids: set = set()
+            if vol_id_strs:
+                vol_data = await self.__call_api(
+                    session,
+                    '/volumes',
+                    {
+                        'field_list': 'id,publisher',
+                        'filter': f'id:{"|".join(vol_id_strs[:100])}',
+                        'limit': 100,
+                    },
+                    {'results': []}
+                )
+                for v in (vol_data.get('results') or []):
+                    pub = ((v.get('publisher') or {}).get('name') or '').lower()
+                    if pub in _MANGA_PUBLISHERS:
+                        manga_vol_ids.add(int(v['id']))
+
+        vol_ids_int = tuple(
+            int(r['volume']['id'])
+            for r in results
+            if (r.get('volume') or {}).get('id')
+        )
+        already_added: Dict[int, int] = {}
+        if vol_ids_int:
+            placeholders = ','.join('?' * len(vol_ids_int))
+            already_added = dict(get_db().execute(
+                f'SELECT comicvine_id, id FROM volumes '
+                f'WHERE comicvine_id IN ({placeholders})',
+                vol_ids_int
+            ).fetchall())
+
+        upcoming = []
+        for item in results:
+            vol = item.get('volume') or {}
+            vol_cv_id = int(vol['id']) if vol.get('id') else None
+            if vol_cv_id and vol_cv_id in manga_vol_ids:
+                continue
+            vol_title = (vol.get('name') or '').lower()
+            if any(k in vol_title for k in _MANGA_TITLE_KEYWORDS):
+                continue
+            upcoming.append({
+                'issue_id':     int(item['id']),
+                'issue_number': item.get('issue_number') or '',
+                'title':        item.get('name') or '',
+                'cover_date':   item.get('cover_date') or '',
+                'cover_link':   (item.get('image') or {}).get('small_url', ''),
+                'site_url':     item.get('site_detail_url') or '',
+                'volume_id':    vol_cv_id,
+                'volume_title': vol.get('name') or '',
+                'already_added': already_added.get(vol_cv_id) if vol_cv_id else None,
+            })
+        return upcoming
+
+    async def get_new_volumes(
+        self,
+        limit: int = 100
+    ) -> List[VolumeMetadata]:
+        """Get volumes sorted by publish date (start year), newest first.
+
+        CV's API silently sorts NULL start_year entries first on a desc sort,
+        and its integer filter syntax does not support range queries. We fetch
+        100 results and discard entries outside the recent window in Python.
+
+        Args:
+            limit: Maximum results to return. Defaults to 20.
+
+        Returns:
+            List of VolumeMetadata dicts with already_added populated.
+        """
+        # date_added:desc avoids the NULL-first ordering that start_year:desc has.
+        # We fetch 400 candidates (4 pages) so that after filtering out the heavy
+        # manga/non-English content we still have at least `limit` results.
+        from datetime import date as _date
+        cutoff = _date.today().year - 3          # 2023+ = "new"
+        params = {
+            'field_list': self.volume_field_list,
+            'sort': 'date_added:desc',
+            'limit': 100,
+        }
+        async with AsyncSession() as session:
+            page1, page2, page3, page4, page5 = await gather(
+                self.__call_api(session, '/volumes', {**params, 'offset': 0},   {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 100}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 200}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 300}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 400}, {'results': []}),
+            )
+        all_results = (
+            (page1.get('results') or [])
+            + (page2.get('results') or [])
+            + (page3.get('results') or [])
+            + (page4.get('results') or [])
+            + (page5.get('results') or [])
+        )
+
+        def _year(v: Dict[str, Any]) -> int:
+            try:
+                return int(v.get('start_year') or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        def _is_non_english(v: Dict[str, Any]) -> bool:
+            pub = ((v.get('publisher') or {}).get('name') or '').lower()
+            return pub in _NON_ENGLISH_PUBLISHERS
+
+        pre_filtered = [
+            v for v in all_results
+            if _year(v) >= cutoff and not _is_non_english(v)
+        ]
+        formatted = [self.__format_volume_output(v) for v in pre_filtered]
+        filtered = [v for v in formatted if not v['translated']][:limit]
+        self._mark_already_added(filtered)
+        return filtered
+
+    async def get_popular_volumes(
+        self,
+        limit: int = 100
+    ) -> List[VolumeMetadata]:
+        """Get popular volumes surfaced by recent activity on CV.
+
+        CV's public API does not expose its internal subscriber/popularity
+        metric, and count_of_issues is not a valid sort field (silent fallback
+        to id:asc). We fetch 1000 recently-updated volumes, discard non-English
+        content and anything with fewer than 10 issues, then re-sort by issue
+        count descending. Long-running ongoing English series (Batman, ASM,
+        X-Men, Avengers, etc.) dominate because they accumulate the most issues.
+
+        Args:
+            limit: Maximum results to return.
+
+        Returns:
+            List of VolumeMetadata dicts with already_added populated.
+        """
+        # date_last_updated:desc surfaces recently active series.
+        # We then require issue_count >= 10 to discard one-shots and short
+        # foreign mini-series, and re-sort by issue_count:desc so the
+        # longest-running ongoing English series (Batman, ASM, X-Men, Avengers)
+        # rise to the top. count_of_issues is not a valid CV API sort field —
+        # sending it causes a silent fallback to default (id:asc).
+        params = {
+            'field_list': self.volume_field_list,
+            'sort': 'date_last_updated:desc',
+            'limit': 100,
+        }
+        async with AsyncSession() as session:
+            page1, page2, page3, page4, page5, page6, page7, page8, page9, page10 = await gather(
+                self.__call_api(session, '/volumes', {**params, 'offset': 0},   {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 100}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 200}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 300}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 400}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 500}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 600}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 700}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 800}, {'results': []}),
+                self.__call_api(session, '/volumes', {**params, 'offset': 900}, {'results': []}),
+            )
+        all_results = (
+            (page1.get('results') or [])
+            + (page2.get('results') or [])
+            + (page3.get('results') or [])
+            + (page4.get('results') or [])
+            + (page5.get('results') or [])
+            + (page6.get('results') or [])
+            + (page7.get('results') or [])
+            + (page8.get('results') or [])
+            + (page9.get('results') or [])
+            + (page10.get('results') or [])
+        )
+
+        def _is_english_publisher(v: Dict[str, Any]) -> bool:
+            pub = ((v.get('publisher') or {}).get('name') or '').lower()
+            return pub in _ENGLISH_COMIC_PUBLISHERS
+
+        pre_filtered = [v for v in all_results if _is_english_publisher(v)]
+        formatted = [self.__format_volume_output(v) for v in pre_filtered]
+
+        # Require at least 10 issues so one-shots and short mini-series are
+        # excluded, then sort by issue count so long-running series lead.
+        filtered = [v for v in formatted if v['issue_count'] >= 10]
+        filtered.sort(key=lambda v: v['issue_count'], reverse=True)
+        self._mark_already_added(filtered[:limit])
+        return filtered[:limit]
+
+    def _mark_already_added(self, volumes: List[VolumeMetadata]) -> None:
+        """Populate the already_added field for a list of formatted volumes."""
+        if not volumes:
+            return
+        placeholders = ','.join('?' * len(volumes))
+        already_added: Dict[int, int] = dict(get_db().execute(
+            f'SELECT comicvine_id, id FROM volumes '
+            f'WHERE comicvine_id IN ({placeholders})',
+            tuple(v['comicvine_id'] for v in volumes)
+        ).fetchall())
+        for v in volumes:
+            v['already_added'] = already_added.get(v['comicvine_id'])
 
     async def __search_volume(
         self, query: str

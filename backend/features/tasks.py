@@ -580,11 +580,11 @@ class BulkLibraryImport(Task):
                     retries += 1
                     wait_msg = (
                         f'Rate limit hit at {idx + 1}/{total} '
-                        f'— waiting 60 s (retry {retries}/3)…'
+                        f'— waiting 60 min (retry {retries}/3)…'
                     )
                     self.message = wait_msg
                     ws.emit(TaskStatusEvent(self.message))
-                    sleep(60)
+                    sleep(3600)
                 except Exception:
                     LOGGER.exception(
                         'Bulk import: failed to import %s', entry['folder']

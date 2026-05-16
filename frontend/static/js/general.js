@@ -352,9 +352,20 @@ usingApiKey()
 	socket = connectToWebSocket(api_key);
 });
 
+const THEME_CLASSES = [
+	'dark-mode', 'batman-mode', 'spiderman-mode',
+	'invincible-mode', 'superman-mode', 'ironman-mode'
+];
+
+function applyTheme(theme) {
+	const root = document.querySelector(':root');
+	THEME_CLASSES.forEach(c => root.classList.remove(c));
+	if (theme !== 'light')
+		root.classList.add(`${theme}-mode`);
+}
+
 setupLocalStorage();
-if (getLocalStorage('theme')['theme'] === 'dark')
-	document.querySelector(':root').classList.add('dark-mode');
+applyTheme(getLocalStorage('theme')['theme']);
 
 document.querySelector('#toggle-nav').onclick = e =>
 	document.querySelector('#nav-bar').classList.toggle('show-nav');

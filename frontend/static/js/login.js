@@ -72,7 +72,8 @@ usingApiKey(false)
 		loadFields();
 })
 
-if (JSON.parse(localStorage.getItem('kapowarr') || {'theme': 'light'})['theme'] === 'dark')
-	document.querySelector(':root').classList.add('dark-mode');
+const _t = JSON.parse(localStorage.getItem('kapowarr') || '{}')['theme'] || 'light';
+if (_t !== 'light')
+	document.querySelector(':root').classList.add(`${_t}-mode`);
 
 document.querySelector('#login-form').action = 'javascript:login();';

@@ -115,6 +115,116 @@ noscript {
 	--volume-info-background-color: var(--dark-color);
 }
 
+/* Batman — near-black with gold/yellow accent */
+:root.batman-mode {
+	--accent-color: #f5c518;
+	--success-color: #54db68;
+	--error-color: #db5461;
+
+	--background-color: #1a1a1a;
+	--foreground-color: #2a2a2a;
+	--hover-color: #333333;
+	--border-color: #3d3d3d;
+	--text-color: #e8e8e8;
+	--dimmed-text-color: #9a9a9a;
+
+	--header-background-color: #f5c518;
+	--header-color: #1a1a1a;
+	--tool-bar-color: #9a9a9a;
+
+	--nav-background-color: #111111;
+	--nav-color: #e8e8e8;
+	--volume-info-background-color: #111111;
+}
+
+/* Spider-Man — dark navy with red accent */
+:root.spiderman-mode {
+	--accent-color: #e63946;
+	--success-color: #54db68;
+	--error-color: #ff6b6b;
+
+	--background-color: #0d1b2e;
+	--foreground-color: #162540;
+	--hover-color: #1f3055;
+	--border-color: #2a4070;
+	--text-color: #e8e8e8;
+	--dimmed-text-color: #8899bb;
+
+	--header-background-color: #e63946;
+	--header-color: #ffffff;
+	--tool-bar-color: #8899bb;
+
+	--nav-background-color: #080f1c;
+	--nav-color: #e8e8e8;
+	--volume-info-background-color: #080f1c;
+}
+
+/* Invincible — deep space blue with yellow accent */
+:root.invincible-mode {
+	--accent-color: #f7d51d;
+	--success-color: #54db68;
+	--error-color: #db5461;
+
+	--background-color: #0a0a1a;
+	--foreground-color: #121230;
+	--hover-color: #1c1c45;
+	--border-color: #2a2a60;
+	--text-color: #f0f0ff;
+	--dimmed-text-color: #8080cc;
+
+	--header-background-color: #1e3a8a;
+	--header-color: #f7d51d;
+	--tool-bar-color: #8080cc;
+
+	--nav-background-color: #0d1a4a;
+	--nav-color: #f7d51d;
+	--volume-info-background-color: #0d1a4a;
+}
+
+/* Superman — light blue with red accent and blue nav */
+:root.superman-mode {
+	--accent-color: #cc0000;
+	--success-color: #2e9e4f;
+	--error-color: #db5461;
+
+	--background-color: #f0f4ff;
+	--foreground-color: #ffffff;
+	--hover-color: #dce8ff;
+	--border-color: #c5d8f0;
+	--text-color: #1a1a4a;
+	--dimmed-text-color: #5050a0;
+
+	--header-background-color: #0033a0;
+	--header-color: #ffcc00;
+	--tool-bar-color: #5050a0;
+
+	--nav-background-color: #0033a0;
+	--nav-color: #ffffff;
+	--volume-info-background-color: #0033a0;
+}
+
+/* Iron Man — dark charcoal with gold and red */
+:root.ironman-mode {
+	--accent-color: #d4a017;
+	--success-color: #54db68;
+	--error-color: #cc3333;
+
+	--background-color: #1a0a0a;
+	--foreground-color: #2a1212;
+	--hover-color: #3a1a1a;
+	--border-color: #502222;
+	--text-color: #e8e8e8;
+	--dimmed-text-color: #aa8888;
+
+	--header-background-color: #8b0000;
+	--header-color: #d4a017;
+	--tool-bar-color: #aa8888;
+
+	--nav-background-color: #600000;
+	--nav-color: #d4a017;
+	--volume-info-background-color: #600000;
+}
+
 ::-webkit-scrollbar {
 	/* For vertical scrollbars */
 	width: 10px;

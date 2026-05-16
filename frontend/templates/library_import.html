@@ -135,7 +135,7 @@
 		</div>
 
 		<div id="bulk-mode" class="hidden">
-			<p>Reads <code>ComicInfo.xml</code> from CBZ files to extract ComicVine IDs — no fuzzy matching needed. Folders already in your library are skipped. Volumes whose CBZ files don't contain a ComicVine ID are shown but excluded from the import by default.</p>
+			<p>Reads <code>ComicInfo.xml</code> from CBZ files to extract ComicVine IDs. Folders already in your library are skipped. Volumes without a ComicVine ID are shown but excluded from the import by default.</p>
 			<ul>
 				<li>The import runs as a background task and handles rate limits automatically.</li>
 				<li>Files are not allowed to be directly in the root folder.</li>
@@ -146,6 +146,20 @@
 						<td colspan="2">
 							<p class="error hidden" id="bulk-folder-filter-error">*Input has to be a folder (pattern) inside a root folder</p>
 							<input type="text" id="bulk-folder-filter-input" placeholder="Folder(s) to scan (glob patterns, leave blank for all root folders)">
+						</td>
+					</tr>
+					<tr>
+						<td><label for="bulk-fuzzy-input">Title matching fallback</label></td>
+						<td>
+							<select id="bulk-fuzzy-input">
+								<option value="false" selected>No</option>
+								<option value="true">Yes</option>
+							</select>
+						</td>
+					</tr>
+					<tr id="bulk-fuzzy-note" class="hidden">
+						<td colspan="2">
+							<p><em>When no ComicInfo ID is found, Kapowarr will search ComicVine by folder name. This is slow — one API call per untagged folder — and will hit the rate limit (200 req/hr) for large libraries. Each rate-limit pause adds 60 seconds per retry.</em></p>
 						</td>
 					</tr>
 				</tbody>

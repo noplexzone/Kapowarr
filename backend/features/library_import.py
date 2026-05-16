@@ -5,7 +5,8 @@ from glob import glob
 from itertools import chain
 from os import listdir
 from os.path import abspath, basename, dirname, isdir, isfile, join, splitext
-from re import search as re_search
+from re import match as re_match, search as re_search
+from time import sleep
 from typing import Any, Dict, List, Tuple, Union
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
@@ -204,6 +205,57 @@ def propose_library_import(
     return result
 
 
+def _folder_name_to_cv_id(folder_name: str) -> Union[Tuple[int, str], None]:
+    """Search ComicVine by title (and year) extracted from a folder name.
+
+    Parses the common "Series Title (Year)" convention, searches CV for the
+    title, then picks the result whose start_year matches. If multiple results
+    share the same year the one with the most issues wins (most likely the main
+    series rather than a reprint/special). Returns (cv_id, 'volume') or None.
+    """
+    m = re_match(r'^(.+?)\s*\((\d{4})\)\s*$', folder_name)
+    if m:
+        title = m.group(1).strip()
+        year  = m.group(2)
+    else:
+        title = folder_name
+        year  = None
+
+    for attempt in range(2):
+        try:
+            results = run(ComicVine().search_volumes(title))
+            break
+        except CVRateLimitReached:
+            if attempt == 0:
+                LOGGER.warning(
+                    'Bulk scan title-match: rate limit hit for "%s", '
+                    'waiting 60 s before retry', title
+                )
+                sleep(60)
+            else:
+                LOGGER.warning(
+                    'Bulk scan title-match: rate limit hit twice for "%s", '
+                    'skipping', title
+                )
+                return None
+        except Exception:
+            return None
+    else:
+        return None
+
+    if not results:
+        return None
+
+    if year is not None:
+        year_matches = [r for r in results if str(r.get('year') or '') == year]
+        if year_matches:
+            best = max(year_matches, key=lambda r: r.get('issue_count') or 0)
+            return best['comicvine_id'], 'volume'
+
+    # No year in folder name or no exact year match — return first result
+    return results[0]['comicvine_id'], 'volume'
+
+
 def read_comicinfo_cv_id(cbz_path: str) -> Union[Tuple[int, str], None]:
     """Extract a ComicVine ID from ComicInfo.xml inside a CBZ file.
 
@@ -281,10 +333,21 @@ def prepare_bulk_scan(
     return scan_roots, existing_folders
 
 
-def generate_bulk_scan(scan_roots: set, existing_folders: set):
+def generate_bulk_scan(
+    scan_roots: set,
+    existing_folders: set,
+    fuzzy_fallback: bool = False
+):
     """Generator that yields one result dict per unimported series folder.
 
-    Yields dicts with keys: folder, file_title, cv_id (int or None).
+    Yields dicts with keys: folder, file_title, cv_id (int or None),
+    id_type, and match_type ('comicinfo', 'title', or None).
+
+    Args:
+        scan_roots: Root directories to scan.
+        existing_folders: Folders already in the library (skipped).
+        fuzzy_fallback: When True and no ComicInfo CV ID is found, attempt a
+            title-based CV search using the folder name as a fallback.
     """
     for root in sorted(scan_roots):
         try:
@@ -301,25 +364,36 @@ def generate_bulk_scan(scan_roots: set, existing_folders: set):
 
             cv_id = None
             id_type = None
+            match_type = None
+
             try:
                 for cbz in list_files(folder, ('.cbz',)):
                     found = read_comicinfo_cv_id(cbz)
                     if found is not None:
                         cv_id, id_type = found
+                        match_type = 'comicinfo'
                         break
             except Exception:
                 pass
 
+            if cv_id is None and fuzzy_fallback:
+                found = _folder_name_to_cv_id(entry)
+                if found is not None:
+                    cv_id, id_type = found
+                    match_type = 'title'
+
             LOGGER.debug(
-                'Bulk scan: %s → %s',
+                'Bulk scan: %s → %s (%s)',
                 entry,
-                f'CV {id_type} ID {cv_id}' if cv_id else 'no CV ID found'
+                f'CV {id_type} ID {cv_id}' if cv_id else 'no CV ID found',
+                match_type or 'none'
             )
             yield {
                 'folder': folder,
                 'file_title': entry,
                 'cv_id': cv_id,
-                'id_type': id_type
+                'id_type': id_type,
+                'match_type': match_type
             }
 
 

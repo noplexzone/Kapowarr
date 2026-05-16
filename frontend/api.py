@@ -728,12 +728,16 @@ def api_library_import_bulk():
             'folder_filter',
             check_existence=False
         )
+        fuzzy_fallback = request.args.get('fuzzy_fallback', '').lower() == 'true'
+
         # Validate + collect roots before streaming (errors surface here,
         # caught by @error_handler before the Response is created)
         scan_roots, existing_folders = prepare_bulk_scan(folder_filter)
 
         def _generate():
-            for item in generate_bulk_scan(scan_roots, existing_folders):
+            for item in generate_bulk_scan(
+                scan_roots, existing_folders, fuzzy_fallback=fuzzy_fallback
+            ):
                 yield _json.dumps(item) + '\n'
 
         return Response(

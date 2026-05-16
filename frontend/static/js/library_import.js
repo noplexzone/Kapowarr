@@ -40,7 +40,9 @@ const LIEls = {
 	modes: {
 		standard: document.querySelector('#standard-mode'),
 		bulk: document.querySelector('#bulk-mode')
-	}
+	},
+	bulk_fuzzy: document.querySelector('#bulk-fuzzy-input'),
+	bulk_fuzzy_note: document.querySelector('#bulk-fuzzy-note')
 };
 
 const rowid_to_filepath = {};
@@ -251,6 +253,9 @@ async function loadBulkProposal(api_key) {
 	const filterVal = ffi.value.trim();
 	if (filterVal)
 		url += `&folder_filter=${encodeURIComponent(filterVal)}`;
+	const fuzzyEnabled = LIEls.bulk_fuzzy.value === 'true';
+	if (fuzzyEnabled)
+		url += '&fuzzy_fallback=true';
 
 	hide(
 		[LIEls.views.start, document.querySelector('#bulk-folder-filter-error')],
@@ -330,7 +335,10 @@ async function loadBulkProposal(api_key) {
 			cvCell.innerText = '—';
 			row.querySelector('input[type="checkbox"]').checked = false;
 		}
-		row.querySelector('.status-column').innerText = result.cv_id ? 'Ready' : 'No ID found';
+		const statusLabel = result.cv_id
+			? (result.match_type === 'title' ? 'Ready (title match)' : 'Ready')
+			: 'No ID found';
+		row.querySelector('.status-column').innerText = statusLabel;
 
 		// Delete button — only shown for unmatched rows
 		if (!result.cv_id) {
@@ -437,6 +445,9 @@ usingApiKey()
 		hide([LIEls.views.bulk_list], [LIEls.views.start]);
 	LIEls.buttons.bulk_delete_unmatched.onclick = e => deleteAllUnmatched(api_key);
 });
+
+LIEls.bulk_fuzzy.onchange = e =>
+	LIEls.bulk_fuzzy_note.classList.toggle('hidden', LIEls.bulk_fuzzy.value !== 'true');
 
 LIEls.tabs.standard.onclick = e => switchTab('standard');
 LIEls.tabs.bulk.onclick = e => switchTab('bulk');

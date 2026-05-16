@@ -9,6 +9,7 @@ main {
 	gap: 1.5rem;
 	flex-wrap: wrap;
 	padding-bottom: 1rem;
+	flex: 0 0 auto;
 }
 
 #fc-filter-row {

@@ -66,8 +66,8 @@ def ui_library_import():
     return render('library_import.html')
 
 
-@ui.route('/folder-check', methods=methods)
-def ui_folder_check():
+@ui.route('/mismatch-review', methods=methods)
+def ui_mismatch_review():
     return render('folder_check.html')
 
 

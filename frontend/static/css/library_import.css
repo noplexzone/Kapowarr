@@ -12,34 +12,6 @@ main {
 	padding-bottom: 1.5rem;
 }
 
-#mode-tabs {
-	display: flex;
-	gap: .5rem;
-	margin-top: min(3vw, 2rem);
-}
-
-.tab-button {
-	padding: .4rem 1rem;
-	border: 2px solid var(--border-color);
-	border-radius: 4px;
-	background-color: var(--foreground-color);
-	color: var(--text-color);
-	font-size: 1rem;
-	cursor: pointer;
-	transition: background-color 100ms linear;
-}
-
-.tab-button:hover {
-	background-color: var(--hover-color);
-}
-
-.tab-button.active {
-	background-color: var(--accent-color);
-	border-color: var(--accent-color);
-	color: #fff;
-}
-
-#standard-mode,
 #bulk-mode {
 	display: flex;
 	flex-direction: column;
@@ -49,8 +21,6 @@ main {
 	max-width: 50rem;
 }
 
-#standard-mode > p,
-#standard-mode > ul,
 #bulk-mode > p,
 #bulk-mode > ul {
 	max-width: 50rem;
@@ -58,7 +28,6 @@ main {
 	align-self: flex-start;
 }
 
-#standard-mode > ul > li,
 #bulk-mode > ul > li {
 	margin-bottom: 1rem;
 }
@@ -92,20 +61,10 @@ main {
 	background-color: var(--hover-color);
 }
 
-#folder-filter-input {
-	width: 100%;
-	display: none;
-}
-
-#start-window table:has(#target-input option[value="false"]:checked) #folder-filter-input {
-	display: block;
-}
-
 #bulk-folder-filter-input {
 	width: 100%;
 }
 
-#folder-filter-error,
 #bulk-folder-filter-error {
 	margin-bottom: 1rem;
 }
@@ -136,11 +95,9 @@ main {
 	width: 3rem;
 }
 
-#run-import-button,
 #run-bulk-scan-button,
 .cancel-button,
-.action-container button,
-#no-cv-window a {
+.action-container button {
 	min-width: 5rem;
 
 	border: 2px solid var(--border-color);
@@ -155,17 +112,14 @@ main {
 	transition: background-color 100ms linear;
 }
 
-#run-import-button:hover,
 #run-bulk-scan-button:hover,
 .cancel-button:hover,
-.action-container button:hover,
-#no-cv-window h2:hover {
+.action-container button:hover {
 	background-color: var(--hover-color);
 }
 
 #loading-window,
-#no-result-window,
-#no-cv-window {
+#no-result-window {
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
@@ -174,8 +128,7 @@ main {
 }
 
 #loading-window h2,
-#no-result-window h2,
-#no-cv-window h2 {
+#no-result-window h2 {
 	font-size: clamp(1rem, 5vw, 2rem);
 	font-weight: 500;
 	text-align: center;
@@ -206,112 +159,4 @@ main {
 
 .table-container th {
 	padding-left: 1rem;
-}
-
-.proposal-list > tr {
-	transition: background-color 400ms linear;
-}
-
-.proposal-list > tr:hover {
-	background-color: var(--hover-color);
-}
-
-.proposal-list td {
-	border-top: 1px solid var(--border-color);
-}
-
-.proposal-list td:first-child {
-	width: 3rem;
-}
-
-.proposal-list td a {
-	color: var(--accent-color);
-}
-
-.proposal-list button img {
-	height: 1.5rem;
-}
-
-#cv-window .window-content {
-	justify-content: flex-start;
-}
-
-.search-bar {
-	width: 100%;
-	height: 2.5rem;
-
-	display: flex;
-	justify-content: center;
-	align-items: center;
-}
-
-.search-bar > input {
-	height: 100%;
-	width: min(100%, 20rem);
-
-	padding: .5rem;
-	border: 2px solid var(--border-color);
-	border-radius: 4px 0px 0px 4px;
-	background-color: var(--background-color);
-	color: var(--text-color);
-}
-
-.search-bar > input:focus {
-	outline: 0;
-	border-color: var(--accent-color);
-	box-shadow:
-		inset 0 1px 1px rgba(0, 0, 0, 0.075),
-		0 0 6px var(--accent-color);
-}
-
-.search-bar > button {
-	height: 100%;
-	aspect-ratio: 1/1;
-
-	padding: .6rem;
-	border: 2px solid var(--border-color);
-	border-left: none;
-	border-radius: 0px 4px 4px 0px;
-}
-
-.search-results-container {
-	padding: .5rem;
-	overflow-x: auto;
-}
-
-.search-results-container table {
-	min-width: 25rem;
-}
-
-.search-results-container th {
-	padding-left: 1rem;
-}
-
-.search-results > tr {
-	transition: background-color 400ms linear;
-}
-
-.search-results > tr:hover {
-	background-color: var(--hover-color);
-}
-
-.search-results td {
-	padding: .5rem 1rem;
-	border-top: 1px solid var(--border-color);
-}
-
-.search-results td:last-child {
-	min-width: 9rem;
-}
-
-.search-results td a {
-	color: var(--accent-color);
-}
-
-.search-results button {
-	border: 2px solid var(--border-color);
-	border-radius: 4px;
-	padding: .3rem;
-	color: var(--text-color);
-	background-color: var(--foreground-color);
 }

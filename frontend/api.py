@@ -24,9 +24,7 @@ from backend.features.download_queue import (DownloadHandler,
                                              get_download_history)
 from backend.base.files import delete_file_folder, folder_is_inside_folder
 from backend.features.library_import import (generate_bulk_scan,
-                                             import_library,
-                                             prepare_bulk_scan,
-                                             propose_library_import)
+                                             prepare_bulk_scan)
 from backend.features.mass_edit import run_mass_editor_action
 from backend.features.search import manual_search
 from backend.features.tasks import (BulkLibraryImport, Task, TaskHandler,
@@ -668,56 +666,6 @@ def api_remote_mapping(id: int):
 # =====================
 # Library Import
 # =====================
-@api.route('/libraryimport', methods=['GET', 'POST'])
-@error_handler
-@auth
-def api_library_import():
-    if request.method == 'GET':
-        folder_filter = extract_key(
-            request,
-            'folder_filter',
-            check_existence=False
-        )
-        limit = extract_key(
-            request,
-            'limit',
-            check_existence=False
-        )
-        only_english = extract_key(
-            request,
-            'only_english',
-            check_existence=False
-        )
-        limit_parent_folder = extract_key(
-            request,
-            'limit_parent_folder',
-            check_existence=False
-        )
-        result = propose_library_import(
-            folder_filter,
-            limit,
-            limit_parent_folder,
-            only_english
-        )
-        return return_api(result)
-
-    elif request.method == 'POST':
-        data = request.get_json()
-        rename_files = extract_key(request, 'rename_files', False)
-
-        if (
-            not isinstance(data, list)
-            or not all(
-                isinstance(e, dict) and 'filepath' in e and 'id' in e
-                for e in data
-            )
-        ):
-            raise InvalidKeyValue
-
-        import_library(data, rename_files)
-        return return_api({}, code=201)
-
-
 @api.route('/libraryimport/bulk', methods=['GET', 'POST'])
 @error_handler
 @auth

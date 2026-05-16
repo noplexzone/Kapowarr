@@ -3,8 +3,12 @@
 from asyncio import run
 from glob import glob
 from itertools import chain
-from os.path import abspath, basename, dirname, isfile, join, splitext
+from os import listdir
+from os.path import abspath, basename, dirname, isdir, isfile, join, splitext
+from re import search as re_search
 from typing import Any, Dict, List, Union
+from xml.etree import ElementTree
+from zipfile import BadZipFile, ZipFile
 
 from backend.base.custom_exceptions import (CVRateLimitReached,
                                             InvalidKeyValue,
@@ -24,7 +28,7 @@ from backend.implementations.file_matching import scan_files
 from backend.implementations.naming import mass_rename
 from backend.implementations.root_folders import RootFolders
 from backend.implementations.volumes import Library
-from backend.internals.db import commit
+from backend.internals.db import commit, get_db
 from backend.internals.db_models import FilesDB
 
 
@@ -198,6 +202,161 @@ def propose_library_import(
     ]
 
     return result
+
+
+def read_comicinfo_cv_id(cbz_path: str) -> Union[int, None]:
+    """Extract a ComicVine series ID from ComicInfo.xml inside a CBZ file.
+
+    Supports the two formats Mylar writes:
+    - Notes field: "Scraped metadata from Comicvine [CVDB:123456]"
+    - Web field:   "https://comicvine.gamespot.com/title/4050-123456/"
+    """
+    try:
+        with ZipFile(cbz_path, 'r') as z:
+            # Find ComicInfo.xml anywhere in the archive (case-insensitive)
+            ci_name = next(
+                (n for n in z.namelist() if n.lower().endswith('comicinfo.xml')),
+                None
+            )
+            if not ci_name:
+                return None
+            xml_bytes = z.read(ci_name)
+            root = ElementTree.fromstring(xml_bytes)
+
+            notes = root.findtext('Notes') or ''
+            m = re_search(r'\[CVDB:(\d+)\]', notes, flags=2)  # re.IGNORECASE=2
+            if m:
+                return int(m.group(1))
+
+            web = root.findtext('Web') or ''
+            m = re_search(r'/4050-(\d+)/', web)
+            if m:
+                return int(m.group(1))
+
+    except (BadZipFile, ElementTree.ParseError, OSError):
+        pass
+    except Exception:
+        LOGGER.debug('Unexpected error reading ComicInfo from %s', cbz_path)
+    return None
+
+
+def _get_existing_volume_folders() -> set:
+    """Return the set of folder paths already used by volumes in the library."""
+    rows = get_db().execute("SELECT folder FROM volumes;").fetchall()
+    return {force_suffix(r[0]) for r in rows}
+
+
+def prepare_bulk_scan(
+    folder_filter: Union[str, None] = None
+) -> tuple:
+    """Validate folder_filter and return (scan_roots, existing_folders).
+
+    Raises InvalidKeyValue if folder_filter points outside a root folder.
+    Call this before starting the scan so errors surface before streaming begins.
+    """
+    root_folders = {abspath(r) for r in RootFolders().get_folder_list()}
+
+    if folder_filter:
+        scan_roots = set(
+            f for f in glob(folder_filter, recursive=True) if not isfile(f)
+        )
+        for f in scan_roots:
+            if not any(folder_is_inside_folder(r, f) for r in root_folders):
+                raise InvalidKeyValue('folder_filter', folder_filter)
+    else:
+        scan_roots = root_folders.copy()
+
+    existing_folders = _get_existing_volume_folders()
+    return scan_roots, existing_folders
+
+
+def generate_bulk_scan(scan_roots: set, existing_folders: set):
+    """Generator that yields one result dict per unimported series folder.
+
+    Yields dicts with keys: folder, file_title, cv_id (int or None).
+    """
+    for root in sorted(scan_roots):
+        try:
+            entries = sorted(listdir(root))
+        except OSError:
+            continue
+
+        for entry in entries:
+            folder = join(root, entry)
+            if not isdir(folder):
+                continue
+            if force_suffix(abspath(folder)) in existing_folders:
+                continue
+
+            cv_id = None
+            try:
+                for cbz in list_files(folder, ('.cbz',)):
+                    cv_id = read_comicinfo_cv_id(cbz)
+                    if cv_id is not None:
+                        break
+            except Exception:
+                pass
+
+            LOGGER.debug(
+                'Bulk scan: %s → %s',
+                entry, f'CV ID {cv_id}' if cv_id else 'no CV ID found'
+            )
+            yield {'folder': folder, 'file_title': entry, 'cv_id': cv_id}
+
+
+def bulk_propose_library_import(
+    folder_filter: Union[str, None] = None
+) -> List[Dict[str, Any]]:
+    """Non-streaming wrapper around prepare_bulk_scan + generate_bulk_scan."""
+    scan_roots, existing_folders = prepare_bulk_scan(folder_filter)
+    results = list(generate_bulk_scan(scan_roots, existing_folders))
+    LOGGER.info(
+        'Bulk scan complete: %d folders, %d with CV IDs',
+        len(results), sum(1 for r in results if r['cv_id'])
+    )
+    return results
+
+
+def import_library_entry(
+    cv_id: int,
+    folder: str,
+    rename_files: bool = False
+) -> None:
+    """Import a single series folder using a known ComicVine ID.
+
+    Intended for bulk imports where the CV ID was extracted from ComicInfo.xml,
+    so no CV search API call is needed for matching.
+    """
+    root_folders = RootFolders().get_all()
+    folder = abspath(folder)
+
+    for root_folder in root_folders:
+        if folder_is_inside_folder(root_folder.folder, folder):
+            break
+    else:
+        LOGGER.warning('Bulk import: %s is not inside any root folder', folder)
+        return
+
+    try:
+        volume_id = Library.add(
+            comicvine_id=cv_id,
+            root_folder_id=root_folder.id,
+            monitored=True,
+            monitor_scheme=MonitorScheme.ALL,
+            monitor_new_issues=True,
+            volume_folder=folder if not rename_files else None
+        )
+        commit()
+
+    except VolumeAlreadyAdded as e:
+        volume_id = e.volume_id
+
+    scan_files(volume_id, update_websocket=True)
+
+    if rename_files:
+        mass_rename(volume_id)
+
+    return
 
 
 def import_library(

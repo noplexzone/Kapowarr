@@ -488,6 +488,74 @@ class SearchAll(Task):
         return downloads
 
 
+class BulkLibraryImport(Task):
+    "Import a pre-scanned list of series folders using known ComicVine IDs"
+
+    stop = False
+    message = ''
+    action = 'bulk_library_import'
+    display_title = 'Bulk Library Import'
+    category = 'manage'
+
+    @property
+    def volume_id(self) -> None:
+        return None
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self, entries: List[Dict]) -> None:
+        """
+        Args:
+            entries: List of {'folder': str, 'cv_id': int, 'file_title': str}
+        """
+        self._entries = entries
+        self.message = f'Queued bulk import of {len(entries)} volumes'
+        return
+
+    def run(self) -> None:
+        from backend.base.custom_exceptions import CVRateLimitReached
+        from backend.features.library_import import import_library_entry
+
+        ws = WebSocket()
+        total = len(self._entries)
+
+        for idx, entry in enumerate(self._entries):
+            if self.stop:
+                break
+
+            self.message = f'Importing {idx + 1}/{total}: {entry["file_title"]}'
+            ws.emit(TaskStatusEvent(self.message))
+
+            retries = 0
+            while retries < 3:
+                try:
+                    import_library_entry(
+                        cv_id=int(entry['cv_id']),
+                        folder=entry['folder']
+                    )
+                    break
+                except CVRateLimitReached:
+                    retries += 1
+                    wait_msg = (
+                        f'Rate limit hit at {idx + 1}/{total} '
+                        f'— waiting 60 s (retry {retries}/3)…'
+                    )
+                    self.message = wait_msg
+                    ws.emit(TaskStatusEvent(self.message))
+                    sleep(60)
+                except Exception:
+                    LOGGER.exception(
+                        'Bulk import: failed to import %s', entry['folder']
+                    )
+                    break
+
+        self.message = f'Bulk import finished: {total} volumes processed'
+        ws.emit(TaskStatusEvent(self.message))
+        return None
+
+
 # =====================
 # Task handling
 # =====================

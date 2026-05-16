@@ -1,17 +1,21 @@
 const LIEls = {
 	pre_build: {
 		li_result: document.querySelector('.pre-build-els .li-result'),
-		search_result: document.querySelector('.pre-build-els .search-result')
+		search_result: document.querySelector('.pre-build-els .search-result'),
+		bulk_result: document.querySelector('.pre-build-els .bulk-result')
 	},
 	views: {
 		start: document.querySelector('#start-window'),
 		no_result: document.querySelector('#no-result-window'),
 		list: document.querySelector('#list-window'),
 		loading: document.querySelector('#loading-window'),
-		no_cv: document.querySelector('#no-cv-window')
+		no_cv: document.querySelector('#no-cv-window'),
+		bulk_list: document.querySelector('#bulk-list-window')
 	},
 	proposal_list: document.querySelector('.proposal-list'),
+	bulk_proposal_list: document.querySelector('.bulk-proposal-list'),
 	select_all: document.querySelector('#selectall-input'),
+	bulk_select_all: document.querySelector('#bulk-selectall-input'),
 	search: {
 		window: document.querySelector('#cv-window'),
 		input: document.querySelector('#search-input'),
@@ -23,7 +27,18 @@ const LIEls = {
 		cancel: document.querySelectorAll('.cancel-button'),
 		run: document.querySelector('#run-import-button'),
 		import: document.querySelector('#import-button'),
-		import_rename: document.querySelector('#import-rename-button')
+		import_rename: document.querySelector('#import-rename-button'),
+		bulk_scan: document.querySelector('#run-bulk-scan-button'),
+		bulk_import: document.querySelector('#bulk-import-button'),
+		bulk_cancel: document.querySelector('#bulk-cancel-button')
+	},
+	tabs: {
+		standard: document.querySelector('#tab-standard'),
+		bulk: document.querySelector('#tab-bulk')
+	},
+	modes: {
+		standard: document.querySelector('#standard-mode'),
+		bulk: document.querySelector('#bulk-mode')
 	}
 };
 
@@ -206,6 +221,149 @@ function importLibrary(api_key, rename=false) {
 	.then(response => hide([LIEls.views.loading], [LIEls.views.start]));
 };
 
+// =====================
+// Bulk Import (ComicInfo mode)
+// =====================
+
+function switchTab(mode) {
+	const isBulk = mode === 'bulk';
+	LIEls.tabs.standard.classList.toggle('active', !isBulk);
+	LIEls.tabs.bulk.classList.toggle('active', isBulk);
+	hide(
+		isBulk ? [LIEls.modes.standard] : [LIEls.modes.bulk],
+		isBulk ? [LIEls.modes.bulk]     : [LIEls.modes.standard]
+	);
+};
+
+function toggleBulkSelectAll() {
+	const checked = LIEls.bulk_select_all.checked;
+	LIEls.bulk_proposal_list.querySelectorAll('input[type="checkbox"]').forEach(
+		e => e.checked = checked
+	);
+};
+
+async function loadBulkProposal(api_key) {
+	const ffi = document.querySelector('#bulk-folder-filter-input');
+	const progressEl = document.querySelector('#bulk-loading-progress');
+
+	let url = `${url_base}/api/libraryimport/bulk?api_key=${api_key}`;
+	const filterVal = ffi.value.trim();
+	if (filterVal)
+		url += `&folder_filter=${encodeURIComponent(filterVal)}`;
+
+	hide(
+		[LIEls.views.start, document.querySelector('#bulk-folder-filter-error')],
+		[LIEls.views.loading, progressEl]
+	);
+	LIEls.bulk_proposal_list.innerHTML = '';
+	progressEl.innerText = 'Starting scan…';
+
+	let response;
+	try {
+		response = await fetch(url);
+	} catch {
+		hide([LIEls.views.loading], [LIEls.views.start]);
+		return;
+	}
+
+	if (!response.ok) {
+		// Server returned an error before streaming started
+		try {
+			const j = await response.json();
+			if (j.error === 'InvalidKeyValue')
+				hide(
+					[LIEls.views.loading, progressEl],
+					[LIEls.views.start, document.querySelector('#bulk-folder-filter-error')]
+				);
+			else
+				hide([LIEls.views.loading, progressEl], [LIEls.views.start]);
+		} catch {
+			hide([LIEls.views.loading, progressEl], [LIEls.views.start]);
+		}
+		return;
+	}
+
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = '';
+	let count = 0;
+	let matched = 0;
+	const rows = [];
+
+	while (true) {
+		const {done, value} = await reader.read();
+		if (done) break;
+
+		buffer += decoder.decode(value, {stream: true});
+		const lines = buffer.split('\n');
+		buffer = lines.pop(); // keep any partial line for next chunk
+
+		for (const line of lines) {
+			if (!line.trim()) continue;
+			let item;
+			try { item = JSON.parse(line); } catch { continue; }
+
+			count++;
+			if (item.cv_id) matched++;
+			progressEl.innerText =
+				`Scanning… ${count} folders checked, ${matched} matched — ${item.file_title}`;
+
+			rows.push(item);
+		}
+	}
+
+	// Build table from collected results
+	rows.forEach(result => {
+		const row = LIEls.pre_build.bulk_result.cloneNode(true);
+		row.dataset.folder = result.folder;
+		row.dataset.cv_id = result.cv_id ?? '';
+
+		row.querySelector('.file-column').innerText = result.file_title;
+		row.querySelector('.file-column').title = result.folder;
+
+		const cvCell = row.querySelector('.cv-id-column');
+		if (result.cv_id) {
+			cvCell.innerText = result.cv_id;
+		} else {
+			cvCell.innerText = '—';
+			row.querySelector('input[type="checkbox"]').checked = false;
+		}
+		row.querySelector('.status-column').innerText = result.cv_id ? 'Ready' : 'No ID found';
+		LIEls.bulk_proposal_list.appendChild(row);
+	});
+
+	document.querySelector('#bulk-summary').innerText =
+		`${count} folders found — ${matched} with ComicVine IDs, ${count - matched} without.`;
+
+	hide([LIEls.views.loading, progressEl], count > 0 ? [LIEls.views.bulk_list] : [LIEls.views.no_result]);
+};
+
+function startBulkImport(api_key) {
+	const rows = [...LIEls.bulk_proposal_list.querySelectorAll(
+		'tr:has(input[type="checkbox"]:checked)'
+	)];
+
+	const data = rows
+		.filter(r => r.dataset.cv_id)
+		.map(r => ({
+			folder: r.dataset.folder,
+			cv_id: parseInt(r.dataset.cv_id),
+			file_title: r.querySelector('.file-column').innerText
+		}));
+
+	if (!data.length) return;
+
+	rows.forEach(r => {
+		if (r.dataset.cv_id)
+			r.querySelector('.status-column').innerText = 'Queued';
+	});
+
+	sendAPI('POST', '/libraryimport/bulk', api_key, {}, data)
+	.then(() => {
+		hide([LIEls.views.bulk_list], [LIEls.views.start]);
+	});
+};
+
 // code run on load
 
 usingApiKey()
@@ -213,10 +371,19 @@ usingApiKey()
 	LIEls.buttons.run.onclick = e => loadProposal(api_key);
 	LIEls.buttons.import.onclick = e => importLibrary(api_key, false);
 	LIEls.buttons.import_rename.onclick = e => importLibrary(api_key, true);
+
+	LIEls.buttons.bulk_scan.onclick = e => loadBulkProposal(api_key);
+	LIEls.buttons.bulk_import.onclick = e => startBulkImport(api_key);
+	LIEls.buttons.bulk_cancel.onclick = e =>
+		hide([LIEls.views.bulk_list], [LIEls.views.start]);
 });
+
+LIEls.tabs.standard.onclick = e => switchTab('standard');
+LIEls.tabs.bulk.onclick = e => switchTab('bulk');
 
 LIEls.search.bar.action = 'javascript:searchCV();';
 LIEls.select_all.onchange = e => toggleSelectAll();
+LIEls.bulk_select_all.onchange = e => toggleBulkSelectAll();
 LIEls.buttons.cancel.forEach(b =>
 	b.onclick = e => hide(
 		[LIEls.views.list, LIEls.views.no_result, LIEls.views.no_cv],

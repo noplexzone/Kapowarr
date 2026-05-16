@@ -12,21 +12,54 @@ main {
 	padding-bottom: 1.5rem;
 }
 
-#start-window h2 {
+#mode-tabs {
+	display: flex;
+	gap: .5rem;
 	margin-top: min(3vw, 2rem);
-
-	font-size: clamp(1rem, 5vw, 2rem);
-	font-weight: 500;
-	text-align: center;
 }
 
-#start-window > p,
-#start-window > ul {
+.tab-button {
+	padding: .4rem 1rem;
+	border: 2px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: 1rem;
+	cursor: pointer;
+	transition: background-color 100ms linear;
+}
+
+.tab-button:hover {
+	background-color: var(--hover-color);
+}
+
+.tab-button.active {
+	background-color: var(--accent-color);
+	border-color: var(--accent-color);
+	color: #fff;
+}
+
+#standard-mode,
+#bulk-mode {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1rem;
+	width: 100%;
+	max-width: 50rem;
+}
+
+#standard-mode > p,
+#standard-mode > ul,
+#bulk-mode > p,
+#bulk-mode > ul {
 	max-width: 50rem;
 	color: var(--text-color);
+	align-self: flex-start;
 }
 
-#start-window > ul > li {
+#standard-mode > ul > li,
+#bulk-mode > ul > li {
 	margin-bottom: 1rem;
 }
 
@@ -61,7 +94,6 @@ main {
 
 #folder-filter-input {
 	width: 100%;
-
 	display: none;
 }
 
@@ -69,11 +101,43 @@ main {
 	display: block;
 }
 
-#folder-filter-error {
+#bulk-folder-filter-input {
+	width: 100%;
+}
+
+#folder-filter-error,
+#bulk-folder-filter-error {
 	margin-bottom: 1rem;
 }
 
+#bulk-summary {
+	padding: .5rem 1rem;
+	color: var(--text-color);
+}
+
+#bulk-list-window {
+	display: flex;
+	flex-direction: column;
+}
+
+.bulk-proposal-list > tr {
+	transition: background-color 400ms linear;
+}
+
+.bulk-proposal-list > tr:hover {
+	background-color: var(--hover-color);
+}
+
+.bulk-proposal-list td {
+	border-top: 1px solid var(--border-color);
+}
+
+.bulk-proposal-list td:first-child {
+	width: 3rem;
+}
+
 #run-import-button,
+#run-bulk-scan-button,
 .cancel-button,
 .action-container button,
 #no-cv-window a {
@@ -92,6 +156,7 @@ main {
 }
 
 #run-import-button:hover,
+#run-bulk-scan-button:hover,
 .cancel-button:hover,
 .action-container button:hover,
 #no-cv-window h2:hover {

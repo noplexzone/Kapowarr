@@ -5,7 +5,9 @@ from datetime import datetime
 from io import BytesIO
 from typing import Any, Dict, List, Tuple, Type, Union
 
-from flask import Blueprint, request, send_file
+import json as _json
+
+from flask import Blueprint, Response, request, send_file, stream_with_context
 
 from backend.base.custom_exceptions import (InvalidKeyValue,
                                             KeyNotFound, TaskNotFound)
@@ -20,11 +22,13 @@ from backend.base.logging import LOGGER, get_log_file_contents
 from backend.features.download_queue import (DownloadHandler,
                                              delete_download_history,
                                              get_download_history)
-from backend.features.library_import import (import_library,
+from backend.features.library_import import (generate_bulk_scan,
+                                             import_library,
+                                             prepare_bulk_scan,
                                              propose_library_import)
 from backend.features.mass_edit import run_mass_editor_action
 from backend.features.search import manual_search
-from backend.features.tasks import (Task, TaskHandler,
+from backend.features.tasks import (BulkLibraryImport, Task, TaskHandler,
                                     delete_task_history, get_task_history,
                                     get_task_planning, task_library)
 from backend.implementations.blocklist import (add_to_blocklist,
@@ -711,6 +715,48 @@ def api_library_import():
 
         import_library(data, rename_files)
         return return_api({}, code=201)
+
+
+@api.route('/libraryimport/bulk', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_library_import_bulk():
+    if request.method == 'GET':
+        folder_filter = extract_key(
+            request,
+            'folder_filter',
+            check_existence=False
+        )
+        # Validate + collect roots before streaming (errors surface here,
+        # caught by @error_handler before the Response is created)
+        scan_roots, existing_folders = prepare_bulk_scan(folder_filter)
+
+        def _generate():
+            for item in generate_bulk_scan(scan_roots, existing_folders):
+                yield _json.dumps(item) + '\n'
+
+        return Response(
+            stream_with_context(_generate()),
+            mimetype='application/x-ndjson'
+        )
+
+    elif request.method == 'POST':
+        data = request.get_json()
+        if (
+            not isinstance(data, list)
+            or not all(
+                isinstance(e, dict)
+                and 'folder' in e
+                and 'cv_id' in e
+                and 'file_title' in e
+                for e in data
+            )
+        ):
+            raise InvalidKeyValue
+
+        task = BulkLibraryImport(data)
+        task_id = TaskHandler().add(task)
+        return return_api({'task_id': task_id}, code=201)
 
 # =====================
 # Library + Volumes

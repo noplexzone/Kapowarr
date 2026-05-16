@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "base.html" import window %}
+{% block title %}Folder Check{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/window.css') }}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/folder_check.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/window.js') }}" defer></script>
+	<script src="{{ url_for('static', filename='js/folder_check.js') }}" defer></script>
+{% endblock %}
+
+{% block pre_build_rows %}
+<tr class="fc-volume-row" data-id="" data-cv_id="">
+	<td class="fc-folder"></td>
+	<td class="fc-title"></td>
+	<td class="fc-year"></td>
+	<td class="fc-status"></td>
+	<td class="fc-actions">
+		<a class="fc-goto" href="">View</a>
+		<button class="fc-fix-btn">Fix Match</button>
+	</td>
+</tr>
+<tr class="fc-search-result" data-cv_id="">
+	<td class="fcs-title"></td>
+	<td class="fcs-year"></td>
+	<td class="fcs-issues"></td>
+	<td><button class="fcs-select-btn">Select</button></td>
+</tr>
+{% endblock pre_build_rows %}
+
+{% block windows %}
+	{% set fix_match_content %}
+		<p id="fc-fix-label"></p>
+		<div id="fc-fix-search-bar">
+			<input type="text" id="fc-fix-input" placeholder="Search ComicVine...">
+			<button id="fc-fix-search-btn">Search</button>
+		</div>
+		<p id="fc-fix-message"></p>
+		<table id="fc-fix-result-table" class="icon-text-color hidden">
+			<thead>
+				<tr>
+					<th>Title</th>
+					<th>Year</th>
+					<th>Issues</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody></tbody>
+		</table>
+	{% endset %}
+	{{ window(True, "fc-fix-window", "Fix Match", fix_match_content, '') }}
+{% endblock windows %}
+
+{% block main %}
+<main>
+	<div id="fc-controls">
+		<div id="fc-filter-row">
+			<label for="fc-filter">Show:</label>
+			<select id="fc-filter">
+				<option value="review" selected>Possible mismatches only</option>
+				<option value="all">All volumes</option>
+			</select>
+		</div>
+		<p id="fc-summary"></p>
+	</div>
+	<div id="fc-loading" class="hidden">
+		<h2>Loading...</h2>
+	</div>
+	<div id="fc-table-container" class="icon-text-color hidden">
+		<table id="fc-table" aria-label="Folder check results">
+			<thead>
+				<tr>
+					<th>Folder Name</th>
+					<th>Volume Title</th>
+					<th>Year</th>
+					<th>Status</th>
+					<th>Actions</th>
+				</tr>
+			</thead>
+			<tbody id="fc-tbody"></tbody>
+		</table>
+	</div>
+	<p id="fc-no-results" class="hidden">No possible mismatches found.</p>
+</main>
+{% endblock main %}

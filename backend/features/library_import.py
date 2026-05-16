@@ -191,9 +191,14 @@ def generate_bulk_scan(
     if not unmatched:
         return
 
-    # Phase 2: batch title searches — one API call per unique base title
+    # Phase 2: batch title searches — one API call per unique base title.
+    # Group folders by title so we can yield results immediately after each
+    # batch completes instead of holding everything until the end.
     unique_titles = list(dict.fromkeys(t for _, _, t, _ in unmatched))
-    title_cache: Dict[str, list] = {}
+    title_to_folders: Dict[str, List[Tuple[str, str, Union[str, None]]]] = {}
+    for folder, entry, title, year in unmatched:
+        title_to_folders.setdefault(title, []).append((folder, entry, year))
+
     cv = ComicVine()
 
     LOGGER.info(
@@ -201,37 +206,38 @@ def generate_bulk_scan(
         len(unmatched), len(unique_titles)
     )
 
-    for title_batch in batched(unique_titles, 10):
-        batch_results = run(async_gather(
-            *(cv.search_volumes(t, allow_rate_limit_reached=True) for t in title_batch),
+    async def _search_batch(titles):
+        return await async_gather(
+            *(cv.search_volumes(t, allow_rate_limit_reached=True) for t in titles),
             return_exceptions=True
-        ))
+        )
+
+    for title_batch in batched(unique_titles, 10):
+        batch_results = run(_search_batch(title_batch))
         for title, results in zip(title_batch, batch_results):
-            title_cache[title] = results if isinstance(results, list) else []
+            result_list = results if isinstance(results, list) else []
             LOGGER.debug(
                 'Bulk scan title search: "%s" → %d results',
-                title, len(title_cache[title])
+                title, len(result_list)
             )
+            for folder, entry, year in title_to_folders.get(title, []):
+                found = _pick_best_cv_result(result_list, year)
+                if found is not None:
+                    cv_id, id_type = found
+                    match_type = 'title'
+                else:
+                    cv_id, id_type, match_type = None, None, None
+                LOGGER.debug(
+                    'Bulk scan: %s → %s (%s)',
+                    entry,
+                    f'CV {id_type} ID {cv_id}' if cv_id else 'no CV ID found',
+                    match_type or 'none'
+                )
+                yield {
+                    'folder': folder, 'file_title': entry,
+                    'cv_id': cv_id, 'id_type': id_type, 'match_type': match_type
+                }
         sleep(Constants.CV_BRAKE_TIME * len(title_batch))
-
-    for folder, entry, title, year in unmatched:
-        results = title_cache.get(title, [])
-        found = _pick_best_cv_result(results, year)
-        if found is not None:
-            cv_id, id_type = found
-            match_type = 'title'
-        else:
-            cv_id, id_type, match_type = None, None, None
-        LOGGER.debug(
-            'Bulk scan: %s → %s (%s)',
-            entry,
-            f'CV {id_type} ID {cv_id}' if cv_id else 'no CV ID found',
-            match_type or 'none'
-        )
-        yield {
-            'folder': folder, 'file_title': entry,
-            'cv_id': cv_id, 'id_type': id_type, 'match_type': match_type
-        }
 
 
 def import_library_entry(

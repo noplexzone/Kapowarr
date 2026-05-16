@@ -82,6 +82,14 @@
             {{ icon_button('', "Delete", "delete.svg") }}
         </td>
 	</tr>
+	<tr class="fix-match-result" data-cv_id="">
+		<td class="fm-title"></td>
+		<td class="fm-year"></td>
+		<td class="fm-issues"></td>
+		<td class="fm-action">
+			<button class="select-match-button">Select</button>
+		</td>
+	</tr>
 {% endblock pre_build_rows %}
 
 {% block windows %}
@@ -342,6 +350,26 @@
 	{% endset %}
 	{{ window(False, "files-window", "General volume files", files_content) }}
 
+	{% set fix_match_content %}
+		<div id="fix-match-search-bar">
+			<input type="text" id="fix-match-input" placeholder="Search ComicVine...">
+			<button id="fix-match-search-button">Search</button>
+		</div>
+		<p id="fix-match-message"></p>
+		<table id="fix-match-result-table" class="icon-text-color hidden">
+			<thead>
+				<tr>
+					<th>Title</th>
+					<th>Year</th>
+					<th>Issues</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody></tbody>
+		</table>
+	{% endset %}
+	{{ window(True, "fix-match-window", "Fix Match", fix_match_content, '') }}
+
 {% endblock windows %}
 
 {% block main %}
@@ -393,6 +421,12 @@
 					"View the general files of the volume",
 					"files.svg",
 					"General Files"
+				) }}
+				{{ icon_button(
+					"fix-match-button",
+					"Re-match this volume to a different ComicVine entry",
+					"manual_search.svg",
+					"Fix Match"
 				) }}
 				{{ icon_button(
 					"edit-button",

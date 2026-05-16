@@ -66,6 +66,11 @@ def ui_library_import():
     return render('library_import.html')
 
 
+@ui.route('/folder-check', methods=methods)
+def ui_folder_check():
+    return render('folder_check.html')
+
+
 @ui.route('/discovery', methods=methods)
 def ui_discovery():
     return render('comic_discovery.html')

@@ -27,7 +27,8 @@ from backend.features.library_import import (generate_bulk_scan,
                                              prepare_bulk_scan)
 from backend.features.mass_edit import run_mass_editor_action
 from backend.features.search import manual_search
-from backend.features.tasks import (BulkLibraryImport, Task, TaskHandler,
+from backend.features.tasks import (BulkLibraryImport, RefreshAndScanVolume,
+                                    Task, TaskHandler,
                                     delete_task_history, get_task_history,
                                     get_task_planning, task_library)
 from backend.implementations.blocklist import (add_to_blocklist,
@@ -47,7 +48,8 @@ from backend.implementations.naming import (generate_volume_folder_name,
                                             preview_mass_rename)
 from backend.implementations.remote_mapping import RemoteMappings
 from backend.implementations.root_folders import RootFolders
-from backend.implementations.volumes import Library, delete_issue_file
+from backend.implementations.volumes import (Library, delete_issue_file,
+                                             rematch_volume)
 from backend.internals.db_models import FilesDB
 from backend.internals.server import Server, StartTypeHandlers
 from backend.internals.settings import Settings, get_about_data
@@ -938,6 +940,21 @@ def api_volume_cover(id: int):
         cover,
         mimetype='image/jpeg'
     ), 200
+
+
+@api.route('/volumes/<int:id>/rematch', methods=['PUT'])
+@error_handler
+@auth
+def api_volume_rematch(id: int):
+    data: dict = request.get_json()
+    new_cv_id = data.get('comicvine_id')
+    if new_cv_id is None:
+        raise KeyNotFound('comicvine_id')
+    if not isinstance(new_cv_id, int):
+        raise InvalidKeyValue('comicvine_id', new_cv_id)
+    rematch_volume(id, new_cv_id)
+    task_id = TaskHandler.add(RefreshAndScanVolume(id))
+    return return_api({'task_id': task_id}, code=202)
 
 
 @api.route('/issues/<int:id>', methods=['GET', 'PUT'])

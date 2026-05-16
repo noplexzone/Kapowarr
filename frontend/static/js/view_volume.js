@@ -11,7 +11,8 @@ const ViewEls = {
 		manage: document.querySelector('.pre-build-els .manage-entry'),
 		match: document.querySelector('.pre-build-els .match-entry'),
 		files_entry: document.querySelector('.pre-build-els .files-entry'),
-		general_files_entry: document.querySelector('.pre-build-els .general-files-entry')
+		general_files_entry: document.querySelector('.pre-build-els .general-files-entry'),
+		fix_match_result: document.querySelector('.pre-build-els .fix-match-result')
 	},
 	vol_data: {
 		monitor: document.querySelector('#volume-monitor'),
@@ -38,6 +39,7 @@ const ViewEls = {
 		convert: document.querySelector('#convert-button'),
 		manage: document.querySelector('#manage-button'),
 		files: document.querySelector('#files-button'),
+		fix_match: document.querySelector('#fix-match-button'),
 		edit: document.querySelector('#edit-button'),
 		delete: document.querySelector('#delete-button')
 	},
@@ -658,6 +660,11 @@ function showManageIssues(api_key) {
 
 	fetchAPI(`/volumes/${volume_id}/manualmatch`, api_key)
 	.then(json => {
+		json.result.sort((a, b) => {
+			const aNum = parseFloat(_issuesCoveredByMapping(a)) || Infinity;
+			const bNum = parseFloat(_issuesCoveredByMapping(b)) || Infinity;
+			return aNum - bNum;
+		});
 		json.result.forEach((mapping, idx) => {
 			const entry = ViewEls.pre_build.manage.cloneNode(true);
 			entry.dataset.manage_id = idx;
@@ -810,6 +817,60 @@ function processIssueMatch() {
 };
 
 //
+// Fix Match
+//
+function showFixMatch() {
+	document.querySelector('#fix-match-input').value = '';
+	document.querySelector('#fix-match-message').innerText = '';
+	document.querySelector('#fix-match-result-table').classList.add('hidden');
+	document.querySelector('#fix-match-result-table tbody').innerHTML = '';
+	showWindow('fix-match-window');
+};
+
+function searchFixMatch(api_key) {
+	const query = document.querySelector('#fix-match-input').value.trim();
+	if (!query) return;
+
+	const msgEl = document.querySelector('#fix-match-message');
+	const tableEl = document.querySelector('#fix-match-result-table');
+	const tbody = tableEl.querySelector('tbody');
+
+	msgEl.innerText = 'Searching...';
+	tableEl.classList.add('hidden');
+	tbody.innerHTML = '';
+
+	fetchAPI('/volumes/search', api_key, {query})
+	.then(json => {
+		if (!json.result.length) {
+			msgEl.innerText = 'No results found.';
+			return;
+		}
+		msgEl.innerText = '';
+		json.result.forEach(r => {
+			const row = ViewEls.pre_build.fix_match_result.cloneNode(true);
+			row.dataset.cv_id = r.comicvine_id;
+			row.querySelector('.fm-title').innerText = r.title;
+			row.querySelector('.fm-year').innerText = r.year ?? '—';
+			row.querySelector('.fm-issues').innerText = r.issue_count ?? '—';
+			row.querySelector('.select-match-button').onclick =
+				() => applyFixMatch(api_key, r.comicvine_id);
+			tbody.appendChild(row);
+		});
+		tableEl.classList.remove('hidden');
+	})
+	.catch(() => {
+		msgEl.innerText = 'Search failed.';
+	});
+};
+
+function applyFixMatch(api_key, cv_id) {
+	if (!confirm(`Re-match this volume to ComicVine ID ${cv_id}?\n\nAll existing issues will be deleted and re-fetched.`))
+		return;
+	sendAPI('PUT', `/volumes/${volume_id}/rematch`, api_key, {}, {comicvine_id: cv_id})
+	.then(() => window.location.reload());
+};
+
+//
 // Editing
 //
 function showEdit(api_key) {
@@ -950,7 +1011,13 @@ usingApiKey()
 	ViewEls.tool_bar.rename.onclick = e => showRename(api_key);
 	ViewEls.tool_bar.convert.onclick = e => showConvert(api_key);
 	ViewEls.tool_bar.manage.onclick = e => showManageIssues(api_key);
+	ViewEls.tool_bar.fix_match.onclick = e => showFixMatch();
 	ViewEls.tool_bar.edit.onclick = e => showEdit(api_key);
+
+	document.querySelector('#fix-match-search-button').onclick = e => searchFixMatch(api_key);
+	document.querySelector('#fix-match-input').onkeydown = e => {
+		if (e.key === 'Enter') searchFixMatch(api_key);
+	};
 
 	document.querySelector('#submit-rename').onclick =
 	e => renameVolume(api_key, parseInt(e.target.dataset.issue_id) || null);

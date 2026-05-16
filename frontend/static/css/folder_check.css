@@ -1,0 +1,246 @@
+main {
+	padding: 1rem;
+	color: var(--text-color);
+}
+
+#fc-controls {
+	display: flex;
+	align-items: center;
+	gap: 1.5rem;
+	flex-wrap: wrap;
+	padding-bottom: 1rem;
+}
+
+#fc-filter-row {
+	display: flex;
+	align-items: center;
+	gap: .5rem;
+}
+
+#fc-filter {
+	height: 2rem;
+	border-radius: 4px;
+	border: 2px solid var(--border-color);
+	padding: .25rem .5rem;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: .9rem;
+	transition: background-color 100ms linear;
+}
+
+#fc-filter:hover {
+	background-color: var(--hover-color);
+}
+
+#fc-summary {
+	font-style: italic;
+	font-size: .9rem;
+}
+
+#fc-loading {
+	display: flex;
+	justify-content: center;
+	padding-top: 3rem;
+}
+
+#fc-no-results {
+	text-align: center;
+	padding-top: 3rem;
+	font-size: 1.1rem;
+}
+
+#fc-table-container {
+	overflow-x: auto;
+}
+
+#fc-table {
+	width: 100%;
+	min-width: 40rem;
+	border: 2px solid var(--border-color);
+	border-radius: 6px;
+	background-color: var(--background-color);
+	color: var(--text-color);
+}
+
+#fc-table th {
+	font-size: .85rem;
+	padding: .6rem .75rem;
+	text-align: left;
+}
+
+#fc-table td {
+	padding: .5rem .75rem;
+	border-top: 1px solid var(--border-color);
+}
+
+.fc-volume-row {
+	transition: background-color 200ms linear;
+}
+
+.fc-volume-row:hover {
+	background-color: var(--hover-color);
+}
+
+.fc-folder {
+	white-space: nowrap;
+	max-width: 20rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.fc-year {
+	width: 4rem;
+	white-space: nowrap;
+}
+
+.fc-status {
+	width: 5rem;
+	font-weight: 500;
+}
+
+.status-ok {
+	color: var(--success-color);
+}
+
+.status-review {
+	color: var(--warning-color, orange);
+}
+
+.fc-actions {
+	width: 11rem;
+	white-space: nowrap;
+	display: flex;
+	gap: .5rem;
+	align-items: center;
+}
+
+.fc-goto {
+	padding: .25rem .6rem;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: .85rem;
+	text-decoration: none;
+	transition: background-color 100ms linear;
+}
+
+.fc-goto:hover {
+	background-color: var(--hover-color);
+}
+
+.fc-fix-btn {
+	padding: .25rem .6rem;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: .85rem;
+	cursor: pointer;
+	transition: background-color 100ms linear;
+}
+
+.fc-fix-btn:hover {
+	background-color: var(--accent-color);
+	color: var(--nav-background-color);
+}
+
+/* Fix Match window */
+#fc-fix-window .window-content {
+	justify-content: flex-start;
+}
+
+#fc-fix-label {
+	font-style: italic;
+	padding-bottom: .5rem;
+}
+
+#fc-fix-search-bar {
+	display: flex;
+	gap: .5rem;
+	width: 100%;
+	max-width: 40rem;
+	padding-bottom: .5rem;
+}
+
+#fc-fix-input {
+	flex: 1;
+	height: 2rem;
+	border-radius: 4px;
+	border: 2px solid var(--border-color);
+	padding: .25rem .5rem;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: .9rem;
+	transition: background-color 100ms linear;
+}
+
+#fc-fix-input:hover {
+	background-color: var(--hover-color);
+}
+
+#fc-fix-search-btn {
+	height: 2rem;
+	padding: 0 .75rem;
+	border: 2px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: .9rem;
+	cursor: pointer;
+	transition: background-color 100ms linear;
+}
+
+#fc-fix-search-btn:hover {
+	background-color: var(--hover-color);
+}
+
+#fc-fix-message {
+	font-style: italic;
+	padding: .25rem 0;
+	min-height: 1.5rem;
+}
+
+#fc-fix-result-table {
+	min-width: 30rem;
+	width: 100%;
+}
+
+#fc-fix-result-table th,
+#fc-fix-result-table td {
+	padding: .5rem .75rem;
+}
+
+#fc-fix-result-table tbody tr {
+	transition: background-color 200ms linear;
+}
+
+#fc-fix-result-table tbody tr:hover {
+	background-color: var(--hover-color);
+}
+
+#fc-fix-result-table tbody td {
+	border-top: 1px solid var(--border-color);
+}
+
+.fcs-year,
+.fcs-issues {
+	width: 5rem;
+	white-space: nowrap;
+}
+
+.fcs-select-btn {
+	padding: .25rem .6rem;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: .85rem;
+	cursor: pointer;
+	transition: background-color 100ms linear;
+}
+
+.fcs-select-btn:hover {
+	background-color: var(--accent-color);
+	color: var(--nav-background-color);
+}

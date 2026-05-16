@@ -462,6 +462,103 @@ tbody .issue-title:hover {
     width: 1.5rem;
 }
 
+/*  */
+/* Fix Match window */
+/*  */
+#fix-match-window .window-content {
+	justify-content: flex-start;
+}
+
+#fix-match-search-bar {
+	display: flex;
+	gap: .5rem;
+	width: 100%;
+	max-width: 40rem;
+	padding-bottom: .5rem;
+}
+
+#fix-match-input {
+	flex: 1;
+	height: 2rem;
+	border-radius: 4px;
+	border: 2px solid var(--border-color);
+	padding: .25rem .5rem;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: .9rem;
+	transition: background-color 100ms linear;
+}
+
+#fix-match-input:hover {
+	background-color: var(--hover-color);
+}
+
+#fix-match-search-button {
+	height: 2rem;
+	padding: 0 .75rem;
+	border: 2px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: .9rem;
+	cursor: pointer;
+	transition: background-color 100ms linear;
+}
+
+#fix-match-search-button:hover {
+	background-color: var(--hover-color);
+}
+
+#fix-match-message {
+	font-style: italic;
+	padding: .25rem 0;
+}
+
+#fix-match-result-table {
+	min-width: 30rem;
+	width: 100%;
+}
+
+#fix-match-result-table th,
+#fix-match-result-table td {
+	padding: .5rem .75rem;
+}
+
+#fix-match-result-table tbody tr {
+	transition: background-color 200ms linear;
+}
+
+#fix-match-result-table tbody tr:hover {
+	background-color: var(--hover-color);
+}
+
+#fix-match-result-table tbody td {
+	border-top: 1px solid var(--border-color);
+}
+
+#fix-match-result-table .fm-year,
+#fix-match-result-table .fm-issues,
+#fix-match-result-table .fm-action {
+	width: 6rem;
+	white-space: nowrap;
+}
+
+.select-match-button {
+	padding: .25rem .6rem;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	font-size: .85rem;
+	cursor: pointer;
+	transition: background-color 100ms linear;
+}
+
+.select-match-button:hover {
+	background-color: var(--accent-color);
+	color: var(--nav-background-color);
+}
+
 @media (max-width: 520px) {
 	#volume-description {
 		display: none;

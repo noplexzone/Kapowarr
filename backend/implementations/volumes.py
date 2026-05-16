@@ -440,7 +440,7 @@ class Volume:
                 monitored
             FROM issues
             WHERE volume_id = ?
-            ORDER BY date, calculated_issue_number
+            ORDER BY calculated_issue_number, date
             """,
             (self.id,)
         ).fetchalldict()
@@ -1607,6 +1607,31 @@ def refresh_and_scan(
         FilesDB.delete_unmatched_files()
 
     return
+
+
+def rematch_volume(volume_id: int, new_comicvine_id: int) -> None:
+    """Change a volume's ComicVine ID and clear its issues for re-fetching.
+
+    Raises InvalidKeyValue if the new CV ID is already used by another volume.
+    The caller should queue a RefreshAndScanVolume task afterward to pull new
+    metadata and issues from ComicVine.
+    """
+    cursor = get_db()
+
+    conflict = cursor.execute(
+        'SELECT id FROM volumes WHERE comicvine_id = ? AND id != ?;',
+        (new_comicvine_id, volume_id)
+    ).fetchone()
+    if conflict:
+        raise InvalidKeyValue('comicvine_id', new_comicvine_id)
+
+    cursor.execute(
+        'UPDATE volumes SET comicvine_id = ?, last_cv_fetch = 0 WHERE id = ?;',
+        (new_comicvine_id, volume_id)
+    )
+    cursor.execute('DELETE FROM issues WHERE volume_id = ?;', (volume_id,))
+    commit()
+    LOGGER.info('Volume %d rematched to CV ID %d', volume_id, new_comicvine_id)
 
 
 def delete_issue_file(file_id: int) -> None:

@@ -625,6 +625,39 @@ class ComicVine:
 
             return issue_infos
 
+    async def fetch_volume_ids_for_issues(
+        self,
+        issue_ids: Sequence[int]
+    ) -> Dict[int, int]:
+        """Resolve issue IDs to their parent volume IDs via the CV API.
+
+        Args:
+            issue_ids: List of ComicVine issue IDs (the 4000-XXXXX kind).
+
+        Returns:
+            Dict[int, int]: Mapping of {issue_id: volume_id}.
+                Entries where the CV API returned no data are omitted.
+        """
+        result: Dict[int, int] = {}
+        async with AsyncSession() as session:
+            for id_batch in batched(issue_ids, 100):
+                filter_str = '|'.join(str(i) for i in id_batch)
+                try:
+                    data = await self.__call_api(
+                        session,
+                        '/issues',
+                        {'field_list': 'id,volume', 'filter': f'id:{filter_str}'},
+                        {'results': []}
+                    )
+                    for item in data['results']:
+                        result[int(item['id'])] = int(item['volume']['id'])
+                except CVRateLimitReached:
+                    LOGGER.warning(
+                        'Rate limit hit while resolving issue IDs to volumes'
+                    )
+                    break
+        return result
+
     async def __search_volume(
         self, query: str
     ) -> List[Dict[str, Any]]:

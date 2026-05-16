@@ -515,15 +515,55 @@ class BulkLibraryImport(Task):
         return
 
     def run(self) -> None:
+        from asyncio import run as async_run
         from backend.base.custom_exceptions import CVRateLimitReached
         from backend.features.library_import import import_library_entry
+        from backend.implementations.comicvine import ComicVine
 
         ws = WebSocket()
         total = len(self._entries)
 
+        # Batch-resolve issue IDs → volume IDs before processing any entries.
+        # ComicTagger tags files with issue IDs (/4000-X/); Kapowarr needs
+        # volume IDs (/4050-X/). 100 issue IDs fit in one CV API call, so
+        # 1200 entries only costs ~12 calls here instead of 1200 later.
+        issue_indices = [
+            (i, int(e['cv_id']))
+            for i, e in enumerate(self._entries)
+            if e.get('id_type') == 'issue' and e.get('cv_id')
+        ]
+        if issue_indices:
+            n = len(issue_indices)
+            self.message = f'Resolving {n} issue ID{"s" if n != 1 else ""} to volume IDs…'
+            ws.emit(TaskStatusEvent(self.message))
+            try:
+                issue_ids = [issue_id for _, issue_id in issue_indices]
+                mapping = async_run(
+                    ComicVine().fetch_volume_ids_for_issues(issue_ids)
+                )
+                for idx, issue_id in issue_indices:
+                    volume_id = mapping.get(issue_id)
+                    if volume_id:
+                        self._entries[idx] = {
+                            **self._entries[idx],
+                            'cv_id': volume_id,
+                            'id_type': 'volume'
+                        }
+                    else:
+                        LOGGER.warning(
+                            'Bulk import: could not resolve issue ID %s to a volume',
+                            issue_id
+                        )
+                        self._entries[idx] = {**self._entries[idx], 'cv_id': None}
+            except Exception:
+                LOGGER.exception('Bulk import: failed to resolve issue IDs')
+
         for idx, entry in enumerate(self._entries):
             if self.stop:
                 break
+
+            if not entry.get('cv_id'):
+                continue
 
             self.message = f'Importing {idx + 1}/{total}: {entry["file_title"]}'
             ws.emit(TaskStatusEvent(self.message))

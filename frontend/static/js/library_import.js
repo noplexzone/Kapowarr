@@ -317,6 +317,7 @@ async function loadBulkProposal(api_key) {
 		const row = LIEls.pre_build.bulk_result.cloneNode(true);
 		row.dataset.folder = result.folder;
 		row.dataset.cv_id = result.cv_id ?? '';
+		row.dataset.id_type = result.id_type ?? '';
 
 		row.querySelector('.file-column').innerText = result.file_title;
 		row.querySelector('.file-column').title = result.folder;
@@ -348,6 +349,7 @@ function startBulkImport(api_key) {
 		.map(r => ({
 			folder: r.dataset.folder,
 			cv_id: parseInt(r.dataset.cv_id),
+			id_type: r.dataset.id_type || 'volume',
 			file_title: r.querySelector('.file-column').innerText
 		}));
 

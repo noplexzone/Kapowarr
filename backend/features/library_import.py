@@ -6,7 +6,7 @@ from itertools import chain
 from os import listdir
 from os.path import abspath, basename, dirname, isdir, isfile, join, splitext
 from re import search as re_search
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
@@ -204,16 +204,19 @@ def propose_library_import(
     return result
 
 
-def read_comicinfo_cv_id(cbz_path: str) -> Union[int, None]:
-    """Extract a ComicVine series ID from ComicInfo.xml inside a CBZ file.
+def read_comicinfo_cv_id(cbz_path: str) -> Union[Tuple[int, str], None]:
+    """Extract a ComicVine ID from ComicInfo.xml inside a CBZ file.
 
-    Supports the two formats Mylar writes:
-    - Notes field: "Scraped metadata from Comicvine [CVDB:123456]"
-    - Web field:   "https://comicvine.gamespot.com/title/4050-123456/"
+    Returns (cv_id, id_type) where id_type is 'volume' or 'issue', or None.
+
+    Recognised formats:
+    - Mylar    Notes: "[CVDB:123456]"              → volume ID
+    - Mylar    Web:   "/4050-123456/"              → volume ID
+    - ComicTagger Notes: "[Issue ID 460960]"       → issue ID
+    - ComicTagger Web:   "/4000-460960/"           → issue ID
     """
     try:
         with ZipFile(cbz_path, 'r') as z:
-            # Find ComicInfo.xml anywhere in the archive (case-insensitive)
             ci_name = next(
                 (n for n in z.namelist() if n.lower().endswith('comicinfo.xml')),
                 None
@@ -224,14 +227,22 @@ def read_comicinfo_cv_id(cbz_path: str) -> Union[int, None]:
             root = ElementTree.fromstring(xml_bytes)
 
             notes = root.findtext('Notes') or ''
-            m = re_search(r'\[CVDB:(\d+)\]', notes, flags=2)  # re.IGNORECASE=2
+            m = re_search(r'\[CVDB:(\d+)\]', notes, flags=2)
             if m:
-                return int(m.group(1))
+                return int(m.group(1)), 'volume'
+
+            m = re_search(r'\[Issue ID (\d+)\]', notes, flags=2)
+            if m:
+                return int(m.group(1)), 'issue'
 
             web = root.findtext('Web') or ''
             m = re_search(r'/4050-(\d+)/', web)
             if m:
-                return int(m.group(1))
+                return int(m.group(1)), 'volume'
+
+            m = re_search(r'/4000-(\d+)/', web)
+            if m:
+                return int(m.group(1)), 'issue'
 
     except (BadZipFile, ElementTree.ParseError, OSError):
         pass
@@ -289,19 +300,27 @@ def generate_bulk_scan(scan_roots: set, existing_folders: set):
                 continue
 
             cv_id = None
+            id_type = None
             try:
                 for cbz in list_files(folder, ('.cbz',)):
-                    cv_id = read_comicinfo_cv_id(cbz)
-                    if cv_id is not None:
+                    found = read_comicinfo_cv_id(cbz)
+                    if found is not None:
+                        cv_id, id_type = found
                         break
             except Exception:
                 pass
 
             LOGGER.debug(
                 'Bulk scan: %s → %s',
-                entry, f'CV ID {cv_id}' if cv_id else 'no CV ID found'
+                entry,
+                f'CV {id_type} ID {cv_id}' if cv_id else 'no CV ID found'
             )
-            yield {'folder': folder, 'file_title': entry, 'cv_id': cv_id}
+            yield {
+                'folder': folder,
+                'file_title': entry,
+                'cv_id': cv_id,
+                'id_type': id_type
+            }
 
 
 def bulk_propose_library_import(

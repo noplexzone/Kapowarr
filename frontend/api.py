@@ -214,7 +214,7 @@ def auth(method):
 
         result = method(*args, **kwargs)
 
-        if result[1] > 300:
+        if not isinstance(result, Response) and result[1] > 300:
             LOGGER.debug(
                 f'{request.method} {request.path} {result[1]} {result[0]}')
 

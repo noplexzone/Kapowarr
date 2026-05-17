@@ -95,16 +95,24 @@ main {
 }
 
 .fc-status {
-	width: 5rem;
-	font-weight: 500;
+	width: 6rem;
+	white-space: nowrap;
 }
 
 .status-ok {
 	color: var(--success-color);
+	font-weight: 500;
 }
 
 .status-review {
 	color: var(--warning-color, orange);
+	font-weight: 500;
+}
+
+.status-language {
+	color: var(--error-color);
+	font-weight: 500;
+	cursor: help;
 }
 
 .fc-actions {

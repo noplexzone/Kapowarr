@@ -16,10 +16,11 @@ const FCEls = {
 
 function normStr(s) {
 	return s.toLowerCase()
-		.replace(/\(\d{4}\)/g, '')
-		.replace(/[:\\*?"<>|]/g, '')    // chars forbidden in folder names — strip, don't space
-		.replace(/[^a-z0-9 ]/g, ' ')
-		.replace(/\s+/g, ' ')
+		.replace(/\(\d{4}\)/g, ‘’)
+		.replace(/[:\\*?"<>|,]/g, ‘’)    // filesystem-forbidden + comma: strip to nothing
+		.replace(/[‘’’’`]/g, ‘’)    // apostrophes: strip to nothing ("Asgard’s" == "Asgards")
+		.replace(/[^a-z0-9 ]/g, ‘ ‘)
+		.replace(/\s+/g, ‘ ‘)
 		.trim();
 }
 
@@ -32,16 +33,61 @@ function isMismatch(folder, title) {
 	return !nf.includes(nt) && !nt.includes(nf);
 }
 
+const FOREIGN_SIGNALS = [
+	'verlag', 'deutschland', 'deutsch', 'gmbh',
+	'éditions', 'editeur', 'française',
+	'editore', 'edizioni', 'planeta',
+	'carlsen', 'egmont ehapa', 'splitter', 'cross cult',
+	'glenat', 'glénat',
+];
+
+function isForeignPublisher(publisher) {
+	if (!publisher) return false;
+	const p = publisher.toLowerCase();
+	return FOREIGN_SIGNALS.some(sig => p.includes(sig));
+}
+
+function makeStatusCell(nameMismatch, langFlag, publisher) {
+	const frag = document.createDocumentFragment();
+	if (nameMismatch) {
+		const span = document.createElement('span');
+		span.className = 'status-review';
+		span.innerText = 'Review';
+		frag.appendChild(span);
+	}
+	if (langFlag) {
+		if (nameMismatch) frag.appendChild(document.createTextNode(' '));
+		const span = document.createElement('span');
+		span.className = 'status-language';
+		span.innerText = 'Language?';
+		if (publisher) span.title = publisher;
+		frag.appendChild(span);
+	}
+	if (!nameMismatch && !langFlag) {
+		const span = document.createElement('span');
+		span.className = 'status-ok';
+		span.innerText = 'OK';
+		frag.appendChild(span);
+	}
+	return frag;
+}
+
 function renderTable(filter) {
 	FCEls.tbody.innerHTML = '';
 
-	const mismatchCount = allVolumes.filter(v => isMismatch(v.folder, v.title)).length;
-	FCEls.summary.innerText =
-		`${allVolumes.length} volumes — ${mismatchCount} possible mismatch${mismatchCount !== 1 ? 'es' : ''}`;
+	const nameMismatches = allVolumes.filter(v => isMismatch(v.folder, v.title));
+	const langFlags = allVolumes.filter(v => isForeignPublisher(v.publisher));
 
-	const volumes = filter === 'review'
-		? allVolumes.filter(v => isMismatch(v.folder, v.title))
-		: allVolumes;
+	let summary = `${allVolumes.length} volumes — ${nameMismatches.length} name mismatch${nameMismatches.length !== 1 ? 'es' : ''}`;
+	if (langFlags.length)
+		summary += `, ${langFlags.length} language flag${langFlags.length !== 1 ? 's' : ''}`;
+	FCEls.summary.innerText = summary;
+
+	let volumes;
+	if (filter === 'name')     volumes = nameMismatches;
+	else if (filter === 'language') volumes = langFlags;
+	else if (filter === 'any') volumes = allVolumes.filter(v => isMismatch(v.folder, v.title) || isForeignPublisher(v.publisher));
+	else                       volumes = allVolumes;
 
 	if (!volumes.length) {
 		hide([FCEls.table_container], [FCEls.no_results]);
@@ -63,11 +109,11 @@ function renderTable(filter) {
 		row.querySelector('.fc-title').innerText = v.title;
 		row.querySelector('.fc-year').innerText = v.year ?? '—';
 
-		const mismatch = isMismatch(v.folder, v.title);
+		const nameMismatch = isMismatch(v.folder, v.title);
+		const langFlag = isForeignPublisher(v.publisher);
 		const statusEl = row.querySelector('.fc-status');
-		statusEl.innerText = mismatch ? 'Review' : 'OK';
-		if (mismatch) statusEl.classList.add('status-review');
-		else statusEl.classList.add('status-ok');
+		statusEl.innerHTML = '';
+		statusEl.appendChild(makeStatusCell(nameMismatch, langFlag, v.publisher));
 
 		row.querySelector('.fc-goto').href = `${url_base}/volumes/${v.id}`;
 		row.querySelector('.fc-fix-btn').onclick = () => openFixMatch(v);

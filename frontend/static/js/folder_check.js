@@ -15,18 +15,20 @@ const FCEls = {
 };
 
 function normStr(s) {
+	if (!s) return ‘’;
 	return s.toLowerCase()
 		.replace(/\(\d{4}\)/g, ‘’)
-		.replace(/[:\\*?"<>|,]/g, ‘’)    // filesystem-forbidden + comma: strip to nothing
-		.replace(/[‘’’’`]/g, ‘’)    // apostrophes: strip to nothing ("Asgard’s" == "Asgards")
+		.replace(/[:\\*?"<>|,]/g, ‘’)
+		.replace(/[‘‘’‛`]/g, ‘’)  // apostrophes to nothing ("Asgard’s" == "Asgards")
 		.replace(/[^a-z0-9 ]/g, ‘ ‘)
 		.replace(/\s+/g, ‘ ‘)
 		.trim();
 }
 
 function isMismatch(folder, title) {
-	const parts = folder.replace(/\\/g, '/').split('/');
-	const folderBase = parts[parts.length - 1] || parts[parts.length - 2] || '';
+	if (!folder || !title) return false;
+	const parts = folder.replace(/\\/g, ‘/’).split(‘/’);
+	const folderBase = parts[parts.length - 1] || parts[parts.length - 2] || ‘’;
 	const nf = normStr(folderBase);
 	const nt = normStr(title);
 	if (!nf || !nt) return false;
@@ -100,8 +102,8 @@ function renderTable(filter) {
 		row.dataset.id = v.id;
 		row.dataset.cv_id = v.comicvine_id;
 
-		const parts = v.folder.replace(/\\/g, '/').split('/');
-		const folderBase = parts[parts.length - 1] || parts[parts.length - 2] || v.folder;
+		const parts = (v.folder || '').replace(/\\/g, '/').split('/');
+		const folderBase = parts[parts.length - 1] || parts[parts.length - 2] || v.folder || '';
 		const folderEl = row.querySelector('.fc-folder');
 		folderEl.innerText = folderBase;
 		folderEl.title = v.folder;

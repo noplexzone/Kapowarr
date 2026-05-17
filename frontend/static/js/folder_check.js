@@ -17,6 +17,7 @@ const FCEls = {
 function normStr(s) {
 	return s.toLowerCase()
 		.replace(/\(\d{4}\)/g, '')
+		.replace(/[:\\*?"<>|]/g, '')    // chars forbidden in folder names — strip, don't space
 		.replace(/[^a-z0-9 ]/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();

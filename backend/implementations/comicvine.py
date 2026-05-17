@@ -339,7 +339,7 @@ class ComicVine:
             result: Dict[str, Any] = await response.json()
 
             if result['status_code'] == 107:
-                raise ClientError
+                raise CVRateLimitReached
             elif result['status_code'] == 101:
                 raise VolumeNotMatched
             elif result['status_code'] == 100:
@@ -347,6 +347,8 @@ class ComicVine:
 
             return result
 
+        except CVRateLimitReached:
+            raise
         except (ClientError, ContentTypeError, JSONDecodeError):
             if default is not None:
                 return default

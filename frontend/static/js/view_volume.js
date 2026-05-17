@@ -192,6 +192,11 @@ function fillPage(data, api_key) {
 	const volume_number = document.createElement('p');
 	volume_number.innerText = `Volume ${data.volume_number || 1}`;
 	tags.appendChild(volume_number);
+	if (data.publisher) {
+		const publisher = document.createElement('p');
+		publisher.innerText = data.publisher;
+		tags.appendChild(publisher);
+	}
 	const special_version = document.createElement('p');
 	special_version.innerText = data.special_version?.toUpperCase() || 'Normal volume';
 	tags.appendChild(special_version);
@@ -820,12 +825,65 @@ function processIssueMatch() {
 // Fix Match
 //
 function showFixMatch() {
-	document.querySelector('#fix-match-input').value = '';
+	const folderPath = ViewEls.vol_data.path.innerText || '';
+	const parts = folderPath.replace(/\\/g, '/').split('/');
+	const folderBase = parts[parts.length - 1] || parts[parts.length - 2] || '';
+	document.querySelector('#fix-match-input').value = folderBase.replace(/\s*\(\d{4}\)\s*$/, '').trim();
 	document.querySelector('#fix-match-message').innerText = '';
 	document.querySelector('#fix-match-result-table').classList.add('hidden');
 	document.querySelector('#fix-match-result-table tbody').innerHTML = '';
 	showWindow('fix-match-window');
 };
+
+let fmResults = [];
+let fmSortState = { key: null, dir: 1 };
+
+function inferType(title, description) {
+	const tmp = document.createElement('div');
+	tmp.innerHTML = description || '';
+	const plain = tmp.innerText.trim().toLowerCase();
+	if (/trade\s*paperback/.test(plain)) return 'TPB';
+	if (/\bhardcover\b/.test(plain)) return 'HC';
+	if (/\bomnibus\b/.test(plain) || /\bomnibus\b/i.test(title || '')) return 'Omnibus';
+	if (/one[- ]shot/.test(plain)) return 'One-Shot';
+	return 'Standard';
+}
+
+function renderFmSearchResults(api_key) {
+	const tbody = document.querySelector('#fix-match-result-table tbody');
+	tbody.innerHTML = '';
+
+	let sorted = [...fmResults];
+	if (fmSortState.key) {
+		sorted.sort((a, b) => {
+			let va = a[fmSortState.key] ?? '';
+			let vb = b[fmSortState.key] ?? '';
+			if (typeof va === 'string') va = va.toLowerCase();
+			if (typeof vb === 'string') vb = vb.toLowerCase();
+			return va < vb ? -fmSortState.dir : va > vb ? fmSortState.dir : 0;
+		});
+	}
+
+	sorted.forEach(r => {
+		const row = ViewEls.pre_build.fix_match_result.cloneNode(true);
+		row.dataset.cv_id = r.comicvine_id;
+		row.querySelector('.fm-title').innerText = r.title;
+		row.querySelector('.fm-year').innerText = r.year ?? '—';
+		row.querySelector('.fm-issues').innerText = r.issue_count ?? '—';
+		row.querySelector('.fm-publisher').innerText = r.publisher ?? '—';
+		row.querySelector('.fm-type').innerText = r._type;
+		row.querySelector('.select-match-button').onclick =
+			() => applyFixMatch(api_key, r.comicvine_id, r.title);
+		tbody.appendChild(row);
+	});
+
+	document.querySelectorAll('#fix-match-result-table thead th[data-sort-key]').forEach(th => {
+		const key = th.dataset.sortKey;
+		const label = th.dataset.baseLabel || th.innerText.replace(/\s*[▲▼]$/, '').trim();
+		th.dataset.baseLabel = label;
+		th.innerText = label + (key === fmSortState.key ? (fmSortState.dir === 1 ? ' ▲' : ' ▼') : '');
+	});
+}
 
 function searchFixMatch(api_key) {
 	const query = document.querySelector('#fix-match-input').value.trim();
@@ -833,11 +891,11 @@ function searchFixMatch(api_key) {
 
 	const msgEl = document.querySelector('#fix-match-message');
 	const tableEl = document.querySelector('#fix-match-result-table');
-	const tbody = tableEl.querySelector('tbody');
 
 	msgEl.innerText = 'Searching...';
 	tableEl.classList.add('hidden');
-	tbody.innerHTML = '';
+	fmResults = [];
+	fmSortState = { key: null, dir: 1 };
 
 	fetchAPI('/volumes/search', api_key, {query})
 	.then(json => {
@@ -846,16 +904,8 @@ function searchFixMatch(api_key) {
 			return;
 		}
 		msgEl.innerText = '';
-		json.result.forEach(r => {
-			const row = ViewEls.pre_build.fix_match_result.cloneNode(true);
-			row.dataset.cv_id = r.comicvine_id;
-			row.querySelector('.fm-title').innerText = r.title;
-			row.querySelector('.fm-year').innerText = r.year ?? '—';
-			row.querySelector('.fm-issues').innerText = r.issue_count ?? '—';
-			row.querySelector('.select-match-button').onclick =
-				() => applyFixMatch(api_key, r.comicvine_id);
-			tbody.appendChild(row);
-		});
+		fmResults = json.result.map(r => ({ ...r, _type: inferType(r.title, r.description) }));
+		renderFmSearchResults(api_key);
 		tableEl.classList.remove('hidden');
 	})
 	.catch(() => {
@@ -863,12 +913,38 @@ function searchFixMatch(api_key) {
 	});
 };
 
-function applyFixMatch(api_key, cv_id) {
-	if (!confirm(`Re-match this volume to ComicVine ID ${cv_id}?\n\nAll existing issues will be deleted and re-fetched.`))
+function applyFixMatch(api_key, cv_id, new_title) {
+	if (!confirm(`Re-match this volume to "${new_title || cv_id}"?\n\nAll existing issues will be deleted and re-fetched.`))
 		return;
-	sendAPI('PUT', `/volumes/${volume_id}/rematch`, api_key, {}, {comicvine_id: cv_id})
-	.then(() => window.location.reload());
+	sendAPI('PUT', `/volumes/${volume_id}/rematch`, api_key, {}, {comicvine_id: cv_id, new_title: new_title || null})
+	.then(r => r.json())
+	.then(() => {
+		document.querySelector('#fix-match-search-bar').classList.add('hidden');
+		document.querySelector('#fix-match-result-table').classList.add('hidden');
+		document.querySelector('#fix-match-message').innerText =
+			'Rematching… fetching new metadata from ComicVine. The page will refresh when complete.';
+		document.querySelectorAll('#fix-match-window button').forEach(b => b.disabled = true);
+		pollVolumeReadyThenReload(api_key);
+	});
 };
+
+function pollVolumeReadyThenReload(api_key, attempts = 0) {
+	if (attempts >= 60) {
+		window.location.reload();
+		return;
+	}
+	fetchAPI(`/volumes/${volume_id}`, api_key)
+	.then(json => {
+		if (json.result.issue_count > 0) {
+			window.location.reload();
+		} else {
+			setTimeout(() => pollVolumeReadyThenReload(api_key, attempts + 1), 1000);
+		}
+	})
+	.catch(() => {
+		setTimeout(() => pollVolumeReadyThenReload(api_key, attempts + 1), 1000);
+	});
+}
 
 //
 // Editing
@@ -1018,6 +1094,20 @@ usingApiKey()
 	document.querySelector('#fix-match-input').onkeydown = e => {
 		if (e.key === 'Enter') searchFixMatch(api_key);
 	};
+
+	document.querySelectorAll('#fix-match-result-table thead th[data-sort-key]').forEach(th => {
+		th.style.cursor = 'pointer';
+		th.onclick = () => {
+			const key = th.dataset.sortKey;
+			if (fmSortState.key === key) {
+				fmSortState.dir *= -1;
+			} else {
+				fmSortState.key = key;
+				fmSortState.dir = 1;
+			}
+			if (fmResults.length) renderFmSearchResults(api_key);
+		};
+	});
 
 	document.querySelector('#submit-rename').onclick =
 	e => renameVolume(api_key, parseInt(e.target.dataset.issue_id) || null);

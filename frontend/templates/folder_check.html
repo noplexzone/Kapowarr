@@ -15,7 +15,12 @@
 	<td class="fc-folder"></td>
 	<td class="fc-title"></td>
 	<td class="fc-year"></td>
+	<td class="fc-issues"></td>
+	<td class="fc-publisher"></td>
+	<td class="fc-type"></td>
 	<td class="fc-status"></td>
+	<td class="fc-suggested hidden"></td>
+	<td class="fc-accept hidden"><input type="checkbox" class="fc-accept-cb"></td>
 	<td class="fc-actions">
 		<a class="fc-goto" href="">View</a>
 		<button class="fc-fix-btn">Fix Match</button>
@@ -25,6 +30,8 @@
 	<td class="fcs-title"></td>
 	<td class="fcs-year"></td>
 	<td class="fcs-issues"></td>
+	<td class="fcs-publisher"></td>
+	<td class="fcs-type"></td>
 	<td><button class="fcs-select-btn">Select</button></td>
 </tr>
 {% endblock pre_build_rows %}
@@ -40,9 +47,11 @@
 		<table id="fc-fix-result-table" class="icon-text-color hidden">
 			<thead>
 				<tr>
-					<th>Title</th>
-					<th>Year</th>
-					<th>Issues</th>
+					<th data-sort-key="title">Title</th>
+					<th data-sort-key="year">Year</th>
+					<th data-sort-key="issue_count">Issues</th>
+					<th data-sort-key="publisher">Publisher</th>
+					<th data-sort-key="_type">Type</th>
 					<th></th>
 				</tr>
 			</thead>
@@ -64,9 +73,15 @@
 				<option value="all">All volumes</option>
 			</select>
 		</div>
+		<div id="fc-autosuggest-bar">
+			<button id="fc-autosuggest-btn">Auto-Suggest Matches</button>
+			<button id="fc-cancel-suggest-btn" class="hidden">Cancel</button>
+			<button id="fc-apply-accepted-btn" class="hidden">Apply Accepted</button>
+			<span id="fc-suggest-progress"></span>
+		</div>
 		<p id="fc-summary"></p>
 	</div>
-	<div id="fc-loading" class="hidden">
+	<div id="fc-loading">
 		<h2>Loading...</h2>
 	</div>
 	<div id="fc-table-container" class="icon-text-color hidden">
@@ -76,7 +91,12 @@
 					<th>Folder Name</th>
 					<th>Volume Title</th>
 					<th>Year</th>
+					<th>Issues (local / CV)</th>
+					<th>Publisher</th>
+					<th>Type</th>
 					<th>Status</th>
+					<th class="fc-suggest-col hidden">Suggested Match</th>
+					<th class="fc-suggest-col hidden">Accept</th>
 					<th>Actions</th>
 				</tr>
 			</thead>

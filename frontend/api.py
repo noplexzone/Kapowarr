@@ -679,6 +679,7 @@ def api_library_import_bulk():
             check_existence=False
         )
         fuzzy_fallback = request.args.get('fuzzy_fallback', '').lower() == 'true'
+        quick = request.args.get('quick', '').lower() == 'true'
 
         # Validate + collect roots before streaming (errors surface here,
         # caught by @error_handler before the Response is created)
@@ -686,7 +687,8 @@ def api_library_import_bulk():
 
         def _generate():
             for item in generate_bulk_scan(
-                scan_roots, existing_folders, fuzzy_fallback=fuzzy_fallback
+                scan_roots, existing_folders,
+                fuzzy_fallback=fuzzy_fallback, quick=quick
             ):
                 yield _json.dumps(item) + '\n'
 
@@ -816,10 +818,16 @@ def api_volumes():
         query = extract_key(request, 'query', False)
         sort = extract_key(request, 'sort', False)
         filter = extract_key(request, 'filter', False)
-        if query:
-            volumes = Library.search(query, sort, filter)
-        else:
-            volumes = Library.get_public_volumes(sort, filter)
+        LOGGER.debug('api_volumes GET: query=%r sort=%r filter=%r', query, sort, filter)
+        try:
+            if query:
+                volumes = Library.search(query, sort or LibrarySorting.TITLE, filter)
+            else:
+                volumes = Library.get_public_volumes(sort or LibrarySorting.TITLE, filter)
+            LOGGER.debug('api_volumes GET: returning %d volumes', len(volumes))
+        except Exception as e:
+            LOGGER.exception('api_volumes GET: unexpected error: %s', e)
+            raise
 
         return return_api(volumes)
 
@@ -952,8 +960,11 @@ def api_volume_rematch(id: int):
         raise KeyNotFound('comicvine_id')
     if not isinstance(new_cv_id, int):
         raise InvalidKeyValue('comicvine_id', new_cv_id)
+    new_title = data.get('new_title') or None
+    if new_title is not None and not isinstance(new_title, str):
+        new_title = None
     rematch_volume(id, new_cv_id)
-    task_id = TaskHandler.add(RefreshAndScanVolume(id))
+    task_id = TaskHandler().add(RefreshAndScanVolume(id, new_title=new_title))
     return return_api({'task_id': task_id}, code=202)
 
 

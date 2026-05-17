@@ -924,6 +924,7 @@ class Library:
                 id, comicvine_id,
                 title, year, publisher,
                 volume_number, description,
+                special_version,
                 monitored, monitor_new_issues,
                 folder,
                 (
@@ -1628,6 +1629,11 @@ def rematch_volume(volume_id: int, new_comicvine_id: int) -> None:
     cursor.execute(
         'UPDATE volumes SET comicvine_id = ?, last_cv_fetch = 0 WHERE id = ?;',
         (new_comicvine_id, volume_id)
+    )
+    cursor.execute(
+        'DELETE FROM issues_files WHERE issue_id IN '
+        '(SELECT id FROM issues WHERE volume_id = ?);',
+        (volume_id,)
     )
     cursor.execute('DELETE FROM issues WHERE volume_id = ?;', (volume_id,))
     commit()

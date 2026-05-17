@@ -281,17 +281,21 @@ class RefreshAndScanVolume(Task):
     def issue_id(self) -> None:
         return None
 
-    def __init__(self, volume_id: int) -> None:
+    def __init__(self, volume_id: int, new_title: str | None = None) -> None:
         """Create the task
 
         Args:
             volume_id (int): The id of the volume for which to perform the task
+            new_title (str | None): Override the display title in the status
+                message (used when the volume is being rematched and its title
+                hasn't been updated in the DB yet).
         """
         self._volume_id = volume_id
+        self._new_title = new_title
         return
 
     def run(self) -> None:
-        volume_title = Volume(self._volume_id).vd.title
+        volume_title = self._new_title or Volume(self._volume_id).vd.title
         self.message = f'Updating info on {volume_title}'
         WebSocket().emit(TaskStatusEvent(self.message))
 
@@ -580,11 +584,11 @@ class BulkLibraryImport(Task):
                     retries += 1
                     wait_msg = (
                         f'Rate limit hit at {idx + 1}/{total} '
-                        f'— waiting 60 min (retry {retries}/3)…'
+                        f'— waiting 65 min (retry {retries}/3)…'
                     )
                     self.message = wait_msg
                     ws.emit(TaskStatusEvent(self.message))
-                    sleep(3600)
+                    sleep(3900)
                 except Exception:
                     LOGGER.exception(
                         'Bulk import: failed to import %s', entry['folder']

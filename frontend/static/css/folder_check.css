@@ -33,6 +33,70 @@ main {
 	background-color: var(--hover-color);
 }
 
+#fc-autosuggest-bar {
+	display: flex;
+	align-items: center;
+	gap: .5rem;
+	flex-wrap: wrap;
+}
+
+#fc-autosuggest-btn,
+#fc-cancel-suggest-btn,
+#fc-apply-accepted-btn {
+	padding: .35rem .85rem;
+	border-radius: 4px;
+	font-size: .9rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background-color 100ms linear, opacity 100ms linear;
+}
+
+#fc-autosuggest-btn {
+	border: 2px solid var(--accent-color);
+	background-color: var(--accent-color);
+	color: var(--nav-background-color);
+}
+
+#fc-autosuggest-btn:hover:not(:disabled) {
+	opacity: .85;
+}
+
+#fc-autosuggest-btn:disabled {
+	opacity: .5;
+	cursor: default;
+}
+
+#fc-cancel-suggest-btn {
+	border: 2px solid var(--error-color);
+	background-color: transparent;
+	color: var(--error-color);
+}
+
+#fc-cancel-suggest-btn:hover {
+	background-color: var(--error-color);
+	color: #fff;
+}
+
+#fc-apply-accepted-btn {
+	border: 2px solid var(--success-color);
+	background-color: var(--success-color);
+	color: #fff;
+}
+
+#fc-apply-accepted-btn:hover:not(:disabled) {
+	opacity: .85;
+}
+
+#fc-apply-accepted-btn:disabled {
+	opacity: .5;
+	cursor: default;
+}
+
+#fc-suggest-progress {
+	font-size: .85rem;
+	font-style: italic;
+}
+
 #fc-summary {
 	font-style: italic;
 	font-size: .9rem;

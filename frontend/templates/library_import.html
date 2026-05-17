@@ -21,9 +21,10 @@
 <main>
 	<div id="start-window">
 		<div id="bulk-mode">
-			<p>Reads <code>ComicInfo.xml</code> from CBZ files to extract ComicVine IDs. Folders already in your library are skipped. Volumes without a ComicVine ID are shown but excluded from the import by default.</p>
+			<p>Scans folders for ComicVine IDs. Folders already in your library are skipped. Volumes without a ComicVine ID are shown but excluded from the import by default.</p>
 			<ul>
-				<li>The import runs as a background task and handles rate limits automatically.</li>
+				<li><strong>Without title matching:</strong> reads <code>ComicInfo.xml</code> only — instant, zero API calls, full rate limit available for importing.</li>
+				<li><strong>With title matching:</strong> searches ComicVine by folder name for untagged files — uses the 200 req/hr limit at ~20 seconds per folder.</li>
 				<li>Files are not allowed to be directly in the root folder.</li>
 			</ul>
 			<table class="fold-table">
@@ -45,7 +46,22 @@
 					</tr>
 					<tr id="bulk-fuzzy-note" class="hidden">
 						<td colspan="2">
-							<p><em>When no ComicInfo ID is found, Kapowarr will search ComicVine by folder name. This is slow — one API call per untagged folder — and will hit the rate limit (200 req/hr) for large libraries. Each rate-limit pause adds 60 seconds per retry.</em></p>
+							<p><em>Searches ComicVine by folder name for untagged files.</em></p>
+						</td>
+					</tr>
+					<tr id="bulk-scan-mode-row" class="hidden">
+						<td><label for="bulk-scan-mode-input">Scan mode</label></td>
+						<td>
+							<select id="bulk-scan-mode-input">
+								<option value="paced" selected>Full (all folders)</option>
+								<option value="quick">Capped (~100 calls)</option>
+							</select>
+						</td>
+					</tr>
+					<tr id="bulk-scan-mode-note" class="hidden">
+						<td colspan="2">
+							<p><em>Full: one request every ~20 seconds, processes all folders, quota never runs dry.</em></p>
+							<p><em>Capped: same pacing as Full, but stops after ~100 requests so the remaining hourly quota is available for importing.</em></p>
 						</td>
 					</tr>
 				</tbody>
@@ -56,6 +72,7 @@
 	<div id="loading-window" class="hidden">
 		<h2>Loading...</h2>
 		<p id="bulk-loading-progress" class="hidden"></p>
+		<button id="scan-cancel-button" class="hidden">Stop Scan</button>
 	</div>
 	<div id="no-result-window" class="hidden">
 		<h2>No results</h2>

@@ -7,6 +7,7 @@ main {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
+	justify-content: center;
 	gap: 1rem;
 
 	padding-bottom: 1.5rem;
@@ -96,6 +97,7 @@ main {
 }
 
 #run-bulk-scan-button,
+#scan-cancel-button,
 .cancel-button,
 .action-container button {
 	min-width: 5rem;
@@ -113,9 +115,15 @@ main {
 }
 
 #run-bulk-scan-button:hover,
+#scan-cancel-button:hover,
 .cancel-button:hover,
 .action-container button:hover {
 	background-color: var(--hover-color);
+}
+
+#scan-cancel-button:hover {
+	border-color: var(--error-color);
+	color: var(--error-color);
 }
 
 #loading-window,

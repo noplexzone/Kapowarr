@@ -86,6 +86,8 @@
 		<td class="fm-title"></td>
 		<td class="fm-year"></td>
 		<td class="fm-issues"></td>
+		<td class="fm-publisher"></td>
+		<td class="fm-type"></td>
 		<td class="fm-action">
 			<button class="select-match-button">Select</button>
 		</td>
@@ -359,9 +361,11 @@
 		<table id="fix-match-result-table" class="icon-text-color hidden">
 			<thead>
 				<tr>
-					<th>Title</th>
-					<th>Year</th>
-					<th>Issues</th>
+					<th data-sort-key="title">Title</th>
+					<th data-sort-key="year">Year</th>
+					<th data-sort-key="issue_count">Issues</th>
+					<th data-sort-key="publisher">Publisher</th>
+					<th data-sort-key="_type">Type</th>
 					<th></th>
 				</tr>
 			</thead>

@@ -15,10 +15,14 @@ const LIEls = {
 		bulk_scan: document.querySelector('#run-bulk-scan-button'),
 		bulk_import: document.querySelector('#bulk-import-button'),
 		bulk_cancel: document.querySelector('#bulk-cancel-button'),
-		bulk_delete_unmatched: document.querySelector('#bulk-delete-unmatched-button')
+		bulk_delete_unmatched: document.querySelector('#bulk-delete-unmatched-button'),
+		scan_cancel: document.querySelector('#scan-cancel-button')
 	},
 	bulk_fuzzy: document.querySelector('#bulk-fuzzy-input'),
-	bulk_fuzzy_note: document.querySelector('#bulk-fuzzy-note')
+	bulk_fuzzy_note: document.querySelector('#bulk-fuzzy-note'),
+	bulk_scan_mode: document.querySelector('#bulk-scan-mode-input'),
+	bulk_scan_mode_row: document.querySelector('#bulk-scan-mode-row'),
+	bulk_scan_mode_note: document.querySelector('#bulk-scan-mode-note')
 };
 
 function toggleBulkSelectAll() {
@@ -27,6 +31,39 @@ function toggleBulkSelectAll() {
 		e => e.checked = checked
 	);
 };
+
+function _addBulkResultRow(result, api_key) {
+	const row = LIEls.pre_build.bulk_result.cloneNode(true);
+	row.dataset.folder = result.folder;
+	row.dataset.cv_id = result.cv_id ?? '';
+	row.dataset.id_type = result.id_type ?? '';
+
+	row.querySelector('.file-column').innerText = result.file_title;
+	row.querySelector('.file-column').title = result.folder;
+
+	const cvCell = row.querySelector('.cv-id-column');
+	if (result.cv_id) {
+		cvCell.innerText = result.cv_id;
+	} else {
+		cvCell.innerText = '—';
+		row.querySelector('input[type="checkbox"]').checked = false;
+	}
+	const statusLabel = result.cv_id
+		? (result.match_type === 'title' ? 'Ready (title match)' : 'Ready')
+		: 'No ID found';
+	row.querySelector('.status-column').innerText = statusLabel;
+
+	if (!result.cv_id) {
+		const deleteBtn = document.createElement('button');
+		deleteBtn.innerText = 'Delete Folder';
+		deleteBtn.className = 'bulk-delete-btn';
+		deleteBtn.title = `Delete ${result.folder}`;
+		deleteBtn.onclick = () => deleteBulkFolder(result.folder, row, api_key);
+		row.querySelector('.delete-column').appendChild(deleteBtn);
+	}
+
+	LIEls.bulk_proposal_list.appendChild(row);
+}
 
 async function loadBulkProposal(api_key) {
 	const ffi = document.querySelector('#bulk-folder-filter-input');
@@ -39,19 +76,24 @@ async function loadBulkProposal(api_key) {
 	const fuzzyEnabled = LIEls.bulk_fuzzy.value === 'true';
 	if (fuzzyEnabled)
 		url += '&fuzzy_fallback=true';
+	if (fuzzyEnabled && LIEls.bulk_scan_mode.value === 'quick')
+		url += '&quick=true';
 
-	hide(
-		[LIEls.views.start, document.querySelector('#bulk-folder-filter-error')],
-		[LIEls.views.loading, progressEl]
-	);
 	LIEls.bulk_proposal_list.innerHTML = '';
 	progressEl.innerText = 'Starting scan…';
+	hide(
+		[LIEls.views.start, document.querySelector('#bulk-folder-filter-error')],
+		[LIEls.views.loading, progressEl, LIEls.buttons.scan_cancel]
+	);
+
+	const abortCtrl = new AbortController();
+	LIEls.buttons.scan_cancel.onclick = () => abortCtrl.abort();
 
 	let response;
 	try {
-		response = await fetch(url);
+		response = await fetch(url, {signal: abortCtrl.signal});
 	} catch {
-		hide([LIEls.views.loading], [LIEls.views.start]);
+		hide([LIEls.views.loading, progressEl, LIEls.buttons.scan_cancel], [LIEls.views.start]);
 		return;
 	}
 
@@ -60,13 +102,13 @@ async function loadBulkProposal(api_key) {
 			const j = await response.json();
 			if (j.error === 'InvalidKeyValue')
 				hide(
-					[LIEls.views.loading, progressEl],
+					[LIEls.views.loading, progressEl, LIEls.buttons.scan_cancel],
 					[LIEls.views.start, document.querySelector('#bulk-folder-filter-error')]
 				);
 			else
-				hide([LIEls.views.loading, progressEl], [LIEls.views.start]);
+				hide([LIEls.views.loading, progressEl, LIEls.buttons.scan_cancel], [LIEls.views.start]);
 		} catch {
-			hide([LIEls.views.loading, progressEl], [LIEls.views.start]);
+			hide([LIEls.views.loading, progressEl, LIEls.buttons.scan_cancel], [LIEls.views.start]);
 		}
 		return;
 	}
@@ -76,65 +118,48 @@ async function loadBulkProposal(api_key) {
 	let buffer = '';
 	let count = 0;
 	let matched = 0;
-	const rows = [];
+	let cancelled = false;
 
-	while (true) {
-		const {done, value} = await reader.read();
-		if (done) break;
+	try {
+		while (true) {
+			const {done, value} = await reader.read();
+			if (done) break;
 
-		buffer += decoder.decode(value, {stream: true});
-		const lines = buffer.split('\n');
-		buffer = lines.pop();
+			buffer += decoder.decode(value, {stream: true});
+			const lines = buffer.split('\n');
+			buffer = lines.pop();
 
-		for (const line of lines) {
-			if (!line.trim()) continue;
-			let item;
-			try { item = JSON.parse(line); } catch { continue; }
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				let item;
+				try { item = JSON.parse(line); } catch { continue; }
 
-			count++;
-			if (item.cv_id) matched++;
-			progressEl.innerText =
-				`Scanning… ${count} folders checked, ${matched} matched — ${item.file_title}`;
+				if (item.type === 'status') {
+					progressEl.innerText = item.message;
+					continue;
+				}
 
-			rows.push(item);
+				count++;
+				if (item.cv_id) matched++;
+				progressEl.innerText =
+					`Scanning… ${count} folders checked, ${matched} matched — ${item.file_title}`;
+				_addBulkResultRow(item, api_key);
+			}
+		}
+	} catch (e) {
+		if (e.name === 'AbortError') {
+			cancelled = true;
+		} else {
+			hide([LIEls.views.loading, progressEl, LIEls.buttons.scan_cancel], [LIEls.views.start]);
+			return;
 		}
 	}
 
-	rows.forEach(result => {
-		const row = LIEls.pre_build.bulk_result.cloneNode(true);
-		row.dataset.folder = result.folder;
-		row.dataset.cv_id = result.cv_id ?? '';
-		row.dataset.id_type = result.id_type ?? '';
+	hide([LIEls.buttons.scan_cancel]);
 
-		row.querySelector('.file-column').innerText = result.file_title;
-		row.querySelector('.file-column').title = result.folder;
-
-		const cvCell = row.querySelector('.cv-id-column');
-		if (result.cv_id) {
-			cvCell.innerText = result.cv_id;
-		} else {
-			cvCell.innerText = '—';
-			row.querySelector('input[type="checkbox"]').checked = false;
-		}
-		const statusLabel = result.cv_id
-			? (result.match_type === 'title' ? 'Ready (title match)' : 'Ready')
-			: 'No ID found';
-		row.querySelector('.status-column').innerText = statusLabel;
-
-		if (!result.cv_id) {
-			const deleteBtn = document.createElement('button');
-			deleteBtn.innerText = 'Delete Folder';
-			deleteBtn.className = 'bulk-delete-btn';
-			deleteBtn.title = `Delete ${result.folder}`;
-			deleteBtn.onclick = () => deleteBulkFolder(result.folder, row, api_key);
-			row.querySelector('.delete-column').appendChild(deleteBtn);
-		}
-
-		LIEls.bulk_proposal_list.appendChild(row);
-	});
-
+	const prefix = cancelled ? 'Scan stopped early — ' : '';
 	document.querySelector('#bulk-summary').innerText =
-		`${count} folders found — ${matched} with ComicVine IDs, ${count - matched} without.`;
+		`${prefix}${count} folders found — ${matched} with ComicVine IDs, ${count - matched} without.`;
 
 	hide([LIEls.views.loading, progressEl], count > 0 ? [LIEls.views.bulk_list] : [LIEls.views.no_result]);
 };
@@ -222,8 +247,15 @@ usingApiKey()
 	LIEls.buttons.bulk_delete_unmatched.onclick = e => deleteAllUnmatched(api_key);
 });
 
-LIEls.bulk_fuzzy.onchange = e =>
-	LIEls.bulk_fuzzy_note.classList.toggle('hidden', LIEls.bulk_fuzzy.value !== 'true');
+LIEls.bulk_fuzzy.onchange = e => {
+	const fuzzy = LIEls.bulk_fuzzy.value === 'true';
+	LIEls.bulk_fuzzy_note.classList.toggle('hidden', !fuzzy);
+	LIEls.bulk_scan_mode_row.classList.toggle('hidden', !fuzzy);
+	if (!fuzzy) LIEls.bulk_scan_mode_note.classList.add('hidden');
+};
+
+LIEls.bulk_scan_mode.onchange = e =>
+	LIEls.bulk_scan_mode_note.classList.toggle('hidden', LIEls.bulk_scan_mode.value === 'paced');
 
 LIEls.bulk_select_all.onchange = e => toggleBulkSelectAll();
 LIEls.buttons.cancel.forEach(b =>

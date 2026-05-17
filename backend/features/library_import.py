@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from asyncio import gather as async_gather, run
+from asyncio import run
 from glob import glob
 from os import listdir
 from os.path import abspath, isdir, isfile, join
@@ -10,10 +10,10 @@ from typing import Dict, List, Tuple, Union
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
-from backend.base.custom_exceptions import InvalidKeyValue, VolumeAlreadyAdded
-from backend.base.definitions import Constants, MonitorScheme
+from backend.base.custom_exceptions import CVRateLimitReached, InvalidKeyValue, VolumeAlreadyAdded
+from backend.base.definitions import MonitorScheme
 from backend.base.files import folder_is_inside_folder, list_files
-from backend.base.helpers import batched, force_suffix
+from backend.base.helpers import force_suffix
 from backend.base.logging import LOGGER
 from backend.implementations.comicvine import ComicVine
 from backend.implementations.file_matching import scan_files
@@ -126,7 +126,8 @@ def prepare_bulk_scan(
 def generate_bulk_scan(
     scan_roots: set,
     existing_folders: set,
-    fuzzy_fallback: bool = False
+    fuzzy_fallback: bool = False,
+    quick: bool = False
 ):
     """Generator that yields one result dict per unimported series folder.
 
@@ -134,15 +135,18 @@ def generate_bulk_scan(
     id_type, and match_type ('comicinfo', 'title', or None).
 
     Phase 1: ComicInfo hits are yielded immediately (no API calls).
-    Phase 2 (fuzzy_fallback only): Unmatched folders are grouped by unique
-    base title, searched 10 at a time in parallel, then yielded in batches.
-    This reduces API calls from one-per-folder to one-per-unique-title.
+    Phase 2 (fuzzy_fallback only): Sequential title searches (one at a time)
+    to avoid CV burst-rate-limiting concurrent connections. Two modes:
+      - Paced (quick=False): 18s between requests, no cap (200 req/hr).
+      - Quick (quick=True): 2s between requests, stops after 100 requests
+        to leave ~100 calls for importing.
 
     Args:
         scan_roots: Root directories to scan.
         existing_folders: Folders already in the library (skipped).
         fuzzy_fallback: When True and no ComicInfo CV ID is found, search CV
             by the folder name as a fallback.
+        quick: When True, use fast mode capped at 100 requests.
     """
     # Phase 1: stream ComicInfo hits; defer unmatched for batch title search
     unmatched: List[Tuple[str, str, str, Union[str, None]]] = []
@@ -191,9 +195,10 @@ def generate_bulk_scan(
     if not unmatched:
         return
 
-    # Phase 2: batch title searches — one API call per unique base title.
-    # Group folders by title so we can yield results immediately after each
-    # batch completes instead of holding everything until the end.
+    # Phase 2: title searches — one API call per unique base title.
+    # Sequential (one at a time) to avoid CV's burst rate limiting on concurrent
+    # requests. Quick: 2s between requests, caps at 100 to leave quota for
+    # importing. Paced: 18s between requests (200 req/hr), no cap.
     unique_titles = list(dict.fromkeys(t for _, _, t, _ in unmatched))
     title_to_folders: Dict[str, List[Tuple[str, str, Union[str, None]]]] = {}
     for folder, entry, title, year in unmatched:
@@ -206,38 +211,79 @@ def generate_bulk_scan(
         len(unmatched), len(unique_titles)
     )
 
-    async def _search_batch(titles):
-        return await async_gather(
-            *(cv.search_volumes(t, allow_rate_limit_reached=True) for t in titles),
-            return_exceptions=True
+    quick_budget = 100
+    sleep_per_request = 2.0 if quick else 3600 / 200
+    requests_made = 0
+    consecutive_rate_limits = 0
+    rate_limited = False
+
+    for title in unique_titles:
+        budget_hit = quick and requests_made >= quick_budget
+
+        if rate_limited or budget_hit:
+            if budget_hit and not rate_limited and requests_made == quick_budget:
+                LOGGER.info(
+                    'Bulk scan quick mode: %d-request budget reached; '
+                    'remaining titles will be unmatched',
+                    quick_budget
+                )
+            result_list = []
+        else:
+            try:
+                # allow_rate_limit_reached=True: 420 responses return [] instead
+                # of raising, matching the original c8ed7fc behaviour. We track
+                # consecutive empty results from known-rate-limited calls via the
+                # CVRateLimitReached path (comicvine.py now raises it before the
+                # default silences it, so search_volumes can surface it here).
+                result_list = run(cv.search_volumes(title, allow_rate_limit_reached=True))
+                requests_made += 1
+                consecutive_rate_limits = 0
+            except CVRateLimitReached:
+                consecutive_rate_limits += 1
+                result_list = []
+                if consecutive_rate_limits >= 3:
+                    rate_limited = True
+                    LOGGER.info(
+                        'Bulk scan: %d consecutive CV rate limits; '
+                        'stopping searches',
+                        consecutive_rate_limits
+                    )
+                    yield {
+                        'type': 'status',
+                        'message': (
+                            'ComicVine is rate-limiting searches — '
+                            'remaining results unmatched. Try again later.'
+                        )
+                    }
+            except Exception as e:
+                LOGGER.warning('Bulk scan: error searching for "%s": %s', title, e)
+                result_list = []
+
+        LOGGER.debug(
+            'Bulk scan title search: "%s" → %d results',
+            title, len(result_list)
         )
 
-    for title_batch in batched(unique_titles, 10):
-        batch_results = run(_search_batch(title_batch))
-        for title, results in zip(title_batch, batch_results):
-            result_list = results if isinstance(results, list) else []
+        for folder, entry, year in title_to_folders.get(title, []):
+            found = _pick_best_cv_result(result_list, year)
+            if found is not None:
+                cv_id, id_type = found
+                match_type = 'title'
+            else:
+                cv_id, id_type, match_type = None, None, None
             LOGGER.debug(
-                'Bulk scan title search: "%s" → %d results',
-                title, len(result_list)
+                'Bulk scan: %s → %s (%s)',
+                entry,
+                f'CV {id_type} ID {cv_id}' if cv_id else 'no CV ID found',
+                match_type or 'none'
             )
-            for folder, entry, year in title_to_folders.get(title, []):
-                found = _pick_best_cv_result(result_list, year)
-                if found is not None:
-                    cv_id, id_type = found
-                    match_type = 'title'
-                else:
-                    cv_id, id_type, match_type = None, None, None
-                LOGGER.debug(
-                    'Bulk scan: %s → %s (%s)',
-                    entry,
-                    f'CV {id_type} ID {cv_id}' if cv_id else 'no CV ID found',
-                    match_type or 'none'
-                )
-                yield {
-                    'folder': folder, 'file_title': entry,
-                    'cv_id': cv_id, 'id_type': id_type, 'match_type': match_type
-                }
-        sleep(Constants.CV_BRAKE_TIME * len(title_batch))
+            yield {
+                'folder': folder, 'file_title': entry,
+                'cv_id': cv_id, 'id_type': id_type, 'match_type': match_type
+            }
+
+        if not rate_limited and not budget_hit:
+            sleep(sleep_per_request)
 
 
 def import_library_entry(

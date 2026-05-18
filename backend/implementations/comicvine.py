@@ -249,6 +249,16 @@ class ComicVine:
         'site_detail_url',
         'start_year'
     ))
+    story_arc_field_list = ','.join((
+        'count_of_issues',
+        'deck',
+        'description',
+        'id',
+        'image',
+        'name',
+        'publisher',
+        'site_detail_url',
+    ))
     issue_field_list = ','.join((
         'id',
         'issue_number',
@@ -923,44 +933,24 @@ class ComicVine:
         self,
         limit: int = 100
     ) -> List[VolumeMetadata]:
-        """Get popular volumes surfaced by recent activity on CV.
+        """Get popular volumes by fetching the longest-running English series.
 
-        CV's public API does not expose its internal subscriber/popularity
-        metric, and count_of_issues is not a valid sort field (silent fallback
-        to id:asc). We fetch 1000 recently-updated volumes, discard non-English
-        content and anything with fewer than 10 issues, then re-sort by issue
-        count descending. Long-running ongoing English series (Batman, ASM,
-        X-Men, Avengers, etc.) dominate because they accumulate the most issues.
-
-        Args:
-            limit: Maximum results to return.
-
-        Returns:
-            List of VolumeMetadata dicts with already_added populated.
+        Sorts by count_of_issues:desc so Batman, ASM, X-Men etc. rise to the top
+        instead of the old date_last_updated approach which was polluted by a
+        bulk 2008-06-06 update date shared by thousands of unrelated volumes.
         """
-        # date_last_updated:desc surfaces recently active series.
-        # We then require issue_count >= 10 to discard one-shots and short
-        # foreign mini-series, and re-sort by issue_count:desc so the
-        # longest-running ongoing English series (Batman, ASM, X-Men, Avengers)
-        # rise to the top. count_of_issues is not a valid CV API sort field —
-        # sending it causes a silent fallback to default (id:asc).
         params = {
             'field_list': self.volume_field_list,
-            'sort': 'date_last_updated:desc',
+            'sort': 'count_of_issues:desc',
             'limit': 100,
         }
         async with AsyncSession() as session:
-            page1, page2, page3, page4, page5, page6, page7, page8, page9, page10 = await gather(
+            page1, page2, page3, page4, page5 = await gather(
                 self.__call_api(session, '/volumes', {**params, 'offset': 0},   {'results': []}),
                 self.__call_api(session, '/volumes', {**params, 'offset': 100}, {'results': []}),
                 self.__call_api(session, '/volumes', {**params, 'offset': 200}, {'results': []}),
                 self.__call_api(session, '/volumes', {**params, 'offset': 300}, {'results': []}),
                 self.__call_api(session, '/volumes', {**params, 'offset': 400}, {'results': []}),
-                self.__call_api(session, '/volumes', {**params, 'offset': 500}, {'results': []}),
-                self.__call_api(session, '/volumes', {**params, 'offset': 600}, {'results': []}),
-                self.__call_api(session, '/volumes', {**params, 'offset': 700}, {'results': []}),
-                self.__call_api(session, '/volumes', {**params, 'offset': 800}, {'results': []}),
-                self.__call_api(session, '/volumes', {**params, 'offset': 900}, {'results': []}),
             )
         all_results = (
             (page1.get('results') or [])
@@ -968,11 +958,6 @@ class ComicVine:
             + (page3.get('results') or [])
             + (page4.get('results') or [])
             + (page5.get('results') or [])
-            + (page6.get('results') or [])
-            + (page7.get('results') or [])
-            + (page8.get('results') or [])
-            + (page9.get('results') or [])
-            + (page10.get('results') or [])
         )
 
         def _is_english_publisher(v: Dict[str, Any]) -> bool:
@@ -981,13 +966,149 @@ class ComicVine:
 
         pre_filtered = [v for v in all_results if _is_english_publisher(v)]
         formatted = [self.__format_volume_output(v) for v in pre_filtered]
-
-        # Require at least 10 issues so one-shots and short mini-series are
-        # excluded, then sort by issue count so long-running series lead.
-        filtered = [v for v in formatted if v['issue_count'] >= 10]
+        filtered = [v for v in formatted if not v['translated'] and v['issue_count'] >= 5]
         filtered.sort(key=lambda v: v['issue_count'], reverse=True)
         self._mark_already_added(filtered[:limit])
         return filtered[:limit]
+
+    async def get_story_arcs(
+        self,
+        query: str = '',
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Browse or search story arcs on ComicVine.
+
+        With no query, returns recently-updated arcs. With a query, filters by
+        name. Non-English arcs are excluded.
+        """
+        params: Dict[str, Any] = {
+            'field_list': self.story_arc_field_list,
+            'sort': 'date_last_updated:desc',
+            'limit': 100,
+        }
+        if query.strip():
+            params['filter'] = f'name:{query.strip()}'
+
+        async with AsyncSession() as session:
+            page1, page2, page3 = await gather(
+                self.__call_api(session, '/story_arcs', {**params, 'offset': 0},   {'results': []}),
+                self.__call_api(session, '/story_arcs', {**params, 'offset': 100}, {'results': []}),
+                self.__call_api(session, '/story_arcs', {**params, 'offset': 200}, {'results': []}),
+            )
+
+        all_results = (
+            (page1.get('results') or [])
+            + (page2.get('results') or [])
+            + (page3.get('results') or [])
+        )
+
+        filtered = []
+        for arc in all_results:
+            pub = ((arc.get('publisher') or {}).get('name') or '').lower()
+            if pub and pub in _NON_ENGLISH_PUBLISHERS:
+                continue
+            name = (arc.get('name') or '').lower()
+            if any(k in name for k in _MANGA_TITLE_KEYWORDS):
+                continue
+            filtered.append({
+                'id': int(arc['id']),
+                'name': arc.get('name') or '',
+                'deck': arc.get('deck') or '',
+                'cover_link': (
+                    (arc.get('image') or {}).get('medium_url')
+                    or (arc.get('image') or {}).get('small_url')
+                    or ''
+                ),
+                'site_url': arc.get('site_detail_url') or '',
+                'issue_count': int(arc.get('count_of_issues') or 0),
+                'publisher': ((arc.get('publisher') or {}).get('name') or ''),
+            })
+
+        filtered.sort(key=lambda a: a['issue_count'], reverse=True)
+        return filtered[:limit]
+
+    async def get_story_arc_volumes(
+        self,
+        arc_id: int
+    ) -> Dict[str, Any]:
+        """Get arc metadata + deduplicated list of English volumes in the arc."""
+        async with AsyncSession() as session:
+            data = await self.__call_api(
+                session,
+                f'/story_arc/{arc_id}',
+                {'field_list': f'{self.story_arc_field_list},issues'},
+            )
+
+        arc = data.get('results') or {}
+        issues = arc.get('issues') or []
+
+        # Extract unique volume IDs preserving arc order
+        seen: set = set()
+        vol_ids: List[int] = []
+        for issue in issues:
+            vid_raw = (issue.get('volume') or {}).get('id')
+            if vid_raw is None:
+                continue
+            vid = int(vid_raw)
+            if vid not in seen:
+                seen.add(vid)
+                vol_ids.append(vid)
+
+        arc_meta: Dict[str, Any] = {
+            'id': arc_id,
+            'name': arc.get('name') or '',
+            'deck': arc.get('deck') or '',
+            'description': _clean_description(arc.get('description') or ''),
+            'cover_link': (
+                (arc.get('image') or {}).get('medium_url')
+                or (arc.get('image') or {}).get('small_url')
+                or ''
+            ),
+            'site_url': arc.get('site_detail_url') or '',
+            'issue_count': int(arc.get('count_of_issues') or 0),
+            'publisher': ((arc.get('publisher') or {}).get('name') or ''),
+        }
+
+        if not vol_ids:
+            return {'arc': arc_meta, 'volumes': []}
+
+        # Batch-fetch volume details (cap at 200 volumes per arc)
+        batch_size = 50
+        raw_volumes: List[Any] = []
+        async with AsyncSession() as session:
+            for i in range(0, min(len(vol_ids), 200), batch_size):
+                batch = vol_ids[i:i + batch_size]
+                resp = await self.__call_api(
+                    session,
+                    '/volumes',
+                    {
+                        'field_list': self.volume_field_list,
+                        'filter': f'id:{"|".join(str(v) for v in batch)}',
+                        'limit': batch_size,
+                    },
+                    {'results': []}
+                )
+                for r in (resp.get('results') or []):
+                    raw_volumes.append(self.__format_volume_output(r))
+
+        def _is_non_english(v: Any) -> bool:
+            pub = (v.get('publisher') or '').lower()
+            return pub in _NON_ENGLISH_PUBLISHERS
+
+        filtered_vols = [
+            v for v in raw_volumes
+            if not _is_non_english(v) and not v.get('translated')
+        ]
+
+        # Restore original arc order
+        order = {vid: idx for idx, vid in enumerate(vol_ids)}
+        filtered_vols.sort(key=lambda v: order.get(v['comicvine_id'], 9999))
+        self._mark_already_added(filtered_vols)
+
+        return {
+            'arc': arc_meta,
+            'volumes': [{k: val for k, val in vol.items() if k != 'cover'} for vol in filtered_vols],
+        }
 
     def _mark_already_added(self, volumes: List[VolumeMetadata]) -> None:
         """Populate the already_added field for a list of formatted volumes."""

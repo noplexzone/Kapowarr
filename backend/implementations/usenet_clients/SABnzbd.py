@@ -121,12 +121,17 @@ class SABnzbd(BaseExternalClient):
         slots_hist = hist.get('history', {}).get('slots', [])
         for slot in slots_hist:
             if slot.get('nzo_id') == download_id:
-                status_str = slot.get('status', 'Completed')
+                status_str = slot.get('status', '')
+                size = int(slot.get('bytes', 0) or 0)
                 if status_str == 'Completed':
                     state = DownloadState.IMPORTING_STATE
-                else:
+                elif status_str == 'Failed':
                     state = DownloadState.FAILED_STATE
-                size = int(slot.get('bytes', 0) or 0)
+                else:
+                    # Transitional history state: SABnzbd is still post-processing
+                    # (e.g. "Running" for scripts, "Extracting", "Moving").
+                    # Keep polling rather than incorrectly treating as failed.
+                    state = DownloadState.DOWNLOADING_STATE
                 return {'size': size, 'progress': 100.0, 'speed': 0.0, 'state': state}
 
         # Not found anywhere — client deleted it

@@ -484,6 +484,27 @@ class LinkBroken(KapowarrException):
         }
 
 
+class LinkRateLimited(KapowarrException):
+    "The link returned HTTP 429 (rate limited)"
+
+    def __init__(self, link: str) -> None:
+        self.link = link
+        LOGGER.warning(
+            f"Link is rate limited (429): {self.link}"
+        )
+        return
+
+    @property
+    def api_response(self) -> ApiResponse:
+        return {
+            "code": 429,
+            "error": self.__class__.__name__,
+            "result": {
+                "link": self.link
+            }
+        }
+
+
 class EnqueuingDownloadFailure(KapowarrException):
     "Failed to enqueue download"
 
@@ -594,9 +615,16 @@ class ClientNotWorking(KapowarrException):
     def __init__(self, reason: BrokenClientReason) -> None:
         self.reason = reason
         self.reason_text = reason.value
-        LOGGER.warning(
-            f"The download client isn't working: {self.reason_text}"
-        )
+        # Only warn for genuine connection failures; other reasons (e.g.
+        # NOT_CLIENT_INSTANCE during delete-cleanup) are handled by callers.
+        if reason == BrokenClientReason.CONNECTION_ERROR:
+            LOGGER.warning(
+                f"The download client isn't working: {self.reason_text}"
+            )
+        else:
+            LOGGER.debug(
+                f"The download client isn't working: {self.reason_text}"
+            )
         return
 
     @property

@@ -94,19 +94,36 @@ class AutoSearchIssue(Task):
         return
 
     def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+        ws = WebSocket()
         volume = Volume(self._volume_id)
         volume_title = volume.vd.title
         issue_number = volume.get_issue(self._issue_id).get_data().issue_number
         self.message = f'Searching for {volume_title} #{issue_number}'
-        WebSocket().emit(TaskStatusEvent(self.message))
+        ws.emit(TaskStatusEvent(self.message, notification=True))
 
-        # Get search results and download them
-        results = auto_search(self._volume_id, self._issue_id)
+        stats: dict = {}
+        results = auto_search(self._volume_id, self._issue_id, _stats=stats)
         if results:
+            ws.emit(TaskStatusEvent(
+                f'Found download for {volume_title} #{issue_number}',
+                notification=True
+            ))
             return [
                 (result['link'], self._volume_id, self._issue_id)
                 for result in results
             ]
+        found = stats.get('total_found', 0)
+        if found > 0:
+            n = f'{found} result{"s" if found != 1 else ""}'
+            ws.emit(TaskStatusEvent(
+                f'{n} found, 0 matched for {volume_title} #{issue_number}',
+                notification=True
+            ))
+        else:
+            ws.emit(TaskStatusEvent(
+                f'No results found for {volume_title} #{issue_number}',
+                notification=True
+            ))
         return []
 
 
@@ -250,17 +267,39 @@ class AutoSearchVolume(Task):
         return
 
     def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+        ws = WebSocket()
         volume_title = Volume(self._volume_id).vd.title
         self.message = f'Searching for {volume_title}'
-        WebSocket().emit(TaskStatusEvent(self.message))
+        ws.emit(TaskStatusEvent(self.message, notification=True))
 
-        # Get search results and download them
-        results = auto_search(self._volume_id)
+        def _progress(idx: int, total: int) -> None:
+            self.message = f'Searching issue {idx + 1}/{total} for {volume_title}'
+            ws.emit(TaskStatusEvent(self.message))
+
+        stats: dict = {}
+        results = auto_search(self._volume_id, _stats=stats, _status_cb=_progress)
         if results:
+            n = len(results)
+            ws.emit(TaskStatusEvent(
+                f'Found {n} download{"s" if n != 1 else ""} for {volume_title}',
+                notification=True
+            ))
             return [
                 (result['link'], self._volume_id, None)
                 for result in results
             ]
+        found = stats.get('total_found', 0)
+        if found > 0:
+            n = f'{found} result{"s" if found != 1 else ""}'
+            ws.emit(TaskStatusEvent(
+                f'{n} found, 0 matched for {volume_title}',
+                notification=True
+            ))
+        else:
+            ws.emit(TaskStatusEvent(
+                f'No results found for {volume_title}',
+                notification=True
+            ))
         return []
 
 

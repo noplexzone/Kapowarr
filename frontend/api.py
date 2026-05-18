@@ -17,7 +17,7 @@ from backend.base.definitions import (BlocklistReason, BlocklistReasonID,
                                       KapowarrException, LibraryFilter,
                                       LibrarySorting, MonitorScheme,
                                       SpecialVersion, StartType, VolumeData)
-from backend.base.helpers import hash_credential
+from backend.base.helpers import force_suffix, hash_credential
 from backend.base.logging import LOGGER, get_log_file_contents
 from backend.features.download_queue import (DownloadHandler,
                                              delete_download_history,
@@ -50,6 +50,7 @@ from backend.implementations.remote_mapping import RemoteMappings
 from backend.implementations.root_folders import RootFolders
 from backend.implementations.volumes import (Library, delete_issue_file,
                                              rematch_volume)
+from backend.internals.db import get_db
 from backend.internals.db_models import FilesDB
 from backend.internals.server import Server, StartTypeHandlers
 from backend.internals.settings import Settings, get_about_data
@@ -754,10 +755,23 @@ def api_discovery():
         results = run(cv.get_popular_volumes())
         for r in results:
             del r['cover']
+    elif discovery_type == 'story-arcs':
+        query = extract_key(request, 'query', False) or ''
+        results = run(cv.get_story_arcs(query=query))
+        return return_api(results)
     else:
         raise InvalidKeyValue('type', discovery_type)
 
     return return_api(results)
+
+
+@api.route('/discovery/story-arc/<int:arc_id>', methods=['GET'])
+@error_handler
+@auth
+def api_discovery_story_arc(arc_id: int):
+    cv = ComicVine()
+    result = run(cv.get_story_arc_volumes(arc_id))
+    return return_api(result)
 
 
 # =====================
@@ -891,6 +905,78 @@ def api_volumes():
 def api_volumes_stats():
     result = Library.get_stats()
     return return_api(result)
+
+
+@api.route('/nav/badges', methods=['GET'])
+@error_handler
+@auth
+def api_nav_badges():
+    import os
+    import re as _re
+
+    db = get_db()
+
+    volume_count: int = db.execute('SELECT COUNT(*) FROM volumes;').fetchone()[0] or 0
+    queue_count: int = len(DownloadHandler().get_all())
+
+    # Count subfolders in root folders not already imported
+    import_count = 0
+    try:
+        existing = {
+            force_suffix(r[0]) for r in db.execute('SELECT folder FROM volumes;').fetchall()
+            if r[0]
+        }
+        for root in RootFolders().get_folder_list():
+            try:
+                for entry in os.listdir(root):
+                    full = os.path.join(root, entry)
+                    if os.path.isdir(full) and force_suffix(os.path.abspath(full)) not in existing:
+                        import_count += 1
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+    # Mismatch count — mirrors isMismatch + isForeignPublisher in folder_check.js
+    _FOREIGN_SIGNALS = (
+        'verlag', 'deutschland', 'deutsch', 'gmbh',
+        'éditions', 'editeur', 'française',
+        'editore', 'edizioni', 'planeta',
+        'carlsen', 'egmont ehapa', 'splitter', 'cross cult',
+        'glenat', 'glénat',
+    )
+
+    def _norm(s: str) -> str:
+        s = s.lower()
+        s = _re.sub(r'\(\d{4}\)', '', s)
+        s = _re.sub(r'[:\\*?"<>|,]', '', s)
+        s = s.replace("'", '')
+        s = _re.sub(r'[^a-z0-9 ]', ' ', s)
+        return _re.sub(r'\s+', ' ', s).strip()
+
+    def _is_mismatch(folder: str, title: str) -> bool:
+        parts = folder.replace('\\', '/').split('/')
+        base = parts[-1] or (parts[-2] if len(parts) > 1 else '')
+        nf, nt = _norm(base), _norm(title)
+        return bool(nf and nt and nt not in nf and nf not in nt)
+
+    def _is_foreign(publisher: str) -> bool:
+        p = publisher.lower()
+        return any(sig in p for sig in _FOREIGN_SIGNALS)
+
+    rows = db.execute('SELECT folder, title, publisher FROM volumes;').fetchall()
+    mismatch_count = sum(
+        1 for folder, title, publisher in rows
+        if (folder and _is_mismatch(folder, title or ''))
+        or (publisher and _is_foreign(publisher))
+    )
+
+    return return_api({
+        'volumes': volume_count,
+        'queue': queue_count,
+        'library_import': import_count,
+        'mismatch': mismatch_count,
+    })
 
 
 @api.route('/volumes/<int:id>', methods=['GET', 'PUT', 'DELETE'])

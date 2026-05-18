@@ -190,6 +190,22 @@ function populateLibrary(volumes, api_key) {
 			volume.issue_count_monitored
 		);
 
+		// Search button
+		const search_btn = list_entry.querySelector('.list-search-btn');
+		search_btn.onclick = e => {
+			e.preventDefault();
+			e.stopPropagation();
+			search_btn.disabled = true;
+			sendAPI('POST', '/system/tasks', api_key, {}, {
+				cmd: 'auto_search',
+				volume_id: volume.id
+			}).then(() => {
+				setTimeout(() => { search_btn.disabled = false; }, 2000);
+			}).catch(() => {
+				search_btn.disabled = false;
+			});
+		};
+
 		// Add to view
 		list_fragment.appendChild(list_entry)
 		table_fragment.appendChild(table_entry);

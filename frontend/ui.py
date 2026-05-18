@@ -139,3 +139,5 @@ def ui_metadata():
 @ui.route('/settings/general', methods=methods)
 def ui_general():
     return render('settings_general.html')
+
+

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
                                           SearchResultMatchData, VolumeData)
 
 clean_title_regex = compile(
-    r'((?<=annual)s|/|\-|–|\+|,|\.|\!|:|\bthe\s|\band\b|&|’|\'|\"|\bone[\-\s]?shot\b|\bhard[\-\s]?cover\b|\bomnibus\b|\btpb\b)'
+    r'((?<=annual)s|/|\-|–|\+|,|\.|\!|:|#|\bthe\s|\band\b|&|’|\'|\"|\bone[\-\s]?shot\b|\bhard[\-\s]?cover\b|\bomnibus\b|\btpb\b)'
 )
 
 

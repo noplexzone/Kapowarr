@@ -448,3 +448,90 @@
 #remote-mapping-list > tr > td {
 	border-top: 1px solid var(--border-color);
 }
+
+/*  */
+/* Blocklist */
+/*  */
+#blocklist-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-bottom: 1rem;
+}
+
+#clear-blocklist {
+	padding: .4rem .9rem;
+	border-radius: 4px;
+	background-color: var(--error-color);
+	color: #fff;
+	font-size: .9rem;
+}
+
+#blocklist-table {
+	min-width: 38rem;
+}
+
+#blocklist-table th {
+	width: unset;
+	padding-top: 0;
+}
+
+#blocklist-table .action-column {
+	width: 3.5rem;
+}
+
+#blocklist-table td {
+	border-top: 1px solid var(--border-color);
+	vertical-align: top;
+}
+
+#no-entries-row td {
+	border-top: 1px solid var(--border-color);
+	text-align: center;
+}
+
+.blocklist-title {
+	max-width: 28rem;
+	word-break: break-word;
+}
+
+.blocklist-subtitle {
+	display: block;
+	margin-top: .2rem;
+	font-size: .8rem;
+	color: var(--subtle-color, #888);
+}
+
+#blocklist-table button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 2rem;
+	height: 2rem;
+	padding: .35rem;
+	border-radius: 4px;
+	background-color: var(--error-color);
+}
+
+#blocklist-table button img {
+	width: 100%;
+}
+
+#blocklist-pagination {
+	display: flex;
+	align-items: center;
+	gap: .75rem;
+	margin-top: 1rem;
+}
+
+#blocklist-pagination button {
+	padding: .35rem .8rem;
+	border-radius: 4px;
+	background-color: var(--foreground-color);
+	color: var(--text-color);
+	border: 1px solid var(--border-color);
+}
+
+#blocklist-pagination button:disabled {
+	opacity: .4;
+	cursor: default;
+}

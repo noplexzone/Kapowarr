@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from asyncio import gather, run
+from asyncio import run
 from os import listdir
 from os.path import basename, join
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Tuple, Type, Union
@@ -123,7 +123,15 @@ class DownloadHandler(metaclass=Singleton):
         status_event = QueueStatusEvent(download)
 
         while True:
-            download.update_status()
+            try:
+                download.update_status()
+            except ClientNotWorking:
+                LOGGER.warning(
+                    'Lost connection to download client while monitoring NZB %d; retrying',
+                    download.id
+                )
+                download.sleep_event.wait(timeout=Constants.TORRENT_UPDATE_INTERVAL)
+                continue
             ws.emit(status_event)
 
             if download.state == DownloadState.CANCELED_STATE:
@@ -134,7 +142,7 @@ class DownloadHandler(metaclass=Singleton):
 
             elif download.state == DownloadState.FAILED_STATE:
                 download.remove_from_client(delete_files=True)
-                PostProcessor.failed(download)
+                PostProcessorNZB.failed(download)
                 self.queue.remove(download)
                 break
 
@@ -496,18 +504,8 @@ class DownloadHandler(metaclass=Singleton):
                 await gcp.load_data()
 
             except EnqueuingDownloadFailure as e:
-                add_to_blocklist(
-                    web_link=link,
-                    web_title=None,
-                    web_sub_title=None,
-                    download_link=None,
-                    source=None,
-                    volume_id=volume_id,
-                    issue_id=issue_id,
-                    reason=BlocklistReason.LINK_BROKEN
-                )
                 LOGGER.warning(
-                    f'Unable to extract download links from source; fail_reason="{e.reason.value}"'
+                    f'Unable to load GetComics page; fail_reason="{e.reason.value}"'
                 )
                 return [], e.reason
 
@@ -517,18 +515,6 @@ class DownloadHandler(metaclass=Singleton):
                 )
 
             except EnqueuingDownloadFailure as e:
-                if e.reason == EnqueuingDownloadFailureReason.NO_WORKING_LINKS:
-                    add_to_blocklist(
-                        web_link=link,
-                        web_title=gcp.title,
-                        web_sub_title=None,
-                        download_link=None,
-                        source=None,
-                        volume_id=volume_id,
-                        issue_id=issue_id,
-                        reason=BlocklistReason.NO_WORKING_LINKS
-                    )
-
                 LOGGER.warning(
                     f'Unable to extract download links from source; fail_reason="{e.reason.value}"'
                 )
@@ -577,10 +563,8 @@ class DownloadHandler(metaclass=Singleton):
         add_args: Iterable[Tuple[str, int, Union[int, None], bool]]
     ) -> None:
         async def add_wrapper():
-            await gather(
-                *(self.add(*entry)
-                for entry in add_args)
-            )
+            for entry in add_args:
+                await self.add(*entry)
 
         run(add_wrapper())
         return

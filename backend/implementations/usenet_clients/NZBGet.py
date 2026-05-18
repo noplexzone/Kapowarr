@@ -98,11 +98,14 @@ class NZBGet(BaseExternalClient):
         for entry in history:
             if entry.get('NZBID') == nzb_id:
                 status = entry.get('Status', '')
+                size = int(entry.get('FileSizeMB', 0) or 0) * 1024 * 1024
                 if 'SUCCESS' in status:
                     state = DownloadState.IMPORTING_STATE
-                else:
+                elif 'FAILURE' in status:
                     state = DownloadState.FAILED_STATE
-                size = int(entry.get('FileSizeMB', 0) or 0) * 1024 * 1024
+                else:
+                    # Unknown or transitional status — keep polling
+                    state = DownloadState.DOWNLOADING_STATE
                 return {'size': size, 'progress': 100.0, 'speed': 0.0, 'state': state}
 
         return None

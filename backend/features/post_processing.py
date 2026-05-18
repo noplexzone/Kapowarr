@@ -6,7 +6,7 @@ The post-download processing (a.k.a. post-processing or PP) of downloads.
 
 from __future__ import annotations
 
-from os.path import basename, exists, isfile, join, splitext
+from os.path import basename, exists, isdir, isfile, join, splitext
 from time import time
 from typing import TYPE_CHECKING, Dict
 
@@ -288,6 +288,39 @@ def set_file_properties(download: Download) -> None:
     return
 
 
+def move_nzb_to_dest(download: Download) -> None:
+    """Move completed NZB download files to the volume folder.
+
+    When the download landed in a job folder (SABnzbd's typical layout),
+    only comic files are extracted; RAR parts and other debris are deleted
+    with the folder.  Falls back to the standard ``move_to_dest`` when the
+    path is already a single file.
+    """
+    job_path = download.files[0]
+    if not exists(job_path):
+        return
+
+    if isdir(job_path):
+        commit()
+        extracted = extract_files_from_folder(job_path, download.volume_id)
+        if extracted:
+            download.files = extracted
+        return
+
+    move_to_dest(download)
+
+
+def rename_nzb_files(download: Download) -> None:
+    "Rename NZB downloaded files to the Kapowarr naming scheme, if enabled"
+    if not Settings().sv.rename_downloaded_files:
+        return
+    download.files = mass_rename(
+        download.volume_id,
+        filepath_filter=download.files,
+        process_individual_files=False
+    )
+
+
 # region Post-Processors
 class PostProcessor:
     actions_success = [
@@ -398,9 +431,17 @@ class PostProcessorNZB(PostProcessor):
     actions_success = [
         remove_from_queue,
         add_to_history,
-        move_to_dest,
+        move_nzb_to_dest,
         rename_with_proper_extension,
-        scan_volume_folder,
+        add_file_to_database,
+        rename_nzb_files,
         convert_file,
         set_file_properties
+    ]
+
+    actions_failed = [
+        remove_from_queue,
+        add_to_history,
+        delete_file,
+        add_dl_to_blocklist,
     ]

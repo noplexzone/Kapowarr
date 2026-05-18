@@ -93,6 +93,7 @@ main:has(#massedit-toggle:checked) #library-container {
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
+	position: relative;
 
 	text-decoration: none;
 	color: var(--dimmed-text-color);
@@ -109,6 +110,43 @@ main:has(#massedit-toggle:checked) #library-container {
 
 .list-img {
 	aspect-ratio: 2/3;
+}
+
+.list-search-btn {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 2rem;
+	height: 2rem;
+	padding: .35rem;
+	background-color: rgba(0, 0, 0, 0.6);
+	border: none;
+	border-radius: 0 0 0 4px;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 200ms ease-in, background-color 100ms linear;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.list-entry:hover .list-search-btn {
+	opacity: 1;
+}
+
+.list-search-btn:hover {
+	background-color: var(--accent-color);
+}
+
+.list-search-btn img {
+	width: 100%;
+	height: 100%;
+	filter: invert(1);
+}
+
+.list-search-btn:disabled {
+	opacity: .5;
+	cursor: default;
 }
 
 .list-entry > :where(h2, p) {

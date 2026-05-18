@@ -5,6 +5,7 @@ NZB indexer management and Newznab API search source.
 """
 
 from dataclasses import asdict, dataclass
+from re import compile as re_compile
 from typing import Any, Dict, List
 from xml.etree import ElementTree
 
@@ -21,6 +22,32 @@ from backend.internals.db import get_db
 
 # Newznab comic category codes (standard + alt)
 DEFAULT_CATEGORIES = '7030,7020'
+
+# Matches bare 4-digit year numbers (1900-2099) not immediately preceded by # or a digit
+_bare_year_re = re_compile(r'(?<![\d#])((?:19|20)\d{2})(?!\d)')
+
+# Matches publisher prefixes like "DC.Comics-" or "Dark.Horse.Comics." at start of dot-separated titles
+_publisher_prefix_re = re_compile(r'(?i)^(?:[A-Za-z0-9]+\.)+Comics[\-\.]')
+
+
+def _normalise_nzb_title(title: str) -> str:
+    """Prepare an NZB title for filename extraction.
+
+    NZB release names use dots as word separators and embed bare years without
+    parentheses, e.g. ``My.Series.001.2025.Group-Name``.  Without treatment
+    the year gets merged into the issue number (``1.2025``) or picked over it.
+    This function:
+    - Replaces dots with spaces when the title contains no spaces (dot-separated format).
+    - Strips publisher prefixes like "DC.Comics-" before dot expansion.
+    - Wraps bare year-like numbers (1900-2099) in parentheses so the standard
+      year detector in ``extract_filename_data`` recognises them and excludes
+      them from the issue-number search.
+    """
+    if ' ' not in title and title.count('.') >= 2:
+        title = _publisher_prefix_re.sub('', title)
+        title = title.replace('.', ' ')
+        title = _bare_year_re.sub(r'(\1)', title)
+    return title
 
 
 @dataclass
@@ -252,7 +279,7 @@ def _parse_newznab_xml(
             continue
 
         result: SearchResultData = {
-            **extract_filename_data(title, assume_volume_number=False, fix_year=True),
+            **extract_filename_data(_normalise_nzb_title(title), assume_volume_number=False, fix_year=True),
             'link': link,
             'display_title': title,
             'source': source_name,

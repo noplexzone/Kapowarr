@@ -71,7 +71,8 @@
 					<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" style="font-size: 14px;">
 						<path fill="currentColor" d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"></path>
 					</svg>
-					Volumes
+					Comics
+					<span class="nav-badge hidden" id="badge-volumes"></span>
 				</a>
 				<div class="sub-nav">
 					<a
@@ -81,7 +82,7 @@
 					<a
 						href="{{url_base}}/library-import"
 						class="{% if request.path == '/library-import' %}current-nav{% endif %}"
-					>Library Import</a>
+					>Library Import<span class="nav-badge hidden" id="badge-import"></span></a>
 					<a
 						href="{{url_base}}/discovery"
 						class="{% if request.path == '/discovery' %}current-nav{% endif %}"
@@ -89,13 +90,14 @@
 					<a
 						href="{{url_base}}/mismatch-review"
 						class="{% if request.path == '/mismatch-review' %}current-nav{% endif %}"
-					>Mismatch Review</a>
+					>Mismatch Review<span class="nav-badge hidden" id="badge-mismatch"></span></a>
 				</div>
 				<a href="{{url_base}}/activity/queue">
 					<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="font-size: 14px;">
 						<path fill="currentColor" d="M464 256A208 208 0 1 1 48 256a208 208 0 1 1 416 0zM0 256a256 256 0 1 0 512 0A256 256 0 1 0 0 256zM232 120V256c0 8 4 15.5 10.7 20l96 64c11 7.4 25.9 4.4 33.3-6.7s4.4-25.9-6.7-33.3L280 243.2V120c0-13.3-10.7-24-24-24s-24 10.7-24 24z"></path>
 					</svg>
 					Activity
+					<span class="nav-badge hidden" id="badge-queue"></span>
 				</a>
 				<div class="sub-nav">
 					<a

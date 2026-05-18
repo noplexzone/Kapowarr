@@ -159,26 +159,26 @@ noscript {
 	--volume-info-background-color: #080f1c;
 }
 
-/* Invincible — deep space blue with yellow accent */
+/* Invincible — blue/yellow like Mark Grayson's costume */
 :root.invincible-mode {
 	--accent-color: #f7d51d;
 	--success-color: #54db68;
 	--error-color: #db5461;
 
-	--background-color: #0a0a1a;
-	--foreground-color: #121230;
-	--hover-color: #1c1c45;
-	--border-color: #2a2a60;
-	--text-color: #f0f0ff;
-	--dimmed-text-color: #8080cc;
+	--background-color: #05152a;
+	--foreground-color: #0a2040;
+	--hover-color: #122e58;
+	--border-color: #1e4070;
+	--text-color: #e8f0ff;
+	--dimmed-text-color: #7090cc;
 
 	--header-background-color: #1e3a8a;
 	--header-color: #f7d51d;
-	--tool-bar-color: #8080cc;
+	--tool-bar-color: #7090cc;
 
-	--nav-background-color: #0d1a4a;
+	--nav-background-color: #020e25;
 	--nav-color: #f7d51d;
-	--volume-info-background-color: #0d1a4a;
+	--volume-info-background-color: #020e25;
 }
 
 /* Superman — light blue with red accent and blue nav */
@@ -201,6 +201,94 @@ noscript {
 	--nav-background-color: #0033a0;
 	--nav-color: #ffffff;
 	--volume-info-background-color: #0033a0;
+}
+
+/* Wonder Woman — deep navy with gold and crimson */
+:root.wonderwoman-mode {
+	--accent-color: #c9a227;
+	--success-color: #54db68;
+	--error-color: #cc3333;
+
+	--background-color: #0a0a1f;
+	--foreground-color: #14143a;
+	--hover-color: #1e1e55;
+	--border-color: #2a2a70;
+	--text-color: #f0f0ff;
+	--dimmed-text-color: #8888cc;
+
+	--header-background-color: #8b0000;
+	--header-color: #c9a227;
+	--tool-bar-color: #8888cc;
+
+	--nav-background-color: #060615;
+	--nav-color: #c9a227;
+	--volume-info-background-color: #060615;
+}
+
+/* The Flash — dark crimson with lightning yellow */
+:root.flash-mode {
+	--accent-color: #f5c518;
+	--success-color: #54db68;
+	--error-color: #ff4444;
+
+	--background-color: #1a0505;
+	--foreground-color: #2a0a0a;
+	--hover-color: #3d1010;
+	--border-color: #5a1a1a;
+	--text-color: #f5e8e8;
+	--dimmed-text-color: #cc8888;
+
+	--header-background-color: #cc0000;
+	--header-color: #f5c518;
+	--tool-bar-color: #cc8888;
+
+	--nav-background-color: #0f0303;
+	--nav-color: #f5c518;
+	--volume-info-background-color: #0f0303;
+}
+
+/* Green Lantern — near-black with vibrant green */
+:root.greenlantern-mode {
+	--accent-color: #00dd38;
+	--success-color: #54db68;
+	--error-color: #db5461;
+
+	--background-color: #050f05;
+	--foreground-color: #0a1f0a;
+	--hover-color: #0f3010;
+	--border-color: #1a4a1a;
+	--text-color: #e0ffe0;
+	--dimmed-text-color: #70c070;
+
+	--header-background-color: #003300;
+	--header-color: #00dd38;
+	--tool-bar-color: #70c070;
+
+	--nav-background-color: #020802;
+	--nav-color: #00dd38;
+	--volume-info-background-color: #020802;
+}
+
+/* Captain America — deep navy with red accent and silver */
+:root.captainamerica-mode {
+	--accent-color: #bf0a30;
+	--success-color: #54db68;
+	--error-color: #db5461;
+
+	--background-color: #0a0f1e;
+	--foreground-color: #121a30;
+	--hover-color: #1a2545;
+	--border-color: #2a3a5e;
+	--text-color: #e8ecf4;
+	--dimmed-text-color: #8899cc;
+
+	--header-background-color: #002147;
+	--header-color: #c0c0c0;
+	--tool-bar-color: #8899cc;
+
+	--nav-background-color: #060c18;
+	--nav-color: #e8ecf4;
+	--volume-info-background-color: #060c18;
 }
 
 /* Iron Man — dark charcoal with gold and red */
@@ -402,6 +490,22 @@ nav svg {
 	padding: 1rem;
 	color: var(--nav-color);
 	font-size: .8rem;
+}
+
+.nav-badge {
+	margin-left: auto;
+	min-width: 1.3rem;
+	height: 1.3rem;
+	padding: 0 .3rem;
+	border-radius: .65rem;
+	background-color: var(--accent-color);
+	color: var(--nav-background-color);
+	font-size: .68rem;
+	font-weight: 700;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
 }
 
 /*  */

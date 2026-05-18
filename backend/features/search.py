@@ -283,7 +283,9 @@ def manual_search(
 
 def auto_search(
     volume_id: int,
-    issue_id: Union[int, None] = None
+    issue_id: Union[int, None] = None,
+    _stats: Union[dict, None] = None,
+    _status_cb=None
 ) -> List[MatchedSearchResultData]:
     """Search for a volume or issue and automatically choose a result.
 
@@ -292,6 +294,10 @@ def auto_search(
         issue_id (Union[int, None], optional): The id of the issue to search for,
         in the case that you want to search for an issue instead of a volume.
             Defaults to None.
+        _stats (Union[dict, None], optional): Dict populated with search stats
+        (key 'total_found'). Used by callers to emit informative status messages.
+        _status_cb (optional): Callable(idx, total) called before each per-issue
+        fallback search so callers can emit progress notifications.
 
     Returns:
         List[MatchedSearchResultData]: List with chosen search results.
@@ -330,11 +336,10 @@ def auto_search(
         LOGGER.debug(f'Auto search results: {result}')
         return result
 
-    search_results = [
-        r
-        for r in manual_search(volume_id, issue_id)
-        if r['match']
-    ]
+    all_results = manual_search(volume_id, issue_id)
+    if _stats is not None:
+        _stats['total_found'] = _stats.get('total_found', 0) + len(all_results)
+    search_results = [r for r in all_results if r['match']]
 
     if issue_id is not None or volume_data.special_version not in (
         SpecialVersion.NORMAL,
@@ -403,8 +408,10 @@ def auto_search(
         )
     ]
 
-    for missing_issue in missing_issues:
-        chosen_downloads.extend(auto_search(volume_id, missing_issue[0]))
+    for idx, missing_issue in enumerate(missing_issues):
+        if _status_cb is not None:
+            _status_cb(idx, len(missing_issues))
+        chosen_downloads.extend(auto_search(volume_id, missing_issue[0], _stats))
 
     LOGGER.debug('Auto search results: %s', chosen_downloads)
     return chosen_downloads

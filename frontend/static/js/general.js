@@ -220,13 +220,59 @@ function handleTaskAdded(data) {
 		spinButton(task_string);
 };
 
+const notificationQueue = [];
+let notificationTimer = null;
+
+function _processNotificationQueue() {
+	if (notificationQueue.length === 0) {
+		notificationTimer = null;
+		setTaskMessage('');
+		return;
+	}
+	setTaskMessage(notificationQueue.shift());
+	notificationTimer = setTimeout(_processNotificationQueue, 4500);
+};
+
+function pushNotification(msg) {
+	notificationQueue.push(msg);
+	if (!notificationTimer) _processNotificationQueue();
+};
+
+function handleQueueAdded(data) {
+	pushNotification(`Queued: ${data.title}`);
+};
+
 function handleTaskRemoved(data) {
-	setTaskMessage('');
+	if (!notificationTimer)
+		setTaskMessage('');
 
 	const task_string = buildTaskString(data);
 	if (task_string in task_to_button)
 		unspinButton(task_string);
 };
+
+function setNavBadge(id, count, always_show = false) {
+	const el = document.querySelector(`#${id}`);
+	if (!el) return;
+	if (always_show || count > 0) {
+		el.innerText = count > 999 ? '999+' : count;
+		el.classList.remove('hidden');
+	} else {
+		el.classList.add('hidden');
+	}
+}
+
+function updateNavBadges(api_key) {
+	fetchAPI('/nav/badges', api_key)
+	.then(json => {
+		const b = json.result;
+		setNavBadge('badge-volumes', b.volumes, true);
+		setNavBadge('badge-import', b.library_import);
+		setNavBadge('badge-queue', b.queue);
+		setNavBadge('badge-mismatch', b.mismatch);
+	})
+	.catch(() => {});
+}
 
 function connectToWebSocket(api_key) {
 	const socket = io({
@@ -242,7 +288,13 @@ function connectToWebSocket(api_key) {
 
 	socket.on('task_added', handleTaskAdded);
 	socket.on('task_ended', handleTaskRemoved);
-	socket.on('task_status', data => setTaskMessage(data.message));
+	socket.on('task_status', data => {
+		if (data.notification)
+			pushNotification(data.message);
+		else if (!notificationTimer)
+			setTaskMessage(data.message);
+	});
+	socket.on('queue_added', handleQueueAdded);
 	socket.connect();
 	return socket;
 };
@@ -349,12 +401,15 @@ let socket;
 usingApiKey()
 .then(api_key => {
 	setTimeout(() => fillTaskQueue(api_key), 200);
+	updateNavBadges(api_key);
 	socket = connectToWebSocket(api_key);
+	socket.on('task_ended', () => setTimeout(() => updateNavBadges(api_key), 500));
 });
 
 const THEME_CLASSES = [
 	'dark-mode', 'batman-mode', 'spiderman-mode',
-	'invincible-mode', 'superman-mode', 'ironman-mode'
+	'invincible-mode', 'superman-mode', 'ironman-mode',
+	'wonderwoman-mode', 'flash-mode', 'greenlantern-mode', 'captainamerica-mode'
 ];
 
 function applyTheme(theme) {

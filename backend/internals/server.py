@@ -477,13 +477,16 @@ class TaskAddedEvent(WebSocketEvent):
 class TaskStatusEvent(WebSocketEvent):
     "Update on the status of the currently running task"
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, notification: bool = False) -> None:
         """Create the event.
 
         Args:
             message (str): The message representing the status of the task.
+            notification (bool): If True, the frontend treats this as a
+                persistent notification rather than a transient status update.
         """
         self.message = message
+        self.notification = notification
         return
 
     def get_type(self) -> WebSocketEventType:
@@ -491,7 +494,8 @@ class TaskStatusEvent(WebSocketEvent):
 
     def get_body(self) -> Dict[str, Any]:
         return {
-            "message": self.message
+            "message": self.message,
+            "notification": self.notification
         }
 
 

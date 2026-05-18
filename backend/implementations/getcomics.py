@@ -16,7 +16,8 @@ from bs4 import BeautifulSoup, Tag
 
 from backend.base.custom_exceptions import (DownloadLimitReached,
                                             EnqueuingDownloadFailure,
-                                            IssueNotFound, LinkBroken)
+                                            IssueNotFound, LinkBroken,
+                                            LinkRateLimited)
 from backend.base.definitions import (GC_DOWNLOAD_SOURCE_TERMS,
                                       BlocklistReason, Constants, Download,
                                       DownloadGroup,
@@ -508,6 +509,8 @@ async def __purify_link(
 
     async with AsyncSession() as session:
         r = await session.get(link)
+    if r.status == 429:
+        raise LinkRateLimited(link)
     if not r.ok:
         raise LinkBroken(link)
     url = str(r.real_url)
@@ -602,6 +605,10 @@ async def __purify_download_group(
             try:
                 pure_link, DownloadClass = await __purify_link(source, link)
 
+            except LinkRateLimited:
+                limit_reached = True
+                continue
+
             except LinkBroken:
                 # Link broken
                 add_to_blocklist(
@@ -617,7 +624,6 @@ async def __purify_download_group(
                 continue
 
             except ClientError:
-                # Page blocked by CF and FS not setup
                 continue
 
             try:

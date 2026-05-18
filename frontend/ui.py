@@ -76,6 +76,11 @@ def ui_discovery():
     return render('comic_discovery.html')
 
 
+@ui.route('/story-arcs', methods=methods)
+def ui_story_arcs():
+    return render('story_arcs.html')
+
+
 @ui.route('/volumes/<id>', methods=methods)
 def ui_view_volume(id):
     return render('view_volume.html')

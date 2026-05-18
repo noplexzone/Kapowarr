@@ -11,7 +11,7 @@
 {% endblock %}
 
 {% block pre_build_els %}
-{# Volume card (New / Popular tabs) #}
+{# Volume card (New Series tab) #}
 <div class="disc-card" data-cv-id="" data-already-added="">
 	<a class="disc-card-cover" href="" target="_blank" tabindex="-1">
 		<img src="" alt="" loading="lazy">
@@ -36,30 +36,6 @@
 		<p class="disc-card-date"></p>
 		<button class="disc-add-btn">+ Add Series</button>
 	</div>
-</div>
-{# Story Arc card #}
-<div class="disc-arc-card" data-arc-id="">
-	<a class="disc-card-cover" href="" target="_blank" tabindex="-1">
-		<img src="" alt="" loading="lazy">
-	</a>
-	<div class="disc-card-body">
-		<p class="disc-arc-card-name"></p>
-		<p class="disc-arc-card-deck"></p>
-		<p class="disc-arc-card-issues"></p>
-		<button class="disc-arc-view-btn">View Volumes</button>
-	</div>
-</div>
-{# Arc volume row (inside arc detail window) #}
-<div class="disc-arc-vol-row" data-cv-id="">
-	<a class="disc-arc-vol-thumb" href="" target="_blank">
-		<img src="" alt="" loading="lazy">
-		<span class="disc-in-library hidden">In Library</span>
-	</a>
-	<div class="disc-arc-vol-info">
-		<p class="disc-arc-vol-title"></p>
-		<p class="disc-arc-vol-meta"></p>
-	</div>
-	<button class="disc-add-btn disc-arc-vol-add">+ Add</button>
 </div>
 {% endblock pre_build_els %}
 
@@ -113,22 +89,6 @@
 	{% endset %}
 
 	{{ window(False, "disc-add-window", "Add to Library", add_content, add_submit, "disc-loading-window", False) }}
-
-	{% set arc_content %}
-		<div id="disc-arc-header">
-			<img id="disc-arc-cover" src="" alt="">
-			<div id="disc-arc-header-text">
-				<h3 id="disc-arc-name-display"></h3>
-				<p id="disc-arc-deck-display"></p>
-			</div>
-		</div>
-		<p id="disc-arc-load-msg">Loading volumes…</p>
-		<div id="disc-arc-vol-list"></div>
-	{% endset %}
-	{% set arc_submit %}
-		<button id="disc-arc-add-all" disabled>Add All Unowned</button>
-	{% endset %}
-	{{ window(True, "disc-arc-window", "Story Arc", arc_content, arc_submit) }}
 {% endblock windows %}
 
 {% block main %}
@@ -139,12 +99,6 @@
 			<div id="disc-tabs">
 				<button class="disc-tab active" data-tab="upcoming">Upcoming Releases</button>
 				<button class="disc-tab" data-tab="new">New Series</button>
-				<button class="disc-tab" data-tab="popular">Popular Series</button>
-				<button class="disc-tab" data-tab="arcs">Story Arcs</button>
-			</div>
-			<div id="disc-arc-search-bar" class="hidden">
-				<input type="text" id="disc-arc-input" placeholder="Search story arcs…">
-				<button id="disc-arc-search-btn">Search</button>
 			</div>
 		</div>
 
@@ -171,20 +125,6 @@
 
 		<div id="disc-grid-new" class="disc-grid hidden"></div>
 		<div id="disc-pagination-new" class="disc-pagination hidden">
-			<button class="disc-page-prev">← Prev</button>
-			<span class="disc-page-indicator"></span>
-			<button class="disc-page-next">Next →</button>
-		</div>
-
-		<div id="disc-grid-popular" class="disc-grid hidden"></div>
-		<div id="disc-pagination-popular" class="disc-pagination hidden">
-			<button class="disc-page-prev">← Prev</button>
-			<span class="disc-page-indicator"></span>
-			<button class="disc-page-next">Next →</button>
-		</div>
-
-		<div id="disc-grid-arcs" class="disc-grid hidden"></div>
-		<div id="disc-pagination-arcs" class="disc-pagination hidden">
 			<button class="disc-page-prev">← Prev</button>
 			<span class="disc-page-indicator"></span>
 			<button class="disc-page-next">Next →</button>

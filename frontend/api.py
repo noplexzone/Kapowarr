@@ -751,10 +751,6 @@ def api_discovery():
         results = run(cv.get_new_volumes())
         for r in results:
             del r['cover']
-    elif discovery_type == 'popular':
-        results = run(cv.get_popular_volumes())
-        for r in results:
-            del r['cover']
     elif discovery_type == 'story-arcs':
         query = extract_key(request, 'query', False) or ''
         results = run(cv.get_story_arcs(query=query))

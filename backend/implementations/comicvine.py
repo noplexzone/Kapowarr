@@ -35,8 +35,9 @@ _NON_ENGLISH_PUBLISHERS = frozenset({
     'media factory', 'kodansha', 'kodansha comics', 'kodansha usa',
     'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
     'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
-    'coamix', 'ascii media works', 'core magazine', 'nihon bungeisha',
-    'takeshobo', 'wani books', 'flex comix', 'ichijinsha', 'libre publishing',
+    'coamix', 'ascii media works', 'core magazine', 'coremagazine',
+    'nihon bungeisha', 'takeshobo', 'wani books', 'wani magazine',
+    'flex comix', 'ichijinsha', 'libre publishing',
     'ohzora publishing', 'shinshkan', 'tokuma shoten', 'houbunsha',
     'earth star entertainment', 'enterbrain', 'micro magazine',
     'leed publishing', 'east press', 'shonengahosha', 'shonen gahosha',
@@ -69,59 +70,6 @@ _NON_ENGLISH_PUBLISHERS = frozenset({
     'star comics', 'sergio bonelli editore', 'bonelli editore',
     'panini italia', 'panini comics italy',
 })
-# Keep the old name as an alias so nothing else in the file needs changing
-_MANGA_PUBLISHERS = _NON_ENGLISH_PUBLISHERS
-
-# Whitelist of known English-language comic publishers used by the Popular tab.
-# A whitelist is more reliable than a blacklist because CV has thousands of
-# foreign publishers that can never be fully enumerated.
-_ENGLISH_COMIC_PUBLISHERS = frozenset({
-    # Marvel
-    'marvel', 'marvel comics', 'marvel max', 'marvel knights', 'icon comics',
-    # DC
-    'dc comics', 'vertigo', 'wildstorm', 'dc black label', 'milestone media',
-    'helix', 'abc comics',
-    # Image
-    'image comics', 'image',
-    # Dark Horse
-    'dark horse comics', 'dark horse',
-    # IDW
-    'idw publishing', 'idw',
-    # BOOM!
-    'boom! studios', 'boom studios', 'kaboom!',
-    # Valiant
-    'valiant entertainment', 'valiant comics', 'valiant',
-    # Dynamite
-    'dynamite entertainment', 'dynamite',
-    # Archie
-    'archie comics', 'archie comic publications', 'archie',
-    # Modern independents
-    'aftershock comics', 'awa studios', 'titan comics',
-    'titan publishing group', 'vault comics', 'oni press',
-    'zenescope entertainment', 'avatar press', 'scout comics',
-    'fantagraphics books', 'fantagraphics', 'drawn & quarterly',
-    'top shelf productions', 'humanoids', 'humanoids publishing',
-    'first second', 'graphix', 'top cow productions', 'top cow',
-    # Historical US
-    'charlton comics', 'charlton',
-    'gold key', 'gold key comics',
-    'harvey comics', 'harvey',
-    'ec comics', 'atlas comics', 'atlas',
-    'first comics', 'eclipse comics',
-    'harris comics', 'chaos! comics', 'chaos comics',
-    'malibu comics', 'crossgen comics', 'crossgen',
-    'comico', 'now comics', 'innovation comics',
-    'dell comics', 'dell', 'western publishing',
-    'quality comics', 'fawcett comics', 'fawcett',
-    'american comics group', 'acg',
-    'prize comics', 'whitman',
-    # British English-language
-    'ipc magazines', 'ipc magazines ltd',
-    'fleetway', 'fleetway publications',
-    '2000 ad', 'rebellion',
-    'd.c. thomson', 'd.c. thomson & co', 'dc thomson',
-    'titan books',
-})
 
 _NON_ENGLISH_TITLE_KEYWORDS = frozenset({
     'manga action', 'young king', 'weekly shonen', 'shonen jump',
@@ -129,6 +77,13 @@ _NON_ENGLISH_TITLE_KEYWORDS = frozenset({
     'shonen magazine', 'weekly playboy', 'young magazine',
     'sho-comi', 'hana to yume', 'sunday comics', 'morning comics',
     'afternoon comics', 'evening comics', 'young animal',
+    # Adult manga anthology magazines — publisher lookup can silently fail for
+    # these on CV, so title keywords act as a second filter layer.
+    'hotmilk', 'bavel', 'comic exe', 'comic x-eros', 'comic kairakuten',
+    'megastore', 'comic megastore', 'comic unreal', 'comic anthurium',
+    'comic tenma', 'comic mujin', 'comic europa', 'comic penguin',
+    'comic lo', 'comic potpourri', 'girls forM', 'comic kuribayashi',
+    'e★everystar', 'e*everystar', 'comic valkyrie',
 })
 _MANGA_TITLE_KEYWORDS = _NON_ENGLISH_TITLE_KEYWORDS
 
@@ -777,12 +732,12 @@ class ComicVine:
 
     async def get_upcoming_releases(
         self,
-        days: int = 30
+        days: int = 60
     ) -> List[Dict[str, Any]]:
         """Get comic issues releasing in the next N days.
 
         Args:
-            days: How many days ahead to look. Defaults to 30.
+            days: How many days ahead to look. Defaults to 60.
 
         Returns:
             List of dicts with keys: issue_id, issue_number, title,
@@ -793,44 +748,66 @@ class ComicVine:
         today = date.today()
         end = today + timedelta(days=days)
 
+        issue_params = {
+            'field_list': 'id,name,issue_number,cover_date,image,site_detail_url,volume',
+            'filter': f'cover_date:{today}|{end}',
+            'sort': 'cover_date:asc',
+            'limit': 100,
+        }
         async with AsyncSession() as session:
-            data = await self.__call_api(
-                session,
-                '/issues',
-                {
-                    'field_list': 'id,name,issue_number,cover_date,image,'
-                                  'site_detail_url,volume',
-                    'filter': f'cover_date:{today}|{end}',
-                    'sort': 'cover_date:asc',
-                    'limit': 100,
-                },
-                {'results': []}
+            issue_pages = await gather(
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 0},   {'results': []}),
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 100}, {'results': []}),
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 200}, {'results': []}),
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 300}, {'results': []}),
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 400}, {'results': []}),
             )
+            results = [r for page in issue_pages for r in (page.get('results') or [])]
 
-            results = data.get('results') or []
+            def _has_non_ascii(s: str) -> bool:
+                return any(ord(c) > 127 for c in s)
 
-            # Batch-fetch volume publisher data to filter out manga publishers
-            vol_id_strs = list({
+            # Pre-filter using data already present in the issue stubs —
+            # no extra API call needed for these checks.
+            results = [
+                r for r in results
+                if not _has_non_ascii((r.get('volume') or {}).get('name') or '')
+                and not _has_non_ascii(r.get('name') or '')
+                and not any(
+                    k in ((r.get('volume') or {}).get('name') or '').lower()
+                    for k in _MANGA_TITLE_KEYWORDS
+                )
+            ]
+
+            # Batch-fetch publisher for every unique volume (all batches run
+            # concurrently). The original code only checked the first 100
+            # volume IDs, leaving the rest unfiltered.
+            unique_vol_ids = list({
                 str(r['volume']['id'])
                 for r in results
                 if (r.get('volume') or {}).get('id')
             })
-            manga_vol_ids: set = set()
-            if vol_id_strs:
-                vol_data = await self.__call_api(
-                    session,
-                    '/volumes',
-                    {
-                        'field_list': 'id,publisher',
-                        'filter': f'id:{"|".join(vol_id_strs[:100])}',
-                        'limit': 100,
-                    },
-                    {'results': []}
-                )
-                for v in (vol_data.get('results') or []):
-                    pub = ((v.get('publisher') or {}).get('name') or '').lower()
-                    if pub in _MANGA_PUBLISHERS:
-                        manga_vol_ids.add(int(v['id']))
+            non_english_vol_ids: set = set()
+            if unique_vol_ids:
+                vol_tasks = [
+                    self.__call_api(
+                        session, '/volumes',
+                        {
+                            'field_list': 'id,publisher',
+                            'filter': f'id:{"|".join(unique_vol_ids[i:i + 100])}',
+                            'limit': 100,
+                        },
+                        {'results': []}
+                    )
+                    for i in range(0, len(unique_vol_ids), 100)
+                ]
+                vol_pages = await gather(*vol_tasks)
+                for vol_page in vol_pages:
+                    for v in (vol_page.get('results') or []):
+                        pub = ((v.get('publisher') or {}).get('name') or '').lower()
+                        if (pub in _NON_ENGLISH_PUBLISHERS
+                                or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)):
+                            non_english_vol_ids.add(int(v['id']))
 
         vol_ids_int = tuple(
             int(r['volume']['id'])
@@ -850,10 +827,7 @@ class ComicVine:
         for item in results:
             vol = item.get('volume') or {}
             vol_cv_id = int(vol['id']) if vol.get('id') else None
-            if vol_cv_id and vol_cv_id in manga_vol_ids:
-                continue
-            vol_title = (vol.get('name') or '').lower()
-            if any(k in vol_title for k in _MANGA_TITLE_KEYWORDS):
+            if vol_cv_id and vol_cv_id in non_english_vol_ids:
                 continue
             upcoming.append({
                 'issue_id':     int(item['id']),
@@ -918,11 +892,16 @@ class ComicVine:
 
         def _is_non_english(v: Dict[str, Any]) -> bool:
             pub = ((v.get('publisher') or {}).get('name') or '').lower()
-            return pub in _NON_ENGLISH_PUBLISHERS
+            return pub in _NON_ENGLISH_PUBLISHERS or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
+
+        def _has_non_ascii_title(v: Dict[str, Any]) -> bool:
+            return any(ord(c) > 127 for c in (v.get('name') or ''))
 
         pre_filtered = [
             v for v in all_results
-            if _year(v) >= cutoff and not _is_non_english(v)
+            if _year(v) >= cutoff
+            and not _is_non_english(v)
+            and not _has_non_ascii_title(v)
         ]
         formatted = [self.__format_volume_output(v) for v in pre_filtered]
         filtered = [v for v in formatted if not v['translated']][:limit]
@@ -933,15 +912,20 @@ class ComicVine:
         self,
         limit: int = 100
     ) -> List[VolumeMetadata]:
-        """Get popular volumes by fetching the longest-running English series.
+        """Get popular volumes approximated by recently-updated English series.
 
-        Sorts by count_of_issues:desc so Batman, ASM, X-Men etc. rise to the top
-        instead of the old date_last_updated approach which was polluted by a
-        bulk 2008-06-06 update date shared by thousands of unrelated volumes.
+        CV's actual popularity metric (page views / user tracking) is not
+        exposed by the API. date_last_updated:desc surfaces volumes that fans
+        are actively editing — which correlates strongly with ongoing/popular
+        series. Anthology-style titles (Four Color, etc.) are excluded since
+        their inflated issue counts skew results.
         """
+        _ANTHOLOGY_KEYWORDS = frozenset({
+            'four color', 'giant-size', 'treasury edition',
+            'annual', 'special edition',
+        })
         params = {
             'field_list': self.volume_field_list,
-            'sort': 'count_of_issues:desc',
             'limit': 100,
         }
         async with AsyncSession() as session:
@@ -960,14 +944,25 @@ class ComicVine:
             + (page5.get('results') or [])
         )
 
-        def _is_english_publisher(v: Dict[str, Any]) -> bool:
+        def _is_non_english(v: Dict[str, Any]) -> bool:
             pub = ((v.get('publisher') or {}).get('name') or '').lower()
-            return pub in _ENGLISH_COMIC_PUBLISHERS
+            return pub in _NON_ENGLISH_PUBLISHERS or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
 
-        pre_filtered = [v for v in all_results if _is_english_publisher(v)]
+        def _has_non_ascii_title(v: Dict[str, Any]) -> bool:
+            return any(ord(c) > 127 for c in (v.get('name') or ''))
+
+        def _is_anthology(v: Dict[str, Any]) -> bool:
+            name = (v.get('name') or '').lower()
+            return any(k in name for k in _ANTHOLOGY_KEYWORDS)
+
+        pre_filtered = [
+            v for v in all_results
+            if not _is_non_english(v)
+            and not _has_non_ascii_title(v)
+            and not _is_anthology(v)
+        ]
         formatted = [self.__format_volume_output(v) for v in pre_filtered]
-        filtered = [v for v in formatted if not v['translated'] and v['issue_count'] >= 5]
-        filtered.sort(key=lambda v: v['issue_count'], reverse=True)
+        filtered = [v for v in formatted if not v['translated'] and v['issue_count'] >= 3]
         self._mark_already_added(filtered[:limit])
         return filtered[:limit]
 
@@ -1040,19 +1035,36 @@ class ComicVine:
             )
 
         arc = data.get('results') or {}
-        issues = arc.get('issues') or []
+        # Issue stubs returned by the story-arc endpoint only carry id/name/
+        # api_detail_url — no volume field. Batch-fetch via /issues to resolve
+        # each stub's parent volume.
+        issue_stubs = arc.get('issues') or []
+        issue_ids = [int(s['id']) for s in issue_stubs if s.get('id')]
 
-        # Extract unique volume IDs preserving arc order
         seen: set = set()
         vol_ids: List[int] = []
-        for issue in issues:
-            vid_raw = (issue.get('volume') or {}).get('id')
-            if vid_raw is None:
-                continue
-            vid = int(vid_raw)
-            if vid not in seen:
-                seen.add(vid)
-                vol_ids.append(vid)
+        if issue_ids:
+            async with AsyncSession() as session:
+                for i in range(0, min(len(issue_ids), 500), 100):
+                    batch = issue_ids[i:i + 100]
+                    resp = await self.__call_api(
+                        session,
+                        '/issues',
+                        {
+                            'field_list': 'id,volume',
+                            'filter': f'id:{"|".join(str(v) for v in batch)}',
+                            'limit': 100,
+                        },
+                        {'results': []}
+                    )
+                    for issue in (resp.get('results') or []):
+                        vid_raw = (issue.get('volume') or {}).get('id')
+                        if vid_raw is None:
+                            continue
+                        vid = int(vid_raw)
+                        if vid not in seen:
+                            seen.add(vid)
+                            vol_ids.append(vid)
 
         arc_meta: Dict[str, Any] = {
             'id': arc_id,
@@ -1093,7 +1105,7 @@ class ComicVine:
 
         def _is_non_english(v: Any) -> bool:
             pub = (v.get('publisher') or '').lower()
-            return pub in _NON_ENGLISH_PUBLISHERS
+            return pub in _NON_ENGLISH_PUBLISHERS or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
 
         filtered_vols = [
             v for v in raw_volumes

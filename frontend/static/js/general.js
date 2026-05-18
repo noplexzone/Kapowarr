@@ -230,7 +230,7 @@ function _processNotificationQueue() {
 		return;
 	}
 	setTaskMessage(notificationQueue.shift());
-	notificationTimer = setTimeout(_processNotificationQueue, 4500);
+	notificationTimer = setTimeout(_processNotificationQueue, 2000);
 };
 
 function pushNotification(msg) {
@@ -255,7 +255,7 @@ function setNavBadge(id, count, always_show = false) {
 	const el = document.querySelector(`#${id}`);
 	if (!el) return;
 	if (always_show || count > 0) {
-		el.innerText = count > 999 ? '999+' : count;
+		el.innerText = count;
 		el.classList.remove('hidden');
 	} else {
 		el.classList.add('hidden');

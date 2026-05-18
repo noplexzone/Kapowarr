@@ -13,7 +13,7 @@ from threading import Thread, Timer
 from typing import (TYPE_CHECKING, Any, Callable, Dict,
                     Iterable, List, Mapping, Union)
 
-from flask import Flask, render_template, request
+from flask import Flask, make_response, render_template, request
 from flask.json.provider import DefaultJSONProvider
 from flask_socketio import SocketIO
 from socketio import PubSubManager
@@ -124,6 +124,20 @@ class Server(metaclass=Singleton):
                 return False
 
             return True
+
+        # CORS — allows the browser extension (and other local clients) to call
+        # the API from a different origin (e.g. moz-extension://, comicvine.gamespot.com).
+        @app.after_request
+        def add_cors_headers(response):
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            return response
+
+        @app.route('/<path:path>', methods=['OPTIONS'])
+        @app.route('/', methods=['OPTIONS'])
+        def handle_options(**_):
+            return make_response(), 200
 
         # Add error handlers
         @app.errorhandler(400)

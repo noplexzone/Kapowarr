@@ -88,6 +88,10 @@
 						class="{% if request.path == '/discovery' %}current-nav{% endif %}"
 					>Discovery</a>
 					<a
+						href="{{url_base}}/story-arcs"
+						class="{% if request.path == '/story-arcs' %}current-nav{% endif %}"
+					>Story Arcs</a>
+					<a
 						href="{{url_base}}/mismatch-review"
 						class="{% if request.path == '/mismatch-review' %}current-nav{% endif %}"
 					>Mismatch Review<span class="nav-badge hidden" id="badge-mismatch"></span></a>

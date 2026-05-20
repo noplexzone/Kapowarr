@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% from "base.html" import window, loading_window %}
+{% block title %}Manga Discovery{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/window.css') }}">
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/comic_discovery.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/window.js') }}" defer></script>
+	<script src="{{ url_for('static', filename='js/comic_discovery.js') }}" defer></script>
+{% endblock %}
+
+{% block pre_build_els %}
+{# Volume card (New Series tab) #}
+<div class="disc-card" data-cv-id="" data-already-added="">
+	<a class="disc-card-cover" href="" target="_blank" tabindex="-1">
+		<img src="" alt="" loading="lazy">
+		<span class="disc-in-library hidden">In Library</span>
+	</a>
+	<div class="disc-card-body">
+		<p class="disc-card-title"></p>
+		<p class="disc-card-meta"></p>
+		<p class="disc-card-issues"></p>
+		<button class="disc-add-btn">+ Add to Library</button>
+	</div>
+</div>
+{# Issue card (Upcoming tab) #}
+<div class="disc-issue-card" data-volume-cv-id="" data-already-added="">
+	<a class="disc-card-cover" href="" target="_blank" tabindex="-1">
+		<img src="" alt="" loading="lazy">
+		<span class="disc-in-library hidden">In Library</span>
+	</a>
+	<div class="disc-card-body">
+		<p class="disc-card-title"></p>
+		<p class="disc-card-issue-num"></p>
+		<p class="disc-card-date"></p>
+		<button class="disc-add-btn">+ Add Series</button>
+	</div>
+</div>
+{% endblock pre_build_els %}
+
+{% block windows %}
+	{{ loading_window("disc-loading-window", "Loading...") }}
+
+	{% set add_content %}
+		<img src="" id="disc-add-cover" alt="">
+		<p id="disc-add-title"></p>
+		<form id="disc-add-form">
+			<input type="hidden" id="disc-cv-id-input">
+			<table class="fold-table">
+				<tr>
+					<th><label for="disc-rootfolder-input">Root Folder</label></th>
+					<td>
+						<select id="disc-rootfolder-input"></select>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="disc-monitor-input">Monitor Volume</label></th>
+					<td>
+						<select id="disc-monitor-input">
+							<option value="true" selected>Yes</option>
+							<option value="false">No</option>
+						</select>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="disc-scheme-input">Monitoring Scheme</label></th>
+					<td>
+						<select id="disc-scheme-input">
+							<option value="all" selected>All</option>
+							<option value="missing">Missing</option>
+							<option value="none">None</option>
+						</select>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="disc-autosearch-input">Auto Search</label></th>
+					<td>
+						<input type="checkbox" id="disc-autosearch-input" checked>
+						<p>Search for issues immediately after adding</p>
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set add_submit %}
+		<button id="disc-add-submit" type="submit" form="disc-add-form">Add Volume</button>
+	{% endset %}
+
+	{{ window(False, "disc-add-window", "Add to Library", add_content, add_submit, "disc-loading-window", False) }}
+{% endblock windows %}
+
+{% block main %}
+<main>
+	<div>
+		<div id="disc-header">
+			<h1>Discover Manga</h1>
+			<div id="disc-tabs">
+				<button class="disc-tab active" data-tab="upcoming">Upcoming Releases</button>
+				<button class="disc-tab" data-tab="new">New Series</button>
+			</div>
+		</div>
+
+		<div id="disc-no-cv" class="hidden">
+			<p>A ComicVine API key is required for discovery.</p>
+			<a href="{{url_base}}/settings/general#cv-input">Go to Settings</a>
+		</div>
+
+		<div id="disc-error" class="hidden">
+			<p>Failed to load results. Check your ComicVine API key and try again.</p>
+			<button id="disc-retry-btn">Retry</button>
+		</div>
+
+		<div id="disc-empty" class="hidden">
+			<p>No results found.</p>
+		</div>
+
+		<div id="disc-grid-upcoming" class="disc-grid hidden"></div>
+		<div id="disc-pagination-upcoming" class="disc-pagination hidden">
+			<button class="disc-page-prev">← Prev</button>
+			<span class="disc-page-indicator"></span>
+			<button class="disc-page-next">Next →</button>
+		</div>
+
+		<div id="disc-grid-new" class="disc-grid hidden"></div>
+		<div id="disc-pagination-new" class="disc-pagination hidden">
+			<button class="disc-page-prev">← Prev</button>
+			<span class="disc-page-indicator"></span>
+			<button class="disc-page-next">Next →</button>
+		</div>
+	</div>
+</main>
+{% endblock %}

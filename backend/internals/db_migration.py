@@ -1207,3 +1207,39 @@ def _migrate_add_client_category():
         ALTER TABLE external_download_clients ADD COLUMN category VARCHAR(255);
     """)
     return
+
+
+@DatabaseMigrationHandler.register_handler(47)
+def _migrate_add_root_folder_section():
+    get_db().execute(
+        "ALTER TABLE root_folders ADD COLUMN section VARCHAR(10) NOT NULL DEFAULT 'comic';"
+    )
+    return
+
+
+@DatabaseMigrationHandler.register_handler(48)
+def _migrate_add_task_history_timestamps():
+    get_db().executescript("""
+        ALTER TABLE task_history ADD COLUMN queued_at INTEGER;
+        ALTER TABLE task_history ADD COLUMN started_at INTEGER;
+        ALTER TABLE task_history ADD COLUMN volume_id INTEGER;
+        ALTER TABLE task_history ADD COLUMN issue_id INTEGER;
+    """)
+    return
+
+
+@DatabaseMigrationHandler.register_handler(49)
+def _migrate_add_task_history_details():
+    get_db().executescript("""
+        ALTER TABLE task_history ADD COLUMN details TEXT;
+    """)
+    return
+
+
+@DatabaseMigrationHandler.register_handler(50)
+def _migrate_add_download_history_task_link():
+    get_db().executescript("""
+        ALTER TABLE download_history ADD COLUMN task_history_id INTEGER;
+        ALTER TABLE download_history ADD COLUMN failure_reason TEXT;
+    """)
+    return

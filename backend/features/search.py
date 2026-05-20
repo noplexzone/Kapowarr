@@ -337,9 +337,26 @@ def auto_search(
         return result
 
     all_results = manual_search(volume_id, issue_id)
+    search_results = [r for r in all_results if r['match']]
     if _stats is not None:
         _stats['total_found'] = _stats.get('total_found', 0) + len(all_results)
-    search_results = [r for r in all_results if r['match']]
+        if issue_id is not None and 'per_issue' in _stats:
+            chosen = search_results[0] if search_results else None
+            try:
+                from backend.implementations.naming import generate_issue_name
+                filename = generate_issue_name(
+                    volume_data, issue_data.calculated_issue_number
+                )
+            except Exception:
+                filename = ''
+            _stats['per_issue'].append({
+                'issue_number': issue_data.issue_number,
+                'results_found': len(all_results),
+                'matched': chosen is not None,
+                'display_title': chosen.get('display_title', '') if chosen else '',
+                'source': chosen.get('source', '') if chosen else '',
+                'filename': filename,
+            })
 
     if issue_id is not None or volume_data.special_version not in (
         SpecialVersion.NORMAL,

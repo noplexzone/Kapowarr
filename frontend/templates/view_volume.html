@@ -52,12 +52,12 @@
 		<td>+</td>
 		<td></td>
 	</tr>
-	<tr class="manage-entry" data-manage_id="">
+	<tr class="manage-entry" data-manage_id="" data-file_id="">
 		<td>
 			<input type="checkbox">
 		</td>
 		<td class="mi-filepath"></td>
-		<td></td>
+		<td class="mi-matched"></td>
 	</tr>
 	<tr class="match-entry" data-issue_id="">
 		<td>
@@ -291,6 +291,7 @@
 	{% endset %}
 	{% set manage_issues_submit %}
 		<button id="show-issue-match" type="button">Set Match</button>
+		<button id="delete-manage-files" type="button">Delete</button>
 		<button id="submit-manage-issues" type="submit">Save</button>
 	{% endset %}
 	{{ window(True, "manage-window", "Manage Issues", manage_issues_content, manage_issues_submit) }}

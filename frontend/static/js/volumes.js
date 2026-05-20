@@ -221,7 +221,8 @@ function fetchLibrary(api_key) {
 
 	const params = {
 		sort: library_els.view_options.sort.value,
-		filter: library_els.view_options.filter.value
+		filter: library_els.view_options.filter.value,
+		section: current_section
 	};
 	const query = library_els.search.input.value;
 	if (query !== '')
@@ -248,7 +249,7 @@ function clearSearch(api_key) {
 };
 
 function fetchStats(api_key) {
-	fetchAPI('/volumes/stats', api_key)
+	fetchAPI('/volumes/stats', api_key, {section: current_section})
 	.then(json => {
 		library_els.stats.volume_count.innerText = json.result.volumes;
 		library_els.stats.volume_monitored_count.innerText = json.result.monitored;
@@ -286,6 +287,7 @@ function runAction(api_key, action, args={}) {
 
 // code run on load
 
+const current_section = window.location.pathname.startsWith(url_base + '/manga') ? 'manga' : 'comic';
 const lib_options = getLocalStorage('lib_sorting', 'lib_view', 'lib_filter');
 library_els.view_options.sort.value = lib_options.lib_sorting;
 library_els.view_options.view.value = lib_options.lib_view;

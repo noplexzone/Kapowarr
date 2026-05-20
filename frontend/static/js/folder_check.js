@@ -3,6 +3,8 @@ window.onerror = (msg, src, line, col, err) => {
 	if (summary) summary.innerText = `JS error at ${src}:${line} — ${msg}`;
 };
 
+const fc_section = window.location.pathname.startsWith(url_base + '/manga') ? 'manga' : 'comic';
+
 let currentFixVolumeId = null;
 let allVolumes = [];
 
@@ -259,7 +261,7 @@ function searchFixMatch(api_key) {
 	fcsResults = [];
 	fcsSortState = { key: null, dir: 1 };
 
-	fetchAPI('/volumes/search', api_key, {query})
+	fetchAPI('/volumes/search', api_key, {query, section: fc_section})
 	.then(json => {
 		if (!json.result.length) {
 			msgEl.innerText = 'No results found.';
@@ -364,7 +366,7 @@ async function autoSuggest(api_key) {
 		const query = folderBase.replace(/\s*\(\d{4}\)\s*$/, '').trim();
 
 		try {
-			const json = await fetchAPI('/volumes/search', api_key, {query});
+			const json = await fetchAPI('/volumes/search', api_key, {query, section: fc_section});
 			const top = json.result[0] ?? null;
 			suggestions.set(v.id, top ? {
 				cvId: top.comicvine_id,
@@ -449,7 +451,7 @@ async function applyAccepted(api_key) {
 	FCEls.apply_accepted_btn.disabled = false;
 	FCEls.autosuggest_btn.disabled = false;
 
-	fetchAPI('/volumes', api_key).then(json => {
+	fetchAPI('/volumes', api_key, {section: fc_section}).then(json => {
 		allVolumes = json.result;
 		renderTable(FCEls.filter.value);
 		const remaining = allVolumes.filter(v => isMismatch(v.folder, v.title)).length;
@@ -467,7 +469,7 @@ usingApiKey()
 	FCEls.summary.innerText = 'Fetching volumes…';
 	hide([FCEls.no_results, FCEls.table_container], [FCEls.loading]);
 
-	fetchAPI('/volumes', api_key)
+	fetchAPI('/volumes', api_key, {section: fc_section})
 	.then(json => {
 		allVolumes = json.result;
 		hide([FCEls.loading]);

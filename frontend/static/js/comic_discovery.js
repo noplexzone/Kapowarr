@@ -38,6 +38,7 @@ const tab_pages  = { upcoming: 0, new: 0 };
 const loaded     = { upcoming: false, new: false };
 let current_tab = 'upcoming';
 let cached_api_key = null;
+const disc_section = window.location.pathname.startsWith(url_base + '/manga') ? 'manga' : 'comic';
 
 //
 // Root folders
@@ -46,12 +47,14 @@ function fillRootFolders(api_key) {
 	fetchAPI('/rootfolder', api_key)
 	.then(json => {
 		DiscEls.window.root_folder.innerHTML = '';
-		json.result.forEach(folder => {
-			const opt = document.createElement('option');
-			opt.value = folder.id;
-			opt.innerText = folder.folder;
-			DiscEls.window.root_folder.appendChild(opt);
-		});
+		json.result
+			.filter(f => f.section === disc_section)
+			.forEach(folder => {
+				const opt = document.createElement('option');
+				opt.value = folder.id;
+				opt.innerText = folder.folder;
+				DiscEls.window.root_folder.appendChild(opt);
+			});
 	});
 }
 
@@ -184,7 +187,7 @@ function renderPage(tab) {
 //
 function prefetchTab(tab, api_key) {
 	if (loaded[tab]) return;
-	fetchAPI('/discovery', api_key, { type: tab })
+	fetchAPI('/discovery', api_key, { type: tab, section: disc_section })
 	.then(json => {
 		if (loaded[tab]) return;
 		loaded[tab] = true;
@@ -214,7 +217,7 @@ function loadTab(tab, api_key) {
 	hide([DiscEls.msgs.error, DiscEls.msgs.empty, DiscEls.msgs.no_cv, ...allGrids, ...allPgns]);
 	showWindow('disc-loading-window');
 
-	fetchAPI('/discovery', api_key, { type: tab })
+	fetchAPI('/discovery', api_key, { type: tab, section: disc_section })
 	.then(json => {
 		loaded[tab] = true;
 		tab_results[tab] = json.result;

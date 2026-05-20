@@ -7,7 +7,8 @@ Background tasks and their handling
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from threading import Thread, Timer
+from json import dumps as json_dumps, loads as json_loads
+from threading import Lock, Thread, Timer
 from time import sleep, time
 from typing import Dict, List, Tuple, Type, Union
 
@@ -20,7 +21,7 @@ from backend.base.logging import LOGGER
 from backend.features.download_queue import DownloadHandler
 from backend.features.search import auto_search
 from backend.implementations.conversion import mass_convert
-from backend.implementations.naming import mass_rename
+from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume, refresh_and_scan
 from backend.internals.db import close_db, get_db
 from backend.internals.server import (TaskAddedEvent, TaskEndedEvent,
@@ -101,15 +102,18 @@ class AutoSearchIssue(Task):
         self.message = f'Searching for {volume_title} #{issue_number}'
         ws.emit(TaskStatusEvent(self.message, notification=True))
 
-        stats: dict = {}
+        stats: dict = {'total_found': 0, 'per_issue': []}
         results = auto_search(self._volume_id, self._issue_id, _stats=stats)
+        # Per-issue search: download info is embedded in per_issue entries; no downloads array needed
+        self.details = {'per_issue': stats['per_issue'], 'downloads': []}
         if results:
             ws.emit(TaskStatusEvent(
                 f'Found download for {volume_title} #{issue_number}',
                 notification=True
             ))
             return [
-                (result['link'], self._volume_id, self._issue_id)
+                (result['link'], self._volume_id, self._issue_id,
+                 result.get('display_title', ''))
                 for result in results
             ]
         found = stats.get('total_found', 0)
@@ -268,7 +272,8 @@ class AutoSearchVolume(Task):
 
     def run(self) -> List[Tuple[str, int, Union[int, None]]]:
         ws = WebSocket()
-        volume_title = Volume(self._volume_id).vd.title
+        vol = Volume(self._volume_id)
+        volume_title = vol.vd.title
         self.message = f'Searching for {volume_title}'
         ws.emit(TaskStatusEvent(self.message, notification=True))
 
@@ -276,18 +281,52 @@ class AutoSearchVolume(Task):
             self.message = f'Searching issue {idx + 1}/{total} for {volume_title}'
             ws.emit(TaskStatusEvent(self.message))
 
-        stats: dict = {}
+        stats: dict = {'total_found': 0, 'per_issue': []}
         results = auto_search(self._volume_id, _stats=stats, _status_cb=_progress)
+        # Volume-level (pack) downloads have no per_issue entry; per-issue ones do.
+        matched_per_issue = sum(1 for e in stats['per_issue'] if e.get('matched'))
+        n_volume_level = max(0, len(results) - matched_per_issue)
+        volume_data = vol.get_data()
+
+        def _dl_entry(r: dict) -> dict:
+            issue_num = r.get('issue_number')
+            filename = ''
+            if isinstance(issue_num, float):
+                try:
+                    filename = generate_issue_name(volume_data, issue_num)
+                except Exception:
+                    pass
+            if not filename:
+                filename = r.get('display_title', '')
+            return {
+                'display_title': r.get('display_title', ''),
+                'source': r.get('source', ''),
+                'issue_number': issue_num,
+                'filename': filename,
+            }
+
+        self.details = {
+            'per_issue': stats['per_issue'],
+            'downloads': [_dl_entry(r) for r in results[:n_volume_level]],
+        }
         if results:
             n = len(results)
             ws.emit(TaskStatusEvent(
                 f'Found {n} download{"s" if n != 1 else ""} for {volume_title}',
                 notification=True
             ))
-            return [
-                (result['link'], self._volume_id, None)
-                for result in results
-            ]
+            downloads = []
+            for result in results:
+                issue_id = None
+                issue_num = result.get('issue_number')
+                if isinstance(issue_num, float):
+                    try:
+                        issue_id = vol.get_issue_from_number(issue_num).id
+                    except Exception:
+                        pass
+                downloads.append((result['link'], self._volume_id, issue_id,
+                                   result.get('display_title', '')))
+            return downloads
         found = stats.get('total_found', 0)
         if found > 0:
             n = f'{found} result{"s" if found != 1 else ""}'
@@ -650,6 +689,153 @@ task_library: Dict[str, Type[Task]] = {
 }
 
 
+class _DownloadResultTask:
+    """Minimal task-like object used to emit a TaskEndedEvent after a
+    download batch finalises (so the frontend refreshes task history)."""
+    action = 'download_result'
+
+    def __init__(self, volume_id: Union[int, None]) -> None:
+        self.volume_id = volume_id
+        self.issue_id = None
+
+
+class DownloadBatch:
+    """Tracks downloads queued by a single auto-search task.
+
+    When every expected download has completed (success or failure) the batch
+    writes a ``download_result`` row to ``task_history`` and emits a socket
+    event so the frontend refreshes.
+    """
+
+    _registry: Dict[int, 'DownloadBatch'] = {}
+    _registry_lock: Lock = Lock()
+
+    def __init__(
+        self,
+        task_history_id: int,
+        expected: int,
+        volume_id: Union[int, None],
+        display_title: str,
+        update_existing: bool = False,
+    ) -> None:
+        self.task_history_id = task_history_id
+        self.expected = expected
+        self.volume_id = volume_id
+        self.display_title = display_title
+        self.update_existing = update_existing
+        self.results: List[dict] = []
+        self._lock: Lock = Lock()
+
+    @classmethod
+    def register(
+        cls,
+        task_history_id: int,
+        expected: int,
+        volume_id: Union[int, None],
+        display_title: str,
+        update_existing: bool = False,
+    ) -> None:
+        if expected <= 0:
+            return
+        with cls._registry_lock:
+            cls._registry[task_history_id] = cls(
+                task_history_id, expected, volume_id, display_title, update_existing
+            )
+
+    @classmethod
+    def record(
+        cls,
+        task_history_id: int,
+        web_title: str,
+        success: bool,
+        failure_reason: str = '',
+        covered_issues: 'Union[float, Tuple[float, float], None]' = None,
+    ) -> None:
+        with cls._registry_lock:
+            batch = cls._registry.get(task_history_id)
+        if not batch:
+            return
+        finalize = False
+        with batch._lock:
+            batch.results.append({
+                'title': web_title,
+                'success': success,
+                'failure_reason': failure_reason,
+                '_covered_issues': covered_issues,  # internal; stripped from JSON
+            })
+            if len(batch.results) >= batch.expected:
+                finalize = True
+        if finalize:
+            with cls._registry_lock:
+                cls._registry.pop(task_history_id, None)
+            batch._finalize()
+
+    def _finalize(self) -> None:
+        results_for_json = [
+            {k: v for k, v in r.items() if not k.startswith('_')}
+            for r in self.results
+        ]
+        details = json_dumps({'results': results_for_json})
+        try:
+            db = get_db()
+            if self.update_existing:
+                db.execute(
+                    "UPDATE task_history SET details=?, run_at=? WHERE rowid=?",
+                    (details, round(time()), self.task_history_id),
+                ).connection.commit()
+            else:
+                db.execute(
+                    """INSERT INTO task_history
+                       (task_name, display_title, run_at, volume_id, details)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    ('download_result', self.display_title,
+                     round(time()), self.volume_id, details),
+                ).connection.commit()
+            WebSocket().emit(TaskEndedEvent(_DownloadResultTask(self.volume_id)))
+        except Exception:
+            LOGGER.exception(
+                'Failed to write download_result for task_history_id=%d',
+                self.task_history_id,
+            )
+        self._queue_fallback_searches()
+
+    def _queue_fallback_searches(self) -> None:
+        """Queue AutoSearchIssue tasks for open issues whose pack download failed."""
+        try:
+            db = get_db()
+            handler = TaskHandler()
+            for r in self.results:
+                if r['success']:
+                    continue
+                covered = r.get('_covered_issues')
+                if not isinstance(covered, tuple):
+                    continue
+                n_start, n_end = covered
+                rows = db.execute(
+                    """SELECT i.id
+                       FROM issues i
+                       LEFT JOIN issues_files if ON i.id = if.issue_id
+                       WHERE if.file_id IS NULL
+                         AND i.volume_id = ?
+                         AND i.monitored = 1
+                         AND i.calculated_issue_number >= ?
+                         AND i.calculated_issue_number <= ?""",
+                    (self.volume_id, n_start, n_end),
+                ).fetchall()
+                for row in rows:
+                    handler.add(AutoSearchIssue(self.volume_id, row['id']))
+                LOGGER.info(
+                    'Queued %d fallback AutoSearchIssue task(s) for volume %d '
+                    'after pack failure covering issues %.1f–%.1f',
+                    len(rows), self.volume_id, n_start, n_end,
+                )
+        except Exception:
+            LOGGER.exception(
+                'Failed to queue fallback searches for task_history_id=%d',
+                self.task_history_id,
+            )
+
+
 class TaskHandler(metaclass=Singleton):
     "Note: Singleton"
 
@@ -677,17 +863,70 @@ class TaskHandler(metaclass=Singleton):
                 cursor = get_db()
 
                 # Note in history
+                queued_at = None
+                started_at = None
+                for entry in self.queue:
+                    if entry['task'] is task:
+                        queued_at = entry.get('queued_at')
+                        started_at = entry.get('started_at')
+                        break
+                details = getattr(task, 'details', None)
+                details_json = json_dumps(details) if details else None
                 cursor.execute(
-                    "INSERT INTO task_history VALUES (?,?,?);",
-                    (task.action, task.display_title, round(time()))
+                    """INSERT INTO task_history
+                       (task_name, display_title, run_at, queued_at, started_at, volume_id, issue_id, details)
+                       VALUES (?,?,?,?,?,?,?,?);""",
+                    (task.action, task.display_title, round(time()),
+                     queued_at, started_at, task.volume_id, task.issue_id, details_json)
                 )
+
+                task_history_id: int = cursor.execute(
+                    "SELECT last_insert_rowid()"
+                ).fetchone()[0]
 
                 if not task.stop:
                     if task.category == 'download' and result:
-                        DownloadHandler().add_multiple(
-                            (link, volume_id, issue_id, False)
-                            for link, volume_id, issue_id in result
+                        queued_count, imm_failures = DownloadHandler().add_multiple(
+                            (
+                                (link, volume_id, issue_id, False, display_title)
+                                for link, volume_id, issue_id, display_title in result
+                            ),
+                            task_history_id=task_history_id,
                         )
+
+                        # Record links that failed to queue at all
+                        if imm_failures:
+                            for f in imm_failures:
+                                cursor.execute(
+                                    """INSERT INTO download_history(
+                                        web_title, volume_id, downloaded_at,
+                                        success, task_history_id, failure_reason
+                                    ) VALUES (?,?,?,?,?,?)""",
+                                    (
+                                        f['display_title'],
+                                        task.volume_id,
+                                        round(time()),
+                                        False,
+                                        task_history_id,
+                                        f['reason'],
+                                    ),
+                                )
+                            cursor.connection.commit()
+
+                        total_expected = queued_count + len(imm_failures)
+                        DownloadBatch.register(
+                            task_history_id,
+                            total_expected,
+                            task.volume_id,
+                            task.display_title,
+                        )
+                        for f in imm_failures:
+                            DownloadBatch.record(
+                                task_history_id,
+                                f['display_title'],
+                                False,
+                                f['reason'],
+                            )
 
                     LOGGER.info(f'Finished task {task.display_title}')
 
@@ -718,6 +957,7 @@ class TaskHandler(metaclass=Singleton):
         first_entry = self.queue[0]
         if first_entry['status'] != 'running':
             first_entry['status'] = 'running'
+            first_entry['started_at'] = round(time())
             first_entry['thread'].start()
         return
 
@@ -736,6 +976,8 @@ class TaskHandler(metaclass=Singleton):
             'task': task,
             'id': id,
             'status': 'queued',
+            'queued_at': round(time()),
+            'started_at': None,
             'thread': Thread(
                 target=self.__run_task,
                 args=(task,),
@@ -831,14 +1073,33 @@ class TaskHandler(metaclass=Singleton):
         Returns:
             dict: The formatted queue entry
         """
+        t = task['task']
+        volume_title = None
+        issue_number = None
+        if t.volume_id:
+            row = get_db().execute(
+                'SELECT title FROM volumes WHERE id = ?', (t.volume_id,)
+            ).fetchone()
+            if row:
+                volume_title = row['title']
+        if t.issue_id:
+            row = get_db().execute(
+                'SELECT issue_number FROM issues WHERE id = ?', (t.issue_id,)
+            ).fetchone()
+            if row:
+                issue_number = row['issue_number']
         return {
             'id': task['id'],
-            'action': task['task'].action,
-            'display_title': task['task'].display_title,
+            'action': t.action,
+            'display_title': t.display_title,
             'status': task['status'],
-            'message': task['task'].message,
-            'volume_id': task['task'].volume_id,
-            'issue_id': task['task'].issue_id
+            'message': t.message,
+            'volume_id': t.volume_id,
+            'volume_title': volume_title,
+            'issue_id': t.issue_id,
+            'issue_number': issue_number,
+            'queued_at': task.get('queued_at'),
+            'started_at': task.get('started_at'),
         }
 
     def get_all(self) -> List[dict]:
@@ -908,6 +1169,62 @@ class TaskHandler(metaclass=Singleton):
         return
 
 
+def record_and_track_download(
+    link: str,
+    volume_id: int,
+    issue_id: Union[int, None],
+    force_match: bool,
+) -> tuple:
+    """Queue a manual download and track its outcome in task history.
+
+    Creates a ``manual_download`` task_history row immediately, then queues
+    the download with ``task_history_id`` set so that when it completes the
+    row is updated with success/failure details via ``DownloadBatch``.
+
+    Returns the same ``(added, fail_reason)`` tuple as ``DownloadHandler.add()``.
+    """
+    from asyncio import run as async_run
+
+    db = get_db()
+    volume_row = db.execute(
+        'SELECT title FROM volumes WHERE id=?', (volume_id,)
+    ).fetchone()
+    volume_title = volume_row['title'] if volume_row else ''
+
+    db.execute(
+        """INSERT INTO task_history
+           (task_name, display_title, run_at, volume_id, issue_id)
+           VALUES (?,?,?,?,?)""",
+        ('manual_download', 'Manual Download', round(time()), volume_id, issue_id),
+    ).connection.commit()
+    task_history_id: int = db.execute(
+        "SELECT last_insert_rowid()"
+    ).fetchone()[0]
+
+    added, fail_reason = async_run(
+        DownloadHandler().add(
+            link, volume_id, issue_id,
+            force_match=force_match,
+            task_history_id=task_history_id,
+        )
+    )
+
+    if added:
+        DownloadBatch.register(
+            task_history_id, len(added), volume_id, volume_title,
+            update_existing=True,
+        )
+    else:
+        reason_str = fail_reason.value if fail_reason else 'Unknown error'
+        DownloadBatch.register(
+            task_history_id, 1, volume_id, volume_title,
+            update_existing=True,
+        )
+        DownloadBatch.record(task_history_id, link, False, reason_str)
+
+    return added, fail_reason
+
+
 def get_task_history(offset: int = 0) -> List[dict]:
     """Get the task history in blocks of 50.
 
@@ -920,17 +1237,41 @@ def get_task_history(offset: int = 0) -> List[dict]:
     Returns:
         List[dict]: The history entries.
     """
-    result = get_db().execute(
+    db = get_db()
+    result = db.execute(
         """
         SELECT
-            task_name, display_title, run_at
+            task_name, display_title, run_at,
+            queued_at, started_at, volume_id, issue_id, details
         FROM task_history
         ORDER BY run_at DESC
-        LIMIT 50
+        LIMIT 20
         OFFSET ?;
         """,
-        (offset * 50,)
+        (offset * 20,)
     ).fetchalldict()
+    for entry in result:
+        raw = entry.get('details')
+        if raw:
+            parsed = json_loads(raw)
+            # Backward compat: old entries stored a plain list (per_issue only)
+            entry['details'] = parsed if isinstance(parsed, dict) else {'per_issue': parsed, 'downloads': []}
+        else:
+            entry['details'] = {'per_issue': [], 'downloads': []}
+        entry['volume_title'] = None
+        entry['issue_number'] = None
+        if entry.get('volume_id'):
+            row = db.execute(
+                'SELECT title FROM volumes WHERE id = ?', (entry['volume_id'],)
+            ).fetchone()
+            if row:
+                entry['volume_title'] = row['title']
+        if entry.get('issue_id'):
+            row = db.execute(
+                'SELECT issue_number FROM issues WHERE id = ?', (entry['issue_id'],)
+            ).fetchone()
+            if row:
+                entry['issue_number'] = row['issue_number']
     return result
 
 

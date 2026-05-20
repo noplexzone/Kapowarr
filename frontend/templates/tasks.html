@@ -18,9 +18,25 @@
 		{{ icon_button("", "Run the task", "refresh.svg") }}
 	</td>
 </tr>
-<tr class="history-entry">
-	<td class="title-column"></td>
-	<td class="date-column"></td>
+<tr class="queue-entry" data-status="">
+	<td class="q-status-column">
+		<img class="q-status-icon" src="" alt="">
+	</td>
+	<td class="q-name-column">
+		<span class="q-type"></span>
+		<a class="q-volume hidden" href=""></a>
+		<span class="q-issue hidden"></span>
+		<span class="q-message hidden"></span>
+	</td>
+	<td class="q-time-column q-queued"></td>
+	<td class="q-time-column q-started"></td>
+	<td class="q-time-column q-ended"></td>
+	<td class="q-time-column q-duration"></td>
+	<td class="q-action-column">
+		<button class="q-remove-btn" title="Remove task from queue">
+			<img src="{{ url_for('static', filename='img/cancel.svg') }}" alt="Remove">
+		</button>
+	</td>
 </tr>
 {% endblock %}
 
@@ -29,35 +45,48 @@
 	<section class="tool-bar-container" aria-label="Tool bar">
 		<div class="tool-bar">
 			{{ icon_button("refresh-button", "Refresh the list", "refresh.svg", "Refresh") }}
-			{{ icon_button("clear-button", "Clear Task History", "delete.svg", "Clear History") }}
+			{{ icon_button("clear-button", "Clear task history", "delete.svg", "Clear History") }}
 		</div>
 	</section>
 	<div class="main-window">
 		<h2>Scheduled</h2>
 		<div class="task-interval-container">
-		<table class="task-interval-table icon-text-color">
-			<thead>
-				<tr>
-					<th>Name</th>
-					<th>Interval</th>
-					<th>Last Execution</th>
-					<th>Next Execution</th>
-					<th>Run</th>
-				</tr>
-			</thead>
-			<tbody id="task-intervals"></tbody>
-		</table>
+			<table class="task-interval-table icon-text-color">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Interval</th>
+						<th>Last Execution</th>
+						<th>Next Execution</th>
+						<th>Run</th>
+					</tr>
+				</thead>
+				<tbody id="task-intervals"></tbody>
+			</table>
 		</div>
-		<h2>History</h2>
-		<table>
-			<thead>
-				<tr>
-					<th>Title</th>
-					<th>Date</th>
-				</tr>
-			</thead>
-			<tbody id="history"></tbody>
-		</table>
+		<h2>Queue</h2>
+		<div class="queue-container icon-text-color">
+			<table class="queue-table">
+				<thead>
+					<tr>
+						<th class="q-status-column"></th>
+						<th class="q-name-column">Task</th>
+						<th class="q-time-column">Queued</th>
+						<th class="q-time-column">Started</th>
+						<th class="q-time-column">Ended</th>
+						<th class="q-time-column">Duration</th>
+						<th class="q-action-column"></th>
+					</tr>
+				</thead>
+				<tbody id="page-task-queue"></tbody>
+			</table>
+			<p id="queue-empty" class="hidden">No tasks queued or recently completed.</p>
+			<div id="queue-pagination" class="hidden">
+				<button id="prev-page-btn" disabled>← Prev</button>
+				<span id="page-indicator">Page 1</span>
+				<button id="next-page-btn">Next →</button>
+			</div>
+		</div>
 	</div>
 </main>
 {% endblock main %}

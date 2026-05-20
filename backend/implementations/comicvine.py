@@ -77,6 +77,14 @@ _NON_ENGLISH_TITLE_KEYWORDS = frozenset({
     'shonen magazine', 'weekly playboy', 'young magazine',
     'sho-comi', 'hana to yume', 'sunday comics', 'morning comics',
     'afternoon comics', 'evening comics', 'young animal',
+    # Additional anthology magazine titles not covered by publisher lookup
+    'grand jump', 'manga time', 'big gangan', 'young gangan',
+    'ultra jump', 'jump sq', 'v jump', 'monthly shonen', 'bessatsu',
+    'ribon', 'nakayoshi', 'comic alive', 'monthly comic',
+    'young champion', 'yuri hime', 'dengeki daioh', 'dengeki maoh',
+    'goraku', 'elegance eve', 'cocohana', 'monthly flowers',
+    'office you', 'champion red', 'action pizazz', 'comic zenon',
+    'comic cune', 'comic ran', 'mahjong', 'be love',
     # Adult manga anthology magazines — publisher lookup can silently fail for
     # these on CV, so title keywords act as a second filter layer.
     'hotmilk', 'bavel', 'comic exe', 'comic x-eros', 'comic kairakuten',
@@ -86,6 +94,64 @@ _NON_ENGLISH_TITLE_KEYWORDS = frozenset({
     'e★everystar', 'e*everystar', 'comic valkyrie',
 })
 _MANGA_TITLE_KEYWORDS = _NON_ENGLISH_TITLE_KEYWORDS
+
+# Japanese publishers + English-language manga imprints (used to positively
+# identify manga volumes for the Manga section).
+_MANGA_PUBLISHERS = frozenset({
+    'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
+    'media factory', 'kodansha', 'kodansha comics', 'kodansha usa',
+    'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
+    'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
+    'coamix', 'ascii media works', 'core magazine', 'coremagazine',
+    'nihon bungeisha', 'takeshobo', 'wani books', 'wani magazine',
+    'flex comix', 'ichijinsha', 'libre publishing',
+    'ohzora publishing', 'shinshkan', 'tokuma shoten', 'houbunsha',
+    'earth star entertainment', 'enterbrain', 'micro magazine',
+    'leed publishing', 'east press', 'shonengahosha', 'shonen gahosha',
+    'bamboo comics', 'square enix manga', 'jump comics', 'shueisha jump',
+    'champion red', 'sunday comics', 'big comics', 'evening', 'morning',
+    'afternoon', 'young animal', 'weekly shonen', 'shonen sunday',
+    'shonen magazine',
+    # English-language manga publishers / imprints
+    'viz media', 'viz', 'tokyopop', 'yen press', 'seven seas entertainment',
+    'vertical', 'vertical comics', 'udon entertainment',
+    'digital manga publishing', 'gen manga', 'aurora publishing',
+    # French/European manga imprints (not bande dessinée)
+    'pika edition', 'pika', 'taifu comics', 'ki-oon', 'kana',
+    'kurokawa', 'tonkam', 'delcourt tonkam', 'glenat manga',
+    'soleil manga', 'kazé', 'kaze', 'panini manga', 'crunchyroll',
+    'crunchyroll manga', 'noeve grafx', 'akata', 'meian',
+})
+
+# English-language manga publishers/imprints only — used to whitelist
+# content in the Manga discovery section so that only licensed English
+# editions (not Japanese originals or other-language editions) are shown.
+_ENGLISH_MANGA_PUBLISHERS = frozenset({
+    'viz media', 'viz',
+    'yen press',
+    'tokyopop',
+    'seven seas entertainment', 'seven seas',
+    'vertical', 'vertical comics',
+    'udon entertainment',
+    'digital manga publishing', 'digital manga guild',
+    'gen manga',
+    'aurora publishing',
+    'dark horse comics', 'dark horse manga',
+    'kodansha comics', 'kodansha comics usa', 'kodansha usa',
+    'square enix manga',
+    'crunchyroll', 'crunchyroll manga',
+    'j-novel club',
+    'cross infinite world',
+    'one peace books',
+    'manga planet',
+    'ghost ship',
+    'fakku books',
+    'irodori comics',
+    'denpa',
+    'ablaze manga',
+    'cmx',
+    'bandai entertainment',
+})
 
 translation_regex = compile(
     r'^<p>\s*\w+(?<!English) publication(\.?</p>$|,\s| \(in the \w+(?<!English) language\)|, translates )|' +
@@ -1172,12 +1238,15 @@ class ComicVine:
     async def search_volumes(
         self,
         query: str,
+        section: str = 'comic',
         allow_rate_limit_reached: bool = False
     ) -> List[VolumeMetadata]:
         """Search for volumes.
 
         Args:
             query (str): The query to use when searching.
+            section (str, optional): 'comic' or 'manga'. Filters results to
+                match the section. Defaults to 'comic'.
             allow_rate_limit_reached (bool, optional): Instead of a
                 CVRateLimitReached exception being thrown, return an empty list.
                 Defaults to False.
@@ -1208,7 +1277,233 @@ class ComicVine:
         if not results:
             return []
 
-        return self.__format_search_output(results)
+        formatted = self.__format_search_output(results)
+
+        if section == 'manga':
+            def _is_manga(v: VolumeMetadata) -> bool:
+                pub = (v.get('publisher') or '').lower()
+                is_manga_pub = (
+                    pub in _MANGA_PUBLISHERS
+                    or any(p in pub for p in _MANGA_PUBLISHERS)
+                )
+                return v.get('translated') or is_manga_pub
+
+            return [v for v in formatted if _is_manga(v)]
+
+        if section == 'comic':
+            def _is_non_english(v: VolumeMetadata) -> bool:
+                pub = (v.get('publisher') or '').lower()
+                return (
+                    pub in _NON_ENGLISH_PUBLISHERS
+                    or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
+                )
+
+            return [v for v in formatted if not _is_non_english(v) and not v.get('translated')]
+
+        return formatted
+
+    async def get_upcoming_releases_manga(
+        self,
+        days: int = 60
+    ) -> List[Dict[str, Any]]:
+        """Get manga issues releasing in the next N days.
+
+        Mirrors get_upcoming_releases but keeps only manga/Japanese
+        publishers instead of filtering them out.
+        """
+        from datetime import date, timedelta
+        today = date.today()
+        end = today + timedelta(days=days)
+
+        issue_params = {
+            'field_list': 'id,name,issue_number,cover_date,image,site_detail_url,volume',
+            'filter': f'cover_date:{today}|{end}',
+            'sort': 'cover_date:asc',
+            'limit': 100,
+        }
+
+        def _is_english_manga_pub(pub: str) -> bool:
+            p = pub.lower()
+            return p in _ENGLISH_MANGA_PUBLISHERS or any(m in p for m in _ENGLISH_MANGA_PUBLISHERS)
+
+        async with AsyncSession() as session:
+            issue_pages = await gather(
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 0},   {'results': []}),
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 100}, {'results': []}),
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 200}, {'results': []}),
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 300}, {'results': []}),
+                self.__call_api(session, '/issues', {**issue_params, 'offset': 400}, {'results': []}),
+            )
+            results = [r for page in issue_pages for r in (page.get('results') or [])]
+            results = [r for r in results if (r.get('volume') or {}).get('id')]
+
+            unique_vol_ids = list({
+                str(r['volume']['id']) for r in results
+            })
+            english_manga_vol_ids: set = set()
+            if unique_vol_ids:
+                vol_tasks = [
+                    self.__call_api(
+                        session, '/volumes',
+                        {
+                            'field_list': 'id,publisher',
+                            'filter': f'id:{"|".join(unique_vol_ids[i:i + 100])}',
+                            'limit': 100,
+                        },
+                        {'results': []}
+                    )
+                    for i in range(0, len(unique_vol_ids), 100)
+                ]
+                vol_pages = await gather(*vol_tasks)
+                for vol_page in vol_pages:
+                    for v in (vol_page.get('results') or []):
+                        pub = ((v.get('publisher') or {}).get('name') or '')
+                        if _is_english_manga_pub(pub):
+                            english_manga_vol_ids.add(int(v['id']))
+
+        filtered = [
+            r for r in results
+            if int(r['volume']['id']) in english_manga_vol_ids
+            and not any(
+                k in ((r.get('volume') or {}).get('name') or '').lower()
+                for k in _MANGA_TITLE_KEYWORDS
+            )
+        ]
+
+        vol_ids_int = tuple(int(r['volume']['id']) for r in filtered)
+        already_added: Dict[int, int] = {}
+        if vol_ids_int:
+            placeholders = ','.join('?' * len(vol_ids_int))
+            already_added = dict(get_db().execute(
+                f'SELECT comicvine_id, id FROM volumes '
+                f'WHERE comicvine_id IN ({placeholders})',
+                vol_ids_int
+            ).fetchall())
+
+        upcoming = []
+        for item in filtered:
+            vol = item.get('volume') or {}
+            vol_cv_id = int(vol['id']) if vol.get('id') else None
+            upcoming.append({
+                'issue_id':     int(item['id']),
+                'issue_number': item.get('issue_number') or '',
+                'title':        item.get('name') or '',
+                'cover_date':   item.get('cover_date') or '',
+                'cover_link':   (item.get('image') or {}).get('small_url', ''),
+                'site_url':     item.get('site_detail_url') or '',
+                'volume_id':    vol_cv_id,
+                'volume_title': vol.get('name') or '',
+                'already_added': already_added.get(vol_cv_id) if vol_cv_id else None,
+            })
+        return upcoming
+
+    async def get_new_volumes_manga(
+        self,
+        limit: int = 100
+    ) -> List[VolumeMetadata]:
+        """Get manga volumes sorted by publish date (start year), newest first."""
+        vol_params = {
+            'field_list': (
+                'id,name,deck,description,publisher,start_year,'
+                'image,site_detail_url,count_of_issues'
+            ),
+            'sort': 'date_last_updated:desc',
+            'limit': 100,
+        }
+        async with AsyncSession() as session:
+            pages = await gather(*(
+                self.__call_api(
+                    session, '/volumes',
+                    {**vol_params, 'offset': i * 100},
+                    {'results': []}
+                )
+                for i in range(5)
+            ))
+
+        all_results = (
+            (pages[0].get('results') or [])
+            + (pages[1].get('results') or [])
+            + (pages[2].get('results') or [])
+            + (pages[3].get('results') or [])
+            + (pages[4].get('results') or [])
+        )
+
+        from datetime import date
+        current_year = date.today().year
+        cutoff = current_year - 2
+
+        def _year(v: Dict[str, Any]) -> int:
+            try:
+                return int(v.get('start_year') or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        def _is_english_manga(v: Dict[str, Any]) -> bool:
+            pub = ((v.get('publisher') or {}).get('name') or '').lower()
+            return pub in _ENGLISH_MANGA_PUBLISHERS or any(p in pub for p in _ENGLISH_MANGA_PUBLISHERS)
+
+        pre_filtered = [
+            v for v in all_results
+            if _year(v) >= cutoff
+            and _is_english_manga(v)
+            and not any(
+                k in (v.get('name') or '').lower()
+                for k in _MANGA_TITLE_KEYWORDS
+            )
+        ]
+        formatted = [self.__format_volume_output(v) for v in pre_filtered][:limit]
+        self._mark_already_added(formatted)
+        return formatted
+
+    async def get_story_arcs_manga(
+        self,
+        query: str = '',
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Browse or search story arcs on ComicVine, filtered to manga-only."""
+        params: Dict[str, Any] = {
+            'field_list': self.story_arc_field_list,
+            'sort': 'date_last_updated:desc',
+            'limit': 100,
+        }
+        if query.strip():
+            params['filter'] = f'name:{query.strip()}'
+
+        async with AsyncSession() as session:
+            page1, page2, page3 = await gather(
+                self.__call_api(session, '/story_arcs', {**params, 'offset': 0},   {'results': []}),
+                self.__call_api(session, '/story_arcs', {**params, 'offset': 100}, {'results': []}),
+                self.__call_api(session, '/story_arcs', {**params, 'offset': 200}, {'results': []}),
+            )
+
+        all_results = (
+            (page1.get('results') or [])
+            + (page2.get('results') or [])
+            + (page3.get('results') or [])
+        )
+
+        filtered = []
+        for arc in all_results:
+            pub = ((arc.get('publisher') or {}).get('name') or '').lower()
+            if not pub or (pub not in _MANGA_PUBLISHERS
+                           and not any(p in pub for p in _MANGA_PUBLISHERS)):
+                continue
+            filtered.append({
+                'id': int(arc['id']),
+                'name': arc.get('name') or '',
+                'deck': arc.get('deck') or '',
+                'cover_link': (
+                    (arc.get('image') or {}).get('medium_url')
+                    or (arc.get('image') or {}).get('small_url')
+                    or ''
+                ),
+                'site_url': arc.get('site_detail_url') or '',
+                'issue_count': int(arc.get('count_of_issues') or 0),
+                'publisher': ((arc.get('publisher') or {}).get('name') or ''),
+            })
+
+        filtered.sort(key=lambda a: a['issue_count'], reverse=True)
+        return filtered[:limit]
 
     async def filenames_to_cvs(
         self,

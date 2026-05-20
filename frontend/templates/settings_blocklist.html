@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Blocklist{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/settings_blocklist.js') }}" defer></script>
+{% endblock %}
+
+{% block main %}
+<main>
+	<div class="settings-container">
+		<h2>Blocklist</h2>
+		<p class="description">
+			Links that have been blocked from being downloaded. Entries are added automatically when a download fails permanently.
+			Remove an entry to allow Kapowarr to try that link again.
+		</p>
+		<div id="blocklist-actions">
+			<button id="clear-blocklist" type="button">Clear All</button>
+		</div>
+		<table id="blocklist-table" class="icon-text-color">
+			<thead>
+				<tr>
+					<th>Title</th>
+					<th>Source</th>
+					<th>Reason</th>
+					<th>Date Added</th>
+					<th class="action-column">Action</th>
+				</tr>
+			</thead>
+			<tbody id="blocklist-body"></tbody>
+			<tbody>
+				<tr id="no-entries-row" class="hidden">
+					<td colspan="5">No blocklist entries</td>
+				</tr>
+			</tbody>
+		</table>
+		<div id="blocklist-pagination">
+			<button id="prev-page" type="button" disabled>Previous</button>
+			<span id="page-indicator">Page 1</span>
+			<button id="next-page" type="button" disabled>Next</button>
+		</div>
+	</div>
+</main>
+{% endblock main %}

@@ -462,7 +462,9 @@ class DownloadHandler(metaclass=Singleton):
         link: str,
         volume_id: int,
         issue_id: Union[int, None] = None,
-        force_match: bool = False
+        force_match: bool = False,
+        display_title: str = '',
+        task_history_id: int = 0,
     ) -> Tuple[List[dict], Union[EnqueuingDownloadFailureReason, None]]:
         """Add a download to the queue.
 
@@ -540,7 +542,7 @@ class DownloadHandler(metaclass=Singleton):
                     source_name=source_name,
                     web_link=link,
                     web_title=None,
-                    web_sub_title=None,
+                    web_sub_title=display_title or None,
                     forced_match=force_match,
                 )]
 
@@ -548,6 +550,9 @@ class DownloadHandler(metaclass=Singleton):
                     IssueNotFound, LinkBroken) as e:
                 LOGGER.warning('Unable to create NZB download: %s', e)
                 return [], EnqueuingDownloadFailureReason.NO_WORKING_LINKS
+
+        for d in downloads:
+            d.task_history_id = task_history_id
 
         result = self.__prepare_downloads_for_queue(
             downloads,
@@ -560,14 +565,33 @@ class DownloadHandler(metaclass=Singleton):
 
     def add_multiple(
         self,
-        add_args: Iterable[Tuple[str, int, Union[int, None], bool]]
-    ) -> None:
-        async def add_wrapper():
-            for entry in add_args:
-                await self.add(*entry)
+        add_args: Iterable[Tuple[str, int, Union[int, None], bool, str]],
+        task_history_id: int = 0,
+    ) -> Tuple[int, List[dict]]:
+        """Queue multiple downloads. Returns (total_queued, immediate_failures).
+
+        immediate_failures is a list of {'display_title', 'reason'} dicts for
+        links that could not be queued synchronously.
+        """
+        queued_total = 0
+        failures: List[dict] = []
+
+        async def add_wrapper() -> None:
+            nonlocal queued_total
+            for link, volume_id, issue_id, force_match, display_title in add_args:
+                added, reason = await self.add(
+                    link, volume_id, issue_id, force_match, display_title,
+                    task_history_id=task_history_id,
+                )
+                queued_total += len(added)
+                if not added and reason is not None:
+                    failures.append({
+                        'display_title': display_title or link,
+                        'reason': reason.value,
+                    })
 
         run(add_wrapper())
-        return
+        return queued_total, failures
 
     def __load_downloads(self) -> None:
         """

@@ -380,7 +380,7 @@ class LibrarySorting(BaseEnum):
     TITLE = "title, year, volume_number"
     YEAR = "year, title, volume_number"
     VOLUME_NUMBER = "volume_number, title, year"
-    RECENTLY_ADDED = "id DESC, title, year, volume_number"
+    RECENTLY_ADDED = "volumes.id DESC, title, year, volume_number"
     PUBLISHER = "publisher, title, year, volume_number"
     WANTED = ("issues_downloaded_monitored >= issue_count_monitored, "
               "title, year, volume_number")
@@ -702,6 +702,7 @@ class RootFolder:
     id: int
     folder: str
     size: Union[SizeData, None]
+    section: str = 'comic'
 
     def todict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -1098,6 +1099,9 @@ class ExternalDownloadClient(ABC):
 class Download(ABC):
     identifier: str
     "An identifier for the specific download implementation (e.g. 'mf_folder')"
+
+    task_history_id: int = 0
+    "ID of the task_history row that queued this download (0 = not from a task)"
 
     @property
     @abstractmethod

@@ -71,6 +71,11 @@ def ui_mismatch_review():
     return render('folder_check.html')
 
 
+@ui.route('/manga/mismatch-review', methods=methods)
+def ui_manga_mismatch_review():
+    return render('folder_check.html')
+
+
 @ui.route('/discovery', methods=methods)
 def ui_discovery():
     return render('comic_discovery.html')
@@ -79,6 +84,26 @@ def ui_discovery():
 @ui.route('/story-arcs', methods=methods)
 def ui_story_arcs():
     return render('story_arcs.html')
+
+
+@ui.route('/manga', methods=methods)
+def ui_manga_library():
+    return render('manga_library.html')
+
+
+@ui.route('/manga/add', methods=methods)
+def ui_manga_add():
+    return render('manga_add.html')
+
+
+@ui.route('/manga/discovery', methods=methods)
+def ui_manga_discovery():
+    return render('manga_discovery.html')
+
+
+@ui.route('/manga/story-arcs', methods=methods)
+def ui_manga_story_arcs():
+    return render('manga_story_arcs.html')
 
 
 @ui.route('/volumes/<id>', methods=methods)

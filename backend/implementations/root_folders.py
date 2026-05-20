@@ -20,21 +20,25 @@ from backend.internals.settings import Settings
 
 class RootFolders(metaclass=Singleton):
     @lru_cache(1)
-    def __get_folder_mapping(self) -> Dict[int, str]:
-        """Get a mapping of all IDs to folders.
+    def __get_folder_mapping(self) -> Dict[int, tuple]:
+        """Get a mapping of all IDs to (folder, section) tuples.
 
         Returns:
-            Dict[int, str]: The mapping.
+            Dict[int, tuple]: The mapping.
         """
-        result = dict(get_db().execute(
-            "SELECT id, folder FROM root_folders;"
-        ))
+        result = {
+            row['id']: (row['folder'], row['section'])
+            for row in get_db().execute(
+                "SELECT id, folder, section FROM root_folders;"
+            )
+        }
         return result
 
     def __gather_extra_data(
         self,
         root_folder_id: int,
-        root_folder_path: str
+        root_folder_path: str,
+        section: str = 'comic'
     ) -> RootFolder:
         if not isdir(root_folder_path):
             create_folder(root_folder_path)
@@ -48,7 +52,7 @@ class RootFolders(metaclass=Singleton):
         except (FileNotFoundError, PermissionError, OSError):
             d_usage = None
 
-        return RootFolder(root_folder_id, root_folder_path, d_usage)
+        return RootFolder(root_folder_id, root_folder_path, d_usage, section)
 
     def is_id_valid(self, root_folder_id: int) -> bool:
         return root_folder_id in self.__get_folder_mapping()
@@ -59,7 +63,7 @@ class RootFolders(metaclass=Singleton):
         Returns:
             List[str]: The list.
         """
-        return list(self.__get_folder_mapping().values())
+        return [folder for folder, _ in self.__get_folder_mapping().values()]
 
     def get_all(self) -> List[RootFolder]:
         """Get info on all rootfolders.
@@ -68,8 +72,8 @@ class RootFolders(metaclass=Singleton):
             List[RootFolder]: The list of rootfolders.
         """
         return [
-            self.__gather_extra_data(id, folder)
-            for id, folder in self.__get_folder_mapping().items()
+            self.__gather_extra_data(id, folder, section)
+            for id, (folder, section) in self.__get_folder_mapping().items()
         ]
 
     def get_one(self, root_folder_id: int) -> RootFolder:
@@ -87,10 +91,8 @@ class RootFolders(metaclass=Singleton):
         if not self.is_id_valid(root_folder_id):
             raise RootFolderNotFound(root_folder_id)
 
-        return self.__gather_extra_data(
-            root_folder_id,
-            self.__get_folder_mapping()[root_folder_id]
-        )
+        folder, section = self.__get_folder_mapping()[root_folder_id]
+        return self.__gather_extra_data(root_folder_id, folder, section)
 
     def __getitem__(self, root_folder_id: int) -> str:
         """Get the folder based on the ID.
@@ -107,11 +109,12 @@ class RootFolders(metaclass=Singleton):
         if not self.is_id_valid(root_folder_id):
             raise RootFolderNotFound(root_folder_id)
 
-        return self.__get_folder_mapping()[root_folder_id]
+        return self.__get_folder_mapping()[root_folder_id][0]
 
     def add(
         self,
         folder: str,
+        section: str = 'comic',
         _folder_to_skip_check: Union[str, None] = None
     ) -> RootFolder:
         """Add a rootfolder.
@@ -150,8 +153,8 @@ class RootFolders(metaclass=Singleton):
             raise RootFolderInvalid(folder)
 
         root_folder_id = get_db().execute(
-            "INSERT INTO root_folders(folder) VALUES (?)",
-            (folder,)
+            "INSERT INTO root_folders(folder, section) VALUES (?, ?)",
+            (folder, section)
         ).lastrowid
 
         self.__get_folder_mapping.cache_clear()
@@ -191,8 +194,10 @@ class RootFolders(metaclass=Singleton):
             f'to {new_folder}'
         )
 
+        current_section = self.__get_folder_mapping()[root_folder_id][1]
         new_id = self.add(
             new_folder,
+            section=current_section,
             _folder_to_skip_check=current_folder
         ).id
 
@@ -215,6 +220,29 @@ class RootFolders(metaclass=Singleton):
 
             COMMIT;
         """)
+        self.__get_folder_mapping.cache_clear()
+        return self.get_one(root_folder_id)
+
+    def update_section(self, root_folder_id: int, section: str) -> RootFolder:
+        """Change the section (comic/manga) of a rootfolder.
+
+        Args:
+            root_folder_id (int): The ID of the rootfolder to update.
+            section (str): The new section ('comic' or 'manga').
+
+        Raises:
+            RootFolderNotFound: The ID doesn't map to any rootfolder.
+
+        Returns:
+            RootFolder: The updated rootfolder info.
+        """
+        if not self.is_id_valid(root_folder_id):
+            raise RootFolderNotFound(root_folder_id)
+
+        get_db().execute(
+            "UPDATE root_folders SET section = ? WHERE id = ?;",
+            (section, root_folder_id)
+        )
         self.__get_folder_mapping.cache_clear()
         return self.get_one(root_folder_id)
 

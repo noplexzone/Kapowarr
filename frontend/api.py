@@ -30,7 +30,8 @@ from backend.features.search import manual_search
 from backend.features.tasks import (BulkLibraryImport, RefreshAndScanVolume,
                                     Task, TaskHandler,
                                     delete_task_history, get_task_history,
-                                    get_task_planning, task_library)
+                                    get_task_planning, record_and_track_download,
+                                    task_library)
 from backend.implementations.blocklist import (add_to_blocklist,
                                                delete_blocklist,
                                                delete_blocklist_entry,
@@ -543,7 +544,10 @@ def api_rootfolder():
         folder = data.get('folder')
         if folder is None:
             raise KeyNotFound('folder')
-        root_folder = root_folders.add(folder).todict()
+        section = data.get('section', 'comic')
+        if section not in ('comic', 'manga'):
+            raise InvalidKeyValue('section', section)
+        root_folder = root_folders.add(folder, section=section).todict()
         return return_api(root_folder, code=201)
 
 
@@ -558,10 +562,15 @@ def api_rootfolder_id(id: int):
         return return_api(root_folder)
 
     elif request.method == 'PUT':
-        folder: Union[str, None] = request.get_json().get('folder')
-        if not folder:
-            raise KeyNotFound('folder')
-        root_folders.rename(id, folder)
+        data: dict = request.get_json()
+        section = data.get('section')
+        if section is not None:
+            if section not in ('comic', 'manga'):
+                raise InvalidKeyValue('section', section)
+            root_folders.update_section(id, section)
+        folder: Union[str, None] = data.get('folder')
+        if folder:
+            root_folders.rename(id, folder)
         return return_api({})
 
     elif request.method == 'DELETE':
@@ -743,17 +752,28 @@ def api_library_import_delete():
 @auth
 def api_discovery():
     discovery_type = extract_key(request, 'type')
+    section = extract_key(request, 'section', False) or 'comic'
     cv = ComicVine()
 
     if discovery_type == 'upcoming':
-        results = run(cv.get_upcoming_releases())
+        if section == 'manga':
+            results = run(cv.get_upcoming_releases_manga())
+        else:
+            results = run(cv.get_upcoming_releases())
     elif discovery_type == 'new':
-        results = run(cv.get_new_volumes())
+        if section == 'manga':
+            results = run(cv.get_new_volumes_manga())
+        else:
+            results = run(cv.get_new_volumes())
         for r in results:
-            del r['cover']
+            if 'cover' in r:
+                del r['cover']
     elif discovery_type == 'story-arcs':
         query = extract_key(request, 'query', False) or ''
-        results = run(cv.get_story_arcs(query=query))
+        if section == 'manga':
+            results = run(cv.get_story_arcs_manga(query=query))
+        else:
+            results = run(cv.get_story_arcs(query=query))
         return return_api(results)
     else:
         raise InvalidKeyValue('type', discovery_type)
@@ -781,7 +801,8 @@ def api_discovery_story_arc(arc_id: int):
 def api_volumes_search():
     if request.method == 'GET':
         query = extract_key(request, 'query')
-        search_results = run(ComicVine().search_volumes(query))
+        section = extract_key(request, 'section', False) or 'comic'
+        search_results = run(ComicVine().search_volumes(query, section=section))
         for r in search_results:
             del r["cover"] # type: ignore
         return return_api(search_results)
@@ -828,12 +849,13 @@ def api_volumes():
         query = extract_key(request, 'query', False)
         sort = extract_key(request, 'sort', False)
         filter = extract_key(request, 'filter', False)
-        LOGGER.debug('api_volumes GET: query=%r sort=%r filter=%r', query, sort, filter)
+        section = extract_key(request, 'section', False) or 'comic'
+        LOGGER.debug('api_volumes GET: query=%r sort=%r filter=%r section=%r', query, sort, filter, section)
         try:
             if query:
-                volumes = Library.search(query, sort or LibrarySorting.TITLE, filter)
+                volumes = Library.search(query, sort or LibrarySorting.TITLE, filter, section)
             else:
-                volumes = Library.get_public_volumes(sort or LibrarySorting.TITLE, filter)
+                volumes = Library.get_public_volumes(sort or LibrarySorting.TITLE, filter, section)
             LOGGER.debug('api_volumes GET: returning %d volumes', len(volumes))
         except Exception as e:
             LOGGER.exception('api_volumes GET: unexpected error: %s', e)
@@ -899,7 +921,8 @@ def api_volumes():
 @error_handler
 @auth
 def api_volumes_stats():
-    result = Library.get_stats()
+    section = extract_key(request, 'section', False) or 'comic'
+    result = Library.get_stats(section)
     return return_api(result)
 
 
@@ -913,6 +936,12 @@ def api_nav_badges():
     db = get_db()
 
     volume_count: int = db.execute('SELECT COUNT(*) FROM volumes;').fetchone()[0] or 0
+    comic_count: int = db.execute(
+        "SELECT COUNT(*) FROM volumes v INNER JOIN root_folders rf ON rf.id = v.root_folder WHERE rf.section = 'comic';"
+    ).fetchone()[0] or 0
+    manga_count: int = db.execute(
+        "SELECT COUNT(*) FROM volumes v INNER JOIN root_folders rf ON rf.id = v.root_folder WHERE rf.section = 'manga';"
+    ).fetchone()[0] or 0
     queue_count: int = len(DownloadHandler().get_all())
 
     # Count subfolders in root folders not already imported
@@ -969,6 +998,8 @@ def api_nav_badges():
 
     return return_api({
         'volumes': volume_count,
+        'comics': comic_count,
+        'manga': manga_count,
         'queue': queue_count,
         'library_import': import_count,
         'mismatch': mismatch_count,
@@ -1184,7 +1215,7 @@ def api_volume_download(id: int):
     Library.get_volume(id)
     link: str = extract_key(request, 'link')
     force_match: bool = extract_key(request, 'force_match')
-    result = run(DownloadHandler().add(link, id, force_match=force_match))
+    result = record_and_track_download(link, id, None, force_match)
     return return_api(
         {
             'result': (result or (None,))[0],
@@ -1213,9 +1244,7 @@ def api_issue_download(id: int):
     volume_id = Library.get_issue(id).get_data().volume_id
     link = extract_key(request, 'link')
     force_match: bool = extract_key(request, 'force_match')
-    result = run(DownloadHandler().add(
-        link, volume_id, id, force_match=force_match
-    ))
+    result = record_and_track_download(link, volume_id, id, force_match)
     return return_api(
         {
             'result': result[0],

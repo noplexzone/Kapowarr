@@ -673,6 +673,7 @@ function showManageIssues(api_key) {
 		json.result.forEach((mapping, idx) => {
 			const entry = ViewEls.pre_build.manage.cloneNode(true);
 			entry.dataset.manage_id = idx;
+			entry.dataset.file_id = mapping.file_id || '';
 			manageIdToFilepath[idx] = mapping.filepath;
 
             const short_f = mapping.filepath.slice(
@@ -680,10 +681,18 @@ function showManageIssues(api_key) {
                 + volume_folder.length
                 + 1
             );
-			entry.querySelector('td:nth-child(2)').innerText = short_f;
-			entry.querySelector('td:nth-child(2)').title = mapping.filepath;
+			entry.querySelector('.mi-filepath').innerText = short_f;
+			entry.querySelector('.mi-filepath').title = mapping.filepath;
+			entry.querySelector('.mi-matched').innerText = _issuesCoveredByMapping(mapping);
 
-			entry.querySelector('td:nth-child(3)').innerText = _issuesCoveredByMapping(mapping);
+			// Keep select-all in sync when individual boxes are toggled
+			entry.querySelector('input[type="checkbox"]').onchange = () => {
+				const allBoxes = [...document.querySelectorAll(
+					'#manage-window tbody input[type="checkbox"]'
+				)];
+				document.querySelector('#selectall-manage-input').checked =
+					allBoxes.length > 0 && allBoxes.every(cb => cb.checked);
+			};
 
 			table.appendChild(entry);
 		});
@@ -814,7 +823,7 @@ function processIssueMatch() {
 
 		managed_issues_changes[manageId] = data;
 		document.querySelector(
-			`#manage-issues-table tbody > tr[data-manage_id="${manageId}"] td:last-child`
+			`#manage-issues-table tbody > tr[data-manage_id="${manageId}"] .mi-matched`
 		).innerText = _issuesCoveredByMapping(data, no_match_is_tbd=true);
 	});
 	document.querySelector('#selectall-manage-input').checked = false;
@@ -1120,6 +1129,28 @@ usingApiKey()
 
 	document.querySelector('#submit-manage-issues').onclick =
 	e => submitManagedIssues(api_key);
+
+	document.querySelector('#delete-manage-files').onclick = () => {
+		const checked = [...document.querySelectorAll(
+			'#manage-issues-table tbody tr[data-manage_id]:has(input[type="checkbox"]:checked)'
+		)];
+		if (!checked.length) return;
+
+		const names = checked.map(r => r.querySelector('.mi-filepath').innerText).join('\n');
+		if (!confirm(`Delete ${checked.length} file(s) from disk?\n\n${names}`)) return;
+
+		Promise.all(checked.map(row => {
+			const fid = row.dataset.file_id;
+			if (!fid) return Promise.resolve();
+			return sendAPI('DELETE', `/files/${fid}`, api_key).then(() => row.remove());
+		})).then(() => {
+			const allBoxes = [...document.querySelectorAll(
+				'#manage-window tbody input[type="checkbox"]'
+			)];
+			document.querySelector('#selectall-manage-input').checked =
+				allBoxes.length > 0 && allBoxes.every(cb => cb.checked);
+		});
+	};
 
 	socket.on(
 		'downloaded_status',

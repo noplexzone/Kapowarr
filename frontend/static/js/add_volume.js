@@ -224,7 +224,7 @@ function search(reset_url_params=true) {
 
     usingApiKey().then(api_key => {
 		const query = SearchEls.search_bar.input.value;
-		fetchAPI('/volumes/search', api_key, {query: query})
+		fetchAPI('/volumes/search', api_key, {query: query, section: add_section})
 		.then(json => {
 
 			buildResults(json.result, api_key);
@@ -360,11 +360,14 @@ function processURLFilters() {
 //
 // Adding
 //
+const add_section = window.location.pathname.startsWith(url_base + '/manga') ? 'manga' : 'comic';
+
 function fillRootFolderInput(api_key) {
 	fetchAPI('/rootfolder', api_key)
 	.then(json => {
-		if (json.result.length)
-			json.result.forEach(folder => {
+		const matching = json.result.filter(f => f.section === add_section);
+		if (matching.length)
+			matching.forEach(folder => {
 				const option = document.createElement('option');
 				option.value = folder.id;
 				option.innerText = folder.folder;

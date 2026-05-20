@@ -882,7 +882,8 @@ class Library:
     def get_public_volumes(
         cls,
         sort: LibrarySorting = LibrarySorting.TITLE,
-        filter: Union[LibraryFilter, int, None] = None
+        filter: Union[LibraryFilter, int, None] = None,
+        section: str = 'comic'
     ) -> List[Dict[str, Any]]:
         """Get all the volumes in the library.
 
@@ -894,15 +895,18 @@ class Library:
                 the list if not `None`.
                 Defaults to None.
 
+            section (str, optional): Section to filter by ('comic' or 'manga').
+                Defaults to 'comic'.
+
         Returns:
             List[Dict[str, Any]]: The list of volumes in the library.
         """
         if isinstance(filter, LibraryFilter):
-            sql_filter = filter.value
+            sql_filter = filter.value + f" AND rf.section = '{section}'"
         elif isinstance(filter, int):
-            sql_filter = f"WHERE comicvine_id = {filter}"
+            sql_filter = f"WHERE comicvine_id = {filter} AND rf.section = '{section}'"
         else:
-            sql_filter = ''
+            sql_filter = f"WHERE rf.section = '{section}'"
 
         volumes = get_db().execute(f"""
             WITH
@@ -921,12 +925,12 @@ class Library:
                     WHERE volume_id = volumes.id
                 )
             SELECT
-                id, comicvine_id,
+                volumes.id, comicvine_id,
                 title, year, publisher,
                 volume_number, description,
                 special_version,
                 monitored, monitor_new_issues,
-                folder,
+                volumes.folder,
                 (
                     SELECT COUNT(id) FROM vol_issues
                 ) AS issue_count,
@@ -943,6 +947,7 @@ class Library:
                     SELECT SUM(size) FROM (SELECT DISTINCT id, size FROM issues_to_files)
                 ) AS total_size
             FROM volumes
+            INNER JOIN root_folders rf ON rf.id = volumes.root_folder
             {sql_filter}
             ORDER BY {sort.value};
             """
@@ -955,7 +960,8 @@ class Library:
         cls,
         query: str,
         sort: LibrarySorting = LibrarySorting.TITLE,
-        filter: Union[LibraryFilter, None] = None
+        filter: Union[LibraryFilter, None] = None,
+        section: str = 'comic'
     ) -> List[Dict[str, Any]]:
         """Search in the library with a query.
 
@@ -969,6 +975,9 @@ class Library:
                 the list if not `None`.
                 Defaults to None.
 
+            section (str, optional): Section to filter by ('comic' or 'manga').
+                Defaults to 'comic'.
+
         Returns:
             List[Dict[str, Any]]: The resulting list of matching volumes
                 in the library.
@@ -976,7 +985,7 @@ class Library:
         if query.startswith(('4050-', 'cv:')):
             try:
                 cv_id = to_number_cv_id((query,))[0]
-                volumes = cls.get_public_volumes(sort, cv_id)
+                volumes = cls.get_public_volumes(sort, cv_id, section)
 
             except ValueError:
                 volumes = []
@@ -984,31 +993,50 @@ class Library:
         else:
             volumes = [
                 v
-                for v in cls.get_public_volumes(sort, filter)
+                for v in cls.get_public_volumes(sort, filter, section)
                 if match_title(v['title'], query, allow_contains=True)
             ]
 
         return volumes
 
     @classmethod
-    def get_stats(cls) -> Dict[str, int]:
+    def get_stats(cls, section: str = 'comic') -> Dict[str, int]:
         """Get library statistics.
+
+        Args:
+            section (str, optional): Section to filter by ('comic' or 'manga').
+                Defaults to 'comic'.
 
         Returns:
             Dict[str, int]: The statistics.
         """
-        result = get_db().execute("""
+        result = get_db().execute(f"""
             WITH v AS (
                 SELECT COUNT(*) AS volumes,
-                    SUM(monitored) AS monitored
-                FROM volumes
+                    SUM(vol.monitored) AS monitored
+                FROM volumes vol
+                INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                WHERE rf.section = '{section}'
             )
             SELECT
                 v.volumes,
                 v.monitored,
                 v.volumes - v.monitored AS unmonitored,
-                (SELECT COUNT(*) FROM issues) AS issues,
-                (SELECT COUNT(DISTINCT issue_id) FROM issues_files) AS downloaded_issues,
+                (SELECT COUNT(*) FROM issues
+                    WHERE volume_id IN (
+                        SELECT vol.id FROM volumes vol
+                        INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                        WHERE rf.section = '{section}'
+                    )
+                ) AS issues,
+                (SELECT COUNT(DISTINCT issue_id) FROM issues_files
+                    WHERE issue_id IN (
+                        SELECT i.id FROM issues i
+                        INNER JOIN volumes vol ON vol.id = i.volume_id
+                        INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                        WHERE rf.section = '{section}'
+                    )
+                ) AS downloaded_issues,
                 (SELECT COUNT(*) FROM files) AS files,
                 (SELECT IFNULL(SUM(size), 0) FROM files) AS total_file_size
             FROM v;

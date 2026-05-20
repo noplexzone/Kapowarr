@@ -12,7 +12,7 @@ from re import IGNORECASE, compile
 from threading import Event, Thread
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Type, Union, final
-from urllib.parse import unquote_plus
+from urllib.parse import parse_qs, unquote_plus, urlparse
 
 from bs4 import BeautifulSoup, Tag
 from requests import RequestException, Response
@@ -1020,7 +1020,7 @@ class NZBDownload(ExternalDownload, BaseDirectDownload):
                 raise e
 
         self._filename_body = ''
-        if settings.rename_downloaded_files:
+        if settings.rename_downloaded_files and covered_issues is not None:
             try:
                 self._filename_body = generate_issue_name(
                     volume.get_data(),
@@ -1030,10 +1030,20 @@ class NZBDownload(ExternalDownload, BaseDirectDownload):
                 if not forced_match:
                     raise e
 
-        # Derive a job name from the NZB URL filename if no rename body set
+        # Use the indexer's display title as the SABnzbd job name when available.
+        # Fall back to URL extraction only if we have nothing better.
         if not self._filename_body:
-            raw = download_link.rstrip('/').split('/')[-1].split('?')[0]
-            self._filename_body = splitext(raw)[0] or 'nzb_download'
+            if self._web_sub_title:
+                self._filename_body = splitext(self._web_sub_title)[0]
+            else:
+                parsed = urlparse(download_link)
+                raw = splitext(parsed.path.rstrip('/').split('/')[-1])[0]
+                if not raw or raw.lower() in ('api', 'get', 'download', 'nzb', 'index'):
+                    qs = parse_qs(parsed.query)
+                    raw = next(
+                        (qs[k][0] for k in ('id', 'guid', 'nzbid') if k in qs), ''
+                    )
+                self._filename_body = unquote_plus(raw) or 'nzb_download'
 
         self._title = basename(self._filename_body)
         # Files will land in a subfolder named after the job inside download_folder

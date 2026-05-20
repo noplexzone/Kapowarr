@@ -341,7 +341,7 @@ tbody .issue-title:hover {
 	width: min-content;
 }
 
-#manage-issues-table td:last-child {
+#manage-issues-table .mi-matched {
 	text-wrap: nowrap;
 }
 
@@ -354,6 +354,18 @@ tbody .issue-title:hover {
 #manage-window:has(input[type="checkbox"]:checked) #show-issue-match {
 	background-color: var(--accent-color);
 	color: var(--nav-background-color);
+}
+
+#delete-manage-files {
+	border: 1px solid var(--border-color);
+	transition: background-color 100ms linear,
+		color 100ms linear;
+}
+
+#manage-window:has(input[type="checkbox"]:checked) #delete-manage-files {
+	background-color: var(--error-color);
+	color: var(--light-color);
+	border-color: var(--error-color);
 }
 
 #submit-match-issues {

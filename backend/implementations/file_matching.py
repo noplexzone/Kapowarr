@@ -409,6 +409,14 @@ def get_file_matching(volume_id: int) -> List[FileMatch]:
         general_match["general_file"] = True
         general_match["forced_match"] = forced
 
+    # Attach file IDs so the frontend can issue DELETE /files/{id} requests
+    for fp, fid in cursor.execute(
+        "SELECT filepath, id FROM files WHERE filepath LIKE ?;",
+        (volume_folder + '%',)
+    ):
+        if fp in current_matches:
+            current_matches[fp]["file_id"] = fid
+
     return list(current_matches.values())
 
 

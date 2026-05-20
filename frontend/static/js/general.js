@@ -266,6 +266,8 @@ function updateNavBadges(api_key) {
 	fetchAPI('/nav/badges', api_key)
 	.then(json => {
 		const b = json.result;
+		setNavBadge('badge-comics', b.comics, true);
+		setNavBadge('badge-manga', b.manga, true);
 		setNavBadge('badge-volumes', b.volumes, true);
 		setNavBadge('badge-import', b.library_import);
 		setNavBadge('badge-queue', b.queue);

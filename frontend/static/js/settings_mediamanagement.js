@@ -311,6 +311,23 @@ function fillRootFolder(api_key) {
 
             entry.appendChild(path);
 
+			const section_td = document.createElement('td');
+			const section_select = document.createElement('select');
+			['comic', 'manga'].forEach(s => {
+				const opt = document.createElement('option');
+				opt.value = s;
+				opt.innerText = s.charAt(0).toUpperCase() + s.slice(1);
+				opt.selected = s === root_folder.section;
+				section_select.appendChild(opt);
+			});
+			section_select.onchange = e => {
+				sendAPI('PUT', `/rootfolder/${root_folder.id}`, api_key, {}, {
+					'section': section_select.value
+				}).catch(console.log);
+			};
+			section_td.appendChild(section_select);
+			entry.appendChild(section_td);
+
 			const free_space = document.createElement('td');
 			free_space.classList.add('number-column');
 			free_space.innerText = convertSize(root_folder.size?.free);
@@ -359,9 +376,10 @@ function toggleAddRootFolder(e) {
 function addRootFolder(api_key) {
 	const folder_input = document.querySelector('#folder-input');
 	const folder = folder_input.value;
+	const section = document.querySelector('#section-input').value;
 	folder_input.value = '';
 
-	sendAPI('POST', '/rootfolder', api_key, {}, {folder: folder})
+	sendAPI('POST', '/rootfolder', api_key, {}, {folder: folder, section: section})
 	.then(response => {
 		fillRootFolder(api_key);
 		toggleAddRootFolder(1);

@@ -45,6 +45,7 @@ let arc_query = '';
 let current_arc_id = null;
 let pending_arc_volumes = [];
 let cached_api_key = null;
+const arc_section = window.location.pathname.startsWith(url_base + '/manga') ? 'manga' : 'comic';
 
 //
 // Root folders
@@ -53,12 +54,14 @@ function fillRootFolders(api_key) {
 	fetchAPI('/rootfolder', api_key)
 	.then(json => {
 		ArcEls.window.root_folder.innerHTML = '';
-		json.result.forEach(folder => {
-			const opt = document.createElement('option');
-			opt.value = folder.id;
-			opt.innerText = folder.folder;
-			ArcEls.window.root_folder.appendChild(opt);
-		});
+		json.result
+			.filter(f => f.section === arc_section)
+			.forEach(folder => {
+				const opt = document.createElement('option');
+				opt.value = folder.id;
+				opt.innerText = folder.folder;
+				ArcEls.window.root_folder.appendChild(opt);
+			});
 	});
 }
 
@@ -250,7 +253,7 @@ function loadArcs(query) {
 	);
 	showWindow('arc-loading-window');
 
-	fetchAPI('/discovery', cached_api_key, { type: 'story-arcs', query: q })
+	fetchAPI('/discovery', cached_api_key, { type: 'story-arcs', query: q, section: arc_section })
 	.then(json => {
 		arc_query = q;
 		arc_results = json.result;

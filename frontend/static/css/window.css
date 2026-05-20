@@ -128,11 +128,17 @@
 }
 
 .cancel-window {
-	background-color: var(--error-color);
+	border: 1px solid var(--border-color);
+	color: var(--text-color);
 }
 
 .window-footer button[type="submit"] {
 	background-color: var(--success-color);
+}
+
+.window-footer .danger-button {
+	background-color: var(--error-color);
+	color: var(--light-color);
 }
 
 @media (max-width: 850px) {

@@ -21,7 +21,7 @@ from backend.implementations.converters import extract_files_from_folder
 from backend.implementations.download_clients import TorrentDownload
 from backend.implementations.file_matching import scan_files
 from backend.implementations.file_processing import mass_process_files
-from backend.implementations.naming import mass_rename
+from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume
 from backend.internals.db import commit, get_db
 from backend.internals.db_models import FilesDB
@@ -50,18 +50,24 @@ def remove_from_queue(download: Download) -> None:
 
 def add_to_history(download: Download) -> None:
     "Add the download to history in the database"
+    success = download.state != DownloadState.FAILED_STATE
+    failure_reason = None if success else 'Download failed'
+    task_history_id = getattr(download, 'task_history_id', 0) or 0
+
     get_db().execute(
         """
         INSERT INTO download_history(
             web_link, web_title, web_sub_title,
             file_title,
             volume_id, issue_id,
-            source, downloaded_at, success
+            source, downloaded_at, success,
+            task_history_id, failure_reason
         ) VALUES (
             :web_link, :web_title, :web_sub_title,
             :file_title,
             :volume_id, :issue_id,
-            :source, :downloaded_at, :success
+            :source, :downloaded_at, :success,
+            :task_history_id, :failure_reason
         );
         """,
         {
@@ -73,9 +79,25 @@ def add_to_history(download: Download) -> None:
             'issue_id': download.issue_id,
             'source': download.source_type.value,
             'downloaded_at': round(time()),
-            'success': download.state != DownloadState.FAILED_STATE
+            'success': success,
+            'task_history_id': task_history_id or None,
+            'failure_reason': failure_reason,
         }
     )
+
+    if task_history_id:
+        display_title = (
+            download.web_sub_title
+            or download.web_title
+            or download.web_link
+            or ''
+        )
+        from backend.features.tasks import DownloadBatch  # lazy to avoid circular import
+        DownloadBatch.record(
+            task_history_id, display_title, success, failure_reason or '',
+            covered_issues=download.covered_issues,
+        )
+
     return
 
 
@@ -314,6 +336,36 @@ def rename_nzb_files(download: Download) -> None:
     "Rename NZB downloaded files to the Kapowarr naming scheme, if enabled"
     if not Settings().sv.rename_downloaded_files:
         return
+
+    # For single-issue downloads, files whose names confused the extractor
+    # (e.g. French "T01.L.homme…" parsed as issue 1.12 ≠ 1.0) won't be
+    # auto-matched in the DB. Rename them directly from covered_issues.
+    if isinstance(download.covered_issues, float):
+        volume_data = Volume(download.volume_id).get_data()
+        try:
+            expected_body = generate_issue_name(volume_data, download.covered_issues)
+        except Exception:
+            expected_body = None
+
+        if expected_body:
+            renamed = []
+            for file in download.files:
+                if not FilesDB.issues_covered(file):
+                    ext = splitext(file)[1].lower()
+                    dest = join(volume_data.folder, expected_body + ext)
+                    if file != dest:
+                        if exists(dest):
+                            delete_file_folder(dest)
+                        rename_file(file, dest)
+                        FilesDB.update_filepaths({file: dest})
+                        commit()
+                        LOGGER.debug('Renamed unmatched NZB file: %s → %s', file, dest)
+                    renamed.append(dest)
+                else:
+                    renamed.append(file)
+            download.files = renamed
+            return
+
     download.files = mass_rename(
         download.volume_id,
         filepath_filter=download.files,

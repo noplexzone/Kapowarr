@@ -49,6 +49,8 @@ issue_regex_4 = compile(r'(?<!--)(?:annuals?[\s\._])?(?<!pages\s)(?:#\s*)?(\-?' 
 issue_regex_5 = compile(r'(?<!page\s)(?:annuals?[\s\._])?#\s*(\-?' + issue_regex_snippet + r')\b(?!(?:\-|\s\-\s|\.\-\.)' + issue_regex_snippet + r')', IGNORECASE)
 issue_regex_6 = compile(r'(?:(?P<i_start>^)|(?<=(?<!part)(?<!page)[\s\._])(?P<n_c>n))(\-?' + issue_regex_snippet + r')(?=(?(n_c)c\d+|\s\-)(?=\s|\.|_|(?=\()|$))', IGNORECASE)
 issue_regex_7 = compile(r'(?:part[\s\._]|annuals?[\s\._]|(?<=[\s\._])|^)(\-?' + issue_regex_snippet + r')(?![\s\-\._]covers?)(?![\s\-\._]of[\s\-\._]\d+[\s\-\._]covers?)(?=\s|\.|_|\(|$)', IGNORECASE)
+# Fallback: bare parenthesised issue number, e.g. GetComics-style "(02)" or "(02-03)"
+issue_regex_8 = compile(r'\((\-?' + issue_regex_snippet + r'(?:(?:\-|\s\-\s)\-?' + issue_regex_snippet + r')?)\)', IGNORECASE)
 year_regex = compile(r'\[(?:[a-z]+\.?\s)?' + year_regex_snippet + r'\]|\((?:[a-z]+\.?\s)?' + year_regex_snippet + r'\)|--' + year_regex_snippet + r'--|__' + year_regex_snippet + r'__|, ' + year_regex_snippet + r'\s{3}|\b(?:(?:\d{2}-){1,2}(\d{4})|(\d{4})(?:-\d{2}){1,2})\b', IGNORECASE)
 series_regex = compile(r'(^(\d+\.)?\s+|^\d+\s{3}|\s(?=\s)|[\s,]+$)')
 annual_regex = compile(r'(?:\+|plus)[\s\._]?annuals?|annuals?[\s\._]?(?:\+|plus)|^((?!annuals?).)*$', IGNORECASE) # If regex matches, it's NOT an annual
@@ -511,11 +513,12 @@ def extract_filename_data(
             (filename,
                 {'pos': volume_end},
                 (issue_regex, issue_regex_2, issue_regex_3, issue_regex_4,
-                    issue_regex_5, issue_regex_6, issue_regex_7)),
+                    issue_regex_5, issue_regex_6, issue_regex_7,
+                    issue_regex_8)),
             (filename,
                 {'endpos': volume_pos},
                 (issue_regex, issue_regex_2, issue_regex_3, issue_regex_4,
-                    issue_regex_5, issue_regex_6))
+                    issue_regex_5, issue_regex_6, issue_regex_8))
         )
 
         for extracted_number, result_start, result_end in _find_issue_numbers(

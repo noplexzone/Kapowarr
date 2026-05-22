@@ -361,6 +361,11 @@ def rename_nzb_files(download: Download) -> None:
                         FilesDB.update_filepaths({file: dest})
                         commit()
                         LOGGER.debug('Renamed unmatched NZB file: %s → %s', file, dest)
+                    scan_files(
+                        download.volume_id,
+                        filepath_filter=[dest],
+                        update_websocket=True
+                    )
                     renamed.append(dest)
                 else:
                     renamed.append(file)

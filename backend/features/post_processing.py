@@ -339,7 +339,8 @@ def rename_nzb_files(download: Download) -> None:
 
     # For single-issue downloads, files whose names confused the extractor
     # (e.g. French "T01.L.homme…" parsed as issue 1.12 ≠ 1.0) won't be
-    # auto-matched in the DB. Rename them directly from covered_issues.
+    # auto-matched in the DB. Pre-link them using covered_issues so that
+    # mass_rename below can find and rename them correctly.
     if isinstance(download.covered_issues, float):
         volume_data = Volume(download.volume_id).get_data()
         try:
@@ -364,7 +365,8 @@ def rename_nzb_files(download: Download) -> None:
                 else:
                     renamed.append(file)
             download.files = renamed
-            return
+        # Fall through to mass_rename to apply the Kapowarr naming scheme
+        # to all files (both pre-linked above and already-matched files).
 
     download.files = mass_rename(
         download.volume_id,

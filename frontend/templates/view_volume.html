@@ -404,6 +404,19 @@
 					"Manual Search"
 				) }}
 				{{ icon_button(
+					"import-button",
+					"Import local files into this volume",
+					"import.svg",
+					"Import Files"
+				) }}
+				<input
+					type="file"
+					id="import-file-input"
+					multiple
+					accept=".zip,.cbz,.cbr,.rar,.cb7,.cbt,.cba,.epub,.mobi,.pdf"
+					style="display:none"
+				>
+				{{ icon_button(
 					"rename-button",
 					"Preview how the files of the volume will be renamed",
 					"rename.svg",

@@ -468,6 +468,7 @@ class GCDownloadSource(BaseEnum):
     MEDIAFIRE = "MediaFire"
     WETRANSFER = "WeTransfer"
     PIXELDRAIN = "Pixeldrain"
+    UFILE = "UFile"
     GETCOMICS = "GetComics"
     "A direct download link straight from their own servers"
     GETCOMICS_TORRENT = "GetComics (torrent)"
@@ -480,6 +481,7 @@ GC_DOWNLOAD_SOURCE_TERMS = {
     GCDownloadSource.MEDIAFIRE: ("mediafire", "mediafire link"),
     GCDownloadSource.WETRANSFER: ("wetransfer", "we transfer", "wetransfer link", "we transfer link"),
     GCDownloadSource.PIXELDRAIN: ("pixeldrain", "pixel drain", "pixeldrain link", "pixel drain link"),
+    GCDownloadSource.UFILE: ("ufile", "ufile link", "ufile.io"),
     GCDownloadSource.GETCOMICS: ("getcomics", "download now", "main download", "main server", "main link", "mirror download", "mirror server", "mirror link", "link 1", "link 2"),
     GCDownloadSource.GETCOMICS_TORRENT: ("getcomics (torrent)", "torrent", "torrent link", "magnet", "magnet link")
 }
@@ -502,12 +504,16 @@ class DownloadSource(BaseEnum):
     MEDIAFIRE = "MediaFire"
     WETRANSFER = "WeTransfer"
     PIXELDRAIN = "Pixeldrain"
+    UFILE = "UFile"
     GETCOMICS = "GetComics"
     "A direct download link straight from their own servers"
     GETCOMICS_TORRENT = "GetComics (torrent)"
     "A torrent magnet link directly on the webpage"
     USENET = "Usenet"
     "An NZB download sourced from a Newznab indexer"
+
+    SUWAYOMI = "Suwayomi"
+    "A chapter sourced from a self-hosted Suwayomi manga server"
 
 
 class DownloadState(BaseEnum):

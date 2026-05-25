@@ -32,10 +32,12 @@ from backend.implementations.blocklist import add_to_blocklist
 from backend.implementations.download_clients import (BaseDirectDownload,
                                                       MegaDownload,
                                                       NZBDownload,
+                                                      SuwayomiDownload,
                                                       TorrentDownload)
 from backend.implementations.external_clients import ExternalClients
 from backend.implementations.getcomics import GetComicsPage
 from backend.implementations.nzb_indexers import NZBIndexers
+from backend.implementations.suwayomi import is_suwayomi_link, SUWAYOMI_SOURCE_NAME
 from backend.implementations.volumes import Issue, Volume
 from backend.internals.db import get_db, iter_commit
 from backend.internals.server import (AddedToQueueEvent, QueueStatusEvent,
@@ -424,6 +426,8 @@ class DownloadHandler(metaclass=Singleton):
         """
         if link.startswith(Constants.GC_SITE_URL):
             return 'gc'
+        if is_suwayomi_link(link):
+            return 'suwayomi'
         for indexer in NZBIndexers.get_all():
             if link.startswith(indexer.base_url):
                 return 'nzb'
@@ -549,6 +553,33 @@ class DownloadHandler(metaclass=Singleton):
             except (ClientNotWorking, ExternalClientNotFound,
                     IssueNotFound, LinkBroken) as e:
                 LOGGER.warning('Unable to create NZB download: %s', e)
+                return [], EnqueuingDownloadFailureReason.NO_WORKING_LINKS
+
+        elif link_type == 'suwayomi':
+            covered_issues = None
+            if issue_id is not None:
+                covered_issues = (
+                    Volume(volume_id)
+                    .get_issue(issue_id)
+                    .get_data()
+                    .calculated_issue_number
+                )
+
+            try:
+                downloads = [SuwayomiDownload(
+                    download_link=link,
+                    volume_id=volume_id,
+                    covered_issues=covered_issues,
+                    source_type=DownloadSource.SUWAYOMI,
+                    source_name=SUWAYOMI_SOURCE_NAME,
+                    web_link=None,
+                    web_title=None,
+                    web_sub_title=display_title or None,
+                    forced_match=force_match,
+                )]
+
+            except IssueNotFound as e:
+                LOGGER.warning('Unable to create Suwayomi download: %s', e)
                 return [], EnqueuingDownloadFailureReason.NO_WORKING_LINKS
 
         for d in downloads:

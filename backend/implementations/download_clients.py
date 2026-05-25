@@ -26,6 +26,9 @@ from backend.base.definitions import (BrokenClientReason, Constants,
                                       DownloadSource, DownloadState,
                                       DownloadType, ExternalDownload,
                                       ExternalDownloadClient)
+from backend.implementations.suwayomi import (SuwayomiClient,
+                                              SUWAYOMI_SOURCE_NAME,
+                                              parse_suwayomi_link)
 from backend.base.helpers import Session, first_of_range, get_torrent_info
 from backend.base.logging import LOGGER
 from backend.implementations.credentials import Credentials
@@ -46,6 +49,7 @@ if TYPE_CHECKING:
 file_extension_regex = compile(r'(?<=\.|\/)[\w\d]{2,4}(?=$|;|\s|\")', IGNORECASE)
 file_name_regex = compile(r'filename(?:=\"|\*=UTF-8\'\')(.*?)\.[a-z]{2,4}\"?$', IGNORECASE)
 extract_mediafire_regex = compile(r'window.location.href\s?=\s?\'https://download\d+\.mediafire.com/.*?(?=\')', IGNORECASE)
+extract_ufile_regex = compile(r'href=["\']+(https://[^"\']*ufile\.io/[^"\']+)["\']', IGNORECASE)
 DOWNLOAD_CHUNK_SIZE = 4194304 # 4MB Chunks
 MEDIAFIRE_FOLDER_LINK = "https://www.mediafire.com/api/1.5/file/zip.php"
 WETRANSFER_API_LINK = "https://wetransfer.com/api/v4/transfers/{transfer_id}/download"
@@ -484,6 +488,30 @@ class MediaFireFolderDownload(BaseDirectDownload):
             headers=headers,
             stream=True
         )
+
+
+# region UFile
+@final
+class UFileDownload(BaseDirectDownload):
+    "For downloading a UFile.io file"
+
+    identifier: str = 'uf'
+
+    def _convert_to_pure_link(self) -> str:
+        r = self._ssn.get(self.download_link, stream=True)
+        soup = BeautifulSoup(r.text, 'html.parser')
+
+        # Try known download button id selectors (ufile.io has a typo in older pages)
+        button = (
+            soup.find('a', {'id': 'downlodfile'})
+            or soup.find('a', {'id': 'downloadfile'})
+        )
+        if isinstance(button, Tag):
+            href = first_of_range(button.get('href') or '')
+            if href and href.startswith('http'):
+                return href
+
+        raise LinkBroken(self.download_link)
 
 
 # region WeTransfer
@@ -1097,3 +1125,153 @@ class NZBDownload(ExternalDownload, BaseDirectDownload):
             **super().as_dict(),
             'client': self.external_client.id if self._external_client else None
         }
+
+
+# region Suwayomi
+@final
+class SuwayomiDownload(BaseDirectDownload):
+    """Download a manga chapter from a self-hosted Suwayomi server.
+
+    The download_link encodes the target as ``suwayomi:{manga_id}:{chapter_id}``.
+    ``run()`` triggers the chapter download on the Suwayomi side, waits for
+    completion, then fetches page images and assembles a CBZ in the download
+    folder.  Post-processing is handled by the standard PostProcessor.success
+    pipeline.
+    """
+
+    identifier: str = 'suwayomi'
+
+    def __init__(
+        self,
+        download_link: str,
+
+        volume_id: int,
+        covered_issues: Union[float, Tuple[float, float], None],
+
+        source_type: DownloadSource,
+        source_name: str,
+
+        web_link: Union[str, None],
+        web_title: Union[str, None],
+        web_sub_title: Union[str, None],
+
+        forced_match: bool = False,
+    ) -> None:
+        LOGGER.debug('Creating Suwayomi download: %s', download_link)
+
+        settings = Settings().sv
+        volume = Volume(volume_id)
+
+        # Bypass BaseDirectDownload.__init__ — there is no HTTP link to probe.
+        self._download_link = download_link
+        self._pure_link = download_link
+        self._volume_id = volume_id
+        self._issue_id = None
+        self._covered_issues = covered_issues
+        self._source_type = source_type
+        self._source_name = source_name
+        self._web_link = web_link
+        self._web_title = web_title
+        self._web_sub_title = web_sub_title
+
+        self._id = None
+        self._state = DownloadState.QUEUED_STATE
+        self._progress = 0.0
+        self._speed = 0.0
+        self._size = -1
+        self._download_thread = None
+        self._download_folder = settings.download_folder
+
+        self._stop_event = Event()
+
+        try:
+            if isinstance(covered_issues, float):
+                self._issue_id = volume.get_issue_from_number(
+                    covered_issues
+                ).id
+        except IssueNotFound as e:
+            if not forced_match:
+                raise e
+
+        self._filename_body = ''
+        if settings.rename_downloaded_files and covered_issues is not None:
+            try:
+                self._filename_body = generate_issue_name(
+                    volume.get_data(), covered_issues
+                )
+            except IssueNotFound as e:
+                if not forced_match:
+                    raise e
+
+        if not self._filename_body:
+            _, chapter_id = parse_suwayomi_link(download_link)
+            self._filename_body = f'suwayomi_chapter_{chapter_id}'
+
+        self._title = basename(self._filename_body)
+        cbz_name = '_'.join(self._filename_body.split(sep)) + '.cbz'
+        self._files = [join(self._download_folder, cbz_name)]
+
+    def run(self) -> None:
+        from backend.internals.server import QueueStatusEvent, WebSocket
+
+        manga_id, chapter_id = parse_suwayomi_link(self._download_link)
+        client = SuwayomiClient()
+
+        self._state = DownloadState.DOWNLOADING_STATE
+        ws = WebSocket()
+        ws.emit(QueueStatusEvent(self))
+
+        LOGGER.info(
+            'Suwayomi: enqueuing download for manga %d chapter %d',
+            manga_id, chapter_id,
+        )
+
+        try:
+            client.enqueue_download(chapter_id)
+        except Exception as e:
+            LOGGER.error('Suwayomi: failed to enqueue download: %s', e)
+            self._state = DownloadState.FAILED_STATE
+            return
+
+        chapter = client.wait_for_download(manga_id, chapter_id, self._stop_event)
+        if chapter is None:
+            if not self._stop_event.is_set():
+                self._state = DownloadState.FAILED_STATE
+            return
+
+        page_count = chapter.get('pageCount', 0)
+        source_order = chapter.get('sourceOrder', 0)
+        if page_count <= 0:
+            LOGGER.error(
+                'Suwayomi: chapter %d has pageCount=%d; cannot create CBZ',
+                chapter_id, page_count,
+            )
+            self._state = DownloadState.FAILED_STATE
+            return
+
+        LOGGER.info(
+            'Suwayomi: chapter %d downloaded (%d pages); building CBZ',
+            chapter_id, page_count,
+        )
+
+        try:
+            ok = client.create_cbz(
+                manga_id, source_order, page_count,
+                self._files[0], self._stop_event,
+            )
+        except Exception as e:
+            LOGGER.error('Suwayomi: failed to create CBZ: %s', e)
+            self._state = DownloadState.FAILED_STATE
+            return
+
+        if not ok:
+            return
+
+        LOGGER.info('Suwayomi: CBZ created at %s', self._files[0])
+
+    def stop(
+        self,
+        state: DownloadState = DownloadState.CANCELED_STATE
+    ) -> None:
+        self._state = state
+        self._stop_event.set()

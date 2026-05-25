@@ -40,6 +40,7 @@ from backend.implementations.download_clients import (DirectDownload,
                                                       PixelDrainDownload,
                                                       PixelDrainFolderDownload,
                                                       TorrentDownload,
+                                                      UFileDownload,
                                                       WeTransferDownload)
 from backend.implementations.external_clients import ExternalClients
 from backend.implementations.matching import download_group_filter
@@ -550,6 +551,12 @@ async def __purify_link(
 
         # File download
         return url, PixelDrainDownload
+
+    elif source == GCDownloadSource.UFILE:
+        if 'error' in url.lower() or 'notfound' in url.lower():
+            raise LinkBroken(link)
+
+        return url, UFileDownload
 
     elif (
         source == GCDownloadSource.GETCOMICS_TORRENT

@@ -21,6 +21,7 @@ from backend.base.logging import LOGGER
 from backend.features.download_queue import DownloadHandler
 from backend.features.search import auto_search
 from backend.implementations.conversion import mass_convert
+from backend.implementations.file_matching import scan_files
 from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume, refresh_and_scan
 from backend.internals.db import close_db, get_db
@@ -480,6 +481,60 @@ class MassConvertVolume(Task):
         )
 
         return
+
+class ImportFilesVolume(Task):
+    "Import uploaded files into a volume"
+
+    stop = False
+    message = ''
+    action = 'import_files_volume'
+    display_title = 'Import Files'
+    category = ''
+
+    @property
+    def volume_id(self) -> int:
+        return self._volume_id
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self, volume_id: int, filepaths: List[str]) -> None:
+        self._volume_id = volume_id
+        self.filepaths = filepaths
+        return
+
+    def run(self) -> None:
+        volume_title = Volume(self._volume_id).vd.title
+        self.message = f'Importing files for {volume_title}'
+        WebSocket().emit(TaskStatusEvent(self.message))
+
+        # Register uploaded files in DB, match to issues
+        scan_files(
+            self._volume_id,
+            filepath_filter=self.filepaths,
+            update_websocket=True
+        )
+
+        # Convert to preferred format (e.g. zip/rar → cbz)
+        converted = mass_convert(
+            self._volume_id,
+            filepath_filter=self.filepaths,
+            update_websocket_progress=True,
+            update_websocket_files=True,
+            process_individual_files=False
+        )
+
+        # Rename; if conversion produced new files use those, else original paths
+        files_to_rename = converted if converted else self.filepaths
+        mass_rename(
+            self._volume_id,
+            filepath_filter=files_to_rename,
+            update_websocket=True
+        )
+
+        return
+
 
 # =====================
 # Library tasks
@@ -1174,6 +1229,7 @@ def record_and_track_download(
     volume_id: int,
     issue_id: Union[int, None],
     force_match: bool,
+    display_title: str = '',
 ) -> tuple:
     """Queue a manual download and track its outcome in task history.
 
@@ -1205,6 +1261,7 @@ def record_and_track_download(
         DownloadHandler().add(
             link, volume_id, issue_id,
             force_match=force_match,
+            display_title=display_title,
             task_history_id=task_history_id,
         )
     )

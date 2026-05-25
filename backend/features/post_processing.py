@@ -373,11 +373,25 @@ def rename_nzb_files(download: Download) -> None:
         # Fall through to mass_rename to apply the Kapowarr naming scheme
         # to all files (both pre-linked above and already-matched files).
 
-    download.files = mass_rename(
+    pre_rename_files = download.files[:]
+    renamed = mass_rename(
         download.volume_id,
         filepath_filter=download.files,
         process_individual_files=False
     )
+    if renamed:
+        download.files = renamed
+    else:
+        # mass_rename found none of our files in the DB (e.g. the file still
+        # couldn't be matched to an issue after pre-linking). Keep the
+        # pre-rename paths so convert_file receives a non-empty filter and
+        # doesn't accidentally re-process unrelated volume files.
+        LOGGER.warning(
+            'NZB post-processing: mass_rename returned no files for volume %d; '
+            'files may not be matched to issues: %s',
+            download.volume_id, pre_rename_files
+        )
+        download.files = pre_rename_files
 
 
 # region Post-Processors

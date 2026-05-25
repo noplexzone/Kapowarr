@@ -1243,3 +1243,16 @@ def _migrate_add_download_history_task_link():
         ALTER TABLE download_history ADD COLUMN failure_reason TEXT;
     """)
     return
+
+
+@DatabaseMigrationHandler.register_handler(51)
+def _migrate_add_ufile_to_preference():
+    from backend.internals.settings import Settings
+
+    service_preference = Settings().sv.service_preference
+    service_preference.append("UFile")
+    get_db().execute(
+        "UPDATE config SET value = ? WHERE key = 'service_preference';",
+        (service_preference,)
+    )
+    return

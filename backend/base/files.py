@@ -92,7 +92,7 @@ def list_files(folder: str, ext: Iterable[str] = []) -> List[str]:
     while to_dos:
         to_do = to_dos.popleft()
         for f in scandir(to_do):
-            if f.is_dir():
+            if f.is_dir() and not f.name.startswith('.'):
                 to_dos.append(f.path)
 
             elif (

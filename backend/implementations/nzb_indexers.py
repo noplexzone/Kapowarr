@@ -26,8 +26,11 @@ DEFAULT_CATEGORIES = '7030,7020'
 # Matches bare 4-digit year numbers (1900-2099) not immediately preceded by # or a digit
 _bare_year_re = re_compile(r'(?<![\d#])((?:19|20)\d{2})(?!\d)')
 
-# Matches publisher prefixes like "DC.Comics-" or "Dark.Horse.Comics." at start of dot-separated titles
-_publisher_prefix_re = re_compile(r'(?i)^(?:[A-Za-z0-9]+\.)+Comics[\-\.]')
+# Matches publisher prefixes at the start of dot-separated titles, e.g.:
+# "DC.Comics-", "Yen.Press-", "Seven.Seas.Entertainment-", "Viz.Media-"
+_publisher_prefix_re = re_compile(
+    r'(?i)^(?:[A-Za-z0-9]+\.)+(?:Comics?|Press|Media|Entertainment|Publishing|Publications?|Books?|Manga)[\-\.]'
+)
 
 
 def _normalise_nzb_title(title: str) -> str:

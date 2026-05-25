@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import gather, get_running_loop, run
+from re import IGNORECASE, sub
 from typing import Dict, List, Tuple, Union
 
-from backend.base.definitions import (QUERY_FORMATS, MatchedSearchResultData,
-                                      SearchResultData, SearchSource,
-                                      SpecialVersion)
+from backend.base.definitions import (QUERY_FORMATS, DownloadSource,
+                                      MatchedSearchResultData, SearchResultData,
+                                      SearchSource, SpecialVersion)
 from backend.base.file_extraction import refine_special_version
 from backend.base.helpers import (AsyncSession, check_overlapping_issues,
                                   extract_year_from_date, force_range,
@@ -14,6 +15,9 @@ from backend.base.logging import LOGGER
 from backend.implementations.getcomics import search_getcomics
 from backend.implementations.matching import check_search_result_match
 from backend.implementations.nzb_indexers import NZBIndexers
+from backend.implementations.suwayomi import (SUWAYOMI_SOURCE_NAME,
+                                              SuwayomiClient,
+                                              make_suwayomi_link)
 from backend.implementations.volumes import Volume
 
 
@@ -152,6 +156,74 @@ class SearchNZBIndexers(SearchSource):
         return await loop.run_in_executor(
             None, NZBIndexers.search_indexers, indexers, self.query
         )
+
+
+class SearchSuwayomi(SearchSource):
+    async def search(self, _session: AsyncSession) -> List[SearchResultData]:
+        loop = get_running_loop()
+        return await loop.run_in_executor(None, self._search_sync)
+
+    def _search_sync(self) -> List[SearchResultData]:
+        client = SuwayomiClient()
+        if not client.is_configured():
+            return []
+
+        series_title = _extract_series_title(self.query)
+        if not series_title:
+            return []
+
+        try:
+            library = client.get_library_manga()
+        except Exception as e:
+            LOGGER.warning('Suwayomi library search failed: %s', e)
+            return []
+
+        results: List[SearchResultData] = []
+        title_lower = series_title.lower()
+        for manga in library:
+            manga_title: str = manga.get('title', '')
+            if title_lower not in manga_title.lower():
+                continue
+
+            manga_id: int = manga['id']
+            try:
+                chapters = client.get_chapters(manga_id)
+            except Exception as e:
+                LOGGER.warning(
+                    'Suwayomi: failed to get chapters for manga %d: %s',
+                    manga_id, e,
+                )
+                continue
+
+            for ch in chapters:
+                ch_number = ch.get('chapterNumber')
+                if ch_number is None or ch_number < 0:
+                    continue
+
+                results.append({
+                    'link': make_suwayomi_link(manga_id, ch['id']),
+                    'display_title': (
+                        f"{manga_title} - Ch. {ch_number:.4g}"
+                    ),
+                    'source': SUWAYOMI_SOURCE_NAME,
+                    'series': manga_title,
+                    'year': None,
+                    'volume_number': None,
+                    'special_version': None,
+                    'issue_number': float(ch_number),
+                    'annual': False,
+                })
+
+        return results
+
+
+def _extract_series_title(query: str) -> str:
+    """Strip issue/volume/year suffixes from a search query to get the title."""
+    # Remove "(year)", "#N", "Vol. N", "Volume N"
+    title = sub(r'\s*\(\d{4}\)', '', query)
+    title = sub(r'\s+#[\d.]+.*$', '', title, flags=IGNORECASE)
+    title = sub(r'\s+Vol(?:ume)?\.?\s*\d+.*$', '', title, flags=IGNORECASE)
+    return title.strip()
 
 
 async def search_multiple_queries(*queries: str) -> List[SearchResultData]:

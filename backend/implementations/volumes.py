@@ -1296,6 +1296,20 @@ class Library:
         LOGGER.info(
             f'Added volume with CV ID {comicvine_id} and ID {volume_id}'
         )
+
+        from threading import Thread
+        from backend.implementations.suwayomi import SuwayomiClient
+
+        def _sync_to_suwayomi(title: str) -> None:
+            try:
+                client = SuwayomiClient()
+                if client.is_configured():
+                    client.sync_manga_to_library(title)
+            except Exception as exc:
+                LOGGER.debug("Suwayomi auto-library sync failed for '%s': %s", title, exc)
+
+        Thread(target=_sync_to_suwayomi, args=(vd["title"],), daemon=True).start()
+
         return volume_id
 
 

@@ -35,6 +35,7 @@ const ViewEls = {
 		refresh: document.querySelector('#refresh-button'),
 		auto_search: document.querySelector('#autosearch-button'),
 		manual_search: document.querySelector('#manualsearch-button'),
+		import: document.querySelector('#import-button'),
 		rename: document.querySelector('#rename-button'),
 		convert: document.querySelector('#convert-button'),
 		manage: document.querySelector('#manage-button'),
@@ -280,6 +281,44 @@ function toggleMonitored(api_key) {
 //
 // Tasks
 //
+function importFiles(api_key) {
+	const file_input = document.querySelector('#import-file-input');
+	file_input.onchange = e => {
+		if (!e.target.files.length) return;
+
+		const button = ViewEls.tool_bar.import;
+		const label = button.querySelector('p');
+		const original_text = label.innerText;
+		label.innerText = 'Uploading...';
+		button.disabled = true;
+
+		const form_data = new FormData();
+		for (const file of e.target.files)
+			form_data.append('files', file);
+
+		fetch(`${url_base}/api/volumes/${volume_id}/import`, {
+			method: 'POST',
+			headers: {'x-api-key': api_key},
+			body: form_data
+		})
+		.then(r => {
+			if (!r.ok) throw r;
+			label.innerText = 'Queued!';
+		})
+		.catch(() => {
+			label.innerText = 'Failed';
+		})
+		.finally(() => {
+			setTimeout(() => {
+				label.innerText = original_text;
+				button.disabled = false;
+			}, 2000);
+			e.target.value = '';
+		});
+	};
+	file_input.click();
+};
+
 function refreshVolume(api_key) {
 	const button_info = task_to_button[`refresh_and_scan#${volume_id}`];
 	const icon = button_info.button.querySelector('img');
@@ -366,12 +405,12 @@ function showManualSearch(api_key, issue_id=null) {
 			const download_button = entry.querySelector('.search-action-column :nth-child(1)');
 			download_button.classList.add('icon-text-color');
 			download_button.onclick =
-				e => addManualSearch(result.link, false, download_button, api_key, issue_id);
+				e => addManualSearch(result.link, false, download_button, api_key, issue_id, result.display_title || '');
 
 			const force_download_button = entry.querySelector('.search-action-column :nth-child(2)');
 			force_download_button.classList.add('icon-text-color');
 			force_download_button.onclick =
-				e => addManualSearch(result.link, true, force_download_button, api_key, issue_id);
+				e => addManualSearch(result.link, true, force_download_button, api_key, issue_id, result.display_title || '');
 
 			const blocklist_button = entry.querySelector('.search-action-column :nth-child(3)')
 			if (result.match_issue === null || !result.match_issue.includes('blocklist'))
@@ -393,7 +432,7 @@ function showManualSearch(api_key, issue_id=null) {
 	});
 };
 
-function addManualSearch(link, force, button, api_key, issue_id=null) {
+function addManualSearch(link, force, button, api_key, issue_id=null, display_title='') {
 	button.classList.remove('error');
 	button.title = 'Download';
 	const img = button.querySelector('img');
@@ -404,7 +443,7 @@ function addManualSearch(link, force, button, api_key, issue_id=null) {
 		? `/issues/${issue_id}/download`
 		: `/volumes/${volume_id}/download`;
 
-	sendAPI('POST', url, api_key, {link: link, force_match: force})
+	sendAPI('POST', url, api_key, {link: link, force_match: force, display_title: display_title})
 	.then(response => response.json())
 	.then(json => {
 		img.classList.remove('spinning');
@@ -1093,6 +1132,7 @@ usingApiKey()
 	ViewEls.tool_bar.refresh.onclick = e => refreshVolume(api_key);
 	ViewEls.tool_bar.auto_search.onclick = e => autosearchVolume(api_key);
 	ViewEls.tool_bar.manual_search.onclick = e => showManualSearch(api_key);
+	ViewEls.tool_bar.import.onclick = e => importFiles(api_key);
 	ViewEls.tool_bar.rename.onclick = e => showRename(api_key);
 	ViewEls.tool_bar.convert.onclick = e => showConvert(api_key);
 	ViewEls.tool_bar.manage.onclick = e => showManageIssues(api_key);

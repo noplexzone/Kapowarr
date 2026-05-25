@@ -123,6 +123,10 @@ class PublicSettingsValues:
     seeding_handling: SeedingHandling = SeedingHandling.COPY
     delete_completed_downloads: bool = True
 
+    suwayomi_base_url: str = ''
+    suwayomi_username: str = ''
+    suwayomi_password: str = ''
+
     date_type: DateType = DateType.COVER_DATE
 
     def todict(self, to_public: bool = True) -> Dict[str, Any]:
@@ -142,7 +146,7 @@ class PublicSettingsValues:
             return result
 
         for k, v in result.items():
-            if k in ("auth_username", "auth_password", "proxy_password") and v:
+            if k in ("auth_username", "auth_password", "proxy_password", "suwayomi_password") and v:
                 result[k] = Constants.CREDENTIAL_REPLACEMENT
 
             if isinstance(v, BaseEnum):
@@ -456,6 +460,10 @@ class Settings(metaclass=Singleton):
         elif key == 'proxy_password':
             if value == Constants.CREDENTIAL_REPLACEMENT:
                 converted_value = self.sv.proxy_password
+
+        elif key == 'suwayomi_password':
+            if value == Constants.CREDENTIAL_REPLACEMENT:
+                converted_value = self.sv.suwayomi_password
 
         elif key == 'comicvine_api_key':
             from backend.implementations.comicvine import ComicVine

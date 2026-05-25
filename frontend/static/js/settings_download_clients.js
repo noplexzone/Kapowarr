@@ -773,11 +773,40 @@ function deleteUsenet(api_key) {
 
 // code run on load
 
+function fillSuwayomi(api_key) {
+	fetchAPI('/settings', api_key)
+	.then(json => {
+		document.querySelector('#suwayomi-url-input').value = json.result.suwayomi_base_url || '';
+		document.querySelector('#suwayomi-username-input').value = json.result.suwayomi_username || '';
+	});
+};
+
+function saveSuwayomi(api_key) {
+	const btn = document.querySelector('#suwayomi-save-button');
+	btn.innerText = 'Saving…';
+	const data = {
+		suwayomi_base_url: document.querySelector('#suwayomi-url-input').value.trim(),
+		suwayomi_username: document.querySelector('#suwayomi-username-input').value,
+	};
+	const password = document.querySelector('#suwayomi-password-input').value;
+	if (password)
+		data.suwayomi_password = password;
+
+	sendAPI('PUT', '/settings', api_key, {}, data)
+	.then(() => {
+		btn.innerText = 'Saved';
+		document.querySelector('#suwayomi-password-input').value = '';
+	})
+	.catch(() => btn.innerText = 'Failed');
+};
+
 usingApiKey()
 .then(api_key => {
 	fillCredentials(api_key);
 	loadTorrentClients(api_key);
 	fillRemoteMappings(api_key);
+	fillSuwayomi(api_key);
+
 	document.querySelector('#delete-torrent-edit').onclick = e => deleteTorrent(api_key);
 	document.querySelector('#test-torrent-edit').onclick = e => testEditTorrent(api_key);
 	document.querySelector('#test-torrent-add').onclick = e => testAddTorrent(api_key);
@@ -787,6 +816,11 @@ usingApiKey()
 	document.querySelector('#test-usenet-edit').onclick = e => testEditUsenet(api_key);
 	document.querySelector('#test-usenet-add').onclick = e => testAddUsenet(api_key);
 	document.querySelector('#add-usenet-client').onclick = e => loadUsenetList(api_key);
+
+	document.querySelector('#suwayomi-form').onsubmit = e => {
+		e.preventDefault();
+		saveSuwayomi(api_key);
+	};
 });
 
 document.querySelector('#edit-torrent-form').action = 'javascript:saveEditTorrent()';

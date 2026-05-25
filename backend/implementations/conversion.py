@@ -118,19 +118,18 @@ def mass_convert(
         List[str]: The new filenames, only of files that have been be converted.
     """
     planned_conversions: List[ProposedConversion] = []
-    for proposed_convertion in _get_convertable_files(
-        volume_id, issue_id, filepath_filter
-    ):
-        if proposed_convertion.target_format == 'folder':
-            resulting_files = proposed_convertion.perform_conversion()
-            FilesDB.delete_filepath(proposed_convertion.filepath)
-            for filepath in resulting_files:
+    conversions_queue = list(_get_convertable_files(volume_id, issue_id, filepath_filter))
+    while conversions_queue:
+        conv = conversions_queue.pop(0)
+        if conv.target_format == 'folder':
+            sub_files = conv.perform_conversion()
+            FilesDB.delete_filepath(conv.filepath)
+            for filepath in sub_files:
                 sub_conversion = ConvertersManager.select_converter(filepath)
                 if sub_conversion is not None:
-                    planned_conversions.append(sub_conversion)
-
+                    conversions_queue.append(sub_conversion)
         else:
-            planned_conversions.append(proposed_convertion)
+            planned_conversions.append(conv)
 
     total_count = len(planned_conversions)
     if not total_count:

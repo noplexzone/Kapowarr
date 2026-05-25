@@ -385,6 +385,36 @@
 				<img src="{{url_base}}/static/img/cancel.svg" alt="">
 			</button>
 		</div>
+		<h2>Suwayomi</h2>
+		<p>Connect to a self-hosted <a href="https://github.com/Suwayomi/Suwayomi-Server" target="_blank">Suwayomi-Server</a> to automatically download manga chapters from its library.</p>
+		<form id="suwayomi-form">
+			<table class="fold-table">
+				<tbody>
+					<tr>
+						<th><label for="suwayomi-url-input">Server URL</label></th>
+						<td>
+							<input type="url" id="suwayomi-url-input" placeholder="http://localhost:4567" spellcheck="false">
+							<p>Base URL of your Suwayomi server. Leave empty to disable.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="suwayomi-username-input">Username</label></th>
+						<td>
+							<input type="text" id="suwayomi-username-input" spellcheck="false" autocomplete="off">
+							<p>Optional — only needed if authentication is enabled on the server.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="suwayomi-password-input">Password</label></th>
+						<td>
+							<input type="password" id="suwayomi-password-input" autocomplete="new-password">
+							<p>Optional — only needed if authentication is enabled on the server.</p>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+			<button type="submit" id="suwayomi-save-button">Save</button>
+		</form>
 		<h2>Remote Path Mappings</h2>
 		<button id="add-remote-mapping" class="icon-dark-color" title="Add remote path mapping">
 			<img src="{{url_base}}/static/img/cancel.svg" alt="">

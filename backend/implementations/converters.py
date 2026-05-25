@@ -265,6 +265,9 @@ class ConvertersManager:
                 filepath, cls.converters[source_format]['folder'][0], 'folder'
             )
 
+        if source_format not in cls.converters:
+            return None
+
         for potential_format in settings.format_preference:
             if source_format == potential_format:
                 # File already is most desired, possible, format

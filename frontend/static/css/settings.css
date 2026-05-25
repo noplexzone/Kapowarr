@@ -402,6 +402,17 @@
 }
 
 /*  */
+/* Suwayomi */
+/*  */
+#suwayomi-save-button {
+	margin-top: .8rem;
+	padding: .5rem 1.2rem;
+	border-radius: 4px;
+	background-color: var(--accent-color);
+	color: var(--nav-background-color);
+}
+
+/*  */
 /* Remote Mapping */
 /*  */
 #add-remote-mapping {

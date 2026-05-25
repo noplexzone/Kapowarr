@@ -359,9 +359,9 @@ def download_group_filter(
     """
     annual = 'annual' in volume_data.title.lower()
 
-    matching_title = match_title(
-        volume_data.title,
-        processed_desc['series']
+    matching_title = (
+        match_title(volume_data.title, processed_desc['series'])
+        or match_title(volume_data.alt_title or '', processed_desc['series'])
     )
 
     matching_volume_number = match_volume_number(

@@ -3,6 +3,8 @@
 from asyncio import run
 from datetime import datetime
 from io import BytesIO
+from os import makedirs
+from os.path import join
 from typing import Any, Dict, List, Tuple, Type, Union
 
 import json as _json
@@ -27,7 +29,8 @@ from backend.features.library_import import (generate_bulk_scan,
                                              prepare_bulk_scan)
 from backend.features.mass_edit import run_mass_editor_action
 from backend.features.search import manual_search
-from backend.features.tasks import (BulkLibraryImport, RefreshAndScanVolume,
+from backend.features.tasks import (BulkLibraryImport, ImportFilesVolume,
+                                    RefreshAndScanVolume,
                                     Task, TaskHandler,
                                     delete_task_history, get_task_history,
                                     get_task_planning, record_and_track_download,
@@ -1052,6 +1055,38 @@ def api_volume(id: int):
         return return_api({})
 
 
+@api.route('/volumes/<int:id>/import', methods=['POST'])
+@error_handler
+@auth
+def api_volume_import(id: int):
+    from werkzeug.utils import secure_filename
+
+    volume = Library.get_volume(id)
+    folder = volume.vd.folder
+    makedirs(folder, exist_ok=True)
+
+    uploads = request.files.getlist('files')
+    if not uploads or all(not f.filename for f in uploads):
+        raise KeyNotFound('files')
+
+    saved_paths = []
+    for upload in uploads:
+        if not upload.filename:
+            continue
+        filename = secure_filename(upload.filename)
+        if not filename:
+            continue
+        filepath = join(folder, filename)
+        upload.save(filepath)
+        saved_paths.append(filepath)
+
+    if not saved_paths:
+        raise KeyNotFound('files')
+
+    task_id = TaskHandler().add(ImportFilesVolume(id, saved_paths))
+    return return_api({'task_id': task_id}, code=201)
+
+
 @api.route('/volumes/<int:id>/cover', methods=['GET'])
 @error_handler
 @auth
@@ -1215,7 +1250,8 @@ def api_volume_download(id: int):
     Library.get_volume(id)
     link: str = extract_key(request, 'link')
     force_match: bool = extract_key(request, 'force_match')
-    result = record_and_track_download(link, id, None, force_match)
+    display_title: str = extract_key(request, 'display_title', check_existence=False) or ''
+    result = record_and_track_download(link, id, None, force_match, display_title)
     return return_api(
         {
             'result': (result or (None,))[0],
@@ -1244,7 +1280,8 @@ def api_issue_download(id: int):
     volume_id = Library.get_issue(id).get_data().volume_id
     link = extract_key(request, 'link')
     force_match: bool = extract_key(request, 'force_match')
-    result = record_and_track_download(link, volume_id, id, force_match)
+    display_title: str = extract_key(request, 'display_title', check_existence=False) or ''
+    result = record_and_track_download(link, volume_id, id, force_match, display_title)
     return return_api(
         {
             'result': result[0],

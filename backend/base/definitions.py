@@ -106,6 +106,9 @@ class Constants:
     GC_SITE_URL = "https://getcomics.org"
     "The base URL of GetComics"
 
+    GC_REQUEST_INTERVAL = 2.0 # seconds
+    "Minimum spacing between GetComics requests to avoid burst rate limits"
+
     GC_SOURCE_TERM = "GetComics"
     "The name used for GetComics as a download source"
 

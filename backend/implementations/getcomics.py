@@ -4,10 +4,11 @@
 Getting downloads from a GC page
 """
 
-from asyncio import gather
+from asyncio import Lock, sleep
 from functools import reduce
 from hashlib import sha1
 from re import IGNORECASE, compile
+from time import monotonic
 from typing import Callable, List, Tuple, Type, Union
 
 from aiohttp import ClientError
@@ -46,12 +47,47 @@ from backend.implementations.external_clients import ExternalClients
 from backend.implementations.matching import download_group_filter
 from backend.implementations.volumes import Volume
 from backend.internals.db import iter_commit
-from backend.internals.settings import Settings
+
 
 mediafire_dd_regex = compile(
     r'https?://download\d+\.mediafire\.com/',
     IGNORECASE
 )
+_gc_request_lock = Lock()
+_gc_last_request_at = 0.0
+
+
+async def _gc_get_text(
+    session: AsyncSession,
+    url: str,
+    **kwargs
+) -> str:
+    """Fetch GetComics text with global pacing and browser-like headers.
+
+    GetComics/Cloudflare will rate-limit bursts. This helper serializes all
+    GetComics page requests in-process and spaces them out so concurrent auto
+    searches do not fan out into a request storm.
+    """
+    global _gc_last_request_at
+
+    headers = dict(kwargs.pop('headers', {}))
+    headers.setdefault('User-Agent', Constants.BROWSER_USERAGENT)
+
+    async with _gc_request_lock:
+        wait_time = (
+            _gc_last_request_at + Constants.GC_REQUEST_INTERVAL
+            - monotonic()
+        )
+        if wait_time > 0:
+            await sleep(wait_time)
+
+        result = await session.get_text(
+            url,
+            headers=headers,
+            **kwargs
+        )
+        _gc_last_request_at = monotonic()
+        return result
 
 
 # region Scraping
@@ -758,7 +794,8 @@ async def search_getcomics(
         List[SearchResultData]: The search results.
     """
     # Fetch first page and determine max pages
-    first_page = await session.get_text(
+    first_page = await _gc_get_text(
+        session,
         Constants.GC_SITE_URL,
         params={"s": query},
         quiet_fail=True
@@ -772,25 +809,17 @@ async def search_getcomics(
         10
     )
 
-    # Fetch pages beyond first concurrently
-    other_tasks = [
-        session.get_text(
+    # Fetch pages beyond first sequentially. GetComics rate-limits bursts, so
+    # keep this paced even when FlareSolverr is configured.
+    other_htmls = [
+        await _gc_get_text(
+            session,
             f"{Constants.GC_SITE_URL}/page/{page}",
             params={"s": query},
             quiet_fail=True
         )
         for page in range(2, max_page + 1)
     ]
-
-    if Settings().sv.flaresolverr_base_url:
-        # FlareSolverr available, run at full speed
-        other_htmls = await gather(*other_tasks)
-    else:
-        # FlareSolverr not available, run at sequencial speed
-        other_htmls = [
-            await task
-            for task in other_tasks
-        ]
 
     other_soups = [
         BeautifulSoup(html, "html.parser")

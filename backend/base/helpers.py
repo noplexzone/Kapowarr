@@ -9,6 +9,7 @@ from __future__ import annotations
 from asyncio import sleep
 from base64 import urlsafe_b64encode
 from collections import deque
+from email.utils import parsedate_to_datetime
 from functools import lru_cache
 from hashlib import pbkdf2_hmac
 from multiprocessing.pool import Pool
@@ -18,10 +19,12 @@ from re import compile
 from subprocess import run
 from sys import base_exec_prefix, executable, maxsize, platform, version_info
 from threading import current_thread
+from time import time
 from typing import (TYPE_CHECKING, Any, Callable, Collection, Dict, Iterable,
                     Iterator, List, Mapping, Sequence, Tuple, Union)
 from unicodedata import normalize
-from urllib.parse import quote_plus, unquote
+from urllib.parse import (parse_qsl, quote_plus, unquote, urlsplit,
+                          urlunsplit)
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 from bencoding import bdecode
@@ -925,6 +928,51 @@ def _running_urllib3_v2_and_above() -> bool:
     return major_version >= 2
 
 
+SENSITIVE_URL_QUERY_KEYS = frozenset((
+    'api_key', 'apikey', 'key', 'token', 'access_token', 'refresh_token',
+    'auth', 'authorization', 'password', 'pass', 'signature', 'sig',
+    'secret', 'client_secret'
+))
+
+
+def redact_url_for_log(url: object) -> str:
+    """Redact sensitive query values before writing a URL to logs."""
+    url_str = str(url)
+    try:
+        parts = urlsplit(url_str)
+        if not parts.query:
+            return url_str
+
+        redacted_pairs = [
+            f"{key}=<redacted>"
+            if key.lower() in SENSITIVE_URL_QUERY_KEYS
+            else f"{key}={value}"
+            for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        ]
+        return urlunsplit(parts._replace(query='&'.join(redacted_pairs)))
+
+    except Exception:
+        return url_str
+
+
+def get_retry_after_seconds(headers: Mapping[str, str]) -> Union[float, None]:
+    """Parse an HTTP Retry-After header value into seconds."""
+    retry_after = headers.get('Retry-After')
+    if not retry_after:
+        return None
+
+    try:
+        return max(float(retry_after), 0.0)
+
+    except ValueError:
+        try:
+            retry_datetime = parsedate_to_datetime(retry_after)
+            return max(retry_datetime.timestamp() - time(), 0.0)
+
+        except (TypeError, ValueError):
+            return None
+
+
 def retry(
     total: int,
     method_whitelist: Collection[str],
@@ -1028,13 +1076,13 @@ class Session(RSession):
             LOGGER.warning(
                 "%s request to %s returned with code %d",
                 result.request.method,
-                result.request.url,
+                redact_url_for_log(result.request.url),
                 result.status_code
             )
             LOGGER.debug(
                 "Request response for %s %s: %s",
                 result.request.method,
-                result.request.url,
+                redact_url_for_log(result.request.url),
                 result.text
             )
 
@@ -1078,13 +1126,29 @@ class AsyncSession(ClientSession):
                 response = await super()._request(*args, **kwargs)
                 LOGGER.debug(
                     'Made async request: %s "%s" %d %d',
-                    method, response.url,
+                    method, redact_url_for_log(response.url),
                     response.status,
                     int(response.headers.get('Content-Length', -1))
                 )
 
                 if response.status in Constants.STATUS_FORCELIST_RETRIES:
                     raise ClientError
+
+                if response.status == 429 and round < Constants.TOTAL_RETRIES:
+                    retry_after = get_retry_after_seconds(response.headers)
+                    wait_time = retry_after if retry_after is not None else sleep_time
+                    LOGGER.warning(
+                        "%s request to %s was rate limited. "
+                        "Retrying in %.1f seconds for round %d...",
+                        method, redact_url_for_log(url), wait_time, round + 1
+                    )
+                    response.close()
+                    await sleep(wait_time)
+                    sleep_time = (
+                        Constants.BACKOFF_FACTOR_RETRIES *
+                        (2 ** (round - 1))
+                    )
+                    continue
 
             except ClientError:
                 if round == Constants.TOTAL_RETRIES:
@@ -1093,7 +1157,7 @@ class AsyncSession(ClientSession):
 
                 LOGGER.warning(
                     "%s request failed for url %s. Retrying for round %d...",
-                    method, url, round + 1
+                    method, redact_url_for_log(url), round + 1
                 )
 
                 await sleep(sleep_time)
@@ -1120,11 +1184,11 @@ class AsyncSession(ClientSession):
             if 400 <= response.status < 500:
                 LOGGER.warning(
                     "%s request to %s returned with code %d",
-                    method, url, response.status
+                    method, redact_url_for_log(url), response.status
                 )
                 LOGGER.debug(
                     "Request response for %s %s: %s",
-                    method, url, await response.text()
+                    method, redact_url_for_log(url), await response.text()
                 )
 
             return response

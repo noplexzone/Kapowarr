@@ -35,6 +35,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/kapowarr:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/kapowarr:develop
             ${{ secrets.DOCKERHUB_USERNAME }}/kapowarr:v${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -16,7 +16,7 @@ from backend.base.custom_exceptions import (ClientNotWorking, InvalidKeyValue,
 from backend.base.definitions import (BrokenClientReason, ClientTestResult,
                                       SearchResultData)
 from backend.base.file_extraction import extract_filename_data
-from backend.base.helpers import Session, normalise_base_url
+from backend.base.helpers import Session, normalise_base_url, redact_url_for_log
 from backend.base.logging import LOGGER
 from backend.internals.db import get_db
 
@@ -271,7 +271,10 @@ def _parse_newznab_xml(
                 if api_key:
                     qs += f'&apikey={api_key}'
                 link = f'{base_url}/api?{qs}'
-                LOGGER.info('Constructed NZB download URL from GUID: %s', link)
+                LOGGER.info(
+                    'Constructed NZB download URL from GUID: %s',
+                    redact_url_for_log(link),
+                )
             else:
                 LOGGER.warning(
                     'NZB item "%s" has no usable download URL and no GUID, skipping', title

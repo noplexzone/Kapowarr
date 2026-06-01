@@ -10,7 +10,8 @@ from backend.base.definitions import (QUERY_FORMATS, DownloadSource,
 from backend.base.file_extraction import refine_special_version
 from backend.base.helpers import (AsyncSession, check_overlapping_issues,
                                   extract_year_from_date, force_range,
-                                  get_subclasses, normalise_query_string)
+                                  get_subclasses, normalise_query_string,
+                                  redact_url_for_log)
 from backend.base.logging import LOGGER
 from backend.implementations.getcomics import search_getcomics
 from backend.implementations.matching import check_search_result_match
@@ -217,6 +218,12 @@ class SearchSuwayomi(SearchSource):
         return results
 
 
+# If a volume-level search returns at least this many results with zero matches,
+# skip per-issue fallbacks: the source is returning max/broad results for this
+# series title and per-issue queries will produce equally irrelevant hits.
+_BROAD_RESULT_SKIP_THRESHOLD = 50
+
+
 def _extract_series_title(query: str) -> str:
     """Strip issue/volume/year suffixes from a search query to get the title."""
     # Remove "(year)", "#N", "Vol. N", "Volume N"
@@ -347,7 +354,10 @@ def manual_search(
             calculated_issue_number
         ))
 
-        LOGGER.debug('Manual search results: %s', results)
+        LOGGER.debug('Manual search results: %s', [
+            {**r, 'link': redact_url_for_log(r.get('link', ''))}
+            for r in results
+        ])
         return results
 
     return []
@@ -404,9 +414,8 @@ def auto_search(
 
     if not searchable_issues:
         # No issues to search for
-        result = []
-        LOGGER.debug(f'Auto search results: {result}')
-        return result
+        LOGGER.debug('Auto search results: []')
+        return []
 
     all_results = manual_search(volume_id, issue_id)
     search_results = [r for r in all_results if r['match']]
@@ -436,7 +445,10 @@ def auto_search(
     ):
         # We're searching for one "item", so just grab first search result.
         result = search_results[:1] if search_results else []
-        LOGGER.debug('Auto search results: %s', result)
+        LOGGER.debug('Auto search results: %s', [
+            {**r, 'link': redact_url_for_log(r.get('link', ''))}
+            for r in result
+        ])
         return result
 
     # We're searching for a volume, so we might download multiple search results.
@@ -497,10 +509,30 @@ def auto_search(
         )
     ]
 
+    # Short-circuit: if the volume-level search already returned a broad/max
+    # result set with zero matches, individual issue queries against the same
+    # sources will very likely return equally irrelevant results.  Skip them
+    # to avoid hammering sources for hundreds of issues with no gain.
+    if (
+        missing_issues
+        and not chosen_downloads
+        and len(all_results) >= _BROAD_RESULT_SKIP_THRESHOLD
+    ):
+        LOGGER.info(
+            'Auto search: skipping %d per-issue fallback(s) for volume %d '
+            '(%d broad results, 0 matched)',
+            len(missing_issues), volume_id, len(all_results),
+        )
+        LOGGER.debug('Auto search results: %s', chosen_downloads)
+        return chosen_downloads
+
     for idx, missing_issue in enumerate(missing_issues):
         if _status_cb is not None:
             _status_cb(idx, len(missing_issues))
         chosen_downloads.extend(auto_search(volume_id, missing_issue[0], _stats))
 
-    LOGGER.debug('Auto search results: %s', chosen_downloads)
+    LOGGER.debug('Auto search results: %s', [
+        {**r, 'link': redact_url_for_log(r.get('link', ''))}
+        for r in chosen_downloads
+    ])
     return chosen_downloads

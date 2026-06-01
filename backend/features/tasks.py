@@ -592,6 +592,10 @@ class SearchAll(Task):
     display_title = 'Search All'
     category = 'download'
 
+    # In-progress observability (readable while task is running)
+    processed_count: int = 0
+    total_count: Union[int, None] = None
+
     @property
     def volume_id(self) -> None:
         return None
@@ -600,7 +604,19 @@ class SearchAll(Task):
     def issue_id(self) -> None:
         return None
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        limit: Union[int, None] = None,
+        offset: int = 0,
+    ) -> None:
+        """Create the task.
+
+        Args:
+            limit: Process at most this many volumes (None = no limit).
+            offset: Skip this many volumes from the start of the monitored list.
+        """
+        self.limit = limit
+        self.offset = offset
         return
 
     def run(self) -> List[Tuple[str, int, Union[int, None]]]:
@@ -608,13 +624,26 @@ class SearchAll(Task):
         cursor.execute(
             "SELECT id, title FROM volumes WHERE monitored = 1;"
         )
+        rows = list(cursor)
+
+        if self.offset:
+            rows = rows[self.offset:]
+        if self.limit is not None:
+            rows = rows[:self.limit]
+
+        self.total_count = len(rows)
+        self.processed_count = 0
+
         downloads: List[Tuple[str, int, Union[int, None]]] = []
         ws = WebSocket()
         per_volume: List[dict] = []
-        for volume_id, volume_title in cursor:
+        for volume_id, volume_title in rows:
             if self.stop:
                 break
-            self.message = f'Searching for {volume_title}'
+            self.message = (
+                f'Searching for {volume_title} '
+                f'({self.processed_count + 1}/{self.total_count})'
+            )
             ws.emit(TaskStatusEvent(self.message))
             stats: dict = {'total_found': 0, 'per_issue': []}
             try:
@@ -636,6 +665,7 @@ class SearchAll(Task):
                     'total_found': stats.get('total_found', 0),
                     'per_issue': stats.get('per_issue', []),
                 })
+                self.processed_count += 1
                 continue
 
             per_volume.append({
@@ -652,6 +682,7 @@ class SearchAll(Task):
                      result.get('display_title', ''))
                     for result in results
                 ]
+            self.processed_count += 1
 
         self.details = {
             'per_issue': [
@@ -1212,7 +1243,7 @@ class TaskHandler(metaclass=Singleton):
             ).fetchone()
             if row:
                 issue_number = row['issue_number']
-        return {
+        result = {
             'id': task['id'],
             'action': t.action,
             'display_title': t.display_title,
@@ -1225,6 +1256,12 @@ class TaskHandler(metaclass=Singleton):
             'queued_at': task.get('queued_at'),
             'started_at': task.get('started_at'),
         }
+        if isinstance(t, SearchAll):
+            result['progress'] = {
+                'processed_count': getattr(t, 'processed_count', 0),
+                'total_count': getattr(t, 'total_count', None),
+            }
+        return result
 
     def get_all(self) -> List[dict]:
         """Get all tasks in the queue

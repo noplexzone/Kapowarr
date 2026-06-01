@@ -4,10 +4,11 @@
 Getting downloads from a GC page
 """
 
-from asyncio import Lock, sleep
+from asyncio import get_running_loop, sleep
 from functools import reduce
 from hashlib import sha1
 from re import IGNORECASE, compile
+from threading import Lock
 from time import monotonic
 from typing import Callable, List, Tuple, Type, Union
 
@@ -73,7 +74,9 @@ async def _gc_get_text(
     headers = dict(kwargs.pop('headers', {}))
     headers.setdefault('User-Agent', Constants.BROWSER_USERAGENT)
 
-    async with _gc_request_lock:
+    loop = get_running_loop()
+    await loop.run_in_executor(None, _gc_request_lock.acquire)
+    try:
         wait_time = (
             _gc_last_request_at + Constants.GC_REQUEST_INTERVAL
             - monotonic()
@@ -88,6 +91,8 @@ async def _gc_get_text(
         )
         _gc_last_request_at = monotonic()
         return result
+    finally:
+        _gc_request_lock.release()
 
 
 # region Scraping

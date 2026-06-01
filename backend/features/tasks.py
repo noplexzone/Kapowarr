@@ -610,18 +610,58 @@ class SearchAll(Task):
         )
         downloads: List[Tuple[str, int, Union[int, None]]] = []
         ws = WebSocket()
+        per_volume: List[dict] = []
         for volume_id, volume_title in cursor:
             if self.stop:
                 break
             self.message = f'Searching for {volume_title}'
             ws.emit(TaskStatusEvent(self.message))
-            # Get search results and download them
-            results = auto_search(volume_id)
+            stats: dict = {'total_found': 0, 'per_issue': []}
+            try:
+                # Get search results and download them. Keep going when one
+                # volume fails so a single bad source/query cannot abort the
+                # whole scheduled backfill.
+                results = auto_search(volume_id, _stats=stats)
+            except Exception as exc:
+                LOGGER.exception(
+                    'Search All failed for volume %s (%s)',
+                    volume_id, volume_title
+                )
+                per_volume.append({
+                    'volume_id': volume_id,
+                    'volume_title': volume_title,
+                    'success': False,
+                    'error': type(exc).__name__,
+                    'message': str(exc),
+                    'total_found': stats.get('total_found', 0),
+                    'per_issue': stats.get('per_issue', []),
+                })
+                continue
+
+            per_volume.append({
+                'volume_id': volume_id,
+                'volume_title': volume_title,
+                'success': True,
+                'total_found': stats.get('total_found', 0),
+                'download_count': len(results or []),
+                'per_issue': stats.get('per_issue', []),
+            })
             if results:
                 downloads += [
-                    (result['link'], volume_id, None)
+                    (result['link'], volume_id, None,
+                     result.get('display_title', ''))
                     for result in results
                 ]
+
+        self.details = {
+            'per_issue': [
+                issue
+                for volume in per_volume
+                for issue in volume.get('per_issue', [])
+            ],
+            'downloads': [],
+            'per_volume': per_volume,
+        }
         return downloads
 
 
@@ -985,11 +1025,40 @@ class TaskHandler(metaclass=Singleton):
 
                     LOGGER.info(f'Finished task {task.display_title}')
 
-            except Exception:
+            except Exception as exc:
                 LOGGER.exception(
                     'An error occured while trying to run a task: ')
                 task.message = 'AN ERROR OCCURED'
                 socket.emit(TaskStatusEvent(task.message))
+
+                queued_at = None
+                started_at = None
+                for entry in self.queue:
+                    if entry['task'] is task:
+                        queued_at = entry.get('queued_at')
+                        started_at = entry.get('started_at')
+                        break
+
+                details = getattr(task, 'details', None) or {}
+                if not isinstance(details, dict):
+                    details = {'per_issue': details, 'downloads': []}
+                details.update({
+                    'success': False,
+                    'error': type(exc).__name__,
+                    'message': str(exc),
+                })
+                details.setdefault('per_issue', [])
+                details.setdefault('downloads', [])
+
+                cursor = get_db()
+                cursor.execute(
+                    """INSERT INTO task_history
+                       (task_name, display_title, run_at, queued_at, started_at, volume_id, issue_id, details)
+                       VALUES (?,?,?,?,?,?,?,?);""",
+                    (task.action, task.display_title, round(time()),
+                     queued_at, started_at, task.volume_id, task.issue_id,
+                     json_dumps(details))
+                )
                 sleep(1.5)
 
             finally:

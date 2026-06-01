@@ -48,6 +48,7 @@ from backend.implementations.external_clients import ExternalClients
 from backend.implementations.matching import download_group_filter
 from backend.implementations.volumes import Volume
 from backend.internals.db import iter_commit
+from backend.internals.settings import Settings
 
 
 mediafire_dd_regex = compile(

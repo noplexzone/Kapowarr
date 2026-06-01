@@ -4,7 +4,7 @@
 Getting downloads from a GC page
 """
 
-from asyncio import get_running_loop, sleep
+from asyncio import gather, get_running_loop, sleep
 from functools import reduce
 from hashlib import sha1
 from re import IGNORECASE, compile

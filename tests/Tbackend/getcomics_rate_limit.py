@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from backend.base.definitions import Constants
@@ -100,6 +101,26 @@ class GcGetTextBrowserUATests(unittest.IsolatedAsyncioTestCase):
             getcomics._gc_last_request_at = original_last
 
         self.assertEqual(captured.get('headers', {}).get('User-Agent'), custom_ua)
+
+    def test_gc_get_text_lock_survives_multiple_event_loops(self):
+        """The global GetComics pacing lock must not bind to one event loop."""
+        calls = []
+
+        class FakeSession:
+            async def get_text(self, url, headers=None, **kwargs):
+                calls.append(url)
+                return ''
+
+        original_last = getcomics._gc_last_request_at
+        getcomics._gc_last_request_at = 0.0
+        try:
+            asyncio.run(getcomics._gc_get_text(FakeSession(), 'https://example.com/1'))
+            getcomics._gc_last_request_at = 0.0
+            asyncio.run(getcomics._gc_get_text(FakeSession(), 'https://example.com/2'))
+        finally:
+            getcomics._gc_last_request_at = original_last
+
+        self.assertEqual(calls, ['https://example.com/1', 'https://example.com/2'])
 
 
 if __name__ == '__main__':

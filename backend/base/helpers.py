@@ -802,6 +802,10 @@ def fix_year(year: int) -> int:
     if len(year_str) == 3:
         year_str.insert(1, '0')
 
+    # A year shorter than 4 digits after padding cannot be a fixable typo.
+    if len(year_str) < 4:
+        return year
+
     if year_str[0] in ('8', '9') and year_str[1] == '1':
         year_str[0], year_str[1] = year_str[1], year_str[0]
 

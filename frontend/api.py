@@ -101,6 +101,11 @@ def extract_key(request, key: str, check_existence: bool = True) -> Any:
         Any: The formatted value of the key.
     """
     value: Any = request.values.get(key)
+    if value is None and key == 'api_key':
+        value = (
+            request.headers.get('x-api-key')
+            or request.headers.get('X-Api-Key')
+        )
     if check_existence and value is None:
         raise KeyNotFound(key)
 

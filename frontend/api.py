@@ -534,6 +534,22 @@ def api_settings_available_formats():
     return return_api(result)
 
 
+@api.route('/settings/suwayomi/sources', methods=['GET'])
+@error_handler
+@auth
+def api_settings_suwayomi_sources():
+    from backend.implementations.suwayomi import SuwayomiClient
+    client = SuwayomiClient()
+    if not client.is_configured():
+        return return_api({'sources': []})
+    try:
+        sources = client.get_sources()
+        return return_api({'sources': sources})
+    except Exception as e:
+        LOGGER.debug('Suwayomi: failed to fetch sources: %s', e)
+        return return_api({'sources': []})
+
+
 @api.route('/rootfolder', methods=['GET', 'POST'])
 @error_handler
 @auth

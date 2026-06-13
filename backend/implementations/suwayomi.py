@@ -363,7 +363,8 @@ class SuwayomiClient:
         return data["fetchChapters"]["chapters"]
 
     def sync_manga_to_library(self, title: str) -> bool:
-        """Search all sources for title, add first matching manga to library.
+        """Search sources for title (in configured priority order), add first
+        matching manga to library.
 
         Returns True if a manga was added, False otherwise.
         Intended to run in a background thread — all errors are logged, not raised.
@@ -374,11 +375,23 @@ class SuwayomiClient:
             LOGGER.debug("Suwayomi: failed to fetch sources: %s", exc)
             return False
 
-        title_lower = title.lower()
-        for source in sources:
-            if source.get("name") == "Local source":
-                continue
+        # Filter by configured source priority, if set
+        from backend.internals.settings import Settings
+        configured_ids = list(Settings().sv.suwayomi_source_ids)
+        if configured_ids:
+            source_by_id = {s["id"]: s for s in sources}
+            ordered = []
+            for sid in configured_ids:
+                s = source_by_id.get(str(sid))
+                if s and s.get("name") != "Local source":
+                    ordered.append(s)
+            sources = ordered
+        else:
+            sources = [s for s in sources if s.get("name") != "Local source"]
 
+        title_lower = title.lower()
+
+        for source in sources:
             try:
                 results = self.search_source(source["id"], title)
             except Exception as exc:

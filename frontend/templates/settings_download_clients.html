@@ -411,6 +411,18 @@
 							<p>Optional — only needed if authentication is enabled on the server.</p>
 						</td>
 					</tr>
+					<tr>
+						<th><label>Source Priority</label></th>
+						<td>
+							<div id="suwayomi-source-container">
+								<p>Select which Suwayomi extensions to use when adding manga, in priority order. The first source that finds the manga is used.</p>
+								<select id="suwayomi-source-selector" style="width:100%;max-width:400px;margin-bottom:8px">
+									<option value="">— Add a source —</option>
+								</select>
+								<ul id="suwayomi-source-priority" class="sortable-list" style="list-style:none;padding:0;margin:0;max-width:400px"></ul>
+							</div>
+						</td>
+					</tr>
 				</tbody>
 			</table>
 			<button type="submit" id="suwayomi-save-button">Save</button>

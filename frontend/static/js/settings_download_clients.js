@@ -773,11 +773,116 @@ function deleteUsenet(api_key) {
 
 // code run on load
 
+function fillSourcePriority(sources, configured_ids) {
+	const list = document.querySelector('#suwayomi-source-priority');
+	const selector = document.querySelector('#suwayomi-source-selector');
+	list.innerHTML = '';
+	selector.innerHTML = '<option value="">— Add a source —</option>';
+
+	const sourceById = {};
+	sources.forEach(s => { sourceById[s.id] = s; });
+
+	const usedIds = new Set();
+	(configured_ids || []).forEach(id => {
+		const s = sourceById[id];
+		if (!s) return;
+		usedIds.add(id);
+		const li = document.createElement('li');
+		li.className = 'suwayomi-source-item';
+		li.dataset.sourceId = id;
+		li.innerHTML =
+			'<span class="source-handle">⠿</span>' +
+			'<span class="source-name">' + escapeHtml(s.name || 'Unknown') + '</span>' +
+			'<span class="source-lang">' + (s.lang || '') + '</span>' +
+			'<button class="source-move-up" title="Move up">▲</button>' +
+			'<button class="source-move-down" title="Move down">▼</button>' +
+			'<button class="source-remove" title="Remove">✕</button>';
+		list.appendChild(li);
+	});
+
+	sources.forEach(s => {
+		if (!usedIds.has(s.id)) {
+			const opt = document.createElement('option');
+			opt.value = s.id;
+			opt.textContent = s.name + (s.lang ? ' (' + s.lang + ')' : '');
+			selector.appendChild(opt);
+		}
+	});
+}
+
+function escapeHtml(text) {
+	const d = document.createElement('div');
+	d.textContent = text;
+	return d.innerHTML;
+}
+
+function setupSourcePriorityHandlers(api_key) {
+	document.querySelector('#suwayomi-source-selector').onchange = function() {
+		const id = this.value;
+		if (!id) return;
+		const sources = window._suwayomiSources || [];
+		const s = sources.find(x => x.id == id);
+		if (!s) return;
+
+		const list = document.querySelector('#suwayomi-source-priority');
+		const li = document.createElement('li');
+		li.className = 'suwayomi-source-item';
+		li.dataset.sourceId = id;
+		li.innerHTML =
+			'<span class="source-handle">⠿</span>' +
+			'<span class="source-name">' + escapeHtml(s.name || 'Unknown') + '</span>' +
+			'<span class="source-lang">' + (s.lang || '') + '</span>' +
+			'<button class="source-move-up" title="Move up">▲</button>' +
+			'<button class="source-move-down" title="Move down">▼</button>' +
+			'<button class="source-remove" title="Remove">✕</button>';
+		list.appendChild(li);
+		this.querySelector('option[value="' + id + '"]').remove();
+		this.value = '';
+	};
+
+	document.querySelector('#suwayomi-source-priority').onclick = function(e) {
+		const btn = e.target.closest('button');
+		if (!btn) return;
+		const li = btn.closest('li');
+		if (!li) return;
+		const id = li.dataset.sourceId;
+		const sources = window._suwayomiSources || [];
+		const s = sources.find(x => x.id == id);
+
+		if (btn.classList.contains('source-remove')) {
+			li.remove();
+			if (s) {
+				const selector = document.querySelector('#suwayomi-source-selector');
+				const opt = document.createElement('option');
+				opt.value = s.id;
+				opt.textContent = s.name + (s.lang ? ' (' + s.lang + ')' : '');
+				selector.appendChild(opt);
+			}
+		} else if (btn.classList.contains('source-move-up')) {
+			const prev = li.previousElementSibling;
+			if (prev) li.parentNode.insertBefore(li, prev);
+		} else if (btn.classList.contains('source-move-down')) {
+			const next = li.nextElementSibling;
+			if (next) li.parentNode.insertBefore(next, li);
+		}
+	};
+}
+
 function fillSuwayomi(api_key) {
 	fetchAPI('/settings', api_key)
 	.then(json => {
 		document.querySelector('#suwayomi-url-input').value = json.result.suwayomi_base_url || '';
 		document.querySelector('#suwayomi-username-input').value = json.result.suwayomi_username || '';
+		const configured_ids = json.result.suwayomi_source_ids || [];
+
+		fetchAPI('/settings/suwayomi/sources', api_key)
+		.then(srcJson => {
+			const sources = srcJson.result.sources || [];
+			window._suwayomiSources = sources;
+			fillSourcePriority(sources, configured_ids);
+			setupSourcePriorityHandlers(api_key);
+		})
+		.catch(() => {});
 	});
 };
 
@@ -791,6 +896,13 @@ function saveSuwayomi(api_key) {
 	const password = document.querySelector('#suwayomi-password-input').value;
 	if (password)
 		data.suwayomi_password = password;
+
+	// Collect source priority IDs in order
+	const sourceIds = [];
+	document.querySelectorAll('#suwayomi-source-priority .suwayomi-source-item').forEach(li => {
+		sourceIds.push(li.dataset.sourceId);
+	});
+	data.suwayomi_source_ids = sourceIds;
 
 	sendAPI('PUT', '/settings', api_key, {}, data)
 	.then(() => {

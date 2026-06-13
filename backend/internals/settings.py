@@ -126,6 +126,7 @@ class PublicSettingsValues:
     suwayomi_base_url: str = ''
     suwayomi_username: str = ''
     suwayomi_password: str = ''
+    suwayomi_source_ids: CommaList = field(default_factory=lambda: CommaList(''))
 
     date_type: DateType = DateType.COVER_DATE
 
@@ -565,6 +566,12 @@ class Settings(metaclass=Singleton):
                 if entry not in value:
                     raise InvalidKeyValue(key, value)
 
+            converted_value = value
+
+        elif key == 'suwayomi_source_ids':
+            if value:
+                if not all(isinstance(s, str) and s.strip() for s in value):
+                    raise InvalidKeyValue(key, value)
             converted_value = value
 
         elif key == 'flaresolverr_base_url':

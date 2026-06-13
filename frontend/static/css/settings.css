@@ -412,6 +412,55 @@
 	color: var(--nav-background-color);
 }
 
+.suwayomi-source-item {
+	display: flex;
+	align-items: center;
+	gap: .5rem;
+	padding: .4rem .6rem;
+	margin-bottom: 2px;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background: var(--table-odd-row-bg-color);
+}
+
+.suwayomi-source-item .source-handle {
+	cursor: grab;
+	opacity: .5;
+	font-size: 1.1rem;
+	user-select: none;
+}
+
+.suwayomi-source-item .source-name {
+	flex: 1;
+}
+
+.suwayomi-source-item .source-lang {
+	font-size: .75rem;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: var(--even-row-bg-color);
+	color: var(--muted-text-color);
+}
+
+.suwayomi-source-item button {
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 2px 4px;
+	font-size: .8rem;
+	color: var(--muted-text-color);
+	opacity: .6;
+}
+
+.suwayomi-source-item button:hover {
+	opacity: 1;
+	color: var(--accent-color);
+}
+
+.suwayomi-source-item .source-remove:hover {
+	color: #e74c3c;
+}
+
 /*  */
 /* Remote Mapping */
 /*  */

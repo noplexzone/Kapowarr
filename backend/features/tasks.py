@@ -24,7 +24,10 @@ from backend.implementations.conversion import mass_convert
 from backend.implementations.file_matching import scan_files
 from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume, refresh_and_scan
-from backend.internals.db import close_db, get_db
+from os.path import basename
+
+from backend.internals.db import close_db, commit, get_db
+from backend.internals.db_models import FilesDB
 from backend.internals.server import (TaskAddedEvent, TaskEndedEvent,
                                       TaskStatusEvent, WebSocket)
 
@@ -509,6 +512,24 @@ class ImportFilesVolume(Task):
         volume_title = Volume(self._volume_id).vd.title
         self.message = f'Importing files for {volume_title}'
         WebSocket().emit(TaskStatusEvent(self.message))
+
+        # Apply user-specified issue matches before scanning
+        if self.match_map:
+            cursor = get_db()
+            for filepath, issue_ids in self.match_map.items():
+                if filepath not in self.filepaths:
+                    continue
+                file_id = FilesDB.add_file(filepath)
+                cursor.execute("DELETE FROM issues_files WHERE file_id = ?", (file_id,))
+                cursor.execute("DELETE FROM volume_files WHERE file_id = ?", (file_id,))
+                for issue_id in issue_ids:
+                    cursor.execute(
+                        "INSERT INTO issues_files(file_id, issue_id, forced) VALUES (?, ?, 1)",
+                        (file_id, issue_id)
+                    )
+                self.message = f'Force-matched {basename(filepath)} to {len(issue_ids)} issue(s)'
+                WebSocket().emit(TaskStatusEvent(self.message))
+            commit()
 
         # Register uploaded files in DB, match to issues
         scan_files(

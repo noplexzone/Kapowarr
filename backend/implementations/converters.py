@@ -74,7 +74,19 @@ def extract_files_from_folder(
         LOGGER.warning(
             "No relevant files found in folder. Keeping all media files."
         )
-        relevant_files = folder_contents
+        # Prefer non-archive comic formats (PDF, CBZ, CBR, etc.) over raw
+        # archive packaging (.zip, .rar, .partN.rar) when both are present.
+        # This prevents NZB multipart delivery artefacts from leaking into
+        # the library when a direct comic payload already exists.
+        _DIRECT_COMIC_EXTS = {
+            '.cbz', '.cbr', '.cb7', '.cbt', '.cba',
+            '.pdf', '.epub', '.mobi'
+        }
+        direct_comics = [
+            f for f in folder_contents
+            if splitext(f)[1].lower() in _DIRECT_COMIC_EXTS
+        ]
+        relevant_files = direct_comics if direct_comics else folder_contents
 
     LOGGER.debug(f'Relevant files: {relevant_files}')
 

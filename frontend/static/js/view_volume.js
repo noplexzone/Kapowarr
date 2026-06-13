@@ -12,7 +12,8 @@ const ViewEls = {
 		match: document.querySelector('.pre-build-els .match-entry'),
 		files_entry: document.querySelector('.pre-build-els .files-entry'),
 		general_files_entry: document.querySelector('.pre-build-els .general-files-entry'),
-		fix_match_result: document.querySelector('.pre-build-els .fix-match-result')
+		fix_match_result: document.querySelector('.pre-build-els .fix-match-result'),
+		import_match: document.querySelector('.pre-build-els .import-match-entry')
 	},
 	vol_data: {
 		monitor: document.querySelector('#volume-monitor'),
@@ -281,42 +282,129 @@ function toggleMonitored(api_key) {
 //
 // Tasks
 //
+function _buildImportIssueSelect() {
+	const select = document.createElement('select');
+	select.className = 'import-issue-select';
+	const autoOpt = document.createElement('option');
+	autoOpt.value = '';
+	autoOpt.textContent = 'Auto-Match';
+	select.appendChild(autoOpt);
+	document.querySelectorAll('#issues-list tr[data-id]').forEach(issueRow => {
+		const opt = document.createElement('option');
+		opt.value = issueRow.dataset.id;
+		const num = issueRow.querySelector('.issue-number').innerText;
+		const title = issueRow.querySelector('.issue-title').innerText;
+		opt.textContent = title ? `${num} - ${title}` : `Issue ${num}`;
+		select.appendChild(opt);
+	});
+	return select;
+}
+
 function importFiles(api_key) {
-	const file_input = document.querySelector('#import-file-input');
-	file_input.onchange = e => {
-		if (!e.target.files.length) return;
+	const tbody = document.querySelector('#import-match-table tbody');
+	tbody.innerHTML = '';
+	document.querySelector('#import-match-table').classList.add('hidden');
+	document.querySelector('.empty-import-match-message').classList.remove('hidden');
+	document.querySelector('.import-match-all-controls').classList.add('hidden');
+	document.querySelector('#import-match-all-issues-select').innerHTML = '<option value="">Auto-Match</option>';
+	document.querySelector('#import-match-file-input').value = '';
 
-		const button = ViewEls.tool_bar.import;
-		const label = button.querySelector('p');
-		const original_text = label.innerText;
-		label.innerText = 'Uploading...';
-		button.disabled = true;
+	// Pre-populate the "Match All To" dropdown
+	const allSelect = document.querySelector('#import-match-all-issues-select');
+	const hasIssues = document.querySelectorAll('#issues-list tr[data-id]').length > 0;
+	if (hasIssues) {
+		document.querySelectorAll('#issues-list tr[data-id]').forEach(issueRow => {
+			const opt = document.createElement('option');
+			opt.value = issueRow.dataset.id;
+			const num = issueRow.querySelector('.issue-number').innerText;
+			const title = issueRow.querySelector('.issue-title').innerText;
+			opt.textContent = title ? `${num} - ${title}` : `Issue ${num}`;
+			allSelect.appendChild(opt);
+		});
+	}
 
-		const form_data = new FormData();
-		for (const file of e.target.files)
-			form_data.append('files', file);
+	document.querySelector('#import-match-file-input').onchange = function(e) {
+		tbody.innerHTML = '';
+		if (!e.target.files.length) {
+			document.querySelector('#import-match-table').classList.add('hidden');
+			document.querySelector('.empty-import-match-message').classList.remove('hidden');
+			document.querySelector('.import-match-all-controls').classList.add('hidden');
+			return;
+		}
+		document.querySelector('.empty-import-match-message').classList.add('hidden');
+		document.querySelector('#import-match-table').classList.remove('hidden');
+		if (hasIssues) {
+			document.querySelector('.import-match-all-controls').classList.remove('hidden');
+		}
+		for (const file of e.target.files) {
+			const row = ViewEls.pre_build.import_match.cloneNode(true);
+			row.dataset.filename = file.name;
+			row.querySelector('.im-filepath').textContent = file.name;
+			const select = _buildImportIssueSelect();
+			select.dataset.filename = file.name;
+			row.querySelector('.im-match').appendChild(select);
+			tbody.appendChild(row);
+		}
+	};
 
+	showWindow('import-match-window');
+}
+
+document.querySelector('#import-match-all-issues-btn').onclick = function() {
+	const val = document.querySelector('#import-match-all-issues-select').value;
+	document.querySelectorAll('.import-issue-select').forEach(s => { s.value = val; });
+};
+
+document.querySelector('#import-match-file-input').onclick = function() {};
+
+document.querySelector('.import-match-file-label').onclick = function() {
+	document.querySelector('#import-match-file-input').click();
+};
+
+document.querySelector('#submit-import-match').onclick = function(e) {
+	const fileInput = document.querySelector('#import-match-file-input');
+	if (!fileInput.files.length) return;
+
+	const button = this;
+	const originalText = button.textContent;
+	button.textContent = 'Uploading...';
+	button.disabled = true;
+
+	const matchMap = {};
+	document.querySelectorAll('.import-issue-select').forEach(select => {
+		if (select.value) {
+			matchMap[select.dataset.filename] = [parseInt(select.value)];
+		}
+	});
+
+	const formData = new FormData();
+	for (const file of fileInput.files)
+		formData.append('files', file);
+	if (Object.keys(matchMap).length > 0)
+		formData.append('match_map', JSON.stringify(matchMap));
+
+	usingApiKey().then(api_key => {
 		fetch(`${url_base}/api/volumes/${volume_id}/import`, {
 			method: 'POST',
 			headers: {'x-api-key': api_key},
-			body: form_data
+			body: formData
 		})
 		.then(r => {
 			if (!r.ok) throw r;
-			label.innerText = 'Queued!';
+			button.textContent = 'Queued!';
 		})
 		.catch(() => {
-			label.innerText = 'Failed';
+			button.textContent = 'Failed';
 		})
 		.finally(() => {
 			setTimeout(() => {
-				label.innerText = original_text;
+				button.textContent = originalText;
 				button.disabled = false;
+				closeWindow();
+				fileInput.value = '';
 			}, 2000);
-			e.target.value = '';
 		});
-	};
-	file_input.click();
+	});
 };
 
 function refreshVolume(api_key) {

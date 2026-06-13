@@ -4,7 +4,7 @@ from asyncio import run
 from datetime import datetime
 from io import BytesIO
 from os import makedirs
-from os.path import join
+from os.path import basename, join
 from typing import Any, Dict, List, Tuple, Type, Union
 
 import json as _json
@@ -1088,7 +1088,17 @@ def api_volume_import(id: int):
     if not saved_paths:
         raise KeyNotFound('files')
 
-    task_id = TaskHandler().add(ImportFilesVolume(id, saved_paths))
+    match_map: Dict[str, List[int]] = {}
+    match_map_raw = request.form.get('match_map')
+    if match_map_raw:
+        raw_map = _json.loads(match_map_raw)
+        filename_to_path = {basename(p): p for p in saved_paths}
+        for fname, issue_ids in raw_map.items():
+            safe_fname = secure_filename(fname)
+            if safe_fname in filename_to_path:
+                match_map[filename_to_path[safe_fname]] = issue_ids
+
+    task_id = TaskHandler().add(ImportFilesVolume(id, saved_paths, match_map=match_map or None))
     return return_api({'task_id': task_id}, code=201)
 
 

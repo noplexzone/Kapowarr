@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from json import dumps as json_dumps, loads as json_loads
 from threading import Lock, Thread, Timer
 from time import sleep, time
-from typing import Dict, List, Tuple, Type, Union
+from typing import Dict, List, Optional, Tuple, Type, Union
 
 from flask import Flask
 
@@ -499,9 +499,10 @@ class ImportFilesVolume(Task):
     def issue_id(self) -> None:
         return None
 
-    def __init__(self, volume_id: int, filepaths: List[str]) -> None:
+    def __init__(self, volume_id: int, filepaths: List[str], match_map: Optional[Dict[str, List[int]]] = None) -> None:
         self._volume_id = volume_id
         self.filepaths = filepaths
+        self.match_map = match_map or {}
         return
 
     def run(self) -> None:

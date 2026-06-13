@@ -10,6 +10,8 @@ REST API only for fetching page images.
 
 from __future__ import annotations
 
+import os
+import tempfile
 import zipfile
 from threading import Event
 from time import sleep
@@ -39,8 +41,31 @@ def parse_suwayomi_link(link: str) -> Tuple[int, int]:
     return int(manga_id), int(chapter_id)
 
 
+def make_suwayomi_volume_link(manga_id: int, chapter_ids: List[int]) -> str:
+    """Encode manga ID + multiple chapter IDs as a Kapowarr download_link."""
+    return f"suwayomi:{manga_id}:{','.join(str(cid) for cid in chapter_ids)}"
+
+
+def parse_suwayomi_volume_link(link: str) -> Tuple[int, List[int]]:
+    """Decode a suwayomi:M:C1,C2,... link → (manga_id, [chapter_ids])."""
+    _, manga_id, chapter_list = link.split(":", 2)
+    chapter_ids = [int(c) for c in chapter_list.split(",")]
+    return int(manga_id), chapter_ids
+
+
 def is_suwayomi_link(link: str) -> bool:
     return link.startswith(SUWAYOMI_SCHEME)
+
+
+def is_manga_publisher(publisher: Optional[str]) -> bool:
+    """Return True if publisher string matches a known manga publisher."""
+    if not publisher:
+        return False
+    from backend.implementations.comicvine import (
+        _ENGLISH_MANGA_PUBLISHERS, _MANGA_PUBLISHERS
+    )
+    pub_lower = publisher.lower().strip()
+    return pub_lower in _MANGA_PUBLISHERS or pub_lower in _ENGLISH_MANGA_PUBLISHERS
 
 
 class SuwayomiClient:
@@ -211,6 +236,58 @@ class SuwayomiClient:
                 ext = _detect_image_ext(data)
                 zf.writestr(f"{i + 1:04d}.{ext}", data)
         return True
+
+    def create_pdf_from_chapters(
+        self,
+        manga_id: int,
+        chapters: List[Tuple[int, int]],
+        dest_path: str,
+        stop_event: Event,
+    ) -> bool:
+        """Download pages from multiple chapters and merge into one PDF.
+
+        Args:
+            manga_id: Suwayomi manga ID.
+            chapters: List of (source_order, page_count) tuples, in order.
+            dest_path: Output PDF file path.
+            stop_event: Event to signal cancellation.
+
+        Returns True on success, False if stopped or no pages collected.
+        """
+        import img2pdf
+
+        temp_paths: List[str] = []
+        try:
+            for source_order, page_count in chapters:
+                for i in range(page_count):
+                    if stop_event.is_set():
+                        return False
+                    data = self.get_page_image(manga_id, source_order, i)
+                    ext = _detect_image_ext(data)
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=f'.{ext}'
+                    ) as tf:
+                        tf.write(data)
+                        temp_paths.append(tf.name)
+
+            if not temp_paths:
+                return False
+
+            if stop_event.is_set():
+                return False
+
+            pdf_bytes = img2pdf.convert(temp_paths)
+            with open(dest_path, 'wb') as f:
+                f.write(pdf_bytes)
+
+            return True
+
+        finally:
+            for path in temp_paths:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
 
     # ------------------------------------------------------------------
     # Source search / library sync

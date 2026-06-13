@@ -33,6 +33,7 @@ from backend.implementations.download_clients import (BaseDirectDownload,
                                                       MegaDownload,
                                                       NZBDownload,
                                                       SuwayomiDownload,
+                                                      SuwayomiVolumeDownload,
                                                       TorrentDownload)
 from backend.implementations.external_clients import ExternalClients
 from backend.implementations.getcomics import GetComicsPage
@@ -556,6 +557,17 @@ class DownloadHandler(metaclass=Singleton):
                 return [], EnqueuingDownloadFailureReason.NO_WORKING_LINKS
 
         elif link_type == 'suwayomi':
+            # Gate: Suwayomi downloads only allowed for manga volumes
+            _vol = Volume(volume_id)
+            _vol_data = _vol.get_data()
+            from backend.implementations.suwayomi import is_manga_publisher
+            if not is_manga_publisher(_vol_data.publisher):
+                LOGGER.warning(
+                    'Rejected Suwayomi link for non-manga volume %d (%s)',
+                    volume_id, _vol_data.title,
+                )
+                return [], EnqueuingDownloadFailureReason.NO_MATCHES
+
             covered_issues = None
             if issue_id is not None:
                 covered_issues = (
@@ -566,17 +578,38 @@ class DownloadHandler(metaclass=Singleton):
                 )
 
             try:
-                downloads = [SuwayomiDownload(
-                    download_link=link,
-                    volume_id=volume_id,
-                    covered_issues=covered_issues,
-                    source_type=DownloadSource.SUWAYOMI,
-                    source_name=SUWAYOMI_SOURCE_NAME,
-                    web_link=None,
-                    web_title=None,
-                    web_sub_title=display_title or None,
-                    forced_match=force_match,
-                )]
+                # Detect volume link (multiple chapter IDs) vs single chapter
+                from backend.implementations.suwayomi import parse_suwayomi_volume_link
+                _, ch_ids = parse_suwayomi_volume_link(link)
+                is_volume_link = len(ch_ids) > 1
+            except Exception:
+                is_volume_link = False
+
+            try:
+                if is_volume_link:
+                    downloads = [SuwayomiVolumeDownload(
+                        download_link=link,
+                        volume_id=volume_id,
+                        covered_issues=covered_issues,
+                        source_type=DownloadSource.SUWAYOMI,
+                        source_name=SUWAYOMI_SOURCE_NAME,
+                        web_link=None,
+                        web_title=None,
+                        web_sub_title=display_title or None,
+                        forced_match=force_match,
+                    )]
+                else:
+                    downloads = [SuwayomiDownload(
+                        download_link=link,
+                        volume_id=volume_id,
+                        covered_issues=covered_issues,
+                        source_type=DownloadSource.SUWAYOMI,
+                        source_name=SUWAYOMI_SOURCE_NAME,
+                        web_link=None,
+                        web_title=None,
+                        web_sub_title=display_title or None,
+                        forced_match=force_match,
+                    )]
 
             except IssueNotFound as e:
                 LOGGER.warning('Unable to create Suwayomi download: %s', e)

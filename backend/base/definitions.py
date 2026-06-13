@@ -924,6 +924,14 @@ class SearchSource(ABC):
         """
         ...
 
+    def supports_volume(self, volume_data: Union['VolumeData', None]) -> bool:
+        """Return True if this source should be queried for the given volume.
+
+        Override to restrict a source to specific volume types.
+        When volume_data is None, always return True.
+        """
+        return True
+
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__}(query={self.query}); {id(self)}>'
 

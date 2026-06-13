@@ -2,11 +2,11 @@
 
 from asyncio import gather, get_running_loop, run
 from re import IGNORECASE, sub
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from backend.base.definitions import (QUERY_FORMATS, DownloadSource,
                                       MatchedSearchResultData, SearchResultData,
-                                      SearchSource, SpecialVersion)
+                                      SearchSource, SpecialVersion, VolumeData)
 from backend.base.file_extraction import refine_special_version
 from backend.base.helpers import (AsyncSession, check_overlapping_issues,
                                   extract_year_from_date, force_range,
@@ -18,7 +18,9 @@ from backend.implementations.matching import check_search_result_match
 from backend.implementations.nzb_indexers import NZBIndexers
 from backend.implementations.suwayomi import (SUWAYOMI_SOURCE_NAME,
                                               SuwayomiClient,
-                                              make_suwayomi_link)
+                                              make_suwayomi_link,
+                                              make_suwayomi_volume_link,
+                                              parse_suwayomi_link)
 from backend.implementations.volumes import Volume
 
 
@@ -160,6 +162,12 @@ class SearchNZBIndexers(SearchSource):
 
 
 class SearchSuwayomi(SearchSource):
+    def supports_volume(self, volume_data: Optional[VolumeData]) -> bool:
+        if volume_data is None or not volume_data.publisher:
+            return True
+        from backend.implementations.suwayomi import is_manga_publisher
+        return is_manga_publisher(volume_data.publisher)
+
     async def search(self, _session: AsyncSession) -> List[SearchResultData]:
         loop = get_running_loop()
         return await loop.run_in_executor(None, self._search_sync)
@@ -233,7 +241,10 @@ def _extract_series_title(query: str) -> str:
     return title.strip()
 
 
-async def search_multiple_queries(*queries: str) -> List[SearchResultData]:
+async def search_multiple_queries(
+    *queries: str,
+    volume_data: Optional[VolumeData] = None,
+) -> List[SearchResultData]:
     """Do a manual search for multiple queries asynchronously.
 
     Returns:
@@ -241,11 +252,15 @@ async def search_multiple_queries(*queries: str) -> List[SearchResultData]:
         duplicates removed.
     """
     async with AsyncSession() as session:
-        searches = [
-            Source(query).search(session)
-            for Source in get_subclasses(SearchSource)
-            for query in queries
-        ]
+        searches = []
+        for Source in get_subclasses(SearchSource):
+            if volume_data is not None:
+                probe = Source.__new__(Source)
+                probe.query = ''
+                if not probe.supports_volume(volume_data):
+                    continue
+            for query in queries:
+                searches.append(Source(query).search(session))
         responses = await gather(*searches)
 
     search_results: List[SearchResultData] = []
@@ -323,13 +338,16 @@ def manual_search(
             )
 
         search_title = normalise_query_string(title).replace(':', '')
-        search_results = run(search_multiple_queries(*(
-            format.format(
-                title=search_title, volume_number=volume_data.volume_number,
-                year=volume_data.year, issue_number=issue_number
-            )
-            for format in formats
-        )))
+        search_results = run(search_multiple_queries(
+            *(
+                format.format(
+                    title=search_title, volume_number=volume_data.volume_number,
+                    year=volume_data.year, issue_number=issue_number
+                )
+                for format in formats
+            ),
+            volume_data=volume_data,
+        ))
         if not search_results:
             continue
 
@@ -361,6 +379,77 @@ def manual_search(
         return results
 
     return []
+
+
+def _try_bundle_suwayomi_chapters(
+    all_results: List,
+    searchable_issues: List[Tuple[int, float]],
+    volume_data: VolumeData,
+) -> Union[MatchedSearchResultData, None]:
+    """Try to bundle individual Suwayomi chapter results into one volume link.
+
+    For each manga in the Suwayomi results, checks if its chapters cover all
+    open (searchable) issues.  Returns a bundled MatchedSearchResultData on
+    success, or None if no manga provides full coverage.
+    """
+    manga_groups: Dict[int, List[SearchResultData]] = {}
+    for result in all_results:
+        link = result.get('link', '')
+        if not link.startswith(SUWAYOMI_SCHEME):
+            continue
+        try:
+            manga_id, _ = parse_suwayomi_link(link)
+        except Exception:
+            continue
+        manga_groups.setdefault(manga_id, []).append(result)
+
+    if not manga_groups:
+        return None
+
+    searchable_numbers = {calc_num for _, calc_num in searchable_issues}
+
+    for manga_id, results in manga_groups.items():
+        chapter_numbers = {
+            r['issue_number']
+            for r in results
+            if isinstance(r['issue_number'], float)
+        }
+        if not searchable_numbers.issubset(chapter_numbers):
+            continue
+
+        id_to_number: Dict[int, float] = {}
+        for r in results:
+            try:
+                _, ch_id = parse_suwayomi_link(r['link'])
+                num = r['issue_number']
+                if isinstance(num, float) and num in searchable_numbers:
+                    id_to_number[ch_id] = num
+            except Exception:
+                continue
+
+        sorted_pairs = sorted(id_to_number.items(), key=lambda x: x[1])
+        chapter_ids = [ch_id for ch_id, _ in sorted_pairs]
+        numbers = [num for _, num in sorted_pairs]
+
+        if not chapter_ids:
+            continue
+
+        manga_title = results[0]['series']
+        return {
+            'link': make_suwayomi_volume_link(manga_id, chapter_ids),
+            'display_title': f"{manga_title} - Vol. {volume_data.volume_number}",
+            'source': SUWAYOMI_SOURCE_NAME,
+            'series': manga_title,
+            'year': None,
+            'volume_number': volume_data.volume_number,
+            'special_version': SpecialVersion.TPB,
+            'issue_number': (min(numbers), max(numbers)),
+            'annual': False,
+            'match': True,
+            'match_issue': None,
+        }
+
+    return None
 
 
 def auto_search(
@@ -444,6 +533,32 @@ def auto_search(
         SpecialVersion.VOLUME_AS_ISSUE
     ):
         # We're searching for one "item", so just grab first search result.
+        # Prefer non-Suwayomi results first (Usenet/GetComics complete volume).
+        matched_non_suwayomi = [
+            r for r in search_results
+            if not r.get('link', '').startswith('suwayomi:')
+        ]
+        if matched_non_suwayomi:
+            result = matched_non_suwayomi[:1]
+            LOGGER.debug('Auto search results: %s', [
+                {**r, 'link': redact_url_for_log(r.get('link', ''))}
+                for r in result
+            ])
+            return result
+
+        # No non-Suwayomi match. Try bundling Suwayomi chapters as fallback.
+        if issue_id is None:
+            bundle = _try_bundle_suwayomi_chapters(
+                all_results, searchable_issues, volume_data
+            )
+            if bundle:
+                LOGGER.debug(
+                    'Auto search: Suwayomi chapter bundle for volume %d',
+                    volume_id,
+                )
+                return [bundle]
+
+        # Fall through to original behavior: first matched result
         result = search_results[:1] if search_results else []
         LOGGER.debug('Auto search results: %s', [
             {**r, 'link': redact_url_for_log(r.get('link', ''))}

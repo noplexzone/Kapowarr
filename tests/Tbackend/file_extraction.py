@@ -133,6 +133,9 @@ class extract_filename_data(unittest.TestCase):
             'VIZ.Media-Jujutsu.Kaisen.Vol.02.Fearsome.Womb.2020.Hybrid.Comic.eBook-BitBook':
                 {'series': 'VIZ.Media Jujutsu.Kaisen', 'year': 2020, 'volume_number': 2, 'special_version': 'tpb', 'issue_number': None, 'annual': False},
 
+            '/manga/Jujutsu Kaisen (2019)/VIZ.Media-Jujutsu.Kaisen.Vol.20.2023.HYBRID.pdf':
+                {'series': 'VIZ.Media Jujutsu.Kaisen', 'year': 2019, 'volume_number': 20, 'special_version': 'tpb', 'issue_number': None, 'annual': False},
+
             '/Comics/Venom (2021) [cv-140084]/Venom (2021) #0021 [Pages 2-19 They Fight] [2023-08-01] [cv-996034].cbz':
                 {'series': 'Venom', 'year': 2021, 'volume_number': 1, 'special_version': None, 'issue_number': 21.0, 'annual': False},
 

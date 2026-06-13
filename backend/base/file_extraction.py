@@ -560,11 +560,15 @@ def extract_filename_data(
 
     # In dotted scene-release filenames (e.g. Title.Vol.02.2020.Hybrid.eBook-Group),
     # the year between dots is matched greedily as '2020.Hybrid' by issue regexes.
-    # Rescue the year and discard the bogus issue number.
-    if issue_number is not None and year is None:
+    # Rescue the year and discard the bogus issue number. This also applies when the
+    # year was already supplied by the folder (e.g. folder "Series (2019)" + filename
+    # "Publisher.Series.Vol.20.2023.HYBRID.pdf"); in that case we still discard the
+    # bogus issue but do not overwrite the known year.
+    if issue_number is not None:
         _m = _dotted_year_in_issue_re.match(issue_number)
         if _m and 1900 <= int(_m.group(1)) <= 2099:
-            year = _m.group(1)
+            if year is None:
+                year = _m.group(1)
             issue_number = None
 
     if not issue_number and not special_version:

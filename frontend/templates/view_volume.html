@@ -92,6 +92,10 @@
 			<button class="select-match-button">Select</button>
 		</td>
 	</tr>
+	<tr class="import-match-entry" data-filename="">
+		<td class="im-filepath"></td>
+		<td class="im-match"></td>
+	</tr>
 {% endblock pre_build_rows %}
 
 {% block windows %}
@@ -374,6 +378,41 @@
 		</table>
 	{% endset %}
 	{{ window(True, "fix-match-window", "Fix Match", fix_match_content, '') }}
+
+	{% set import_match_content %}
+		<div class="import-match-controls">
+			<label for="import-match-file-input" class="import-match-file-label">Select Files</label>
+			<input
+				type="file"
+				id="import-match-file-input"
+				multiple
+				accept=".zip,.cbz,.cbr,.rar,.cb7,.cbt,.cba,.epub,.mobi,.pdf"
+				style="display:none"
+			>
+			<div class="import-match-all-controls hidden">
+				<button type="button" id="import-match-all-issues-btn">Match All To</button>
+				<select id="import-match-all-issues-select">
+					<option value="">Auto-Match</option>
+				</select>
+			</div>
+		</div>
+		<div class="import-match-files-container">
+			<p class="empty-import-match-message">No files selected</p>
+			<table id="import-match-table" class="icon-text-color hidden">
+				<thead>
+					<tr>
+						<th>File</th>
+						<th>Match To Issue</th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	{% endset %}
+	{% set import_match_submit %}
+		<button id="submit-import-match" type="button">Import</button>
+	{% endset %}
+	{{ window(True, "import-match-window", "Import Files", import_match_content, import_match_submit) }}
 
 {% endblock windows %}
 

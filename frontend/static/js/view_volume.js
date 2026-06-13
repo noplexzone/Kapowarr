@@ -312,7 +312,9 @@ function importFiles(api_key) {
 	// Pre-populate the "Match All To" dropdown
 	const allSelect = document.querySelector('#import-match-all-issues-select');
 	const hasIssues = document.querySelectorAll('#issues-list tr[data-id]').length > 0;
+	const noIssuesMsg = document.querySelector('#import-match-no-issues-msg');
 	if (hasIssues) {
+		noIssuesMsg.classList.add('hidden');
 		document.querySelectorAll('#issues-list tr[data-id]').forEach(issueRow => {
 			const opt = document.createElement('option');
 			opt.value = issueRow.dataset.id;
@@ -321,6 +323,11 @@ function importFiles(api_key) {
 			opt.textContent = title ? `${num} - ${title}` : `Issue ${num}`;
 			allSelect.appendChild(opt);
 		});
+	} else {
+		noIssuesMsg.classList.remove('hidden');
+		// Hide the match column header when there are no issues to select
+		const matchHeader = document.querySelector('#import-match-table thead tr th:last-child');
+		if (matchHeader) matchHeader.classList.add('hidden');
 	}
 
 	document.querySelector('#import-match-file-input').onchange = function(e) {
@@ -340,9 +347,14 @@ function importFiles(api_key) {
 			const row = ViewEls.pre_build.import_match.cloneNode(true);
 			row.dataset.filename = file.name;
 			row.querySelector('.im-filepath').textContent = file.name;
-			const select = _buildImportIssueSelect();
-			select.dataset.filename = file.name;
-			row.querySelector('.im-match').appendChild(select);
+			const matchCell = row.querySelector('.im-match');
+			if (hasIssues) {
+				const select = _buildImportIssueSelect();
+				select.dataset.filename = file.name;
+				matchCell.appendChild(select);
+			} else {
+				matchCell.classList.add('hidden');
+			}
 			tbody.appendChild(row);
 		}
 	};

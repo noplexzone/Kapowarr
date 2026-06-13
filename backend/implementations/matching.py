@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from itertools import chain
 from math import floor
-from re import compile
+from re import IGNORECASE, compile
 from typing import TYPE_CHECKING, Dict, List, Mapping, Tuple, Union
 
 from backend.base.definitions import IssueData, SpecialVersion, VolumeMetadata
@@ -24,6 +24,21 @@ if TYPE_CHECKING:
 clean_title_regex = compile(
     r'((?<=annual)s|/|\-|–|\+|,|\.|\!|:|#|\bthe\s|\band\b|&|’|\'|\"|\bone[\-\s]?shot\b|\bhard[\-\s]?cover\b|\bomnibus\b|\btpb\b)'
 )
+publisher_prefix_regex = compile(
+    r'^(?:viz(?:\.media|\s+media)?|idw\s+publishing|dark\s+horse(?:\s+comics)?|image\s+comics|boom\s+studios)\s+',
+    IGNORECASE
+)
+
+
+def _clean_title(title: str) -> str:
+    title = publisher_prefix_regex.sub(
+        '',
+        normalise_query_string(title)
+    )
+    return clean_title_regex.sub(
+        '',
+        title.lower()
+    ).replace(' ', '')
 
 
 def match_title(
@@ -43,15 +58,9 @@ def match_title(
     Returns:
         bool: Whether the titles match.
     """
-    clean_reference_title = clean_title_regex.sub(
-        '',
-        normalise_query_string(title1).lower()
-    ).replace(' ', '')
+    clean_reference_title = _clean_title(title1)
 
-    clean_title = clean_title_regex.sub(
-        '',
-        normalise_query_string(title2).lower()
-    ).replace(' ', '')
+    clean_title = _clean_title(title2)
 
     if allow_contains:
         return clean_title in clean_reference_title

@@ -59,6 +59,9 @@ cover_regex = compile(r'\b(?<!no[ \-_])(?<!hard[ \-_])(?<!\d[ \-_]covers)cover\b
 page_regex = compile(r'^(\d+(?:[a-f]|_\d+)?)$|\b(?i:page|pg)[\s\.\-_]?(\d+(?:[a-f]|_\d+)?)|n?\d+[_\-p](\d+(?:[a-f]|_\d+)?)')
 page_regex_2 = compile(r'(\d+)')
 revision_regex = compile(r'[1-3]\.\d')
+# Detects issue strings that are actually a year+alpha suffix from dotted scene-release names.
+# E.g. '2020.Hybrid' should be treated as year=2020, not issue 2020.08...
+_dotted_year_in_issue_re = compile(r'^(\d{4})\.[a-zA-Z]')
 # autopep8: on
 
 
@@ -554,6 +557,15 @@ def extract_filename_data(
                 issue_number = extracted_number
                 issue_folderpos = result_start
                 break
+
+    # In dotted scene-release filenames (e.g. Title.Vol.02.2020.Hybrid.eBook-Group),
+    # the year between dots is matched greedily as '2020.Hybrid' by issue regexes.
+    # Rescue the year and discard the bogus issue number.
+    if issue_number is not None and year is None:
+        _m = _dotted_year_in_issue_re.match(issue_number)
+        if _m and 1900 <= int(_m.group(1)) <= 2099:
+            year = _m.group(1)
+            issue_number = None
 
     if not issue_number and not special_version:
         # If no issue number is found and no Special Version is determined,

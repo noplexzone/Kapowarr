@@ -445,24 +445,40 @@ def check_search_result_match(
     ):
         return {'match': False, 'match_issue': "Titles don't match"}
 
-    if not match_volume_number(
-        volume_data,
-        volume_issues,
-        result['volume_number'],
-        conservative=True
+    volume_number_matches_searched_issue = (
+        calculated_issue_number is not None
+        and result['issue_number'] is None
+        and result['special_version'] == SpecialVersion.TPB
+        and result['volume_number'] == calculated_issue_number
+    )
+
+    if not (
+        match_volume_number(
+            volume_data,
+            volume_issues,
+            result['volume_number'],
+            conservative=True
+        )
+        or volume_number_matches_searched_issue
     ):
         return {'match': False, 'match_issue': "Volume numbers don't match"}
 
-    if not match_special_version(
-        volume_data.special_version,
-        result['special_version'],
-        volume_data.title,
-        result['issue_number']
+    if not (
+        match_special_version(
+            volume_data.special_version,
+            result['special_version'],
+            volume_data.title,
+            result['issue_number']
+        )
+        or volume_number_matches_searched_issue
     ):
         return {'match': False, 'match_issue': 'Special version conflict'}
 
     if result['issue_number'] is not None:
         issue_number = result['issue_number']
+
+    elif volume_number_matches_searched_issue:
+        issue_number = calculated_issue_number or float('-inf')
 
     elif (
         volume_data.special_version == SpecialVersion.VOLUME_AS_ISSUE

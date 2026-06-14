@@ -451,6 +451,7 @@ def manual_search(
         # individual chapters for all of them. This covers English manga where
         # Kapowarr issues represent tankobon volumes (e.g. JJK #1 = ch. 1-7).
         from backend.implementations.suwayomi import is_manga_publisher
+        covered_links: set = set()
         if (
             issue_id is not None
             and issue_data is not None
@@ -464,15 +465,26 @@ def manual_search(
                 search_results, ch_nums, volume_data, calculated_issue_number
             )
             if bundle is not None:
+                # Mark every individual chapter link covered by the bundle so
+                # it won't appear as a matching download option alongside it.
+                _bparts = bundle['link'].split(':', 2)
+                covered_links = {
+                    f'{SUWAYOMI_SCHEME}{_bparts[1]}:{ch_id}'
+                    for ch_id in _bparts[2].split(',')
+                }
                 search_results = [bundle] + list(search_results)
 
         results: List[MatchedSearchResultData] = [
             {
                 **result,
-                **check_search_result_match(
-                    result, volume_data, volume_issues,
-                    number_to_year, calculated_issue_number
-                )
+                **(
+                    {'match': False, 'match_issue': 'Covered by Suwayomi bundle'}
+                    if result.get('link') in covered_links
+                    else check_search_result_match(
+                        result, volume_data, volume_issues,
+                        number_to_year, calculated_issue_number
+                    )
+                ),
             }
             for result in search_results
         ]

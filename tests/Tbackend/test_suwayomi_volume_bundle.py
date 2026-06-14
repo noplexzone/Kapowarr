@@ -228,10 +228,47 @@ class ManualSearchVAIBundleTest(unittest.TestCase):
         self.assertEqual(len(bundled), 0)
 
     def test_single_chapter_results_still_present(self):
-        """Individual chapter results must remain in the returned list."""
+        """Individual chapter results must remain in the returned list (as non-matches)."""
         results = _run_manual_search('Chapter 1 ... Chapter 7')
-        single = [r for r in results if ',' not in r.get('link', '')]
+        single = [r for r in results if ',' not in r.get('link', '')
+                  and r.get('link', '').startswith('suwayomi:')]
         self.assertEqual(len(single), 7)
+
+    def test_covered_chapters_are_not_match(self):
+        """Individual Suwayomi chapters covered by the bundle must have match=False."""
+        results = _run_manual_search('Chapter 1 ... Chapter 7')
+        covered = [
+            r for r in results
+            if r.get('link', '').startswith('suwayomi:')
+            and ',' not in r.get('link', '')
+        ]
+        self.assertEqual(len(covered), 7, 'Expected 7 individual chapter results')
+        for r in covered:
+            self.assertFalse(
+                r.get('match'),
+                f"Chapter result {r['link']} should have match=False but got match=True",
+            )
+
+    def test_bundle_itself_is_match(self):
+        """The injected bundle result must still be a match (mock returns match=True)."""
+        results = _run_manual_search('Chapter 1 ... Chapter 7')
+        bundled = [r for r in results if ',' in r.get('link', '')]
+        self.assertEqual(len(bundled), 1)
+        self.assertTrue(bundled[0].get('match'))
+
+    def test_covered_chapters_have_explanatory_match_issue(self):
+        """Covered chapters must carry a non-None match_issue explaining why."""
+        results = _run_manual_search('Chapter 1 ... Chapter 7')
+        covered = [
+            r for r in results
+            if r.get('link', '').startswith('suwayomi:')
+            and ',' not in r.get('link', '')
+        ]
+        for r in covered:
+            self.assertIsNotNone(
+                r.get('match_issue'),
+                f"Covered chapter {r['link']} should have a match_issue string",
+            )
 
 
 # ---------------------------------------------------------------------------

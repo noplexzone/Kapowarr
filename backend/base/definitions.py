@@ -385,7 +385,7 @@ class LibrarySorting(BaseEnum):
     VOLUME_NUMBER = "volume_number, title, year"
     RECENTLY_ADDED = "volumes.id DESC, title, year, volume_number"
     PUBLISHER = "publisher, title, year, volume_number"
-    WANTED = ("issues_downloaded_monitored >= issue_count_monitored, "
+    WANTED = ("(issue_count_monitored - issues_downloaded_monitored) DESC, "
               "title, year, volume_number")
     RECENTLY_RELEASED = ("(SELECT MAX(date) FROM vol_issues) DESC, "
                          "title, year, volume_number")

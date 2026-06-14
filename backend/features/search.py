@@ -281,6 +281,7 @@ def _build_suwayomi_bundle_for_issue(
     chapter_numbers: List[float],
     volume_data: VolumeData,
     calculated_issue_number: float,
+    display_volume_number: Optional[int] = None,
 ) -> Optional[SearchResultData]:
     """Return a bundled suwayomi:M:c1,c2,... result for a manga issue.
 
@@ -288,6 +289,10 @@ def _build_suwayomi_bundle_for_issue(
     covers every number in chapter_numbers, returns a bundled result whose
     issue_number equals calculated_issue_number so it ranks as a direct match.
     Returns None if coverage is incomplete.
+
+    display_volume_number overrides volume_data.volume_number in display_title
+    only (use the tankobon/issue number for the label while keeping series
+    volume metadata for matcher compatibility).
     """
     if not chapter_numbers:
         return None
@@ -318,10 +323,11 @@ def _build_suwayomi_bundle_for_issue(
         ch_ids = [cid for _, cid in sorted_pairs]
         ch_nums_sorted = [n for n, _ in sorted_pairs]
         manga_title = manga_titles.get(manga_id, '')
+        display_vol = display_volume_number if display_volume_number is not None else volume_data.volume_number
         return {
             'link': make_suwayomi_volume_link(manga_id, ch_ids),
             'display_title': (
-                f"{manga_title} - Vol. {volume_data.volume_number} "
+                f"{manga_title} - Vol. {display_vol} "
                 f"(Ch. {ch_nums_sorted[0]:.4g}–{ch_nums_sorted[-1]:.4g})"
             ),
             'source': SUWAYOMI_SOURCE_NAME,
@@ -451,7 +457,6 @@ def manual_search(
         # individual chapters for all of them. This covers English manga where
         # Kapowarr issues represent tankobon volumes (e.g. JJK #1 = ch. 1-7).
         from backend.implementations.suwayomi import is_manga_publisher
-        covered_links: set = set()
         if (
             issue_id is not None
             and issue_data is not None
@@ -462,28 +467,26 @@ def manual_search(
                 issue_data.description or ''
             )
             bundle = _build_suwayomi_bundle_for_issue(
-                search_results, ch_nums, volume_data, calculated_issue_number
+                search_results, ch_nums, volume_data, calculated_issue_number,
+                display_volume_number=int(calculated_issue_number),
             )
             if bundle is not None:
-                # Mark every individual chapter link covered by the bundle so
-                # it won't appear as a matching download option alongside it.
-                _bparts = bundle['link'].split(':', 2)
-                covered_links = {
-                    f'{SUWAYOMI_SCHEME}{_bparts[1]}:{ch_id}'
-                    for ch_id in _bparts[2].split(',')
-                }
-                search_results = [bundle] + list(search_results)
+                # Drop ALL individual Suwayomi chapter links (no comma in id
+                # portion) so only the bundle represents Suwayomi in results.
+                search_results = [bundle] + [
+                    r for r in search_results
+                    if not (
+                        r.get('link', '').startswith(SUWAYOMI_SCHEME)
+                        and ',' not in r.get('link', '')
+                    )
+                ]
 
         results: List[MatchedSearchResultData] = [
             {
                 **result,
-                **(
-                    {'match': False, 'match_issue': 'Covered by Suwayomi bundle'}
-                    if result.get('link') in covered_links
-                    else check_search_result_match(
-                        result, volume_data, volume_issues,
-                        number_to_year, calculated_issue_number
-                    )
+                **check_search_result_match(
+                    result, volume_data, volume_issues,
+                    number_to_year, calculated_issue_number
                 ),
             }
             for result in search_results

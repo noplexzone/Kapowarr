@@ -115,6 +115,7 @@ def _run_manual_search(
     raw_results=None,
     special_version_marker='volume-as-issue',
     publisher='VIZ Media',
+    issue_num: float = 1.0,
 ):
     """Run manual_search(1, 10) with mocked Volume and search_multiple_queries."""
     from backend.features.search import manual_search
@@ -123,7 +124,7 @@ def _run_manual_search(
         raw_results = _single_chapter_results()
 
     volume_data = _make_volume_data(special_version_marker, publisher)
-    issue_data = _make_issue_data(description=issue_description)
+    issue_data = _make_issue_data(description=issue_description, issue_num=issue_num)
 
     mock_issue = MagicMock()
     mock_issue.get_data.return_value = issue_data
@@ -227,27 +228,28 @@ class ManualSearchVAIBundleTest(unittest.TestCase):
         bundled = [r for r in results if ',' in r.get('link', '')]
         self.assertEqual(len(bundled), 0)
 
-    def test_single_chapter_results_still_present(self):
-        """Individual chapter results must remain in the returned list (as non-matches)."""
+    def test_covered_chapters_absent_from_final_results(self):
+        """Individual Suwayomi chapters covered by the bundle must not appear at all."""
         results = _run_manual_search('Chapter 1 ... Chapter 7')
-        single = [r for r in results if ',' not in r.get('link', '')
-                  and r.get('link', '').startswith('suwayomi:')]
-        self.assertEqual(len(single), 7)
+        single = [
+            r for r in results
+            if r.get('link', '').startswith('suwayomi:')
+            and ',' not in r.get('link', '')
+        ]
+        self.assertEqual(
+            len(single), 0,
+            'Covered individual chapter results should be absent when a bundle exists',
+        )
 
-    def test_covered_chapters_are_not_match(self):
-        """Individual Suwayomi chapters covered by the bundle must have match=False."""
+    def test_covered_chapters_are_not_in_results(self):
+        """Covered individual chapters must be removed, not merely marked non-match."""
         results = _run_manual_search('Chapter 1 ... Chapter 7')
         covered = [
             r for r in results
             if r.get('link', '').startswith('suwayomi:')
             and ',' not in r.get('link', '')
         ]
-        self.assertEqual(len(covered), 7, 'Expected 7 individual chapter results')
-        for r in covered:
-            self.assertFalse(
-                r.get('match'),
-                f"Chapter result {r['link']} should have match=False but got match=True",
-            )
+        self.assertEqual(len(covered), 0, 'Expected 0 individual chapter results')
 
     def test_bundle_itself_is_match(self):
         """The injected bundle result must still be a match (mock returns match=True)."""
@@ -256,19 +258,72 @@ class ManualSearchVAIBundleTest(unittest.TestCase):
         self.assertEqual(len(bundled), 1)
         self.assertTrue(bundled[0].get('match'))
 
-    def test_covered_chapters_have_explanatory_match_issue(self):
-        """Covered chapters must carry a non-None match_issue explaining why."""
-        results = _run_manual_search('Chapter 1 ... Chapter 7')
-        covered = [
+    def test_bundle_display_title_uses_issue_number_as_vol_number(self):
+        """Bundle display_title for issue 11 must say Vol. 11, not Vol. 1 (series vol)."""
+        raw = _single_chapter_results(ch_range=range(89, 98))
+        results = _run_manual_search(
+            'Chapters 89-97',
+            raw_results=raw,
+            issue_num=11.0,
+        )
+        bundled = [r for r in results if ',' in r.get('link', '')]
+        self.assertEqual(len(bundled), 1, 'Expected exactly one bundled result')
+        title = bundled[0].get('display_title', '')
+        self.assertIn(
+            'Vol. 11', title,
+            f'display_title should contain "Vol. 11" for issue 11, got: {title!r}',
+        )
+        self.assertNotIn(
+            'Vol. 1 ', title,
+            f'display_title must not use series volume_number 1, got: {title!r}',
+        )
+
+    def test_bundle_volume_number_metadata_uses_series_volume_for_matching(self):
+        """Bundle volume_number must equal series volume_number (1) for matching,
+        even when the display title shows the tankobon number (11)."""
+        raw = _single_chapter_results(ch_range=range(89, 98))
+        results = _run_manual_search(
+            'Chapters 89-97',
+            raw_results=raw,
+            issue_num=11.0,
+        )
+        bundled = [r for r in results if ',' in r.get('link', '')]
+        self.assertEqual(len(bundled), 1)
+        self.assertEqual(
+            bundled[0].get('volume_number'), 1,
+            'volume_number metadata must be series volume (1) for matching, not issue number',
+        )
+
+    def test_unrelated_individual_suwayomi_chapters_absent_when_bundle_exists(self):
+        """All individual Suwayomi chapter links must be removed when a bundle exists,
+        including chapters not covered by the bundle (e.g. Ch. 11 alongside ch. 89-97)."""
+        raw = _single_chapter_results(ch_range=range(89, 98))
+        # Add an unrelated individual chapter link (Ch. 11)
+        raw.append({
+            'link': 'suwayomi:1756:10011',
+            'display_title': 'Jujutsu Kaisen - Ch. 11',
+            'source': 'Suwayomi',
+            'series': 'Jujutsu Kaisen',
+            'year': None,
+            'volume_number': None,
+            'special_version': None,
+            'issue_number': 11.0,
+            'annual': False,
+        })
+        results = _run_manual_search(
+            'Chapters 89-97',
+            raw_results=raw,
+            issue_num=11.0,
+        )
+        single = [
             r for r in results
             if r.get('link', '').startswith('suwayomi:')
             and ',' not in r.get('link', '')
         ]
-        for r in covered:
-            self.assertIsNotNone(
-                r.get('match_issue'),
-                f"Covered chapter {r['link']} should have a match_issue string",
-            )
+        self.assertEqual(
+            len(single), 0,
+            f'Expected no individual Suwayomi results when bundle exists, found: {[r["link"] for r in single]}',
+        )
 
 
 # ---------------------------------------------------------------------------

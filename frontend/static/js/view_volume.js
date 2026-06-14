@@ -69,7 +69,7 @@ class IssueEntry {
 		this.status = this.entry.querySelector('.issue-status');
 		this.auto_search = this.entry.querySelector('.action-column :nth-child(1)');
 		this.manual_search = this.entry.querySelector('.action-column :nth-child(2)');
-		this.convert = this.entry.querySelector('.action-column :nth-child(3)');
+		this.history = this.entry.querySelector('.action-column :nth-child(3)');
 	};
 
 	setMonitorIcon() {
@@ -172,7 +172,7 @@ function fillTable(issues, api_key) {
 		// Actions
 		inst.auto_search.onclick = e => autosearchIssue(obj.id, api_key);
 		inst.manual_search.onclick = e => showManualSearch(api_key, obj.id);
-		inst.convert.onclick = e => showConvert(api_key, obj.id);
+		inst.history.onclick = e => showIssueHistory(api_key, obj.id);
 	};
 };
 
@@ -784,6 +784,59 @@ function convertVolume(api_key, issue_id=null) {
 
 	sendAPI('POST', '/system/tasks', api_key, {}, data)
 	.then(response => closeWindow());
+};
+
+//
+// Issue History
+//
+function showIssueHistory(api_key, issue_id) {
+	const table = document.querySelector('#issue-history-table');
+	const empty_msg = document.querySelector('#issue-history-window .empty-rename-message');
+	table.innerHTML = '';
+
+	fetchAPI('/activity/history', api_key, {issue_id: issue_id})
+	.then(json => {
+		if (!json.result.length) {
+			hide([table], [empty_msg]);
+		} else {
+			hide([empty_msg], [table]);
+			json.result.forEach(obj => {
+				const row = document.createElement('tr');
+
+				const source_td = document.createElement('td');
+				source_td.innerText = obj.source || '';
+				row.appendChild(source_td);
+
+				const title_td = document.createElement('td');
+				if (obj.web_link) {
+					const a = document.createElement('a');
+					a.href = obj.web_link;
+					a.target = '_blank';
+					a.innerText = obj.web_title || obj.web_link;
+					title_td.appendChild(a);
+				} else {
+					title_td.innerText = obj.file_title || obj.web_title || '';
+				}
+				row.appendChild(title_td);
+
+				const date_td = document.createElement('td');
+				if (obj.downloaded_at) {
+					const d = new Date(obj.downloaded_at * 1000);
+					date_td.innerText = d.toLocaleString('en-CA').slice(0,10) + ' ' + d.toTimeString().slice(0,5);
+				}
+				row.appendChild(date_td);
+
+				const status_td = document.createElement('td');
+				if (obj.success === true) status_td.innerText = 'Success';
+				else if (obj.success === false) status_td.innerText = 'Failed';
+				else status_td.innerText = '';
+				row.appendChild(status_td);
+
+				table.appendChild(row);
+			});
+		}
+		showWindow('issue-history-window');
+	});
 };
 
 //

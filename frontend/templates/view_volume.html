@@ -30,7 +30,7 @@
 		<td class="action-column" aria-label="Actions">
 			{{ icon_button('', "Auto search for this issue", "search.svg") }}
 			{{ icon_button('', "Manually search for this issue", "manual_search.svg") }}
-			{{ icon_button('', "Convert files for this issue", "convert.svg") }}
+			{{ icon_button('', "View history for this issue", "history.svg") }}
 		</td>
 	</tr>
 	<tr class="search-entry">
@@ -280,6 +280,22 @@
 		<button id="submit-convert" type="submit">Convert</button>
 	{% endset %}
 	{{ window(True, "convert-window", "Convert volume files", convert_content, convert_submit) }}
+
+	{% set issue_history_content %}
+		<p class="empty-rename-message">No history for this issue</p>
+		<table class="icon-text-color">
+			<thead>
+				<tr>
+					<th>Source</th>
+					<th>Title</th>
+					<th>Downloaded At</th>
+					<th>Status</th>
+				</tr>
+			</thead>
+			<tbody id="issue-history-table"></tbody>
+		</table>
+	{% endset %}
+	{{ window(True, "issue-history-window", "Issue History", issue_history_content, '') }}
 
 	{% set manage_issues_content %}
 		<table id="manage-issues-table">

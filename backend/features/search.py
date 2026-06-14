@@ -418,9 +418,9 @@ def _mangadex_chapters_for_issue(
         chapters = volume_chapter_map.get(calculated_issue_number)
         if chapters:
             return chapters, False
-        found_incompatible_map = True
         LOGGER.info(
-            'MangaDex aggregate rejected for %s issue %.4g: no volume entry',
+            'MangaDex map for %s has no entry for issue %.4g; '
+            'falling back to description parsing',
             volume_data.title, calculated_issue_number,
         )
     return None, found_incompatible_map

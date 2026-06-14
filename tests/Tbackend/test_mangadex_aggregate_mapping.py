@@ -92,7 +92,9 @@ class MangaDexCompatibilityTest(unittest.TestCase):
             _mangadex_map_is_compatible(md_map, _issues(*range(1, 16)))
         )
 
-    def test_missing_current_volume_is_incompatible_for_issue_lookup(self):
+    def test_missing_current_volume_allows_description_fallback(self):
+        """Compatible map missing the issue returns (None, False) so
+        description parsing can run as a fallback."""
         from backend.base.definitions import SpecialVersion, VolumeData
         from backend.features.search import _mangadex_chapters_for_issue
 
@@ -117,7 +119,7 @@ class MangaDexCompatibilityTest(unittest.TestCase):
             )
 
         self.assertIsNone(chapters)
-        self.assertTrue(incompatible)
+        self.assertFalse(incompatible)
 
 
 class ManualSearchMangaDexGuardTest(unittest.TestCase):

@@ -7,8 +7,8 @@ function fillSettings(api_key) {
 		document.querySelector('#seeding-handling-input').value = json.result.seeding_handling;
 		document.querySelector('#delete-downloads-input').checked = json.result.delete_completed_downloads;
 		fillPref(json.result.service_preference);
-		fillSourcePriority('#comic-source-priority-table', json.result.comic_source_priority);
-		fillSourcePriority('#manga-source-priority-table', json.result.manga_source_priority);
+		fillDownloadSourcePriority('#comic-source-priority-table', json.result.comic_source_priority);
+		fillDownloadSourcePriority('#manga-source-priority-table', json.result.manga_source_priority);
 	});
 };
 
@@ -22,8 +22,8 @@ function saveSettings(api_key) {
 		'seeding_handling': document.querySelector('#seeding-handling-input').value,
 		'delete_completed_downloads': document.querySelector('#delete-downloads-input').checked,
 		'service_preference': [...document.querySelectorAll('#pref-table select')].map(e => e.value),
-		'comic_source_priority': getSourcePriority('#comic-source-priority-table'),
-		'manga_source_priority': getSourcePriority('#manga-source-priority-table')
+		'comic_source_priority': getDownloadSourcePriority('#comic-source-priority-table'),
+		'manga_source_priority': getDownloadSourcePriority('#manga-source-priority-table')
 	};
 	sendAPI('PUT', '/settings', api_key, {}, data)
 	.then(response => 
@@ -96,13 +96,13 @@ function updatePrefOrder(e) {
 //
 // Download source priority
 //
-const sourcePriorityLabels = {
+const downloadSourcePriorityLabels = {
 	'usenet': 'Usenet',
 	'getcomics': 'GetComics',
 	'suwayomi': 'Suwayomi'
 };
 
-function fillSourcePriority(tableSelector, priority) {
+function fillDownloadSourcePriority(tableSelector, priority) {
 	const table = document.querySelector(tableSelector);
 	if (!table) return;
 	const selects = table.querySelectorAll('select');
@@ -114,11 +114,11 @@ function fillSourcePriority(tableSelector, priority) {
 		const source = priority[i];
 		const select = selects[i];
 		select.innerHTML = '';
-		select.onchange = updateSourcePriorityOrder;
+		select.onchange = updateDownloadSourcePriorityOrder;
 		priority.forEach(option => {
 			const entry = document.createElement('option');
 			entry.value = option;
-			entry.innerText = sourcePriorityLabels[option] || option;
+			entry.innerText = downloadSourcePriorityLabels[option] || option;
 			if (option === source)
 				entry.selected = true;
 			select.appendChild(entry);
@@ -126,11 +126,11 @@ function fillSourcePriority(tableSelector, priority) {
 	};
 };
 
-function getSourcePriority(tableSelector) {
+function getDownloadSourcePriority(tableSelector) {
 	return [...document.querySelectorAll(`${tableSelector} select`)].map(e => e.value);
 };
 
-function updateSourcePriorityOrder(e) {
+function updateDownloadSourcePriorityOrder(e) {
 	const table = e.target.closest('table');
 	const other_selects = table.querySelectorAll(
 		`select:not([data-place="${e.target.dataset.place}"])`

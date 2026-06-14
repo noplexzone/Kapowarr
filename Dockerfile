@@ -8,11 +8,10 @@ FROM rust:slim-${DISTRO} AS builder
 WORKDIR /wheels
 
 # Install Build Dependencies
-RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=private \
-    --mount=target=/var/cache/apt,type=cache,sharing=private \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential libssl-dev libffi-dev pkg-config
+        build-essential libssl-dev libffi-dev pkg-config && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy Python From Python Stage
 COPY --from=python /usr/local /usr/local
@@ -29,24 +28,25 @@ FROM python:${PYTHON}-slim-${DISTRO} AS runtime
 WORKDIR /app
 
 # Install Runtime Dependencies
-RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=private \
-    --mount=target=/var/cache/apt,type=cache,sharing=private \
-    apt-get update && \
+RUN apt-get update && \
     apt-get full-upgrade -y && \
-    apt-get autoremove -y
+    apt-get autoremove -y && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 COPY --from=tianon/gosu /gosu /usr/local/bin/
 
 # Install Compiled Wheels
-RUN --mount=from=builder,source=/wheels,target=/wheels \
-    --mount=type=cache,target=/root/.cache/pip,sharing=private \
-    pip3 install --no-index --find-links=/wheels -r /wheels/requirements.txt
+COPY --from=builder /wheels /wheels
+RUN pip3 install --no-index --find-links=/wheels -r /wheels/requirements.txt && \
+    rm -rf /wheels
 
 RUN groupadd -g 1000 kapowarr && \
     useradd -u 1000 -g kapowarr -d /nonexistent -M -s /bin/bash kapowarr && \
     mkdir -p /app/db /app/logs /app/temp_downloads
 
-COPY --chmod=755 . .
-RUN find /app -name "*.sh" -exec sed -i 's/\r$//' {} +
+COPY . .
+RUN chmod -R 755 /app && \
+    find /app -name "*.sh" -exec sed -i 's/\r$//' {} +
 
 ENV PUID=0 \
     PGID=0 \

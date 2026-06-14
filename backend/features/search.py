@@ -297,6 +297,10 @@ def _extract_series_title(query: str) -> str:
     return title.strip()
 
 
+# Chapter-number extraction patterns.  Bracketed format
+# (e.g. '[ 80 ] Title', 'Chapter [165] Title') handled
+# by _BRACKET_CHAPTER_RE to cover ComicVine description
+# variants that lack a plain 'Chapter N' prefix.
 _CHAPTER_RANGE_RE = _re_compile(
     r'[Cc]hapters?\s+(\d+(?:\.\d+)?)'
     r'\s*(?:[-–]|to\b|through\b|\.\.\.)\s*'

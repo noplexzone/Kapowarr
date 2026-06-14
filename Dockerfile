@@ -44,6 +44,7 @@ RUN groupadd -g 1000 kapowarr && \
     useradd -u 1000 -g kapowarr -d /nonexistent -M -s /bin/bash kapowarr && \
     mkdir -p /app/db /app/logs /app/temp_downloads
 
+ARG CACHE_BUST=0
 COPY . .
 RUN chmod -R 755 /app && \
     find /app -name "*.sh" -exec sed -i 's/\r$//' {} +

@@ -159,7 +159,9 @@ class SuwayomiClient:
         self._gql(
             """
             mutation EnqueueDownload($id: Int!) {
-                enqueueChapterDownload(id: $id) { state }
+                enqueueChapterDownload(input: {id: $id}) {
+                    downloadStatus { state }
+                }
             }
             """,
             {"id": chapter_id},

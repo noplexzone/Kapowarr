@@ -83,6 +83,7 @@ plugins:
         'library-import.md': 'general_info/library_import.md'
         'general_info/features.md': 'general_info/library_import.md'
         'general_info/downloading.md': 'general_info/implementation_details.md'
+        'settings/downloadclients.md': 'settings/download.md'
 
 # Navigation Layout
 nav:
@@ -102,7 +103,6 @@ nav:
     - Introduction: settings/settings.md
     - Media Management: settings/mediamanagement.md
     - Download: settings/download.md
-    - Download Clients: settings/downloadclients.md
     - Metadata: settings/metadata.md
     - General: settings/general.md
   - FAQ: other_docs/faq.md

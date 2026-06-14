@@ -153,7 +153,7 @@ def ui_download():
 
 @ui.route('/settings/downloadclients', methods=methods)
 def ui_download_clients():
-    return render('settings_download_clients.html')
+    return redirect(f'{Server.url_base}/settings/download')
 
 
 @ui.route('/settings/indexers', methods=methods)

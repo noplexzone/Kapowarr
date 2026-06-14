@@ -24,7 +24,7 @@ This is only applicable to people _not_ using Docker. If you want to, you can ch
 
 ## Credentials
 
-If you have an account at a download service like Mega or Pixeldrain, then Kapowarr can take advantage of the higher limits (download speed, daily download limit, etc.) that the account has to offer. See the ['Credentials' section of the settings](../settings/downloadclients.md#credentials) for more details.
+If you have an account at a download service like Mega or Pixeldrain, then Kapowarr can take advantage of the higher limits (download speed, daily download limit, etc.) that the account has to offer. See the ['Credentials' section of the settings](../settings/download.md#credentials) for more details.
 
 ## Building a library
 

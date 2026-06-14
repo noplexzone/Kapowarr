@@ -1,12 +1,367 @@
 {% extends "base.html" %}
-{% from "base.html" import icon_button %}
+{% from "base.html" import icon_button, window %}
 {% block title %}Download Settings{% endblock %}
 {% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/window.css') }}">
 	<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
 {% endblock %}
 {% block js %}
+	<script src="{{ url_for('static', filename='js/window.js') }}" defer></script>
 	<script src="{{ url_for('static', filename='js/settings_download.js') }}" defer></script>
+	<script src="{{ url_for('static', filename='js/settings_download_clients.js') }}" defer></script>
 {% endblock %}
+
+{% block pre_build_rows %}
+<tr class="mega-cred-entry cred-entry">
+	<td class="mega-email"></td>
+	<td class="mega-password"></td>
+	<td>
+		<button type="button" class="delete-credential" title="Delete credential">
+			<img src="{{ url_for('static', filename='img/delete.svg') }}" alt="">
+		</button>
+	</td>
+</tr>
+<tr class="pixeldrain-cred-entry cred-entry">
+	<td class="pixeldrain-key"></td>
+	<td>
+		<button type="button" class="delete-credential" title="Delete credential">
+			<img src="{{ url_for('static', filename='img/delete.svg') }}" alt="">
+		</button>
+	</td>
+</tr>
+<tr class="remote-mapping-entry">
+	<td class="mapping-client"></td>
+	<td class="mapping-remote"></td>
+	<td class="mapping-local"></td>
+	<td class="action-column">
+		<button type="button" class="edit-mapping" title="Edit remote path mapping">
+			<img src="{{url_base}}/static/img/edit.svg" alt="">
+		</button>
+		<button type="button" class="delete-mapping" title="Delete remote path mapping">
+			<img src="{{url_base}}/static/img/delete.svg" alt="">
+		</button>
+	</td>
+</tr>
+{% endblock pre_build_rows %}
+
+{% block windows %}
+	{% set builtin_content %}
+		<h2 id="mega-title">Mega</h2>
+		<p id="mega-desc" class="description">
+			<a href="https://mega.io/" target="_blank">Mega</a> is a file sharing service that supports end-to-end encrypted
+			downloads, which Kapowarr makes use of.
+			<br><br>
+			By default, you are limited to downloading around 5GB of files per day from Mega. There are no download speed constraints.
+			<br><br>
+			Mega offers free and paid accounts that come with higher limits for downloading files. Kapowarr is able to download
+			files using an account to take advantage of these higher limits (i.e. being able to download more than 5GB per day).
+			If you have a Mega account, it's advised to enter the credentials below so that Kapowarr can take advantage of it's
+			premium features. Also make sure to set Mega high in the service preference list, so that Kapowarr will prefer using it.
+		</p>
+		<h2 id="mf-title">MediaFire</h2>
+		<p id="mf-desc" class="description">
+			<a href="https://www.mediafire.com/" target="_blank">MediaFire</a> is a file sharing service from which Kapowarr can
+			download files.
+			<br><br>
+			MediaFire does not limit how much you can download per day.
+		</p>
+		<h2 id="wt-title">WeTransfer</h2>
+		<p id="wt-desc" class="description">
+			<a href="https://wetransfer.com/" target="_blank">WeTransfer</a> is a file sharing service from which Kapowarr can
+			download files.
+			<br><br>
+			WeTransfer does not limit how much you can download per day.
+		</p>
+		<h2 id="pd-title">Pixeldrain</h2>
+		<p id="pd-desc" class="description">
+			<a href="https://pixeldrain.com/" target="_blank">Pixeldrain</a> is a file sharing service from which Kapowarr can
+			download files.
+			<br><br>
+			By default, you can download up to 6GB of files at full speed per day from Pixeldrain. After that limit is reached,
+			download speed is reduced to 1MB/s.
+			<br><br>
+			Pixeldrain offers paid subscription plans that remove this speed limit. Kapowarr is able to download files using
+			an account to take advantage of these higher limits (i.e. download more than 6GB per day at full speed). If you
+			have a Pixeldrain account, it's advised to enter the credentials below so that Kapowarr can take advantage of
+			it's premium features. Also make sure to set Pixeldrain high in the service preference list, so that Kapowarr
+			will prefer using it.
+		</p>
+		<h2 id="gc-title">GetComics</h2>
+		<p id="gc-desc" class="description">
+			<a href="https://getcomics.org" target="_blank">GetComics</a> is a website that offers a vast amount of downloads
+			for comics. Kapowarr can search this website to find downloads for the volumes in your library. The comics can
+			be downloaded via multiple services. Kapowarr has built-in support for almost all these services.
+			<br><br>
+			When downloading directly from the servers of GetComics (instead of using an external service), the download speed
+			will be significantly reduced 400MB into the download. This behaviour is set up by the owner of the website, is
+			intentional, and is not planned to be removed.
+			<br><br>
+			Also, most often on Wednesday and Thursday, the site is very busy so the downloads speed goes down a lot. Preferring
+			external services in the service preference list is advised in order to avoid this.
+		</p>
+
+		<div id="cred-container">
+			<p id="cred-error" class="error hidden">Failed to add credentials</p>
+			<form id="mega-form" data-source="mega">
+				<table>
+					<thead>
+						<tr>
+							<th>Email</th>
+							<th>Password</th>
+							<th>Action</th>
+						</tr>
+					</thead>
+					<tbody id="mega-creds" class="icon-text-color">
+					</tbody>
+					<tbody id="add-mega" class="icon-text-color">
+						<tr id="add-mega">
+							<td class="mega-email">
+								<input type="email" required>
+							</td>
+							<td class="mega-password">
+								<input type="password" required>
+							</td>
+							<td>{{ icon_button("submit-mega", "Add credential", "cancel.svg", "", True) }}</td>
+						</tr>
+					</tbody>
+				</table>
+			</form>
+			<form id="pixeldrain-form" data-source="pd">
+				<table>
+					<thead>
+						<tr>
+							<th>Api Key</th>
+							<th>Action</th>
+						</tr>
+					</thead>
+					<tbody id="pixeldrain-creds" class="icon-text-color">
+					</tbody>
+					<tbody id="add-pixeldrain" class="icon-text-color">
+						<tr id="add-pixeldrain">
+							<td class="pixeldrain-key">
+								<input type="text" required>
+							</td>
+							<td>{{ icon_button("submit-pixeldrain", "Add credential", "cancel.svg", "", True) }}</td>
+						</tr>
+					</tbody>
+				</table>
+			</form>
+		</div>
+	{% endset %}
+
+	{{ window(False, "builtin-window", "Client Information", builtin_content) }}
+
+	{% set choose_content %}
+		<div id="choose-torrent-list"></div>
+	{% endset %}
+
+	{{ window(False, "choose-torrent-window", "Choose Torrent Client", choose_content) }}
+
+	{% set add_content %}
+		<p class="error hidden" id="add-error"></p>
+		<form id="add-torrent-form">
+			<table>
+				<tr>
+					<th><label for="add-title-input">Title</label></th>
+					<td>
+						<input type="text" id="add-title-input" required>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="add-baseurl-input">Base URL</label></th>
+					<td>
+						<input type="text" id="add-baseurl-input" required>
+						<p>E.g. 'http://192.168.2.15:8008/torrent_client'</p>
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set add_submit %}
+		<button id="test-torrent-add" class="test-button" type="button">
+			<div>Failed</div>
+			<div>Test</div>
+			<div>Success</div>
+		</button>
+		<button id="submit-torrent-add" type="submit" form="add-torrent-form">Add</button>
+	{% endset %}
+
+	{{ window(False, "add-torrent-window", "Add Torrent Client", add_content, add_submit) }}
+
+	{% set edit_content %}
+		<p class="error hidden" id="edit-error"></p>
+		<form id="edit-torrent-form">
+			<table>
+				<tr>
+					<th><label for="edit-title-input">Title</label></th>
+					<td>
+						<input type="text" id="edit-title-input" required>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="edit-baseurl-input">Base URL</label></th>
+					<td>
+						<input type="text" id="edit-baseurl-input" required>
+						<p>E.g. 'http://192.168.2.15:8008/torrent_client'</p>
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set edit_submit %}
+		<button id="delete-torrent-edit" type="button">Delete</button>
+		<button id="test-torrent-edit" class="test-button" type="button">
+			<div>Failed</div>
+			<div>Test</div>
+			<div>Success</div>
+		</button>
+		<button id="submit-torrent-edit" type="submit" form="edit-torrent-form">Save</button>
+	{% endset %}
+
+	{{ window(False, "edit-torrent-window", "Edit Torrent Client", edit_content, edit_submit) }}
+
+	{% set choose_usenet_content %}
+		<div id="choose-usenet-list"></div>
+	{% endset %}
+
+	{{ window(False, "choose-usenet-window", "Choose Usenet Client", choose_usenet_content) }}
+
+	{% set add_usenet_content %}
+		<p class="error hidden" id="add-usenet-error"></p>
+		<form id="add-usenet-form">
+			<table>
+				<tr>
+					<th><label for="add-usenet-title-input">Title</label></th>
+					<td>
+						<input type="text" id="add-usenet-title-input" required>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="add-usenet-baseurl-input">Base URL</label></th>
+					<td>
+						<input type="text" id="add-usenet-baseurl-input" required>
+						<p>E.g. 'http://192.168.2.15:8080'</p>
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set add_usenet_submit %}
+		<button id="test-usenet-add" class="test-button" type="button">
+			<div>Failed</div>
+			<div>Test</div>
+			<div>Success</div>
+		</button>
+		<button id="submit-usenet-add" type="submit" form="add-usenet-form">Add</button>
+	{% endset %}
+
+	{{ window(False, "add-usenet-window", "Add Usenet Client", add_usenet_content, add_usenet_submit) }}
+
+	{% set edit_usenet_content %}
+		<p class="error hidden" id="edit-usenet-error"></p>
+		<form id="edit-usenet-form">
+			<table>
+				<tr>
+					<th><label for="edit-usenet-title-input">Title</label></th>
+					<td>
+						<input type="text" id="edit-usenet-title-input" required>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="edit-usenet-baseurl-input">Base URL</label></th>
+					<td>
+						<input type="text" id="edit-usenet-baseurl-input" required>
+						<p>E.g. 'http://192.168.2.15:8080'</p>
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set edit_usenet_submit %}
+		<button id="delete-usenet-edit" type="button">Delete</button>
+		<button id="test-usenet-edit" class="test-button" type="button">
+			<div>Failed</div>
+			<div>Test</div>
+			<div>Success</div>
+		</button>
+		<button id="submit-usenet-edit" type="submit" form="edit-usenet-form">Save</button>
+	{% endset %}
+
+	{{ window(False, "edit-usenet-window", "Edit Usenet Client", edit_usenet_content, edit_usenet_submit) }}
+
+	{% set add_remote_mapping_content %}
+		<p class="error hidden" id="add-mapping-error"></p>
+		<form id="add-mapping-form">
+			<table>
+				<tr>
+					<th><label for="add-mapping-client-input">Remote Download Client</label></th>
+					<td>
+						<select id="add-mapping-client-input" required></select>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="add-mapping-remote-input">Remote Path</label></th>
+					<td>
+						<input type="text" id="add-mapping-remote-input" required>
+						<p>Root path to the directory that the remote download client accesses</p>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="add-mapping-local-input">Local Path</label></th>
+					<td>
+						<input type="text" id="add-mapping-local-input" required>
+						<p>Path that Kapowarr should use to access the remote path locally</p>
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set add_remote_mapping_submit %}
+		<button id="submit-mapping-add" type="submit" form="add-mapping-form">Add</button>
+	{% endset %}
+
+	{{ window(False, "add-mapping-window", "Add Remote Path Mapping", add_remote_mapping_content, add_remote_mapping_submit) }}
+
+	{% set edit_remote_mapping_content %}
+		<p class="error hidden" id="edit-mapping-error"></p>
+		<form id="edit-mapping-form">
+			<table>
+				<tr>
+					<th><label for="edit-mapping-client-input">Remote Download Client</label></th>
+					<td>
+						<select id="edit-mapping-client-input" required></select>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="edit-mapping-remote-input">Remote Path</label></th>
+					<td>
+						<input type="text" id="edit-mapping-remote-input" required>
+						<p>Root path to the directory that the remote download client accesses</p>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="edit-mapping-local-input">Local Path</label></th>
+					<td>
+						<input type="text" id="edit-mapping-local-input" required>
+						<p>Path that Kapowarr should use to access the remote path locally</p>
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set edit_remote_mapping_submit %}
+		<button id="submit-mapping-edit" type="submit" form="edit-mapping-form">Save</button>
+	{% endset %}
+
+	{{ window(False, "edit-mapping-window", "Edit Remote Path Mapping", edit_remote_mapping_content, edit_remote_mapping_submit) }}
+
+{% endblock windows %}
 
 {% block main %}
 <main>
@@ -17,7 +372,7 @@
 	</section>
 	<div class="settings-container">
 		<form id="settings-form">
-			<h2>Download Location</h2>
+			<h2>Direct Downloads</h2>
 			<table class="fold-table">
 				<tbody>
 					<tr>
@@ -36,7 +391,7 @@
 					</tr>
 				</tbody>
 			</table>
-			<h2>Queue</h2>
+			<h2>Download Queue Handling</h2>
 			<table class="fold-table">
 				<tbody>
 					<tr>
@@ -72,7 +427,7 @@
 					</tr>
 				</tbody>
 			</table>
-			<h2>Service preference</h2>
+			<h2>GetComics Service Preference</h2>
 			<p>The preference for service to download from when using GetComics as the source.</p>
 			<table id="pref-table" class="short-table">
 				<tbody>
@@ -127,6 +482,90 @@
 					</tr>
 				</tbody>
 			</table>
+		</form>
+		<h2>Built-in Download Services</h2>
+		<div id="builtin-client-list" class="client-list">
+			<button id="mega-client" data-tag="mega">Mega</button>
+			<button id="mediafire-client" data-tag="mediafire">MediaFire</button>
+			<button id="wetransfer-client" data-tag="wetransfer">WeTransfer</button>
+			<button id="pixeldrain-client" data-tag="pixeldrain">Pixeldrain</button>
+			<button id="getcomics-client" data-tag="getcomics">GetComics</button>
+		</div>
+		<h2>External Torrent Clients</h2>
+		<div id="torrent-client-list" class="client-list">
+			<button id="add-torrent-client" class="add-button icon-text-color" title="Add torrent client">
+				<img src="{{url_base}}/static/img/cancel.svg" alt="">
+			</button>
+		</div>
+		<h2>External Usenet Clients</h2>
+		<div id="usenet-client-list" class="client-list">
+			<button id="add-usenet-client" class="add-button icon-text-color" title="Add usenet client">
+				<img src="{{url_base}}/static/img/cancel.svg" alt="">
+			</button>
+		</div>
+		<h2>Remote Path Mappings</h2>
+		<button id="add-remote-mapping" class="icon-dark-color" title="Add remote path mapping">
+			<img src="{{url_base}}/static/img/cancel.svg" alt="">
+		</button>
+		<div class="remote-mapping-container">
+			<table id="remote-mapping-table" class="icon-text-color">
+				<thead>
+					<tr>
+						<th>Client</th>
+						<th>Remote Path</th>
+						<th>Local Path</th>
+						<th class="action-column">Action</th>
+					</tr>
+				</thead>
+				<tbody id="remote-mapping-list"></tbody>
+				<tbody>
+					<tr id="no-mappings-row">
+						<td colspan="4">No Remote Mappings</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+		<h2>Suwayomi</h2>
+		<p>Connect to a self-hosted <a href="https://github.com/Suwayomi/Suwayomi-Server" target="_blank">Suwayomi-Server</a> to automatically download manga chapters from its library.</p>
+		<form id="suwayomi-form">
+			<table class="fold-table">
+				<tbody>
+					<tr>
+						<th><label for="suwayomi-url-input">Server URL</label></th>
+						<td>
+							<input type="url" id="suwayomi-url-input" placeholder="http://localhost:4567" spellcheck="false">
+							<p>Base URL of your Suwayomi server. Leave empty to disable.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="suwayomi-username-input">Username</label></th>
+						<td>
+							<input type="text" id="suwayomi-username-input" spellcheck="false" autocomplete="off">
+							<p>Optional — only needed if authentication is enabled on the server.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="suwayomi-password-input">Password</label></th>
+						<td>
+							<input type="password" id="suwayomi-password-input" autocomplete="new-password">
+							<p>Optional — only needed if authentication is enabled on the server.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label>Source Priority</label></th>
+						<td>
+							<div id="suwayomi-source-container">
+								<p>Select which Suwayomi extensions to use when adding manga, in priority order. The first source that finds the manga is used.</p>
+								<select id="suwayomi-source-selector" style="width:100%;max-width:400px;margin-bottom:8px">
+									<option value="">— Add a source —</option>
+								</select>
+								<ul id="suwayomi-source-priority" class="sortable-list" style="list-style:none;padding:0;margin:0;max-width:400px"></ul>
+							</div>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+			<button type="submit" id="suwayomi-save-button">Save</button>
 		</form>
 	</div>
 </main>

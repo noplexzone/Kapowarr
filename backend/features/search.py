@@ -15,6 +15,7 @@ from backend.base.helpers import (AsyncSession, check_overlapping_issues,
 from backend.base.logging import LOGGER
 from backend.implementations.getcomics import search_getcomics
 from backend.implementations.matching import check_search_result_match
+from backend.implementations.mangadex import get_mangadex_volume_chapter_map
 from backend.implementations.nzb_indexers import NZBIndexers
 from backend.implementations.suwayomi import (SUWAYOMI_SCHEME,
                                               SUWAYOMI_SOURCE_NAME,
@@ -330,6 +331,103 @@ def _parse_chapter_range_from_description(description: str) -> List[float]:
     return []
 
 
+_MAX_MANGADEX_CHAPTERS_PER_VOLUME = 40
+
+
+def _mangadex_map_is_compatible(
+    volume_chapter_map: Dict[float, List[float]],
+    volume_issues: List,
+) -> bool:
+    """Return whether a MangaDex map appears to match this Kapowarr volume.
+
+    MangaDex sometimes models webtoon/manhwa "volumes" as seasons/arcs while
+    Kapowarr/ComicVine models English retail tankobon volumes as individual
+    issues.  Solo Leveling is the canonical example: MangaDex says 3 volumes,
+    Kapowarr has 15 Yen Press volumes.  Such mappings must not be used for
+    Suwayomi matching.
+    """
+    if not volume_chapter_map or not volume_issues:
+        return False
+
+    issue_numbers = {
+        i.calculated_issue_number
+        for i in volume_issues
+        if getattr(i, 'calculated_issue_number', None) is not None
+        and i.calculated_issue_number > 0
+    }
+    if not issue_numbers:
+        return False
+
+    map_numbers = set(volume_chapter_map.keys())
+    matching_numbers = issue_numbers.intersection(map_numbers)
+    if not matching_numbers:
+        return False
+
+    # If MangaDex has far fewer volume buckets than Kapowarr issues, the two
+    # sources are almost certainly describing different edition structures.
+    if len(issue_numbers) >= 8 and len(map_numbers) < len(issue_numbers) * 0.5:
+        return False
+
+    # Very large per-volume chapter spans are also a webtoon/season signal, not
+    # a retail tankobon mapping suitable for one Kapowarr issue.
+    if any(
+        len(chapters) > _MAX_MANGADEX_CHAPTERS_PER_VOLUME
+        for chapters in volume_chapter_map.values()
+    ):
+        return False
+
+    return True
+
+
+def _mangadex_chapters_for_issue(
+    volume_data: VolumeData,
+    volume_issues: List,
+    calculated_issue_number: float,
+) -> Tuple[Optional[List[float]], bool]:
+    """Return MangaDex chapter numbers for an issue and compatibility status.
+
+    Returns (chapters, incompatible).  If MangaDex has a map but it is
+    incompatible with Kapowarr's issue structure, incompatible=True tells the
+    caller to block Suwayomi matches rather than falling back to weaker
+    ComicVine description parsing.
+    """
+    found_incompatible_map = False
+    for title in (volume_data.title, volume_data.alt_title):
+        if not title:
+            continue
+        volume_chapter_map = get_mangadex_volume_chapter_map(title)
+        if not volume_chapter_map:
+            continue
+        if not _mangadex_map_is_compatible(volume_chapter_map, volume_issues):
+            found_incompatible_map = True
+            LOGGER.info(
+                'MangaDex aggregate rejected for %s: incompatible volume map',
+                volume_data.title,
+            )
+            continue
+        chapters = volume_chapter_map.get(calculated_issue_number)
+        if chapters:
+            return chapters, False
+        found_incompatible_map = True
+        LOGGER.info(
+            'MangaDex aggregate rejected for %s issue %.4g: no volume entry',
+            volume_data.title, calculated_issue_number,
+        )
+    return None, found_incompatible_map
+
+
+def _is_individual_suwayomi_result(result: SearchResultData) -> bool:
+    link = result.get('link', '')
+    return link.startswith(SUWAYOMI_SCHEME) and ',' not in link
+
+
+def _remove_individual_suwayomi_results(
+    search_results: List[SearchResultData],
+) -> List[SearchResultData]:
+    """Remove individual chapter results so partial chapters cannot match."""
+    return [r for r in search_results if not _is_individual_suwayomi_result(r)]
+
+
 def _build_suwayomi_bundle_for_issue(
     search_results: List[SearchResultData],
     chapter_numbers: List[float],
@@ -506,10 +604,27 @@ def manual_search(
         if not search_results:
             continue
 
-        # For manga issue searches, inject a bundled Suwayomi result when the
-        # issue description names the contained chapter range and Suwayomi has
-        # individual chapters for all of them. This covers English manga where
-        # Kapowarr issues represent tankobon volumes (e.g. JJK #1 = ch. 1-7).
+        # Manga volume-level searches should not treat individual Suwayomi
+        # chapters as complete Kapowarr issues.  Let auto_search fall through to
+        # per-issue searches, where MangaDex/description ranges can build a
+        # verified multi-chapter bundle or block Suwayomi entirely.
+        from backend.implementations.suwayomi import is_manga_publisher
+        if (
+            issue_id is None
+            and volume_data.special_version in (
+                SpecialVersion.NORMAL,
+                SpecialVersion.VOLUME_AS_ISSUE,
+            )
+            and is_manga_publisher(volume_data.publisher)
+        ):
+            search_results = _remove_individual_suwayomi_results(search_results)
+
+        # For manga issue searches, inject a bundled Suwayomi result when a
+        # trusted manga metadata source names the contained chapter range and
+        # Suwayomi has individual chapters for all of them. MangaDex aggregate
+        # metadata is primary because it exposes explicit volume/chapter maps
+        # when queried with includeUnavailable=1. ComicVine description parsing
+        # is only a fallback when MangaDex has no usable mapping at all.
         from backend.implementations.suwayomi import is_manga_publisher
         if (
             issue_id is not None
@@ -517,23 +632,41 @@ def manual_search(
             and calculated_issue_number is not None
             and is_manga_publisher(volume_data.publisher)
         ):
-            ch_nums = _parse_chapter_range_from_description(
-                issue_data.description or ''
+            ch_nums, md_incompatible = _mangadex_chapters_for_issue(
+                volume_data, volume_issues, calculated_issue_number
             )
-            bundle = _build_suwayomi_bundle_for_issue(
-                search_results, ch_nums, volume_data, calculated_issue_number,
-                display_volume_number=int(calculated_issue_number),
-            )
-            if bundle is not None:
-                # Drop ALL individual Suwayomi chapter links (no comma in id
-                # portion) so only the bundle represents Suwayomi in results.
-                search_results = [bundle] + [
-                    r for r in search_results
-                    if not (
-                        r.get('link', '').startswith(SUWAYOMI_SCHEME)
-                        and ',' not in r.get('link', '')
+            if ch_nums is None and not md_incompatible:
+                ch_nums = _parse_chapter_range_from_description(
+                    issue_data.description or ''
+                )
+
+            if md_incompatible:
+                # MangaDex found the title but its volume map describes a
+                # different edition structure (for example webtoon seasons vs.
+                # English retail volumes).  In that case, block individual
+                # Suwayomi chapters from matching the Kapowarr volume.
+                search_results = _remove_individual_suwayomi_results(
+                    search_results
+                )
+            else:
+                bundle = _build_suwayomi_bundle_for_issue(
+                    search_results, ch_nums or [], volume_data,
+                    calculated_issue_number,
+                    display_volume_number=int(calculated_issue_number),
+                )
+                if bundle is not None:
+                    # Drop ALL individual Suwayomi chapter links (no comma in id
+                    # portion) so only the verified bundle represents Suwayomi.
+                    search_results = [bundle] + _remove_individual_suwayomi_results(
+                        search_results
                     )
-                ]
+                elif ch_nums:
+                    # We know the intended chapter range but cannot build the
+                    # full bundle.  Do not allow a single matching chapter to be
+                    # considered a successful volume match.
+                    search_results = _remove_individual_suwayomi_results(
+                        search_results
+                    )
 
         results: List[MatchedSearchResultData] = [
             {

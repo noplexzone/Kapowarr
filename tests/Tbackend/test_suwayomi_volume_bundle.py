@@ -139,6 +139,8 @@ def _run_manual_search(
 
     with patch('backend.features.search.Volume', return_value=mock_volume), \
          patch('backend.features.search.run', return_value=raw_results), \
+         patch('backend.features.search.get_mangadex_volume_chapter_map',
+               return_value=None), \
          patch('backend.features.search.check_search_result_match',
                side_effect=fake_check_match):
         return manual_search(1, 10)

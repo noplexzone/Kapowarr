@@ -37,7 +37,7 @@ function fillHistory(api_key) {
             };
 
             if (obj.source !== null)
-                entry.querySelector('td:nth-child(3)').innerText = obj.source;
+                entry.querySelector('td:nth-child(3)').innerText = obj.source_name || obj.source;
 
 			let d = new Date(obj.downloaded_at * 1000);
 			let formatted_date = d.toLocaleString('en-CA').slice(0,10) + ' ' + d.toTimeString().slice(0,5);

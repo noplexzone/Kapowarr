@@ -1256,3 +1256,11 @@ def _migrate_add_ufile_to_preference():
         (service_preference,)
     )
     return
+
+
+@DatabaseMigrationHandler.register_handler(52)
+def _migrate_add_source_name_to_download_history():
+    get_db().executescript("""
+        ALTER TABLE download_history ADD COLUMN source_name TEXT;
+    """)
+    return

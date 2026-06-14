@@ -473,6 +473,7 @@ CREATE TABLE IF NOT EXISTS download_history(
     issue_id INTEGER,
 
     source VARCHAR(25),
+    source_name TEXT,
     downloaded_at INTEGER NOT NULL CHECK (downloaded_at > 0),
     success BOOL,
 

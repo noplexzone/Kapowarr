@@ -804,7 +804,7 @@ function showIssueHistory(api_key, issue_id) {
 				const row = document.createElement('tr');
 
 				const source_td = document.createElement('td');
-				source_td.innerText = obj.source || '';
+				source_td.innerText = obj.source_name || obj.source || '';
 				row.appendChild(source_td);
 
 				const title_td = document.createElement('td');

@@ -60,13 +60,13 @@ def add_to_history(download: Download) -> None:
             web_link, web_title, web_sub_title,
             file_title,
             volume_id, issue_id,
-            source, downloaded_at, success,
+            source, source_name, downloaded_at, success,
             task_history_id, failure_reason
         ) VALUES (
             :web_link, :web_title, :web_sub_title,
             :file_title,
             :volume_id, :issue_id,
-            :source, :downloaded_at, :success,
+            :source, :source_name, :downloaded_at, :success,
             :task_history_id, :failure_reason
         );
         """,
@@ -78,6 +78,7 @@ def add_to_history(download: Download) -> None:
             'volume_id': download.volume_id,
             'issue_id': download.issue_id,
             'source': download.source_type.value,
+            'source_name': download.source_name or None,
             'downloaded_at': round(time()),
             'success': success,
             'task_history_id': task_history_id or None,

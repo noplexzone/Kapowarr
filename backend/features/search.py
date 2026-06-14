@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import gather, get_running_loop, run
-from re import IGNORECASE, sub
+from re import IGNORECASE, compile as _re_compile, findall as _re_findall, sub
 from typing import Dict, List, Optional, Tuple, Union
 
 from backend.base.definitions import (QUERY_FORMATS, DownloadSource,
@@ -16,7 +16,8 @@ from backend.base.logging import LOGGER
 from backend.implementations.getcomics import search_getcomics
 from backend.implementations.matching import check_search_result_match
 from backend.implementations.nzb_indexers import NZBIndexers
-from backend.implementations.suwayomi import (SUWAYOMI_SOURCE_NAME,
+from backend.implementations.suwayomi import (SUWAYOMI_SCHEME,
+                                              SUWAYOMI_SOURCE_NAME,
                                               SuwayomiClient,
                                               make_suwayomi_link,
                                               make_suwayomi_volume_link,
@@ -241,6 +242,99 @@ def _extract_series_title(query: str) -> str:
     return title.strip()
 
 
+_CHAPTER_RANGE_RE = _re_compile(
+    r'[Cc]hapters?\s+(\d+(?:\.\d+)?)'
+    r'\s*(?:[-–]|to\b|through\b|\.\.\.)\s*'
+    r'(?:[Cc]hapters?\s+)?(\d+(?:\.\d+)?)',
+    IGNORECASE,
+)
+_CHAPTER_NUM_RE = _re_compile(r'[Cc]h(?:apter)?\.?\s*(\d+(?:\.\d+)?)')
+
+
+def _parse_chapter_range_from_description(description: str) -> List[float]:
+    """Extract chapter numbers from a manga issue/volume description.
+
+    Handles 'Chapter 1 ... Chapter 7', 'Chapters 1-7', and lists of
+    individual 'Chapter N' mentions.  Returns a sorted list of floats.
+    """
+    if not description:
+        return []
+    m = _CHAPTER_RANGE_RE.search(description)
+    if m:
+        start = float(m.group(1))
+        end = float(m.group(2))
+        if start <= end <= start + 100:
+            nums: List[float] = []
+            n = start
+            while n <= end + 0.001:
+                nums.append(round(n, 4))
+                n += 1.0
+            return nums
+    hits = _re_findall(_CHAPTER_NUM_RE.pattern, description)
+    if hits:
+        return sorted(set(float(x) for x in hits))
+    return []
+
+
+def _build_suwayomi_bundle_for_issue(
+    search_results: List[SearchResultData],
+    chapter_numbers: List[float],
+    volume_data: VolumeData,
+    calculated_issue_number: float,
+) -> Optional[SearchResultData]:
+    """Return a bundled suwayomi:M:c1,c2,... result for a manga issue.
+
+    Scans single-chapter Suwayomi entries in search_results.  If one manga
+    covers every number in chapter_numbers, returns a bundled result whose
+    issue_number equals calculated_issue_number so it ranks as a direct match.
+    Returns None if coverage is incomplete.
+    """
+    if not chapter_numbers:
+        return None
+    target = set(chapter_numbers)
+    manga_chapters: Dict[int, Dict[float, int]] = {}
+    manga_titles: Dict[int, str] = {}
+    for result in search_results:
+        link = result.get('link', '')
+        if not link.startswith(SUWAYOMI_SCHEME):
+            continue
+        parts = link.split(':', 2)
+        if len(parts) != 3 or ',' in parts[2]:
+            continue
+        try:
+            manga_id = int(parts[1])
+            ch_id = int(parts[2])
+        except (ValueError, IndexError):
+            continue
+        ch_num = result.get('issue_number')
+        if not isinstance(ch_num, float) or ch_num not in target:
+            continue
+        manga_chapters.setdefault(manga_id, {})[ch_num] = ch_id
+        manga_titles.setdefault(manga_id, result.get('series', ''))
+    for manga_id, num_to_id in manga_chapters.items():
+        if not target.issubset(set(num_to_id.keys())):
+            continue
+        sorted_pairs = sorted(num_to_id.items(), key=lambda x: x[0])
+        ch_ids = [cid for _, cid in sorted_pairs]
+        ch_nums_sorted = [n for n, _ in sorted_pairs]
+        manga_title = manga_titles.get(manga_id, '')
+        return {
+            'link': make_suwayomi_volume_link(manga_id, ch_ids),
+            'display_title': (
+                f"{manga_title} - Vol. {volume_data.volume_number} "
+                f"(Ch. {ch_nums_sorted[0]:.4g}–{ch_nums_sorted[-1]:.4g})"
+            ),
+            'source': SUWAYOMI_SOURCE_NAME,
+            'series': manga_title,
+            'year': None,
+            'volume_number': volume_data.volume_number,
+            'special_version': None,
+            'issue_number': calculated_issue_number,
+            'annual': False,
+        }
+    return None
+
+
 async def search_multiple_queries(
     *queries: str,
     volume_data: Optional[VolumeData] = None,
@@ -300,6 +394,7 @@ def manual_search(
     }
     issue_number: Union[str, None] = None
     calculated_issue_number: Union[float, None] = None
+    issue_data = None
 
     if issue_id and volume_data.special_version in (
         SpecialVersion.NORMAL,
@@ -350,6 +445,26 @@ def manual_search(
         ))
         if not search_results:
             continue
+
+        # For manga issue searches, inject a bundled Suwayomi result when the
+        # issue description names the contained chapter range and Suwayomi has
+        # individual chapters for all of them. This covers English manga where
+        # Kapowarr issues represent tankobon volumes (e.g. JJK #1 = ch. 1-7).
+        from backend.implementations.suwayomi import is_manga_publisher
+        if (
+            issue_id is not None
+            and issue_data is not None
+            and calculated_issue_number is not None
+            and is_manga_publisher(volume_data.publisher)
+        ):
+            ch_nums = _parse_chapter_range_from_description(
+                issue_data.description or ''
+            )
+            bundle = _build_suwayomi_bundle_for_issue(
+                search_results, ch_nums, volume_data, calculated_issue_number
+            )
+            if bundle is not None:
+                search_results = [bundle] + list(search_results)
 
         results: List[MatchedSearchResultData] = [
             {

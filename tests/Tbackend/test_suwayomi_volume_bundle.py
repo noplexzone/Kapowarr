@@ -57,6 +57,18 @@ class ParseChapterRangeFromDescriptionTest(unittest.TestCase):
         result = self._parse('Chapter 1 to Chapter 7')
         self.assertEqual(result, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
 
+    def test_bracketed_numbers(self):
+        """'[ 80 ] Chapter Title' format extracts chapter numbers from brackets."""
+        desc = '<ul><li>[ 80 ] Dog Feelings</li><li>[ 81 ] Paw</li><li>[ 82 ] Breakfast</li></ul>'
+        result = self._parse(desc)
+        self.assertEqual(result, [80.0, 81.0, 82.0])
+
+    def test_chapter_bracketed_numbers(self):
+        """'Chapter [165] Title' format extracts the bracketed number."""
+        desc = '<li>Chapter [165] Everyday Scenery</li><li>Chapter [166] Rain</li>'
+        result = self._parse(desc)
+        self.assertEqual(result, [165.0, 166.0])
+
 
 # ---------------------------------------------------------------------------
 # manual_search injects bundled result for manga issue searches

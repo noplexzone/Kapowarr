@@ -304,13 +304,15 @@ _CHAPTER_RANGE_RE = _re_compile(
     IGNORECASE,
 )
 _CHAPTER_NUM_RE = _re_compile(r'[Cc]h(?:apter)?\.?\s*(\d+(?:\.\d+)?)')
+_BRACKET_CHAPTER_RE = _re_compile(r'(?:[Cc]hapter\s+)?\[\s*(\d+(?:\.\d+)?)\s*\]')
 
 
 def _parse_chapter_range_from_description(description: str) -> List[float]:
     """Extract chapter numbers from a manga issue/volume description.
 
-    Handles 'Chapter 1 ... Chapter 7', 'Chapters 1-7', and lists of
-    individual 'Chapter N' mentions.  Returns a sorted list of floats.
+    Handles 'Chapter 1 ... Chapter 7', 'Chapters 1-7', lists of individual
+    'Chapter N' mentions, '[ N ] Title' bracket format, and 'Chapter [N]
+    Title' bracket format.  Returns a sorted list of floats.
     """
     if not description:
         return []
@@ -326,6 +328,10 @@ def _parse_chapter_range_from_description(description: str) -> List[float]:
                 n += 1.0
             return nums
     hits = _re_findall(_CHAPTER_NUM_RE.pattern, description)
+    if hits:
+        return sorted(set(float(x) for x in hits))
+    # Try bracket format: [ N ] or Chapter [N]
+    hits = _re_findall(_BRACKET_CHAPTER_RE.pattern, description)
     if hits:
         return sorted(set(float(x) for x in hits))
     return []

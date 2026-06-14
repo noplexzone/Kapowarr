@@ -104,7 +104,12 @@ const sourcePriorityLabels = {
 
 function fillSourcePriority(tableSelector, priority) {
 	const table = document.querySelector(tableSelector);
+	if (!table) return;
 	const selects = table.querySelectorAll('select');
+	if (!priority || priority.length === 0) {
+		const defaults = {'#comic-source-priority-table': ['usenet', 'getcomics'], '#manga-source-priority-table': ['suwayomi', 'usenet', 'getcomics']};
+		priority = defaults[tableSelector] || [];
+	};
 	for (let i = 0; i < priority.length; i++) {
 		const source = priority[i];
 		const select = selects[i];

@@ -117,6 +117,12 @@ class PublicSettingsValues:
     service_preference: CommaList = field(default_factory=lambda: CommaList(
         (s.value for s in GCDownloadSource._member_map_.values())
     ))
+    comic_source_priority: CommaList = field(
+        default_factory=lambda: CommaList(('usenet', 'getcomics'))
+    )
+    manga_source_priority: CommaList = field(
+        default_factory=lambda: CommaList(('suwayomi', 'usenet', 'getcomics'))
+    )
     download_folder: str = folder_path('temp_downloads')
     concurrent_direct_downloads: int = 1
     failing_download_timeout: int = 0
@@ -565,6 +571,16 @@ class Settings(metaclass=Singleton):
             for entry in available:
                 if entry not in value:
                     raise InvalidKeyValue(key, value)
+
+            converted_value = value
+
+        elif key in ('comic_source_priority', 'manga_source_priority'):
+            available = ['usenet', 'getcomics']
+            if key == 'manga_source_priority':
+                available = ['suwayomi', *available]
+
+            if len(value) != len(available) or set(value) != set(available):
+                raise InvalidKeyValue(key, value)
 
             converted_value = value
 

@@ -7,6 +7,8 @@ function fillSettings(api_key) {
 		document.querySelector('#seeding-handling-input').value = json.result.seeding_handling;
 		document.querySelector('#delete-downloads-input').checked = json.result.delete_completed_downloads;
 		fillPref(json.result.service_preference);
+		fillSourcePriority('#comic-source-priority-table', json.result.comic_source_priority);
+		fillSourcePriority('#manga-source-priority-table', json.result.manga_source_priority);
 	});
 };
 
@@ -19,7 +21,9 @@ function saveSettings(api_key) {
 		'failing_download_timeout': parseInt(document.querySelector('#download-timeout-input').value || 0) * 60,
 		'seeding_handling': document.querySelector('#seeding-handling-input').value,
 		'delete_completed_downloads': document.querySelector('#delete-downloads-input').checked,
-		'service_preference': [...document.querySelectorAll('#pref-table select')].map(e => e.value)
+		'service_preference': [...document.querySelectorAll('#pref-table select')].map(e => e.value),
+		'comic_source_priority': getSourcePriority('#comic-source-priority-table'),
+		'manga_source_priority': getSourcePriority('#manga-source-priority-table')
 	};
 	sendAPI('PUT', '/settings', api_key, {}, data)
 	.then(response => 
@@ -83,6 +87,54 @@ function updatePrefOrder(e) {
 			all_values = [...document.querySelector('#pref-table select').options].map(e => e.value)
 			used_values = new Set([...document.querySelectorAll('#pref-table select')].map(s => s.value));
 			open_value = all_values.filter(e => !used_values.has(e))[0];
+			other_selects[i].value = open_value;
+			break;
+		};
+	};
+};
+
+//
+// Download source priority
+//
+const sourcePriorityLabels = {
+	'usenet': 'Usenet',
+	'getcomics': 'GetComics',
+	'suwayomi': 'Suwayomi'
+};
+
+function fillSourcePriority(tableSelector, priority) {
+	const table = document.querySelector(tableSelector);
+	const selects = table.querySelectorAll('select');
+	for (let i = 0; i < priority.length; i++) {
+		const source = priority[i];
+		const select = selects[i];
+		select.innerHTML = '';
+		select.onchange = updateSourcePriorityOrder;
+		priority.forEach(option => {
+			const entry = document.createElement('option');
+			entry.value = option;
+			entry.innerText = sourcePriorityLabels[option] || option;
+			if (option === source)
+				entry.selected = true;
+			select.appendChild(entry);
+		});
+	};
+};
+
+function getSourcePriority(tableSelector) {
+	return [...document.querySelectorAll(`${tableSelector} select`)].map(e => e.value);
+};
+
+function updateSourcePriorityOrder(e) {
+	const table = e.target.closest('table');
+	const other_selects = table.querySelectorAll(
+		`select:not([data-place="${e.target.dataset.place}"])`
+	);
+	for (let i = 0; i < other_selects.length; i++) {
+		if (other_selects[i].value === e.target.value) {
+			const all_values = [...table.querySelector('select').options].map(e => e.value);
+			const used_values = new Set([...table.querySelectorAll('select')].map(s => s.value));
+			const open_value = all_values.filter(e => !used_values.has(e))[0];
 			other_selects[i].value = open_value;
 			break;
 		};

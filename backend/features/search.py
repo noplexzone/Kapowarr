@@ -25,6 +25,60 @@ from backend.implementations.suwayomi import (SUWAYOMI_SCHEME,
 from backend.implementations.volumes import Volume
 
 
+_SOURCE_PRIORITY_FALLBACK = 999
+_SOURCE_PRIORITY_VALUES = ('usenet', 'getcomics', 'suwayomi')
+
+
+def _search_result_source_id(result: SearchResultData) -> str:
+    """Map a search result to the configurable source-priority id."""
+    link = result.get('link', '')
+    source = str(result.get('source', '')).lower()
+    if link.startswith(SUWAYOMI_SCHEME) or source == 'suwayomi':
+        return 'suwayomi'
+    if 'getcomics' in link.lower() or source == 'getcomics':
+        return 'getcomics'
+    return 'usenet'
+
+
+def _source_priority_for_volume(volume_data: VolumeData) -> List[str]:
+    """Return configured source priority for this volume's library type."""
+    from backend.implementations.suwayomi import is_manga_publisher
+    from backend.internals.settings import Settings
+
+    publisher = getattr(volume_data, 'publisher', None)
+    is_manga = is_manga_publisher(publisher)
+    try:
+        settings = Settings().sv
+        if is_manga:
+            priority = list(settings.manga_source_priority)
+        else:
+            priority = list(settings.comic_source_priority)
+    except RuntimeError:
+        # Some isolated unit tests exercise auto_search without a Flask/DB
+        # context.  Use defaults rather than making source ordering force an
+        # application context where the previous code did not need one.
+        priority = (
+            ['suwayomi', 'usenet', 'getcomics']
+            if is_manga else ['usenet', 'getcomics']
+        )
+    return [p for p in priority if p in _SOURCE_PRIORITY_VALUES]
+
+
+def _sort_by_source_priority(
+    results: List[MatchedSearchResultData],
+    volume_data: VolumeData,
+) -> List[MatchedSearchResultData]:
+    """Return matched results sorted by configured source priority."""
+    priority = _source_priority_for_volume(volume_data)
+    priority_index = {source: idx for idx, source in enumerate(priority)}
+    return sorted(
+        results,
+        key=lambda r: priority_index.get(
+            _search_result_source_id(r), _SOURCE_PRIORITY_FALLBACK
+        ),
+    )
+
+
 def _rank_search_result(
     result: MatchedSearchResultData,
     title: str,
@@ -641,7 +695,10 @@ def auto_search(
     if _stats is not None:
         _stats['total_found'] = _stats.get('total_found', 0) + len(all_results)
         if issue_id is not None and 'per_issue' in _stats:
-            chosen = search_results[0] if search_results else None
+            chosen = (
+                _sort_by_source_priority(search_results, volume_data)[0]
+                if search_results else None
+            )
             try:
                 from backend.implementations.naming import generate_issue_name
                 filename = generate_issue_name(
@@ -662,22 +719,14 @@ def auto_search(
         SpecialVersion.NORMAL,
         SpecialVersion.VOLUME_AS_ISSUE
     ):
-        # We're searching for one "item", so just grab first search result.
-        # Prefer non-Suwayomi results first (Usenet/GetComics complete volume).
-        matched_non_suwayomi = [
-            r for r in search_results
-            if not r.get('link', '').startswith('suwayomi:')
-        ]
-        if matched_non_suwayomi:
-            result = matched_non_suwayomi[:1]
-            LOGGER.debug('Auto search results: %s', [
-                {**r, 'link': redact_url_for_log(r.get('link', ''))}
-                for r in result
-            ])
-            return result
+        # We're searching for one "item", so choose the highest-priority
+        # configured source with a matching result.  If Suwayomi is allowed and
+        # no matched Suwayomi result exists yet, try to build a bundle before
+        # applying priority so manga can prefer Suwayomi volume PDFs.
+        candidates = list(search_results)
+        priority = _source_priority_for_volume(volume_data)
 
-        # No non-Suwayomi match. Try bundling Suwayomi chapters as fallback.
-        if issue_id is None:
+        if issue_id is None and 'suwayomi' in priority:
             bundle = _try_bundle_suwayomi_chapters(
                 all_results, searchable_issues, volume_data
             )
@@ -686,10 +735,12 @@ def auto_search(
                     'Auto search: Suwayomi chapter bundle for volume %d',
                     volume_id,
                 )
-                return [bundle]
+                candidates = [bundle] + [
+                    r for r in candidates
+                    if _search_result_source_id(r) != 'suwayomi'
+                ]
 
-        # Fall through to original behavior: first matched result
-        result = search_results[:1] if search_results else []
+        result = _sort_by_source_priority(candidates, volume_data)[:1]
         LOGGER.debug('Auto search results: %s', [
             {**r, 'link': redact_url_for_log(r.get('link', ''))}
             for r in result
@@ -700,7 +751,7 @@ def auto_search(
     # Find a combination of search results that download the most issues.
     chosen_downloads: List[MatchedSearchResultData] = []
     searchable_issue_numbers = {i[1] for i in searchable_issues}
-    for result in search_results:
+    for result in _sort_by_source_priority(search_results, volume_data):
         result = refine_special_version(volume_data, result)
 
         # Determine what issues the result covers

@@ -808,14 +808,15 @@ function showIssueHistory(api_key, issue_id) {
 				row.appendChild(source_td);
 
 				const title_td = document.createElement('td');
+				const displayTitle = obj.web_title || obj.web_sub_title || obj.file_title || obj.source || 'Unknown';
 				if (obj.web_link) {
 					const a = document.createElement('a');
 					a.href = obj.web_link;
 					a.target = '_blank';
-					a.innerText = obj.web_title || obj.web_link;
+					a.innerText = displayTitle;
 					title_td.appendChild(a);
 				} else {
-					title_td.innerText = obj.file_title || obj.web_title || '';
+					title_td.innerText = displayTitle;
 				}
 				row.appendChild(title_td);
 

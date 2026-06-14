@@ -624,6 +624,7 @@ def manual_search(
             and volume_data.special_version in (
                 SpecialVersion.NORMAL,
                 SpecialVersion.VOLUME_AS_ISSUE,
+                SpecialVersion.TPB,
             )
             and is_manga_publisher(volume_data.publisher)
         ):

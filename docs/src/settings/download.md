@@ -12,7 +12,7 @@ This isn't so much of a setting as it is a tool. It will delete all files from t
 
 ## Download Queue Handling
 
-### Concurrent Direct Downloads
+### Concurrent Downloads
 
 The amount of direct downloads (DDLs) that are allowed to run at the same time.
 

@@ -147,6 +147,10 @@ class BaseDirectDownload(Download):
         return self._speed
 
     @property
+    def task_label(self) -> str:
+        return self._task_label
+
+    @property
     def download_thread(self) -> Union[Thread, None]:
         return self._download_thread
 
@@ -198,6 +202,7 @@ class BaseDirectDownload(Download):
         self._state = DownloadState.QUEUED_STATE
         self._progress = 0.0
         self._speed = 0.0
+        self._task_label = ''
         self._download_thread = None
         self._download_folder = settings.download_folder
 
@@ -419,7 +424,8 @@ class BaseDirectDownload(Download):
             'size': self._size,
             'status': self._state.value,
             'progress': self._progress,
-            'speed': self._speed
+            'speed': self._speed,
+            'task_label': getattr(self, '_task_label', '')
         }
 
 
@@ -1180,6 +1186,7 @@ class SuwayomiDownload(BaseDirectDownload):
         self._progress = 0.0
         self._speed = 0.0
         self._size = -1
+        self._task_label = 'Queued'
         self._download_thread = None
         self._download_folder = settings.download_folder
 
@@ -1217,9 +1224,10 @@ class SuwayomiDownload(BaseDirectDownload):
 
         manga_id, chapter_id = parse_suwayomi_link(self._download_link)
         client = SuwayomiClient()
+        ws = WebSocket()
 
         self._state = DownloadState.DOWNLOADING_STATE
-        ws = WebSocket()
+        self._task_label = 'Enqueuing'
         ws.emit(QueueStatusEvent(self))
 
         LOGGER.info(
@@ -1233,6 +1241,9 @@ class SuwayomiDownload(BaseDirectDownload):
             LOGGER.error('Suwayomi: failed to enqueue download: %s', e)
             self._state = DownloadState.FAILED_STATE
             return
+
+        self._task_label = 'Downloading'
+        ws.emit(QueueStatusEvent(self))
 
         chapter = client.wait_for_download(manga_id, chapter_id, self._stop_event)
         if chapter is None:
@@ -1255,10 +1266,22 @@ class SuwayomiDownload(BaseDirectDownload):
             chapter_id, page_count,
         )
 
+        self._task_label = 'Building CBZ'
+        self._progress = 0.0
+        ws.emit(QueueStatusEvent(self))
+
+        def _on_page(done: int, total: int) -> None:
+            if total <= 0:
+                return
+            self._progress = done / total * 100
+            if done % 5 == 0 or done == total:
+                ws.emit(QueueStatusEvent(self))
+
         try:
             ok = client.create_cbz(
                 manga_id, source_order, page_count,
                 self._files[0], self._stop_event,
+                progress_cb=_on_page,
             )
         except Exception as e:
             LOGGER.error('Suwayomi: failed to create CBZ: %s', e)
@@ -1324,10 +1347,20 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
         self._progress = 0.0
         self._speed = 0.0
         self._size = -1
+        self._task_label = 'Queued'
         self._download_thread = None
         self._download_folder = settings.download_folder
 
         self._stop_event = Event()
+
+        try:
+            if isinstance(covered_issues, float):
+                self._issue_id = volume.get_issue_from_number(
+                    covered_issues
+                ).id
+        except IssueNotFound as e:
+            if not forced_match:
+                raise e
 
         # Generate filename using naming format
         self._filename_body = ''
@@ -1354,14 +1387,19 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
 
         manga_id, chapter_ids = parse_suwayomi_volume_link(self._download_link)
         client = SuwayomiClient()
+        ws = WebSocket()
+        total_chapters = len(chapter_ids)
 
         self._state = DownloadState.DOWNLOADING_STATE
-        ws = WebSocket()
         ws.emit(QueueStatusEvent(self))
 
         # Collect chapter info in order
         chapter_info: List[Tuple[int, int]] = []
-        for ch_id in chapter_ids:
+        for idx, ch_id in enumerate(chapter_ids):
+            self._task_label = f'Downloading {idx + 1}/{total_chapters}'
+            self._progress = idx / total_chapters * 100 if total_chapters else 0.0
+            ws.emit(QueueStatusEvent(self))
+
             LOGGER.info(
                 'SuwayomiVolume: enqueuing chapter %d for manga %d',
                 ch_id, manga_id,
@@ -1401,10 +1439,22 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
             len(chapter_info),
         )
 
+        self._task_label = 'Assembling PDF'
+        self._progress = 0.0
+        ws.emit(QueueStatusEvent(self))
+
+        def _on_page(done: int, total: int) -> None:
+            if total <= 0:
+                return
+            self._progress = done / total * 100
+            if done % 5 == 0 or done == total:
+                ws.emit(QueueStatusEvent(self))
+
         try:
             ok = client.create_pdf_from_chapters(
                 manga_id, chapter_info,
                 self._files[0], self._stop_event,
+                progress_cb=_on_page,
             )
         except Exception as e:
             LOGGER.error('SuwayomiVolume: failed to create PDF: %s', e)

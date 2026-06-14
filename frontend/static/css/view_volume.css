@@ -136,7 +136,39 @@ This flows better for ARIA.
 	width: 6.5rem;
 }
 .issue-status {
-	width: 3rem;
+	width: 5rem;
+}
+
+.issue-progress {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	width: 100%;
+}
+
+.issue-progress-track {
+	height: 5px;
+	background-color: var(--border-color);
+	border-radius: 3px;
+	overflow: hidden;
+	width: 100%;
+}
+
+.issue-progress-fill {
+	height: 100%;
+	width: 0%;
+	background-color: var(--accent-color);
+	border-radius: 3px;
+	transition: width 250ms ease;
+}
+
+.issue-progress-label {
+	font-size: .6rem;
+	text-align: center;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--text-color);
 }
 .action-column {
 	width: 6rem;

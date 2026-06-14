@@ -47,17 +47,23 @@ function addQueueEntry(api_key, obj) {
 
 function updateQueueEntry(obj) {
 	const tr = document.querySelector(`#queue > tr[data-id="${obj.id}"]`);
+	if (!tr) return;
 	tr.dataset.status = obj.status;
+	const statusText = obj.status.charAt(0).toUpperCase() + obj.status.slice(1);
+	const taskLabel = obj.task_label || '';
 	tr.querySelector('td:nth-child(1)').innerText =
-		obj.status.charAt(0).toUpperCase() + obj.status.slice(1);
+		taskLabel ? `${statusText} — ${taskLabel}` : statusText;
 	tr.querySelector('td:nth-child(4)').innerText =
-		convertSize(obj.size);
+		obj.size === -1 ? '—' : convertSize(obj.size);
 	tr.querySelector('td:nth-child(5)').innerText =
-		twoDigits(Math.round(obj.speed / 100000) / 10) + 'MB/s';
-	tr.querySelector('td:nth-child(6)').innerText =
-		obj.size === -1
-			? convertSize(obj.progress)
-			: twoDigits(Math.round(obj.progress * 10) / 10) + '%';
+		obj.speed > 0
+			? twoDigits(Math.round(obj.speed / 100000) / 10) + 'MB/s'
+			: '—';
+	const progressIsPercent = obj.size !== -1 || obj.progress_is_percent ||
+		['suwayomi', 'suwayomi_volume'].includes(obj.type);
+	tr.querySelector('td:nth-child(6)').innerText = progressIsPercent
+		? twoDigits(Math.round((obj.progress || 0) * 10) / 10) + '%'
+		: convertSize(obj.progress || 0);
 };
 
 function removeQueueEntry(id) {

@@ -1250,6 +1250,11 @@ class Download(ABC):
         ...
 
     @property
+    def task_label(self) -> str:
+        "Human-readable label for the current download phase (e.g. 'Downloading', 'Building CBZ')"
+        return getattr(self, '_task_label', '')
+
+    @property
     @abstractmethod
     def download_thread(self) -> Union[Thread, None]:
         ...

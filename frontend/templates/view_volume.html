@@ -19,7 +19,13 @@
 		<td class="issue-title"></td>
 		<td class="issue-date"></td>
 		<td class="issue-status" title="">
-			<img src="" alt="">
+			<img src="" alt="" class="issue-status-icon">
+			<div class="issue-progress" style="display:none">
+				<div class="issue-progress-track">
+					<div class="issue-progress-fill"></div>
+				</div>
+				<span class="issue-progress-label"></span>
+			</div>
 		</td>
 		<td class="action-column" aria-label="Actions">
 			{{ icon_button('', "Auto search for this issue", "search.svg") }}

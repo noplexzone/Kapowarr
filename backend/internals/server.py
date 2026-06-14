@@ -437,7 +437,10 @@ class QueueStatusEvent(WebSocketEvent):
             "status": self.download.state.value,
             "size": self.download.size,
             "speed": self.download.speed,
-            "progress": self.download.progress
+            "progress": self.download.progress,
+            "task_label": getattr(self.download, 'task_label', ''),
+            "volume_id": getattr(self.download, 'volume_id', None),
+            "issue_id": getattr(self.download, 'issue_id', None),
         }
 
 

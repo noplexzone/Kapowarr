@@ -225,10 +225,12 @@ class SuwayomiClient:
         page_count: int,
         dest_path: str,
         stop_event: Event,
+        progress_cb=None,
     ) -> bool:
         """Download all pages and create a CBZ file at dest_path.
 
         Returns True on success, False if stop_event fired mid-way.
+        progress_cb(pages_done, total_pages) is called after each page if provided.
         """
         with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_STORED) as zf:
             for i in range(page_count):
@@ -237,6 +239,8 @@ class SuwayomiClient:
                 data = self.get_page_image(manga_id, chapter_source_order, i)
                 ext = _detect_image_ext(data)
                 zf.writestr(f"{i + 1:04d}.{ext}", data)
+                if progress_cb is not None:
+                    progress_cb(i + 1, page_count)
         return True
 
     def create_pdf_from_chapters(
@@ -245,6 +249,7 @@ class SuwayomiClient:
         chapters: List[Tuple[int, int]],
         dest_path: str,
         stop_event: Event,
+        progress_cb=None,
     ) -> bool:
         """Download pages from multiple chapters and merge into one PDF.
 
@@ -253,11 +258,14 @@ class SuwayomiClient:
             chapters: List of (source_order, page_count) tuples, in order.
             dest_path: Output PDF file path.
             stop_event: Event to signal cancellation.
+            progress_cb: Optional callable(pages_done, total_pages) for progress.
 
         Returns True on success, False if stopped or no pages collected.
         """
         import img2pdf
 
+        total_pages = sum(pc for _, pc in chapters)
+        fetched = 0
         temp_paths: List[str] = []
         try:
             for source_order, page_count in chapters:
@@ -271,6 +279,9 @@ class SuwayomiClient:
                     ) as tf:
                         tf.write(data)
                         temp_paths.append(tf.name)
+                    fetched += 1
+                    if progress_cb is not None and total_pages > 0:
+                        progress_cb(fetched, total_pages)
 
             if not temp_paths:
                 return False

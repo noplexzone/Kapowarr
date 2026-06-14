@@ -60,6 +60,8 @@ class IssueEntry {
 		else
 			this.entry = ViewEls.issues_list.querySelector(`tr[data-id="${id}"]`);
 
+		if (!this.entry) return;
+
 		this.monitored = this.entry.querySelector('.issue-monitored button');
 		this.issue_number = this.entry.querySelector('.issue-number');
 		this.title = this.entry.querySelector('.issue-title');
@@ -98,17 +100,38 @@ class IssueEntry {
 	};
 
 	setDownloaded(downloaded) {
+		if (!this.entry) return;
+		this.hideProgress();
 		if (downloaded) {
-			// Downloaded
 			setImage(this.status, images.check, 'Issue is downloaded');
             this.status.classList.remove('error');
             this.status.classList.add('success');
 		} else {
-			// Not downloaded
 			setImage(this.status, images.cancel, 'Issue is not downloaded');
             this.status.classList.remove('success');
             this.status.classList.add('error');
 		};
+	};
+
+	showProgress(percent, label) {
+		if (!this.entry || !this.status) return;
+		const icon = this.status.querySelector('.issue-status-icon');
+		const bar = this.status.querySelector('.issue-progress');
+		const fill = this.status.querySelector('.issue-progress-fill');
+		const lbl = this.status.querySelector('.issue-progress-label');
+		if (icon) icon.style.display = 'none';
+		if (bar) bar.style.display = '';
+		if (fill) fill.style.width = `${Math.min(100, Math.max(0, percent || 0))}%`;
+		if (lbl) lbl.textContent = label || '';
+		this.status.classList.remove('success', 'error');
+	};
+
+	hideProgress() {
+		if (!this.entry || !this.status) return;
+		const icon = this.status.querySelector('.issue-status-icon');
+		const bar = this.status.querySelector('.issue-progress');
+		if (icon) icon.style.display = '';
+		if (bar) bar.style.display = 'none';
 	};
 };
 
@@ -1305,6 +1328,41 @@ usingApiKey()
 			);
 		}
 	);
+
+	// Track active download id -> issue_id for this volume so queue_ended
+	// can restore the icon when the download finishes.
+	const _activeDownloads = new Map();
+
+	socket.on('queue_added', data => {
+		if (data.volume_id !== volume_id) return;
+		const iid = data.issue_id;
+		_activeDownloads.set(data.id, iid);
+		if (iid == null) return;
+		try {
+			const entry = new IssueEntry(iid, api_key);
+			entry.showProgress(0, data.task_label || 'Queued');
+		} catch(e) {}
+	});
+
+	socket.on('queue_status', data => {
+		if (data.volume_id !== volume_id) return;
+		const iid = data.issue_id;
+		if (iid != null) _activeDownloads.set(data.id, iid);
+		if (iid == null) return;
+		try {
+			const entry = new IssueEntry(iid, api_key);
+			entry.showProgress(data.progress, data.task_label || data.status);
+		} catch(e) {}
+	});
+
+	socket.on('queue_ended', data => {
+		const iid = _activeDownloads.get(data.id);
+		_activeDownloads.delete(data.id);
+		if (iid == null) return;
+		try {
+			new IssueEntry(iid, api_key).hideProgress();
+		} catch(e) {}
+	});
 });
 
 ViewEls.tool_bar.files.onclick = e => showWindow('files-window');

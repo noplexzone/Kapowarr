@@ -85,7 +85,9 @@ export async function autoSearchVolume(
 export async function manualSearchVolume(
   id: number,
 ): Promise<ManualSearchResult[]> {
-  const response = await apiClient.get(`volumes/${id}/manualsearch`);
+  const response = await apiClient.get(`volumes/${id}/manualsearch`, {
+    timeout: 60000,
+  });
   return readJson<ManualSearchResult[]>(response);
 }
 
@@ -108,7 +110,9 @@ export async function autoSearchIssue(
 export async function manualSearchIssue(
   issueId: number,
 ): Promise<ManualSearchResult[]> {
-  const response = await apiClient.get(`issues/${issueId}/manualsearch`);
+  const response = await apiClient.get(`issues/${issueId}/manualsearch`, {
+    timeout: 60000,
+  });
   return readJson<ManualSearchResult[]>(response);
 }
 

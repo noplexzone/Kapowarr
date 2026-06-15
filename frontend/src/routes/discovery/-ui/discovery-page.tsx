@@ -9,7 +9,6 @@ import {
   storyArcDetailQueryOptions,
 } from '../-discovery.api';
 import type { DiscoveryVolume, StoryArc, DiscoveryType, DiscoverySection } from '../-discovery.types';
-import { getUrlBase } from '@/app/api-client';
 import styles from './discovery-page.module.css';
 
 interface DiscoveryPageProps {
@@ -112,8 +111,8 @@ function VolumeGridView({ type, section }: { type: 'upcoming' | 'new'; section: 
 }
 
 function VolumeCard({ volume, onClick }: { volume: DiscoveryVolume; onClick: (v: DiscoveryVolume) => void }) {
-  const base = getUrlBase();
-  const coverSrc = volume.cover_url ? `${base}/api/${volume.cover_url}` : null;
+  // Backend returns cover_link (a full ComicVine small image URL).
+  const coverSrc = (volume as any).cover_link || null;
 
   return (
     <div

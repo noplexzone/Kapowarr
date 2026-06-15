@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { useSearch } from '@tanstack/react-router';
+import { useSearch, useNavigate } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
 import { volumeListQueryOptions } from '../-comics.api';
 import { volumesSearchSchema, type ViewOption, type SectionType } from '../-comics.types';
@@ -15,11 +15,19 @@ interface ComicsPageProps {
 
 export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   const search = useSearch({ strict: false });
+  const navigate = useNavigate();
   const validated = volumesSearchSchema.parse(search);
   const { data } = useSuspenseQuery(volumeListQueryOptions(1, validated, section));
 
   const [view, setView] = useState<ViewOption>(validated.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const updateSearch = useCallback(
+    (patch: Record<string, unknown>) => {
+      navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...patch }) });
+    },
+    [navigate, section],
+  );
 
   const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
@@ -49,7 +57,11 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
             ))}
           </div>
 
-          <select className={styles.select} defaultValue={validated.filter}>
+          <select
+            className={styles.select}
+            value={validated.filter}
+            onChange={(e) => updateSearch({ filter: e.target.value })}
+          >
             {FILTER_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
                 {opt || 'All'}
@@ -57,7 +69,11 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
             ))}
           </select>
 
-          <select className={styles.select} defaultValue={validated.sort}>
+          <select
+            className={styles.select}
+            value={validated.sort}
+            onChange={(e) => updateSearch({ sort: e.target.value })}
+          >
             {SORT_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
                 Sort: {opt.replace(/_/g, ' ')}
@@ -70,6 +86,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
             type="search"
             placeholder="Search volumes..."
             defaultValue={validated.search}
+            onChange={(e) => updateSearch({ search: e.target.value || undefined })}
           />
         </div>
 

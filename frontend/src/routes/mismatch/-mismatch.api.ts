@@ -4,14 +4,13 @@ import type { MismatchItem, MismatchSelection } from './-mismatch.types';
 const API_KEY_STORAGE_KEY = 'kapowarr_api_key';
 
 export async function* scanMismatch(
-  section: 'comic' | 'manga',
+  _section: 'comic' | 'manga',
 ): AsyncGenerator<MismatchItem> {
   const base = getUrlBase();
   const apiKey = localStorage.getItem(API_KEY_STORAGE_KEY) ?? '';
   const params = new URLSearchParams({
     folder_filter: '',
     quick: 'true',
-    section,
   });
 
   const response = await fetch(`${base}/api/libraryimport/bulk?${params}`, {

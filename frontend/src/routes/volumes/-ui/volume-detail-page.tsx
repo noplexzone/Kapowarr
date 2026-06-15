@@ -67,7 +67,6 @@ export function VolumeDetailPage() {
   const id = parseInt(volumeId ?? '0', 10);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [descExpanded, setDescExpanded] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
 
   // Manual search dialog
@@ -427,27 +426,15 @@ export function VolumeDetailPage() {
               Delete
             </Button>
           </div>
-        </div>
-      </div>
 
-      {volume.description && (
-        <section className={styles.section}>
-          <button
-            className={styles.sectionToggle}
-            onClick={() => setDescExpanded((e) => !e)}
-            type="button"
-          >
-            <span>Description</span>
-            <span className={styles.toggleIcon}>{descExpanded ? '▲' : '▼'}</span>
-          </button>
-          {descExpanded && (
+          {volume.description && (
             <div
-              className={styles.description}
+              className={styles.inlineDescription}
               dangerouslySetInnerHTML={{ __html: sanitizeHtml(volume.description) }}
             />
           )}
-        </section>
-      )}
+        </div>
+      </div>
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>

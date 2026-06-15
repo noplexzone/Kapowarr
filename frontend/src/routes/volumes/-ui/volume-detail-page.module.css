@@ -475,6 +475,27 @@
   font-size: 0.85rem;
 }
 
+/* ── Inline description (below actions, no toggle) ── */
+.inlineDescription {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.inlineDescription p {
+  margin: 0.4em 0;
+}
+
+.inlineDescription a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.inlineDescription a:hover {
+  text-decoration: underline;
+}
+
 .confirmText {
   font-size: 0.875rem;
   color: var(--text);

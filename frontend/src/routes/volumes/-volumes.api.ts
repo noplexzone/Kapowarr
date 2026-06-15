@@ -22,7 +22,50 @@ export function volumeDetailFullQueryOptions(id: number) {
 
 async function fetchVolumeDetailFull(id: number): Promise<VolumeDetailFull> {
   const response = await apiClient.get(`volumes/${id}`);
-  return readJson<VolumeDetailFull>(response);
+  const raw = await readJson<Record<string, any>>(response);
+  return toVolumeDetailFull(raw);
+}
+
+/** Transform raw backend volume detail into the SPA's VolumeDetailFull shape. */
+function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
+  return {
+    id: raw.id,
+    comicvine_id: raw.comicvine_id,
+    title: raw.title ?? '',
+    year: raw.year ?? 0,
+    publisher: raw.publisher ?? '',
+    volume_number: raw.volume_number ?? 0,
+    special_version: raw.special_version ?? '',
+    description: raw.description ?? undefined,
+    site_url: raw.site_url ?? undefined,
+    monitored: Boolean(raw.monitored),
+    monitor_new_issues: Boolean(raw.monitor_new_issues),
+    folder: raw.folder ?? '',
+    root_folder: raw.root_folder ?? 0,
+    root_folder_path: raw.root_folder_path ?? '',
+    issue_count: raw.issue_count ?? 0,
+    issues_downloaded: raw.issues_downloaded ?? 0,
+    cover: raw.cover ?? undefined,
+    issues: Array.isArray(raw.issues)
+      ? raw.issues.map((i: Record<string, any>) => ({
+          id: i.id,
+          issue_number: String(i.issue_number ?? ''),
+          title: i.title ?? undefined,
+          release_date: i.date ?? i.release_date ?? undefined,
+          monitored: Boolean(i.monitored),
+          downloaded: Boolean(
+            Array.isArray(i.files) ? i.files.length > 0 : i.downloaded ?? false,
+          ),
+          size:
+            typeof i.size === 'number' && i.size > 0
+              ? i.size
+              : Array.isArray(i.files)
+                ? i.files.reduce((sum: number, f: any) => sum + (f.size ?? 0), 0)
+                : 0,
+          issue_folder: i.issue_folder ?? undefined,
+        }))
+      : [],
+  };
 }
 
 export async function deleteVolume(id: number): Promise<void> {

@@ -5,7 +5,10 @@
 
 .main-window h2 {
 	border-bottom: 2px solid var(--border-color);
+	padding-bottom: .5rem;
 	margin-bottom: 1rem;
+	font-size: 1.1rem;
+	font-weight: 500;
 }
 
 .main-window h2:not(:first-child) {

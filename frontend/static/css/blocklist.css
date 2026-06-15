@@ -1,5 +1,5 @@
 .main-window {
-	padding: 1rem;
+	padding: clamp(.5rem, 2vw, 1.5rem);
 }
 
 .table-container {
@@ -10,8 +10,16 @@ table {
 	width: 100%;
 	min-width: 33.3rem;
 	table-layout: fixed;
-
 	color: var(--text-color);
+	border-spacing: 0 .25rem;
+}
+
+thead th {
+	padding: .5rem .9rem;
+	font-size: .8rem;
+	font-weight: 500;
+	color: var(--dimmed-text-color);
+	border-bottom: 2px solid var(--border-color);
 }
 
 th, td {
@@ -34,10 +42,59 @@ th, td {
 	width: 4.5rem;
 }
 
-.list-entry > * {
-	border-top: 1px solid var(--border-color);
+.list-entry {
+	transition: background-color 200ms ease-in-out;
 }
 
-.delete-entry > img {
-	width: 20px;
+.list-entry:hover {
+	background-color: var(--hover-color);
+}
+
+.list-entry > td {
+	border-top: 1px solid var(--border-color);
+	vertical-align: middle;
+}
+
+.option-column .action-btn {
+	padding: .2rem .3rem;
+}
+
+.option-column .action-btn img {
+	width: 18px;
+}
+
+.list-entry .chip {
+	font-size: .7rem;
+}
+
+@media (max-width: 600px) {
+	table { min-width: unset; table-layout: auto; }
+
+	.list-entry {
+		display: grid;
+		grid-template-areas:
+			"link   link"
+			"reason date"
+			"action action";
+		grid-template-columns: 1fr 1fr;
+		gap: .15rem .5rem;
+		border: 1px solid var(--border-color);
+		border-radius: 6px;
+		padding: .5rem;
+		margin-bottom: .5rem;
+		background-color: var(--foreground-color);
+	}
+
+	.list-entry > td {
+		display: block;
+		border-top: none;
+		padding: .15rem 0;
+	}
+
+	.list-entry .link-column { grid-area: link; }
+	.list-entry .reason-column { grid-area: reason; width: auto; }
+	.list-entry .date-column { grid-area: date; width: auto; font-size: .8rem; color: var(--dimmed-text-color); }
+	.list-entry .option-column { grid-area: action; width: auto; display: flex; justify-content: flex-end; }
+
+	thead { display: none; }
 }

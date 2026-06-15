@@ -10,9 +10,10 @@ h2 {
 	gap: 1rem;
 	align-items: center;
 
-	border-bottom: 1px solid var(--border-color);
+	border-bottom: 2px solid var(--border-color);
+	padding-bottom: .5rem;
 
-	font-size: 2rem;
+	font-size: 1.1rem;
 	font-weight: 500;
 }
 
@@ -39,6 +40,10 @@ section:not(:first-of-type) h2 {
 #about-table {
 	width: 100%;
 	min-width: 31rem;
+	background-color: var(--foreground-color);
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: .5rem;
 }
 
 #about-table :where(th, td) {

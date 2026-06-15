@@ -10,15 +10,16 @@
 
 {% block pre_build_rows %}
 <tr class="history-entry">
-	<td>
+	<td colspan="2">
 		<a href="" target="_blank"></a>
 	</td>
-    <td>
-        <a></a>
-    </td>
-    <td></td>
+	<td>
+		<span class="chip source-chip"></span>
+	</td>
 	<td></td>
-	<td></td>
+	<td>
+		<span class="chip state-chip"></span>
+	</td>
 </tr>
 {% endblock %}
 
@@ -36,9 +37,8 @@
 			<table>
 				<thead>
 					<tr>
-						<th>Link</th>
-                        <th>File</th>
-                        <th>Source</th>
+						<th colspan="2">Title</th>
+						<th>Source</th>
 						<th>Downloaded At</th>
 						<th>State</th>
 					</tr>

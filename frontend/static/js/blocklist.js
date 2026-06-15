@@ -23,64 +23,60 @@ function fillList(api_key) {
 			const entry = BlockEls.entry.cloneNode(true);
 
 			const link = entry.querySelector('a');
-            if (obj.download_link === null) {
-                // GC page blocked
-                link.innerText = obj.web_title || obj.web_link;
-                link.href = obj.web_link;
+			if (obj.download_link === null) {
+				link.innerText = obj.web_title || obj.web_link;
+				link.href = obj.web_link;
+			} else {
+				if (obj.web_title !== null) {
+					link.innerText = `${obj.web_title} - ${obj.web_sub_title}`;
+					if (obj.source !== null)
+						link.innerText += ` - ${obj.source}`;
+				} else
+					link.innerText = obj.download_link;
+				link.href = obj.download_link;
+			}
 
-            } else {
-                // Download link blocked
-                if (obj.web_title !== null) {
-                    link.innerText = `${obj.web_title} - ${obj.web_sub_title}`;
-                    if (obj.source !== null)
-                        link.innerText += ` - ${obj.source}`;
-                } else
-                    link.innerText = obj.download_link;
+			// Reason chip
+			const reasonChip = entry.querySelector('.reason-chip');
+			reasonChip.textContent = obj.reason || 'Unknown';
+			reasonChip.className = 'chip reason-chip';
 
-                link.href = obj.download_link;
-            };
-
-            entry.querySelector('.reason-column').innerText = obj.reason;
-
-			var d = new Date(obj.added_at * 1000);
-			var formatted_date =
-				d.toLocaleString('en-CA').slice(0,10)
-				+ ' '
-				+ d.toTimeString().slice(0,5);
-			entry.querySelector('.date-column').innerText = formatted_date;
+			const d = new Date(obj.added_at * 1000);
+			const formatted = d.toLocaleString('en-CA').slice(0,10) + ' ' + d.toTimeString().slice(0,5);
+			entry.querySelector('.date-column').innerText = formatted;
 
 			entry.querySelector('button').onclick = e => deleteEntry(obj.id, api_key);
 
 			BlockEls.table.appendChild(entry);
 		});
 	});
-};
+}
 
 function deleteEntry(id, api_key) {
 	sendAPI('DELETE', `/blocklist/${id}`, api_key)
 	.then(response => fillList(api_key));
-};
+}
 
 function clearList(api_key) {
 	sendAPI('DELETE', '/blocklist', api_key)
 	offset = 0;
 	BlockEls.page_turner.number.innerText = 'Page 1';
 	BlockEls.table.innerHTML = '';
-};
+}
 
 function reduceOffset(api_key) {
 	if (offset === 0) return;
 	offset--;
 	BlockEls.page_turner.number.innerText = `Page ${offset + 1}`;
 	fillList(api_key);
-};
+}
 
 function increaseOffset(api_key) {
 	if (BlockEls.table.innerHTML === '') return;
 	offset++;
 	BlockEls.page_turner.number.innerText = `Page ${offset + 1}`;
 	fillList(api_key);
-};
+}
 
 // code run on load
 usingApiKey()

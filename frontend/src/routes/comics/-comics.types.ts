@@ -14,6 +14,25 @@ export const FILTER_OPTIONS = ['', 'wanted', 'monitored'] as const;
 
 export const VIEW_OPTIONS = ['posters', 'table'] as const;
 
+export const SORT_LABELS: Record<string, string> = {
+  title: 'Title',
+  volume_number: 'Volume Number',
+  year: 'Year',
+  recently_added: 'Recently Added',
+  recently_released: 'Recently Released',
+  publisher: 'Publisher',
+  wanted: 'Wanted',
+};
+
+export const VIEW_LABELS: Record<string, string> = {
+  posters: 'Poster',
+  table: 'Table',
+};
+
+export const STORAGE_KEY_SORT = 'kapowarr_sort';
+export const STORAGE_KEY_VIEW = 'kapowarr_view';
+export const STORAGE_KEY_FILTER = 'kapowarr_filter';
+
 export type SortOption = (typeof SORT_OPTIONS)[number];
 export type FilterOption = (typeof FILTER_OPTIONS)[number];
 export type ViewOption = (typeof VIEW_OPTIONS)[number];

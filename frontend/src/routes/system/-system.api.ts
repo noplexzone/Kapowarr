@@ -1,9 +1,11 @@
 import { queryOptions } from '@tanstack/react-query';
 import { apiClient, readJson, getUrlBase } from '@/app/api-client';
-import type { SystemAbout, SystemTask } from './-system.types';
+import type { SystemAbout, SystemTask, TaskHistoryEntry, TaskPlanningEntry } from './-system.types';
 
 export const SYSTEM_ABOUT_KEY = ['system', 'about'] as const;
 export const SYSTEM_TASKS_KEY = ['system', 'tasks'] as const;
+export const SYSTEM_TASKS_HISTORY_KEY = ['system', 'tasks', 'history'] as const;
+export const SYSTEM_TASKS_PLANNING_KEY = ['system', 'tasks', 'planning'] as const;
 
 export function systemAboutQueryOptions() {
   return queryOptions({
@@ -21,8 +23,36 @@ export function systemTasksQueryOptions() {
   });
 }
 
+export function systemTaskHistoryQueryOptions(page: number) {
+  return queryOptions({
+    queryKey: [...SYSTEM_TASKS_HISTORY_KEY, page],
+    queryFn: () =>
+      apiClient
+        .get(`system/tasks/history?offset=${page}`)
+        .then(res => readJson<TaskHistoryEntry[]>(res)),
+    staleTime: 0,
+  });
+}
+
+export function systemTaskPlanningQueryOptions() {
+  return queryOptions({
+    queryKey: SYSTEM_TASKS_PLANNING_KEY,
+    queryFn: () =>
+      apiClient.get('system/tasks/planning').then(res => readJson<TaskPlanningEntry[]>(res)),
+    staleTime: 60_000,
+  });
+}
+
 export async function cancelTask(id: number): Promise<void> {
   await apiClient.delete(`system/tasks/${id}`);
+}
+
+export async function clearTaskHistory(): Promise<void> {
+  await apiClient.delete('system/tasks/history');
+}
+
+export async function runTask(cmd: string): Promise<void> {
+  await apiClient.post('system/tasks', { json: { cmd } });
 }
 
 export async function downloadLogs(): Promise<void> {

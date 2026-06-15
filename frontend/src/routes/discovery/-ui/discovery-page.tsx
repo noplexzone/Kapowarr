@@ -1,7 +1,7 @@
 import { useState, useDeferredValue } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge } from '@/components/primitives';
+import { Badge, Button } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
 import {
   discoveryVolumeQueryOptions,
@@ -111,28 +111,36 @@ function VolumeGridView({ type, section }: { type: 'upcoming' | 'new'; section: 
 }
 
 function VolumeCard({ volume, onClick }: { volume: DiscoveryVolume; onClick: (v: DiscoveryVolume) => void }) {
-  // Backend returns cover_link (a full ComicVine small image URL).
-  const coverSrc = (volume as any).cover_link || null;
+  const isAdded = volume.already_added != null;
+  const coverSrc = volume.cover_link || null;
 
   return (
-    <div
-      className={styles.volumeCard}
-      onClick={() => onClick(volume)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={e => e.key === 'Enter' && onClick(volume)}
-    >
+    <div className={styles.volumeCard}>
       <div className={styles.coverWrap}>
         {coverSrc ? (
           <img src={coverSrc} alt={volume.title} className={styles.cover} loading="lazy" />
         ) : (
           <div className={styles.coverPlaceholder}>📚</div>
         )}
+        {isAdded && <div className={styles.addedBadge}>✓</div>}
       </div>
       <div className={styles.cardBody}>
         <div className={styles.cardTitle}>{volume.title}</div>
-        <div className={styles.cardMeta}>{volume.year} · Vol. {volume.volume_number}</div>
-        <div className={styles.cardMeta}>{volume.publisher}</div>
+        <div className={styles.cardMeta}>
+          {[
+            volume.year,
+            volume.publisher,
+            volume.issue_count != null ? `${volume.issue_count} issue${volume.issue_count !== 1 ? 's' : ''}` : null,
+            volume.date_added,
+          ].filter(Boolean).join(' · ')}
+        </div>
+        <div className={styles.actionBtns}>
+          {isAdded ? (
+            <span className={styles.disabledLabel}>In Library</span>
+          ) : (
+            <Button variant="primary" onClick={() => onClick(volume)}>+ Add</Button>
+          )}
+        </div>
       </div>
     </div>
   );

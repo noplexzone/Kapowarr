@@ -147,6 +147,38 @@
   color: var(--text-dim);
 }
 
+.actionBtns {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+}
+
+.addedBadge {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  background: var(--surface);
+  border-radius: 50%;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: var(--success, #22c55e);
+  border: 1px solid var(--success, #22c55e);
+}
+
+.disabledLabel {
+  font-size: 0.72rem;
+  background: var(--text-dim);
+  color: var(--surface);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
 .empty {
   display: flex;
   align-items: center;

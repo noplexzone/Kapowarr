@@ -29,3 +29,24 @@ export interface VolumeDetailFull {
   cover?: string;
   issues: IssueDetail[];
 }
+
+export interface ManualSearchResult {
+  link: string;
+  display_title: string;
+  source: string;
+  match: boolean;
+  match_issue: string | null;
+}
+
+export interface IssueHistoryEntry {
+  web_link: string;
+  web_title: string | null;
+  web_sub_title: string | null;
+  file_title: string | null;
+  volume_id: number;
+  issue_id: number | null;
+  source: string;
+  source_name: string | null;
+  downloaded_at: number | null;
+  success: boolean | null;
+}

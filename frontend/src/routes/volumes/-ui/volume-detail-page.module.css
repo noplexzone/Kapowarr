@@ -279,3 +279,140 @@
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Actions column ──────────────────────────────── */
+.thActions {
+  width: 8rem;
+  text-align: center;
+}
+
+.actionsCell {
+  text-align: center;
+}
+
+.issueActions {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.issueActionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  line-height: 1;
+}
+
+.issueActionBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.issueActionBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Dialog status text ──────────────────────────── */
+.dialogStatus {
+  color: var(--text-dim);
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 2rem 0;
+  margin: 0;
+}
+
+/* ── Manual search results table ─────────────────── */
+.searchResultTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.searchResultTable th {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.searchResultTable td {
+  padding: 0.4rem 0.5rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+.thMatch {
+  width: 5rem;
+}
+
+.thSource {
+  width: 7rem;
+}
+
+.thAction {
+  width: 10rem;
+}
+
+.resultTitle {
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.resultTitle:hover {
+  text-decoration: underline;
+}
+
+.sourceCell {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.actionCell {
+  white-space: nowrap;
+}
+
+.actionCell > * + * {
+  margin-left: 0.25rem;
+}
+
+/* ── Issue history table ─────────────────────────── */
+.historyTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.historyTable th {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.historyTable td {
+  padding: 0.4rem 0.5rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+.dateCell {
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}

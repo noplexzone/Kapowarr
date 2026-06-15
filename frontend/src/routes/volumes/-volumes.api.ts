@@ -1,6 +1,10 @@
 import { queryOptions } from '@tanstack/react-query';
 import { apiClient, readJson } from '@/app/api-client';
-import type { VolumeDetailFull } from './-volumes.types';
+import type {
+  VolumeDetailFull,
+  ManualSearchResult,
+  IssueHistoryEntry,
+} from './-volumes.types';
 
 export const VOLUME_FULL_KEY = (id: number) =>
   ['volumes', 'full', id] as const;
@@ -29,4 +33,66 @@ export async function autoSearchVolume(id: number): Promise<void> {
 
 export async function manualSearchVolume(id: number): Promise<void> {
   await apiClient.post(`volumes/${id}/manualsearch`);
+}
+
+// ── Per-issue actions ─────────────────────────────────────────────
+
+export async function autoSearchIssue(
+  volumeId: number,
+  issueId: number,
+): Promise<{ id: number }> {
+  const response = await apiClient.post('system/tasks', {
+    json: {
+      cmd: 'auto_search_issue',
+      volume_id: volumeId,
+      issue_id: issueId,
+    },
+  });
+  return readJson<{ id: number }>(response);
+}
+
+export async function manualSearchIssue(
+  issueId: number,
+): Promise<ManualSearchResult[]> {
+  const response = await apiClient.get(`issues/${issueId}/manualsearch`);
+  return readJson<ManualSearchResult[]>(response);
+}
+
+export async function fetchIssueHistory(
+  issueId: number,
+): Promise<IssueHistoryEntry[]> {
+  const response = await apiClient.get('activity/history', {
+    searchParams: { issue_id: issueId },
+  });
+  return readJson<IssueHistoryEntry[]>(response);
+}
+
+export async function downloadIssue(
+  issueId: number,
+  link: string,
+  forceMatch: boolean,
+  displayTitle: string,
+): Promise<{ result: number | null; fail_reason: string | null }> {
+  const response = await apiClient.post(`issues/${issueId}/download`, {
+    json: { link, force_match: forceMatch, display_title: displayTitle },
+  });
+  return readJson<{ result: number | null; fail_reason: string | null }>(
+    response,
+  );
+}
+
+export async function addToBlocklist(
+  link: string,
+  displayTitle: string,
+  volumeId: number,
+  issueId: number | null,
+): Promise<void> {
+  await apiClient.post('blocklist', {
+    json: {
+      link,
+      display_title: displayTitle,
+      volume_id: volumeId,
+      issue_id: issueId,
+    },
+  });
 }

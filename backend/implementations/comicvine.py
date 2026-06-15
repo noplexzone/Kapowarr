@@ -1415,12 +1415,14 @@ class ComicVine:
         limit: int = 100
     ) -> List[VolumeMetadata]:
         """Get manga volumes sorted by publish date (start year), newest first."""
+        from datetime import date as _date
+        cutoff = _date.today().year - 3
         vol_params = {
             'field_list': (
                 'id,name,deck,description,publisher,start_year,'
-                'image,site_detail_url,count_of_issues'
+                'image,site_detail_url,count_of_issues,date_added'
             ),
-            'sort': 'date_last_updated:desc',
+            'sort': 'date_added:desc',
             'limit': 100,
         }
         async with AsyncSession() as session:
@@ -1441,10 +1443,6 @@ class ComicVine:
             + (pages[4].get('results') or [])
         )
 
-        from datetime import date
-        current_year = date.today().year
-        cutoff = current_year - 2
-
         def _year(v: Dict[str, Any]) -> int:
             try:
                 return int(v.get('start_year') or 0)
@@ -1455,18 +1453,26 @@ class ComicVine:
             pub = ((v.get('publisher') or {}).get('name') or '').lower()
             return pub in _ENGLISH_MANGA_PUBLISHERS or any(p in pub for p in _ENGLISH_MANGA_PUBLISHERS)
 
+        def _has_non_ascii_title(v: Dict[str, Any]) -> bool:
+            return any(ord(c) > 127 for c in (v.get('name') or ''))
+
         pre_filtered = [
             v for v in all_results
             if _year(v) >= cutoff
             and _is_english_manga(v)
+            and not _has_non_ascii_title(v)
             and not any(
                 k in (v.get('name') or '').lower()
                 for k in _MANGA_TITLE_KEYWORDS
             )
         ]
-        formatted = [self.__format_volume_output(v) for v in pre_filtered][:limit]
-        self._mark_already_added(formatted)
-        return formatted
+        formatted = [self.__format_volume_output(v) for v in pre_filtered]
+        # Keep only volumes flagged as translated — the positive publisher
+        # check above already ensures English manga houses. The translated
+        # flag catches the remaining signal from the description text.
+        filtered = [v for v in formatted if v['translated']][:limit]
+        self._mark_already_added(filtered)
+        return filtered
 
     async def get_story_arcs_manga(
         self,

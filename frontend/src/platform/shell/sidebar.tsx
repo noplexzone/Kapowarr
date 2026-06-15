@@ -68,7 +68,7 @@ export function Sidebar() {
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
-        <span className={styles.brandIcon}>K</span>
+        <img className={styles.brandIcon} src="/ui/favicon.svg" alt="Kapowarr" />
         <span className={styles.brandText}>Kapowarr</span>
       </div>
 

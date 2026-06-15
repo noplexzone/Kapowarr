@@ -78,3 +78,20 @@ export interface RenameEntry {
   before: string;
   after: string;
 }
+
+export interface IssueFile {
+  id: number;
+  filepath: string;
+  size: number;
+}
+
+export interface IssueData {
+  id: number;
+  volume_id: number;
+  issue_number: string;
+  title?: string;
+  date?: string;
+  description?: string;
+  monitored: boolean;
+  files: IssueFile[];
+}

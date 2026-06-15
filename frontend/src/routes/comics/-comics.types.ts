@@ -38,6 +38,7 @@ export const FILTER_LABELS: Record<string, string> = {
 export const STORAGE_KEY_SORT = 'kapowarr_sort';
 export const STORAGE_KEY_VIEW = 'kapowarr_view';
 export const STORAGE_KEY_FILTER = 'kapowarr_filter';
+export const STORAGE_KEY_SEARCH = 'kapowarr_search';
 
 export type SortOption = (typeof SORT_OPTIONS)[number];
 export type FilterOption = (typeof FILTER_OPTIONS)[number];

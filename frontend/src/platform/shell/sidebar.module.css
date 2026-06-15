@@ -20,20 +20,6 @@
 .brandIcon {
   width: 28px;
   height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent);
-  color: #000;
-  font-weight: 700;
-  font-size: 0.9rem;
-  border-radius: 6px;
-}
-
-.brandText {
-  font-weight: 600;
-  font-size: 1rem;
-  color: var(--text);
 }
 
 .nav {

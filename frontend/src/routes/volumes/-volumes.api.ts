@@ -7,6 +7,7 @@ import type {
   RootFolder,
   ComicVineSearchResult,
   RenameEntry,
+  IssueData,
 } from './-volumes.types';
 
 export const VOLUME_FULL_KEY = (id: number) =>
@@ -115,6 +116,24 @@ export async function manualSearchIssue(
     timeout: 60000,
   });
   return readJson<ManualSearchResult[]>(response);
+}
+
+export async function deleteIssue(issueId: number): Promise<void> {
+  await apiClient.delete(`issues/${issueId}`);
+}
+
+export async function forceMatchIssue(
+  volumeId: number,
+  issueId: number,
+): Promise<{ id: number }> {
+  const response = await apiClient.post('system/tasks', {
+    json: {
+      cmd: 'auto_search_issue',
+      volume_id: volumeId,
+      issue_id: issueId,
+    },
+  });
+  return readJson<{ id: number }>(response);
 }
 
 export async function fetchIssueHistory(
@@ -234,4 +253,15 @@ export async function submitRename(
     },
   });
   return readJson<{ id: number }>(response);
+}
+
+// ── Issue management ──────────────────────────────────────────
+
+export async function fetchIssueData(issueId: number): Promise<IssueData> {
+  const response = await apiClient.get(`issues/${issueId}`);
+  return readJson<IssueData>(response);
+}
+
+export async function deleteFile(fileId: number): Promise<void> {
+  await apiClient.delete(`files/${fileId}`);
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
@@ -14,6 +14,7 @@ import {
   STORAGE_KEY_SORT,
   STORAGE_KEY_VIEW,
   STORAGE_KEY_FILTER,
+  STORAGE_KEY_SEARCH,
 } from '../-comics.types';
 import { ComicCard } from './comic-card';
 import { ComicTableRow } from './comic-table-row';
@@ -40,8 +41,46 @@ function setStorageVal(key: string, val: unknown) {
 export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   const navigate = useNavigate();
 
-  // Use the router's reactive search instead of window.location — drives
-  // useSuspenseQuery via a stable signal so sort/filter changes trigger re-fetch.
+  // Hydrate from localStorage on first mount when URL has no explicit params.
+  // Read window.location.search directly — useSearch() always returns Zod defaults
+  // so we can't detect whether a param was actually in the URL from there.
+  const [hydrated] = useState(() => {
+    const rawParams = new URLSearchParams(window.location.search);
+    const patch: Record<string, unknown> = {};
+    if (!rawParams.get('sort')) {
+      const stored = getStorageVal<string | null>(STORAGE_KEY_SORT, null);
+      if (stored && SORT_OPTIONS.includes(stored as any)) patch.sort = stored;
+    }
+    if (!rawParams.get('view')) {
+      const stored = getStorageVal<string | null>(STORAGE_KEY_VIEW, null);
+      if (stored && VIEW_OPTIONS.includes(stored as any)) patch.view = stored;
+    }
+    if (!rawParams.get('filter')) {
+      const stored = getStorageVal<string | null>(STORAGE_KEY_FILTER, null);
+      if (stored && FILTER_OPTIONS.includes(stored as any)) patch.filter = stored;
+    }
+    if (!rawParams.get('search')) {
+      const stored = getStorageVal<string | null>(STORAGE_KEY_SEARCH, null);
+      if (stored) patch.search = stored;
+    }
+    return patch;
+  });
+
+  const hydrationDone = useRef(false);
+  useEffect(() => {
+    if (hydrationDone.current) return;
+    hydrationDone.current = true;
+    if (Object.keys(hydrated).length > 0) {
+      navigate({
+        to: section === 'comic' ? '/comics' : '/manga',
+        search: (prev: any) => ({ ...prev, ...hydrated }),
+        replace: true,
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Use the router's reactive search so sort/filter/view/search changes
+  // trigger a stable re-fetch via useSuspenseQuery.
   const rawSearch = useSearch({ strict: false }) as Record<string, unknown>;
   const validated = volumesSearchSchema.parse(rawSearch);
   const { data } = useSuspenseQuery(volumeListQueryOptions(1, validated, section));
@@ -49,40 +88,13 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   const [view, setView] = useState<ViewOption>(validated.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  // Hydrate from localStorage when no URL param is present (first visit)
-  const hydrationDone = useRef(false);
-  const rawUrl = useRef(new URLSearchParams(window.location.search));
-  if (!hydrationDone.current) {
-    const patch: Record<string, unknown> = {};
-    if (!rawUrl.current.get('sort')) {
-      const stored = getStorageVal<string | null>(STORAGE_KEY_SORT, null);
-      if (stored && SORT_OPTIONS.includes(stored as any)) patch.sort = stored;
-    }
-    if (!rawUrl.current.get('view')) {
-      const stored = getStorageVal<string | null>(STORAGE_KEY_VIEW, null);
-      if (stored && VIEW_OPTIONS.includes(stored as any)) patch.view = stored;
-    }
-    if (!rawUrl.current.get('filter')) {
-      const stored = getStorageVal<string | null>(STORAGE_KEY_FILTER, null);
-      if (stored && FILTER_OPTIONS.includes(stored as any)) patch.filter = stored;
-    }
-    if (Object.keys(patch).length > 0) {
-      // Will navigate at end of render; use a microtask to avoid setState-during-render
-      queueMicrotask(() => {
-        hydrationDone.current = true;
-        navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...patch }), replace: true });
-      });
-    } else {
-      hydrationDone.current = true;
-    }
-  }
-
   const updateSearch = useCallback(
     (patch: Record<string, unknown>) => {
       // Persist to localStorage
       if ('sort' in patch) setStorageVal(STORAGE_KEY_SORT, patch.sort);
       if ('view' in patch) setStorageVal(STORAGE_KEY_VIEW, patch.view);
       if ('filter' in patch) setStorageVal(STORAGE_KEY_FILTER, patch.filter);
+      if ('search' in patch) setStorageVal(STORAGE_KEY_SEARCH, patch.search);
 
       navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...patch }) });
     },
@@ -143,14 +155,6 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
               </option>
             ))}
           </select>
-
-          <input
-            className={styles.search}
-            type="search"
-            placeholder="Search volumes..."
-            defaultValue={validated.search}
-            onChange={(e) => updateSearch({ search: e.target.value || undefined })}
-          />
         </div>
 
         <div className={styles.toolbarRight}>
@@ -210,6 +214,22 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
           </table>
         </div>
       )}
+
+      {/* Floating bottom search bar */}
+      <div className={styles.searchBar}>
+        <input
+          className={styles.searchInput}
+          type="search"
+          placeholder="Search volumes..."
+          value={validated.search ?? ''}
+          onChange={(e) => updateSearch({ search: e.target.value || undefined })}
+        />
+        {validated.search && (
+          <span className={styles.searchCount}>
+            {total} result{total !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
 
       <div className={styles.statsBar}>
         <div className={styles.stat}>

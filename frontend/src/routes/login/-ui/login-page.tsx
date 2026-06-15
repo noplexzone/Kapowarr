@@ -39,7 +39,7 @@ export function LoginPage() {
     <div className={styles.page}>
       <div className={styles.container}>
         <div className={styles.brand}>
-          <span className={styles.brandIcon}>K</span>
+          <img src="/static/img/favicon.svg" alt="Kapowarr" className={styles.brandIcon} />
           <span className={styles.brandTitle}>Kapowarr</span>
         </div>
 

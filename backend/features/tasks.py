@@ -1430,10 +1430,10 @@ def get_task_history(offset: int = 0) -> List[dict]:
             queued_at, started_at, volume_id, issue_id, details
         FROM task_history
         ORDER BY run_at DESC
-        LIMIT 20
+        LIMIT 15
         OFFSET ?;
         """,
-        (offset * 20,)
+        (offset * 15,)
     ).fetchalldict()
     for entry in result:
         raw = entry.get('details')

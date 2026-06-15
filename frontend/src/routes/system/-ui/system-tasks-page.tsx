@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button } from '@/components/primitives';
 import {
@@ -356,14 +357,23 @@ function ActiveTasksSection({
                         <Badge
                           tone={taskStatusTone(task.status)}
                           className={statusClass(task.status)}
+                          style={{ textTransform: 'capitalize' }}
                         >
                           {task.status}
                         </Badge>
                       </td>
                       <td>
-                        {task.volume_title && (
+                        {task.volume_title && task.volume_id != null ? (
+                          <Link
+                            to="/volumes/$volumeId"
+                            params={{ volumeId: String(task.volume_id) }}
+                            className={styles.volLink}
+                          >
+                            {task.volume_title}
+                          </Link>
+                        ) : task.volume_title ? (
                           <span className={styles.volLink}>{task.volume_title}</span>
-                        )}
+                        ) : null}
                         {task.issue_number != null && (
                           <span className={styles.issueNum}>
                             {' '}#{task.issue_number}
@@ -410,7 +420,7 @@ function ActiveTasksSection({
 
 // ── Section B: Task History ──
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 15;
 
 function HistorySection() {
   const [page, setPage] = useState(0);
@@ -505,11 +515,19 @@ function HistorySection() {
                         </td>
                         <td>{entry.display_title}</td>
                         <td>
-                          {entry.volume_title && (
+                          {entry.volume_title && entry.volume_id != null ? (
+                            <Link
+                              to="/volumes/$volumeId"
+                              params={{ volumeId: String(entry.volume_id) }}
+                              className={styles.volLink}
+                            >
+                              {entry.volume_title}
+                            </Link>
+                          ) : entry.volume_title ? (
                             <span className={styles.volLink}>
                               {entry.volume_title}
                             </span>
-                          )}
+                          ) : null}
                           {entry.issue_number != null && (
                             <span className={styles.issueNum}>
                               {' '}#{entry.issue_number}

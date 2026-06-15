@@ -1158,7 +1158,7 @@ def api_volume_rematch(id: int):
     return return_api({'task_id': task_id}, code=202)
 
 
-@api.route('/issues/<int:id>', methods=['GET', 'PUT'])
+@api.route('/issues/<int:id>', methods=['GET', 'PUT', 'DELETE'])
 @error_handler
 @auth
 def api_issues(id: int):
@@ -1176,6 +1176,10 @@ def api_issues(id: int):
 
         result = issue.get_data()
         return return_api(result)
+
+    elif request.method == 'DELETE':
+        issue.delete()
+        return return_api({})
 
 
 # =====================

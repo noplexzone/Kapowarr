@@ -75,7 +75,9 @@ export function HistoryPage({ offset }: HistoryPageProps) {
                     {new Date(entry.downloaded_at).toLocaleString()}
                   </td>
                   <td>
-                    <Badge tone={stateTone(entry.state)}>{entry.state}</Badge>
+                    <Badge tone={stateTone(entry.state)}>
+                      {entry.state.charAt(0).toUpperCase() + entry.state.slice(1)}
+                    </Badge>
                   </td>
                 </tr>
               ))}

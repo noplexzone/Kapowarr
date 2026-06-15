@@ -56,7 +56,7 @@ async function fetchVolumeList(params: VolumesSearch, section: SectionType): Pro
   sp.set('section', section);
   if (params.sort) sp.set('sort', params.sort);
   if (params.filter) sp.set('filter', params.filter);
-  if (params.search) sp.set('search', params.search);
+  if (params.search) sp.set('query', params.search);
   if (params.offset != null) sp.set('offset', String(params.offset));
 
   const response = await apiClient.get('volumes', { searchParams: sp });

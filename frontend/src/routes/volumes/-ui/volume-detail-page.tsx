@@ -23,6 +23,8 @@ import {
   refreshVolume,
   fetchRenamePreview,
   submitRename,
+  deleteIssue,
+  forceMatchIssue,
 } from '../-volumes.api';
 import type {
   IssueDetail,
@@ -33,6 +35,45 @@ import type {
 } from '../-volumes.types';
 import { sanitizeHtml } from './sanitize';
 import styles from './volume-detail-page.module.css';
+
+// ── SVG icon components ──────────────────────────────────────────
+
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8"/>
+      <path d="M21 21l-4.35-4.35"/>
+    </svg>
+  );
+}
+
+function PersonIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10"/>
+      <polyline points="1 20 1 14 7 14"/>
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <polyline points="12 6 12 12 16 14"/>
+    </svg>
+  );
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -112,6 +153,12 @@ export function VolumeDetailPage() {
   const [renameLoading, setRenameLoading] = useState(false);
   const [renameChecked, setRenameChecked] = useState<Set<string>>(new Set());
   const [renameSubmitting, setRenameSubmitting] = useState(false);
+
+  // Manage Issues dialog
+  const [manageIssuesOpen, setManageIssuesOpen] = useState(false);
+  const [manageChecked, setManageChecked] = useState<Set<number>>(new Set());
+  const [manageDeleting, setManageDeleting] = useState(false);
+  const [manageForceMatching, setManageForceMatching] = useState(false);
 
   const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
 
@@ -333,6 +380,71 @@ export function VolumeDetailPage() {
     }
   }, [id, renameChecked, closeRename]);
 
+  const openManageIssues = useCallback(() => {
+    setManageChecked(new Set());
+    setManageDeleting(false);
+    setManageForceMatching(false);
+    setManageIssuesOpen(true);
+  }, []);
+
+  const closeManageIssues = useCallback(() => {
+    setManageIssuesOpen(false);
+    setManageChecked(new Set());
+  }, []);
+
+  const toggleManageCheck = useCallback((issueId: number) => {
+    setManageChecked(prev => {
+      const next = new Set(prev);
+      if (next.has(issueId)) next.delete(issueId);
+      else next.add(issueId);
+      return next;
+    });
+  }, []);
+
+  const toggleAllManage = useCallback((checked: boolean, allIds: number[]) => {
+    if (checked) {
+      setManageChecked(new Set(allIds));
+    } else {
+      setManageChecked(new Set());
+    }
+  }, []);
+
+  const handleDeleteSelected = useCallback(async () => {
+    if (manageChecked.size === 0) return;
+    setManageDeleting(true);
+    const ids = [...manageChecked];
+    try {
+      for (const issueId of ids) {
+        await deleteIssue(issueId);
+      }
+      setActionMsg(`Deleted ${ids.length} issue(s).`);
+      queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+      setManageChecked(new Set());
+    } catch (err) {
+      setActionMsg('Delete failed: ' + (err as Error).message);
+    } finally {
+      setManageDeleting(false);
+    }
+  }, [manageChecked, id, queryClient]);
+
+  const handleForceMatchSelected = useCallback(async () => {
+    if (manageChecked.size === 0) return;
+    setManageForceMatching(true);
+    const ids = [...manageChecked];
+    try {
+      for (const issueId of ids) {
+        await forceMatchIssue(id, issueId);
+      }
+      setActionMsg(`Force matching ${ids.length} issue(s).`);
+      queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+      setManageChecked(new Set());
+    } catch (err) {
+      setActionMsg('Force match failed: ' + (err as Error).message);
+    } finally {
+      setManageForceMatching(false);
+    }
+  }, [manageChecked, id, queryClient]);
+
   const openEdit = useCallback(() => {
     if (!volume) return;
     setEditMonitored(volume.monitored);
@@ -491,48 +603,46 @@ export function VolumeDetailPage() {
             )}
           </div>
 
-          <div className={styles.actions}>
-            <Button
-              variant="secondary"
-              onClick={() => refreshMutation.mutate()}
-              disabled={refreshMutation.isPending}
-            >
-              {refreshMutation.isPending ? '⟳ Scanning…' : 'Refresh & Scan'}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => autoSearchMutation.mutate()}
-              disabled={autoSearchMutation.isPending}
-            >
-              {autoSearchMutation.isPending ? '⟳ Searching…' : 'Auto Search'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handleVolumeManualSearch}
-              disabled={volManualSearching}
-            >
-              {volManualSearching ? '⟳ Searching…' : 'Manual Search'}
-            </Button>
-            <Button variant="ghost" onClick={openEdit}>
-              Edit
-            </Button>
-            <Button variant="ghost" onClick={openFixMatch}>
-              Fix Match
-            </Button>
-            <Button variant="ghost" onClick={handleOpenRename}>
-              Preview Rename
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                if (window.confirm(`Delete "${volume.title}"? This cannot be undone.`)) {
-                  deleteMutation.mutate();
-                }
-              }}
-              disabled={deleteMutation.isPending}
-            >
-              Delete
-            </Button>
+          <div className={styles.actionBox}>
+            <span className={styles.actionBoxTitle}>Actions</span>
+            <div className={styles.actionBtns}>
+              <Button
+                variant="secondary"
+                onClick={() => refreshMutation.mutate()}
+                disabled={refreshMutation.isPending}
+              >
+                <RefreshIcon />
+                {refreshMutation.isPending ? 'Scanning…' : 'Refresh & Scan'}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => autoSearchMutation.mutate()}
+                disabled={autoSearchMutation.isPending}
+              >
+                <SearchIcon />
+                {autoSearchMutation.isPending ? 'Searching…' : 'Auto Search'}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handleVolumeManualSearch}
+                disabled={volManualSearching}
+              >
+                <PersonIcon />
+                {volManualSearching ? 'Searching…' : 'Manual Search'}
+              </Button>
+              <Button variant="secondary" onClick={openEdit}>
+                Edit
+              </Button>
+              <Button variant="secondary" onClick={openFixMatch}>
+                Fix Match
+              </Button>
+              <Button variant="secondary" onClick={handleOpenRename}>
+                Preview Rename
+              </Button>
+              <Button variant="secondary" onClick={openManageIssues}>
+                Manage Issues
+              </Button>
+            </div>
           </div>
 
           {volume.description && (
@@ -963,8 +1073,19 @@ export function VolumeDetailPage() {
               >
                 {updateMutation.isPending ? 'Saving…' : 'Update'}
               </Button>
-              <Button variant="ghost" onClick={() => setEditOpen(false)}>
+              <Button variant="secondary" onClick={() => setEditOpen(false)}>
                 Cancel
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  if (window.confirm(`Delete "${volume.title}"? This cannot be undone.`)) {
+                    deleteMutation.mutate();
+                  }
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete Volume'}
               </Button>
             </div>
           </div>
@@ -1154,6 +1275,104 @@ export function VolumeDetailPage() {
           )}
         </DialogBody>
       </DialogFrame>
+
+      {/* ── Manage Issues Dialog ──────────────────────────── */}
+      <DialogFrame
+        open={manageIssuesOpen}
+        onOpenChange={(open) => {
+          if (!open) closeManageIssues();
+        }}
+      >
+        <DialogHeader
+          title={`Manage Issues — ${volume.title}`}
+          onClose={closeManageIssues}
+        />
+        <DialogBody>
+          {volume.issues.length === 0 ? (
+            <p className={styles.dialogStatus}>No issues to manage.</p>
+          ) : (
+            <>
+              <table className={styles.renameTable}>
+                <thead>
+                  <tr>
+                    <th className={styles.renameCheck}>
+                      <input
+                        type="checkbox"
+                        checked={
+                          volume.issues.length > 0 &&
+                          manageChecked.size === volume.issues.length
+                        }
+                        onChange={(e) =>
+                          toggleAllManage(
+                            e.target.checked,
+                            volume.issues.map(i => i.id),
+                          )
+                        }
+                      />
+                    </th>
+                    <th>#</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {volume.issues.map((issue) => (
+                    <tr key={issue.id}>
+                      <td className={styles.renameCheck}>
+                        <input
+                          type="checkbox"
+                          checked={manageChecked.has(issue.id)}
+                          onChange={() => toggleManageCheck(issue.id)}
+                        />
+                      </td>
+                      <td className={styles.issueNum}>#{issue.issue_number}</td>
+                      <td className={styles.issueTitle}>
+                        {issue.title || '—'}
+                      </td>
+                      <td>
+                        <Badge
+                          tone={
+                            issue.downloaded
+                              ? 'success'
+                              : issue.monitored
+                                ? 'warning'
+                                : 'neutral'
+                          }
+                        >
+                          {issue.downloaded
+                            ? 'Downloaded'
+                            : issue.monitored
+                              ? 'Wanted'
+                              : 'Unmonitored'}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className={styles.renameActions}>
+                <Button
+                  variant="primary"
+                  disabled={manageChecked.size === 0 || manageDeleting || manageForceMatching}
+                  onClick={handleDeleteSelected}
+                >
+                  {manageDeleting ? 'Deleting…' : 'Delete Selected'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={manageChecked.size === 0 || manageDeleting || manageForceMatching}
+                  onClick={handleForceMatchSelected}
+                >
+                  {manageForceMatching ? 'Matching…' : 'Force Match Selected'}
+                </Button>
+                <Button variant="secondary" onClick={closeManageIssues}>
+                  Close
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogBody>
+      </DialogFrame>
     </div>
   );
 }
@@ -1220,7 +1439,7 @@ function IssueRow({
             aria-label="Manually search for this issue"
             onClick={onManualSearch}
           >
-            🔎
+            🧑
           </button>
           <button
             type="button"

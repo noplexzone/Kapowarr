@@ -119,17 +119,19 @@
 {% block main %}
 <main>
 	<div class="settings-container">
-		<h2>NZB Indexers</h2>
-		<p class="description">
-			NZB indexers are Newznab-compatible APIs (such as
-			<a href="https://github.com/theotherp/nzbhydra2" target="_blank">NZBHydra2</a> or
-			<a href="https://prowlarr.com/" target="_blank">Prowlarr</a>) that Kapowarr uses to
-			search for NZB files of comics on Usenet.
-		</p>
-		<div id="indexer-list" class="client-list">
-			<button id="add-indexer-client" class="add-button icon-text-color" title="Add NZB indexer">
-				<img src="{{url_base}}/static/img/cancel.svg" alt="">
-			</button>
+		<div class="card">
+			<h2 class="section-header">NZB Indexers</h2>
+			<p class="description">
+				NZB indexers are Newznab-compatible APIs (such as
+				<a href="https://github.com/theotherp/nzbhydra2" target="_blank">NZBHydra2</a> or
+				<a href="https://prowlarr.com/" target="_blank">Prowlarr</a>) that Kapowarr uses to
+				search for NZB files of comics on Usenet.
+			</p>
+			<div id="indexer-list" class="client-list">
+				<button id="add-indexer-client" class="add-button icon-text-color" title="Add NZB indexer">
+					<img src="{{url_base}}/static/img/cancel.svg" alt="">
+				</button>
+			</div>
 		</div>
 	</div>
 </main>

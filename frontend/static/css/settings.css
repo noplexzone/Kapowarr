@@ -11,6 +11,7 @@
 /*  */
 /* Sections titles */
 /*  */
+.settings-container .section-header,
 .settings-container h2 {
 	margin-bottom: 1rem;
 
@@ -22,13 +23,29 @@
 	color: var(--text-color);
 }
 
-.settings-container h2:not(:first-of-type) {
-	margin-top: 3rem;
+/* Card spacing inside settings container */
+.settings-container .card {
+	margin-bottom: 1.5rem;
 }
 
-.settings-container > label {
-	font-weight: bold;
+.settings-container .card:last-child {
+	margin-bottom: 0;
 }
+
+/* Subtle note text inside settings cards */
+.card-note {
+	margin-bottom: 1rem;
+	color: var(--dimmed-text-color);
+	font-size: 0.9rem;
+}
+
+/* Bold label above a setting group (e.g. Format Preference) */
+.settings-label {
+	font-weight: bold;
+	margin-top: 1rem;
+	display: block;
+}
+
 
 /*  */
 /* Setting tables */

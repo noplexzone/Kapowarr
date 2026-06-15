@@ -17,177 +17,189 @@
 	</section>
 	<div class="settings-container">
 		<form id="settings-form">
-			<h2>Host</h2>
-			<p>Changing hosting settings will immediately restart Kapowarr. Access the web-ui within 60 seconds for the changes to stay, or they will be reverted.</p>
-			<table class="fold-table">
-				<tr>
-					<th><label for="bind-address-input">Bind Address</label></th>
-					<td>
-						<input type="text" id="bind-address-input" required spellcheck="false">
-						<p>Valid IPv4 address (default is '0.0.0.0' for all available interfaces).</p>
-					</td>
-				</tr>
-				<tr>
-					<th><label for="port-input">Port Number</label></th>
-					<td>
-						<input type="text" id="port-input" required spellcheck="false">
-						<p>The port used to access the web UI (default is '5656').</p>
-					</td>
-				</tr>
-				<tr>
-					<th><label for="url-base-input">Base URL</label></th>
-					<td>
-						<input type="text" id="url-base-input" spellcheck="false">
-						<p>For reverse proxy support (default is empty).</p>
-					</td>
-				</tr>
-			</table>
-			<h2>Security</h2>
-			<table class="fold-table">
-				<tr>
-					<th><label for="auth-toggle">Authentication</label></th>
-					<td>
-						<select id="auth-toggle">
-							<option value="">None</option>
-							<option value="password">Password</option>
-							<option value="username-password">Username And Password</option>
-						</select>
-					</td>
-				</tr>
-				<tr id="username-input-row">
-					<th><label for="username-input">Username</label></th>
-					<td>
-						<input id="username-input" required spellcheck="false" autocomplete="username">
-						<p>The username that is required to be entered to get access to web-UI and API.</p>
-					</td>
-				</tr>
-				<tr id="password-input-row">
-					<th><label for="password-input">Password</label></th>
-					<td>
-						<input type="password" id="password-input" required spellcheck="false" autocomplete="new-password">
-						<p>The password that is required to be entered to get access to web-UI and API.</p>
-					</td>
-				</tr>
-				<tr>
-					<th><label>API Key</label></th>
-					<td>
-						<div id="api-container" class="icon-light-color">
-							<input type="text" id="api-input" readonly>
-							<button type="button" id="generate-api"><img src="{{url_base}}/static/img/refresh.svg" alt=""></button>
-						</div>
-					</td>
-				</tr>
-			</table>
-			<h2>Proxy</h2>
-			<p>Changing proxy settings will immediately restart Kapowarr.</p>
-			<table class="fold-table">
-				<tr>
-					<th><label for="proxy-type-input">Proxy Type</label></th>
-					<td>
-						<select id="proxy-type-input">
-							<option value="">Disabled</option>
-							<option value="http">HTTP</option>
-							<option value="https">HTTPS</option>
-							<option value="socks5">Socks5 (local DNS)</option>
-							<option value="socks5h">Socks5h (remote DNS)</option>
-						</select>
-					</td>
-				</tr>
-				<tr>
-					<th><label for="proxy-host-input">Hostname</label></th>
-					<td>
-						<input id="proxy-host-input" spellcheck="false">
-						<p>The hostname of the proxy.</p>
-					</td>
-				</tr>
-				<tr>
-					<th><label for="proxy-port-input">Port</label></th>
-					<td>
-						<input id="proxy-port-input" type="number" spellcheck="false" min="1" max="65535">
-						<p>The port of the proxy.</p>
-					</td>
-				</tr>
-				<tr>
-					<th><label for="proxy-username-input">Username</label></th>
-					<td>
-						<input id="proxy-username-input" spellcheck="false">
-						<p>You only need to enter a username and password if one is required. Leave them blank otherwise.</p>
-					</td>
-				</tr>
-				<tr>
-					<th><label for="proxy-password-input">Password</label></th>
-					<td>
-						<input id="proxy-password-input" type="password" spellcheck="false">
-						<p>You only need to enter a username and password if one is required. Leave them blank otherwise.</p>
-					</td>
-				</tr>
-				<tr>
-					<th><label for="proxy-ignored-addresses-input">Ignored Addresses</label></th>
-					<td>
-						<input id="proxy-ignored-addresses-input" spellcheck="false">
-						<p>Use ',' as a separator, and '*' as a wildcard for subdomains.</p>
-					</td>
-				</tr>
-			</table>
-			<h2>External Websites</h2>
-			<table class="fold-table">
-				<tr>
-					<th><label for="cv-input">Comic Vine API Key</label></th>
-					<td>
-						<input type="text" id="cv-input" required spellcheck="false">
-						<p>The API key of the <a href="https://comicvine.gamespot.com/api" target="_blank">Comic Vine API</a>, which is required for Kapowarr to work.</p>
-					</td>
-				</tr>
-				<tr>
-					<th><label for="flaresolverr-input">FlareSolverr Base URL</label></th>
-					<td>
-						<input type="url" name="" id="flaresolverr-input">
-						<p>Base URL of a FlareSolverr instance (set empty to disable). Needed in case of a large amount of requests to CloudFlare protected websites.</p>
-					</td>
-				</tr>
-			</table>
-			<h2>UI</h2>
-			<table class="fold-table">
-				<tr>
-					<th><label for="theme-input">Theme</label></th>
-					<td>
-						<select id="theme-input">
-							<option value="light">Light</option>
-							<option value="dark">Dark</option>
-							<optgroup label="Superhero">
-								<option value="batman">Batman</option>
-								<option value="spiderman">Spider-Man</option>
-								<option value="invincible">Invincible</option>
-								<option value="superman">Superman</option>
-								<option value="ironman">Iron Man</option>
-								<option value="wonderwoman">Wonder Woman</option>
-								<option value="flash">The Flash</option>
-								<option value="greenlantern">Green Lantern</option>
-								<option value="captainamerica">Captain America</option>
-							</optgroup>
-						</select>
-					</td>
-				</tr>
-			</table>
-			<h2>Logging</h2>
-			<table class="fold-table">
-				<tr>
-					<th><label for="log-level-input">Log Level</label></th>
-					<td>
-						<select id="log-level-input" required>
-							<option value="20">Info</option>
-							<option value="10">Debug</option>
-						</select>
-						<p>Change this to 'Debug' if detailed logging is needed for troubleshooting. Change it back to 'Info' when done.</p>
-					</td>
-				</tr>
-				<tr>
-					<th><label for="download-logs-button">Download Logs</label></th>
-					<td>
-						<a id="download-logs-button" href="">Download Logs</a>
-					</td>
-				</tr>
-			</table>
+			<div class="card">
+				<h2 class="section-header">Host</h2>
+				<p class="card-note">Changing hosting settings will immediately restart Kapowarr. Access the web-ui within 60 seconds for the changes to stay, or they will be reverted.</p>
+				<table class="fold-table">
+					<tr>
+						<th><label for="bind-address-input">Bind Address</label></th>
+						<td>
+							<input type="text" id="bind-address-input" required spellcheck="false">
+							<p>Valid IPv4 address (default is '0.0.0.0' for all available interfaces).</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="port-input">Port Number</label></th>
+						<td>
+							<input type="text" id="port-input" required spellcheck="false">
+							<p>The port used to access the web UI (default is '5656').</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="url-base-input">Base URL</label></th>
+						<td>
+							<input type="text" id="url-base-input" spellcheck="false">
+							<p>For reverse proxy support (default is empty).</p>
+						</td>
+					</tr>
+				</table>
+			</div>
+			<div class="card">
+				<h2 class="section-header">Security</h2>
+				<table class="fold-table">
+					<tr>
+						<th><label for="auth-toggle">Authentication</label></th>
+						<td>
+							<select id="auth-toggle">
+								<option value="">None</option>
+								<option value="password">Password</option>
+								<option value="username-password">Username And Password</option>
+							</select>
+						</td>
+					</tr>
+					<tr id="username-input-row">
+						<th><label for="username-input">Username</label></th>
+						<td>
+							<input id="username-input" required spellcheck="false" autocomplete="username">
+							<p>The username that is required to be entered to get access to web-UI and API.</p>
+						</td>
+					</tr>
+					<tr id="password-input-row">
+						<th><label for="password-input">Password</label></th>
+						<td>
+							<input type="password" id="password-input" required spellcheck="false" autocomplete="new-password">
+							<p>The password that is required to be entered to get access to web-UI and API.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label>API Key</label></th>
+						<td>
+							<div id="api-container" class="icon-light-color">
+								<input type="text" id="api-input" readonly>
+								<button type="button" id="generate-api"><img src="{{url_base}}/static/img/refresh.svg" alt=""></button>
+							</div>
+						</td>
+					</tr>
+				</table>
+			</div>
+			<div class="card">
+				<h2 class="section-header">Proxy</h2>
+				<p class="card-note">Changing proxy settings will immediately restart Kapowarr.</p>
+				<table class="fold-table">
+					<tr>
+						<th><label for="proxy-type-input">Proxy Type</label></th>
+						<td>
+							<select id="proxy-type-input">
+								<option value="">Disabled</option>
+								<option value="http">HTTP</option>
+								<option value="https">HTTPS</option>
+								<option value="socks5">Socks5 (local DNS)</option>
+								<option value="socks5h">Socks5h (remote DNS)</option>
+							</select>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="proxy-host-input">Hostname</label></th>
+						<td>
+							<input id="proxy-host-input" spellcheck="false">
+							<p>The hostname of the proxy.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="proxy-port-input">Port</label></th>
+						<td>
+							<input id="proxy-port-input" type="number" spellcheck="false" min="1" max="65535">
+							<p>The port of the proxy.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="proxy-username-input">Username</label></th>
+						<td>
+							<input id="proxy-username-input" spellcheck="false">
+							<p>You only need to enter a username and password if one is required. Leave them blank otherwise.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="proxy-password-input">Password</label></th>
+						<td>
+							<input id="proxy-password-input" type="password" spellcheck="false">
+							<p>You only need to enter a username and password if one is required. Leave them blank otherwise.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="proxy-ignored-addresses-input">Ignored Addresses</label></th>
+						<td>
+							<input id="proxy-ignored-addresses-input" spellcheck="false">
+							<p>Use ',' as a separator, and '*' as a wildcard for subdomains.</p>
+						</td>
+					</tr>
+				</table>
+			</div>
+			<div class="card">
+				<h2 class="section-header">External Websites</h2>
+				<table class="fold-table">
+					<tr>
+						<th><label for="cv-input">Comic Vine API Key</label></th>
+						<td>
+							<input type="text" id="cv-input" required spellcheck="false">
+							<p>The API key of the <a href="https://comicvine.gamespot.com/api" target="_blank">Comic Vine API</a>, which is required for Kapowarr to work.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="flaresolverr-input">FlareSolverr Base URL</label></th>
+						<td>
+							<input type="url" name="" id="flaresolverr-input">
+							<p>Base URL of a FlareSolverr instance (set empty to disable). Needed in case of a large amount of requests to CloudFlare protected websites.</p>
+						</td>
+					</tr>
+				</table>
+			</div>
+			<div class="card">
+				<h2 class="section-header">UI</h2>
+				<table class="fold-table">
+					<tr>
+						<th><label for="theme-input">Theme</label></th>
+						<td>
+							<select id="theme-input">
+								<option value="light">Light</option>
+								<option value="dark">Dark</option>
+								<optgroup label="Superhero">
+									<option value="batman">Batman</option>
+									<option value="spiderman">Spider-Man</option>
+									<option value="invincible">Invincible</option>
+									<option value="superman">Superman</option>
+									<option value="ironman">Iron Man</option>
+									<option value="wonderwoman">Wonder Woman</option>
+									<option value="flash">The Flash</option>
+									<option value="greenlantern">Green Lantern</option>
+									<option value="captainamerica">Captain America</option>
+								</optgroup>
+							</select>
+						</td>
+					</tr>
+				</table>
+			</div>
+			<div class="card">
+				<h2 class="section-header">Logging</h2>
+				<table class="fold-table">
+					<tr>
+						<th><label for="log-level-input">Log Level</label></th>
+						<td>
+							<select id="log-level-input" required>
+								<option value="20">Info</option>
+								<option value="10">Debug</option>
+							</select>
+							<p>Change this to 'Debug' if detailed logging is needed for troubleshooting. Change it back to 'Info' when done.</p>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="download-logs-button">Download Logs</label></th>
+						<td>
+							<a id="download-logs-button" href="">Download Logs</a>
+						</td>
+					</tr>
+				</table>
+			</div>
 		</form>
 	</div>
 </main>

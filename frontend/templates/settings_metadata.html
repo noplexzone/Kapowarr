@@ -17,19 +17,21 @@
 	</section>
 	<div class="settings-container">
 		<form id="settings-form">
-			<h2>Fetching</h2>
-			<table class="fold-table">
-				<tr>
-					<th><label for="date-type-input">Date Type</label></th>
-					<td>
-						<select id="date-type-input" required>
-							<option value="cover_date">Cover Date</option>
-							<option value="store_date">In Store Date</option>
-						</select>
-						<p>Dates will be updated on next metadata fetch.</p>
-					</td>
-				</tr>
-			</table>
+			<div class="card">
+				<h2 class="section-header">Fetching</h2>
+				<table class="fold-table">
+					<tr>
+						<th><label for="date-type-input">Date Type</label></th>
+						<td>
+							<select id="date-type-input" required>
+								<option value="cover_date">Cover Date</option>
+								<option value="store_date">In Store Date</option>
+							</select>
+							<p>Dates will be updated on next metadata fetch.</p>
+						</td>
+					</tr>
+				</table>
+			</div>
 		</form>
 	</div>
 </main>

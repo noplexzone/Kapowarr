@@ -360,7 +360,7 @@ class ExternalClients:
                 id, download_type, client_type,
                 title, base_url,
                 username, password,
-                api_token
+                api_token, category
             FROM external_download_clients
             ORDER BY title, id;
             """

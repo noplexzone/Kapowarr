@@ -159,3 +159,123 @@ details[open] > .sectionHeader::after {
   font-size: 0.85rem;
   color: var(--text-dim);
 }
+
+/* --- New styles for NZB Indexers, Clients, Remote Mappings --- */
+
+.clientCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.clientList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.clientHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+}
+
+.clientMeta {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.clientType {
+  font-size: 0.75rem;
+  background: var(--accent);
+  color: var(--accent-text, #fff);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
+.indexerRow {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.inlineForm {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.testSuccess {
+  font-size: 0.85rem;
+  color: #22c55e;
+  font-weight: 600;
+  padding: 0.25rem 0;
+}
+
+.testFailure {
+  font-size: 0.85rem;
+  color: #ef4444;
+  font-weight: 600;
+  padding: 0.25rem 0;
+}
+
+.actionBtns {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+.disabledLabel {
+  font-size: 0.72rem;
+  background: var(--text-dim);
+  color: var(--surface);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.smallBtn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.smallBtn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.smallBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.addBtnRow {
+  margin-top: 0.5rem;
+}
+
+.subSectionTitle {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0.75rem 0 0.4rem;
+}

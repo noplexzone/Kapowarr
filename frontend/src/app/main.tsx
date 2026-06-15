@@ -4,6 +4,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { routeTree } from './router';
 
+// Theme initialization — uses 'kapowarr-theme' in localStorage
+const savedTheme = localStorage.getItem('kapowarr-theme');
+if (savedTheme) {
+  document.documentElement.dataset.theme = savedTheme;
+} else {
+  document.documentElement.dataset.theme = 'batman-mode';
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

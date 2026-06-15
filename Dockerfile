@@ -23,11 +23,11 @@ RUN apt-get update && \
         build-essential libssl-dev libffi-dev pkg-config && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy Python From Python Stage
-COPY --from=python /usr/local /usr/local
-COPY --from=python /usr/lib /usr/lib
-COPY --from=python /lib /lib
-COPY --from=python /etc /etc
+# Copy Python From Python Stage — use explicit image ref for legacy builder compat
+COPY --from=python:${PYTHON}-slim-${DISTRO} /usr/local /usr/local
+COPY --from=python:${PYTHON}-slim-${DISTRO} /usr/lib /usr/lib
+COPY --from=python:${PYTHON}-slim-${DISTRO} /lib /lib
+COPY --from=python:${PYTHON}-slim-${DISTRO} /etc /etc
 
 # Compile Wheels
 COPY requirements.txt .

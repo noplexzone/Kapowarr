@@ -12,43 +12,37 @@ function loadDashboard(api_key) {
 		el.style.color = count > 0 ? 'var(--accent-color)' : '';
 	});
 
-	// Recent downloads (last 7 days, both sections)
+	// Recent downloads (last 7 days)
 	const sevenDaysAgo = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
-	Promise.all([
-		fetchAPI('/activity/history', api_key, {after: sevenDaysAgo}),
-		fetchAPI('/volumes', api_key),
-		fetchAPI('/volumes', api_key, {section: 'manga'})
-	])
-	.then(([history, comics, manga]) => {
-		// Recent downloads
-		const successful = history.result.filter(r => r.success).length;
+	fetchAPI('/activity/history', api_key, {after: sevenDaysAgo})
+	.then(json => {
+		const successful = json.result.filter(r => r.success).length;
 		document.getElementById('stat-recent').textContent = successful;
+	});
 
-		// Wanted — sum across both sections
-		let wanted = 0;
-		[comics.result, manga.result].forEach(volumes => {
-			volumes.forEach(v => {
-				(v.issues || []).forEach(i => {
-					if (i.monitored && !i.downloaded) wanted++;
-				});
-			});
-		});
+	// Wanted + library stats via /volumes/stats
+	Promise.all([
+		fetchAPI('/volumes/stats', api_key, {section: 'comic'}),
+		fetchAPI('/volumes/stats', api_key, {section: 'manga'})
+	])
+	.then(([comicStats, mangaStats]) => {
+		const cs = comicStats.result;
+		const ms = mangaStats.result;
+
+		// Wanted (monitored but not downloaded, across both sections)
+		const wanted = (cs.wanted || 0) + (ms.wanted || 0);
 		const wantedEl = document.getElementById('stat-wanted');
 		wantedEl.textContent = wanted;
 		wantedEl.style.color = wanted > 0 ? 'var(--error-color)' : '';
 
 		// Library stats
-		document.getElementById('stat-comic-volumes').textContent = comics.result.length;
-		document.getElementById('stat-manga-volumes').textContent = manga.result.length;
-
-		let comicIssues = 0, mangaIssues = 0;
-		comics.result.forEach(v => { comicIssues += (v.issues || []).length; });
-		manga.result.forEach(v => { mangaIssues += (v.issues || []).length; });
-		document.getElementById('stat-comic-issues').textContent = comicIssues;
-		document.getElementById('stat-manga-issues').textContent = mangaIssues;
+		document.getElementById('stat-comic-volumes').textContent = cs.volumes || 0;
+		document.getElementById('stat-manga-volumes').textContent = ms.volumes || 0;
+		document.getElementById('stat-comic-issues').textContent = cs.issues || 0;
+		document.getElementById('stat-manga-issues').textContent = ms.issues || 0;
 	});
 
-	// Recently added — both sections, interleaved
+	// Recently added — both sections
 	Promise.all([
 		fetchAPI('/volumes', api_key, {sort: 'recently_added', limit: 4}),
 		fetchAPI('/volumes', api_key, {sort: 'recently_added', limit: 4, section: 'manga'})
@@ -57,7 +51,7 @@ function loadDashboard(api_key) {
 		const items = [];
 		comics.result.slice(0, 4).forEach(v => items.push({...v, section: 'comics'}));
 		manga.result.slice(0, 4).forEach(v => items.push({...v, section: 'manga'}));
-		items.sort((a, b) => (b.added_at || 0) - (a.added_at || 0));
+		items.sort((a, b) => (b.id || 0) - (a.id || 0));
 		const recent = items.slice(0, 6);
 
 		const list = document.getElementById('recent-list');
@@ -73,7 +67,7 @@ function loadDashboard(api_key) {
 
 			const cover = document.createElement('img');
 			cover.className = 'dash-list-cover';
-			cover.src = v.cover || '';
+			cover.src = `${url_base}/api/volumes/${v.id}/cover?api_key=${api_key}`;
 			cover.alt = '';
 			cover.loading = 'lazy';
 			item.appendChild(cover);
@@ -84,9 +78,7 @@ function loadDashboard(api_key) {
 			const title = document.createElement('div');
 			title.className = 'dash-list-title';
 			const link = document.createElement('a');
-			link.href = v.section === 'manga'
-				? `${url_base}/manga/volumes/${v.id}`
-				: `${url_base}/volumes/${v.id}`;
+			link.href = `${url_base}/volumes/${v.id}`;
 			link.textContent = v.title;
 			title.appendChild(link);
 			info.appendChild(title);

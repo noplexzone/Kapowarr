@@ -88,7 +88,7 @@ const images = {
 //
 const task_to_button = {};
 function mapButtons(id) {
-	if (window.location.pathname === (url_base + '/')) {
+	if (window.location.pathname === (url_base + '/comics')) {
 		task_to_button['search_all'] = {
 			'button': document.querySelector('#searchall-button'),
 			'icon': `${url_base}/static/img/search.svg`,

@@ -441,7 +441,7 @@ class Volume:
                 monitored
             FROM issues
             WHERE volume_id = ?
-            ORDER BY calculated_issue_number, date
+            ORDER BY calculated_issue_number DESC, date DESC
             """,
             (self.id,)
         ).fetchalldict()

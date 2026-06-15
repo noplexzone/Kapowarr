@@ -15,8 +15,18 @@ import {
   fetchIssueHistory,
   downloadIssue,
   addToBlocklist,
+  updateVolume,
+  fetchRootFolders,
+  searchVolumes,
+  rematchVolume,
+  refreshVolume,
 } from '../-volumes.api';
-import type { IssueDetail, ManualSearchResult, IssueHistoryEntry } from '../-volumes.types';
+import type {
+  IssueDetail,
+  ManualSearchResult,
+  IssueHistoryEntry,
+  ComicVineSearchResult,
+} from '../-volumes.types';
 import { sanitizeHtml } from './sanitize';
 import styles from './volume-detail-page.module.css';
 
@@ -32,6 +42,25 @@ function formatDownloadTime(unixSeconds: number): string {
   const d = new Date(unixSeconds * 1000);
   return d.toLocaleDateString() + ' ' + d.toTimeString().slice(0, 5);
 }
+
+// ── Constants ───────────────────────────────────────────────────
+
+const SPECIAL_VERSIONS = [
+  { value: 'auto', label: 'Automatic' },
+  { value: '', label: 'Normal Volume' },
+  { value: 'tpb', label: 'Trade Paper Back' },
+  { value: 'one-shot', label: 'One Shot' },
+  { value: 'hard-cover', label: 'Hard Cover' },
+  { value: 'omnibus', label: 'Omnibus' },
+  { value: 'volume-as-issue', label: 'Volume As Issue' },
+] as const;
+
+const MONITORING_SCHEMES = [
+  { value: '', label: "-- Don't apply --" },
+  { value: 'all', label: 'All' },
+  { value: 'missing', label: 'Missing' },
+  { value: 'none', label: 'None' },
+] as const;
 
 export function VolumeDetailPage() {
   const { volumeId } = useParams({ strict: false }) as { volumeId: string };
@@ -51,7 +80,32 @@ export function VolumeDetailPage() {
   const [historyEntries, setHistoryEntries] = useState<IssueHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Edit dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editMonitored, setEditMonitored] = useState(true);
+  const [editMonitorNew, setEditMonitorNew] = useState(true);
+  const [editScheme, setEditScheme] = useState('');
+  const [editRootFolder, setEditRootFolder] = useState(1);
+  const [editVolumeFolder, setEditVolumeFolder] = useState('');
+  const [editSpecialVersion, setEditSpecialVersion] = useState('auto');
+
+  // Fix Match dialog
+  const [fixMatchOpen, setFixMatchOpen] = useState(false);
+  const [fixQuery, setFixQuery] = useState('');
+  const [fixSearchResults, setFixSearchResults] = useState<ComicVineSearchResult[]>([]);
+  const [fixSearchStatus, setFixSearchStatus] = useState('');
+  const [fixSearching, setFixSearching] = useState(false);
+  const [fixMatchedTitle, setFixMatchedTitle] = useState('');
+  const [fixShowConfirm, setFixShowConfirm] = useState(false);
+  const [fixReplacing, setFixReplacing] = useState(false);
+
   const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
+
+  const rootFoldersQuery = useQuery({
+    queryKey: ['rootFolders'],
+    queryFn: fetchRootFolders,
+    staleTime: 60_000,
+  });
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteVolume(id),
@@ -106,6 +160,40 @@ export function VolumeDetailPage() {
     onSuccess: () => setActionMsg('Added to blocklist.'),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => updateVolume(id, data),
+    onSuccess: () => {
+      setActionMsg('Volume updated.');
+      setEditOpen(false);
+      queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+    },
+    onError: (err) => setActionMsg('Update failed: ' + (err as Error).message),
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: () => refreshVolume(id),
+    onSuccess: () => setActionMsg('Refresh & Scan started.'),
+    onError: (err) => setActionMsg('Refresh failed: ' + (err as Error).message),
+  });
+
+  const rematchMutation = useMutation({
+    mutationFn: ({
+      comicvineId,
+      newTitle,
+    }: {
+      comicvineId: number;
+      newTitle: string | null;
+    }) => rematchVolume(id, comicvineId, newTitle),
+    onSuccess: () => {
+      setFixReplacing(true);
+      setFixSearchStatus('Rematching… fetching new metadata from ComicVine.');
+    },
+    onError: (err) => {
+      setFixSearchStatus('Rematch failed: ' + (err as Error).message);
+      setFixReplacing(false);
+    },
+  });
+
   const handleManualSearch = useCallback(async (issueId: number) => {
     setManualSearchIssueId(issueId);
     setManualSearching(true);
@@ -143,6 +231,89 @@ export function VolumeDetailPage() {
     setHistoryIssueId(null);
     setHistoryEntries([]);
   }, []);
+
+  const openEdit = useCallback(() => {
+    if (!volume) return;
+    setEditMonitored(volume.monitored);
+    setEditMonitorNew(volume.monitor_new_issues);
+    setEditScheme('');
+    setEditRootFolder(volume.root_folder);
+    setEditVolumeFolder(volume.folder.replace(volume.root_folder_path, '').replace(/^\//, ''));
+    setEditSpecialVersion(volume.special_version || 'auto');
+    setEditOpen(true);
+  }, [volume]);
+
+  const handleEditSave = useCallback(() => {
+    const data: Record<string, unknown> = {
+      monitored: editMonitored,
+      monitor_new_issues: editMonitorNew,
+    };
+    if (editScheme) {
+      data.monitoring_scheme = editScheme;
+    }
+    data.root_folder = editRootFolder;
+    if (editVolumeFolder) {
+      data.volume_folder = editVolumeFolder;
+    }
+    data.special_version = editSpecialVersion;
+    updateMutation.mutate(data);
+  }, [
+    editMonitored,
+    editMonitorNew,
+    editScheme,
+    editRootFolder,
+    editVolumeFolder,
+    editSpecialVersion,
+    updateMutation,
+  ]);
+
+  const openFixMatch = useCallback(() => {
+    if (!volume) return;
+    setFixQuery(volume.title.replace(/\s*\(\d{4}\)\s*$/, '').trim());
+    setFixSearchResults([]);
+    setFixSearchStatus('');
+    setFixShowConfirm(false);
+    setFixReplacing(false);
+    setFixMatchedTitle('');
+    setFixMatchOpen(true);
+  }, [volume]);
+
+  const handleFixSearch = useCallback(async () => {
+    const q = fixQuery.trim();
+    if (!q) return;
+    setFixSearching(true);
+    setFixSearchStatus('Searching...');
+    setFixSearchResults([]);
+    try {
+      const results = await searchVolumes(q);
+      setFixSearchResults(results);
+      setFixSearchStatus(results.length > 0 ? '' : 'No results found.');
+    } catch {
+      setFixSearchStatus('Search failed.');
+    } finally {
+      setFixSearching(false);
+    }
+  }, [fixQuery, searchVolumes]);
+
+  const handleFixApply = useCallback(
+    (_cvId: number, title: string) => {
+      setFixMatchedTitle(title);
+      setFixShowConfirm(true);
+    },
+    [],
+  );
+
+  const handleFixConfirm = useCallback(() => {
+    const result = fixSearchResults.find(
+      (r) => r.title === fixMatchedTitle,
+    );
+    if (!result) return;
+    setFixShowConfirm(false);
+    rematchMutation.mutate({
+      comicvineId: result.comicvine_id,
+      newTitle: result.title,
+    });
+  }, [fixMatchedTitle, fixSearchResults, rematchMutation]);
 
   if (isLoading) {
     return <div className={styles.loading}>Loading volume…</div>;
@@ -218,6 +389,13 @@ export function VolumeDetailPage() {
 
           <div className={styles.actions}>
             <Button
+              variant="secondary"
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending}
+            >
+              Refresh & Scan
+            </Button>
+            <Button
               variant="primary"
               onClick={() => autoSearchMutation.mutate()}
               disabled={autoSearchMutation.isPending}
@@ -227,9 +405,15 @@ export function VolumeDetailPage() {
             <Button
               variant="secondary"
               onClick={() => manualSearchVolMutation.mutate()}
-              disabled={manualSearchVolMutation.isPending || manualResults.length > 0}
+              disabled={manualSearchVolMutation.isPending}
             >
               Manual Search
+            </Button>
+            <Button variant="ghost" onClick={openEdit}>
+              Edit
+            </Button>
+            <Button variant="ghost" onClick={openFixMatch}>
+              Fix Match
             </Button>
             <Button
               variant="ghost"
@@ -499,6 +683,229 @@ export function VolumeDetailPage() {
                 })}
               </tbody>
             </table>
+          )}
+        </DialogBody>
+      </DialogFrame>
+
+      {/* ── Edit Volume Dialog ──────────────────────────────── */}
+      <DialogFrame
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!open) setEditOpen(false);
+        }}
+      >
+        <DialogHeader title="Edit Volume" onClose={() => setEditOpen(false)} />
+        <DialogBody>
+          <div className={styles.editForm}>
+            <label className={styles.editField}>
+              <span className={styles.editLabel}>Monitor Volume</span>
+              <select
+                className={styles.editSelect}
+                value={String(editMonitored)}
+                onChange={(e) => setEditMonitored(e.target.value === 'true')}
+              >
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </label>
+
+            <label className={styles.editField}>
+              <span className={styles.editLabel}>Monitor New Issues</span>
+              <select
+                className={styles.editSelect}
+                value={String(editMonitorNew)}
+                onChange={(e) => setEditMonitorNew(e.target.value === 'true')}
+              >
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+              <span className={styles.editHint}>
+                When new issues come out, automatically monitor them.
+              </span>
+            </label>
+
+            <label className={styles.editField}>
+              <span className={styles.editLabel}>Monitoring Scheme</span>
+              <select
+                className={styles.editSelect}
+                value={editScheme}
+                onChange={(e) => setEditScheme(e.target.value)}
+              >
+                {MONITORING_SCHEMES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <span className={styles.editHint}>
+                Apply a monitoring scheme once, on save.
+              </span>
+            </label>
+
+            <label className={styles.editField}>
+              <span className={styles.editLabel}>Root Folder</span>
+              <select
+                className={styles.editSelect}
+                value={editRootFolder}
+                onChange={(e) => setEditRootFolder(Number(e.target.value))}
+              >
+                {(rootFoldersQuery.data ?? []).map((rf) => (
+                  <option key={rf.id} value={rf.id}>
+                    {rf.folder}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className={styles.editField}>
+              <span className={styles.editLabel}>Volume Folder</span>
+              <input
+                className={styles.editInput}
+                type="text"
+                value={editVolumeFolder}
+                onChange={(e) => setEditVolumeFolder(e.target.value)}
+              />
+              <span className={styles.editHint}>
+                Make empty to generate the default folder.
+              </span>
+            </label>
+
+            <label className={styles.editField}>
+              <span className={styles.editLabel}>Special Version</span>
+              <select
+                className={styles.editSelect}
+                value={editSpecialVersion}
+                onChange={(e) => setEditSpecialVersion(e.target.value)}
+              >
+                {SPECIAL_VERSIONS.map((sv) => (
+                  <option key={sv.value} value={sv.value}>
+                    {sv.label}
+                  </option>
+                ))}
+              </select>
+              <span className={styles.editHint}>Type of volume.</span>
+            </label>
+
+            <div className={styles.editActions}>
+              <Button
+                variant="primary"
+                onClick={handleEditSave}
+                disabled={updateMutation.isPending}
+              >
+                {updateMutation.isPending ? 'Saving…' : 'Update'}
+              </Button>
+              <Button variant="ghost" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogBody>
+      </DialogFrame>
+
+      {/* ── Fix Match Dialog ────────────────────────────────── */}
+      <DialogFrame
+        open={fixMatchOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFixMatchOpen(false);
+            setFixShowConfirm(false);
+            setFixReplacing(false);
+          }
+        }}
+      >
+        <DialogHeader title="Fix Match" onClose={() => setFixMatchOpen(false)} />
+        <DialogBody>
+          {fixReplacing ? (
+            <p className={styles.dialogStatus}>
+              {fixSearchStatus}
+            </p>
+          ) : fixShowConfirm ? (
+            <div>
+              <p className={styles.confirmText}>
+                Re-match this volume to <strong>{fixMatchedTitle}</strong>?
+                <br />
+                All existing issues will be deleted and re-fetched.
+              </p>
+              <div className={styles.editActions}>
+                <Button
+                  variant="primary"
+                  onClick={handleFixConfirm}
+                  disabled={rematchMutation.isPending}
+                >
+                  {rematchMutation.isPending ? 'Rematching…' : 'Confirm'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setFixShowConfirm(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className={styles.fixSearchBar}>
+                <input
+                  type="text"
+                  className={styles.fixSearchInput}
+                  placeholder="Search ComicVine…"
+                  value={fixQuery}
+                  onChange={(e) => setFixQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleFixSearch();
+                  }}
+                />
+                <Button
+                  variant="primary"
+                  onClick={handleFixSearch}
+                  disabled={fixSearching || !fixQuery.trim()}
+                >
+                  {fixSearching ? '…' : 'Search'}
+                </Button>
+              </div>
+
+              {fixSearchStatus && (
+                <p className={styles.dialogStatus}>{fixSearchStatus}</p>
+              )}
+
+              {fixSearchResults.length > 0 && (
+                <table className={styles.fixMatchTable}>
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th className={styles.thFixYear}>Year</th>
+                      <th className={styles.thFixIssues}>Issues</th>
+                      <th>Publisher</th>
+                      <th>Type</th>
+                      <th className={styles.thFixAction}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fixSearchResults.map((result, i) => (
+                      <tr key={i}>
+                        <td className={styles.fixTitle}>{result.title}</td>
+                        <td className={styles.fixCell}>{result.year ?? '—'}</td>
+                        <td className={styles.fixCell}>{result.issue_count}</td>
+                        <td className={styles.fixCell}>{result.publisher ?? '—'}</td>
+                        <td className={styles.fixCell}>
+                          {result.special_version || 'Normal'}
+                        </td>
+                        <td>
+                          <Button
+                            variant="primary"
+                            onClick={() =>
+                              handleFixApply(result.comicvine_id, result.title)
+                            }
+                          >
+                            Select
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           )}
         </DialogBody>
       </DialogFrame>

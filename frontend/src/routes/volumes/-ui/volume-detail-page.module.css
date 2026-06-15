@@ -416,3 +416,108 @@
   font-size: 0.75rem;
   color: var(--text-dim);
 }
+
+/* ── Edit Volume Form ─────────────────────────────── */
+.editForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.editField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.editLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.editSelect,
+.editInput {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.editHint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.editActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+/* ── Fix Match ────────────────────────────────────── */
+.fixSearchBar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.fixSearchInput {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.confirmText {
+  font-size: 0.875rem;
+  color: var(--text);
+  line-height: 1.6;
+  margin: 0 0 1rem;
+}
+
+.fixMatchTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.fixMatchTable th {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.fixMatchTable td {
+  padding: 0.4rem 0.5rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+.fixTitle {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.fixCell {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.thFixYear,
+.thFixIssues {
+  width: 5rem;
+}
+
+.thFixAction {
+  width: 5rem;
+}

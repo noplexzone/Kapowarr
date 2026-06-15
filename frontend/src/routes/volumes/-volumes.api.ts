@@ -4,6 +4,8 @@ import type {
   VolumeDetailFull,
   ManualSearchResult,
   IssueHistoryEntry,
+  RootFolder,
+  ComicVineSearchResult,
 } from './-volumes.types';
 
 export const VOLUME_FULL_KEY = (id: number) =>
@@ -95,4 +97,49 @@ export async function addToBlocklist(
       issue_id: issueId,
     },
   });
+}
+
+// ── Volume settings / Edit ──────────────────────────────────────
+
+export async function updateVolume(
+  id: number,
+  data: Record<string, unknown>,
+): Promise<void> {
+  await apiClient.put(`volumes/${id}`, { json: data });
+}
+
+export async function fetchRootFolders(): Promise<RootFolder[]> {
+  const response = await apiClient.get('rootfolder');
+  return readJson<RootFolder[]>(response);
+}
+
+// ── Fix Match / ComicVine search ────────────────────────────────
+
+export async function searchVolumes(
+  query: string,
+): Promise<ComicVineSearchResult[]> {
+  const response = await apiClient.get('volumes/search', {
+    searchParams: { query, section: 'comic' },
+  });
+  return readJson<ComicVineSearchResult[]>(response);
+}
+
+export async function rematchVolume(
+  id: number,
+  comicvineId: number,
+  newTitle: string | null,
+): Promise<{ task_id: number }> {
+  const response = await apiClient.put(`volumes/${id}/rematch`, {
+    json: { comicvine_id: comicvineId, new_title: newTitle },
+  });
+  return readJson<{ task_id: number }>(response);
+}
+
+// ── Volume tasks ─────────────────────────────────────────────────
+
+export async function refreshVolume(volumeId: number): Promise<{ id: number }> {
+  const response = await apiClient.post('system/tasks', {
+    json: { cmd: 'refresh_and_scan', volume_id: volumeId },
+  });
+  return readJson<{ id: number }>(response);
 }

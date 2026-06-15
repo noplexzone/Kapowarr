@@ -50,3 +50,25 @@ export interface IssueHistoryEntry {
   downloaded_at: number | null;
   success: boolean | null;
 }
+
+export interface RootFolder {
+  id: number;
+  folder: string;
+  section: string;
+  total: number;
+  used: number;
+  free: number;
+  free_pct: number;
+  is_available: boolean;
+}
+
+export interface ComicVineSearchResult {
+  comicvine_id: number;
+  title: string;
+  year: number | null;
+  volume_number: number;
+  issue_count: number;
+  publisher: string | null;
+  description: string;
+  special_version: string;
+}

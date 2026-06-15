@@ -80,7 +80,7 @@ main:has(#massedit-toggle:checked) #library-container {
 /* Library List */
 /*  */
 #list-library {
-	--entry-width: clamp(7rem, 11%, 9rem);
+	--entry-width: clamp(8rem, 12%, 10rem);
 	display: flex;
 	align-items: flex-start;
 	flex-wrap: wrap;
@@ -98,18 +98,26 @@ main:has(#massedit-toggle:checked) #library-container {
 	text-decoration: none;
 	color: var(--dimmed-text-color);
 	background-color: var(--foreground-color);
-	border-radius: 1px;
+	border-radius: 4px;
 
-	transition: box-shadow 200ms ease-in;
+	transition: transform 150ms ease, box-shadow 200ms ease;
 }
 
 .list-entry:hover {
-	box-shadow: 0 0 12px #000;
+	transform: scale(1.03);
+	box-shadow: 0 4px 16px var(--shadow-color, rgba(0,0,0,0.25));
 	text-decoration: none;
+	z-index: 1;
 }
 
 .list-img {
 	aspect-ratio: 2/3;
+	border-radius: 6px;
+	box-shadow: 0 2px 8px var(--shadow-color, rgba(0,0,0,0.2));
+}
+
+.list-entry:hover .list-img {
+	box-shadow: 0 4px 14px var(--shadow-color, rgba(0,0,0,0.35));
 }
 
 .list-search-btn {
@@ -183,10 +191,16 @@ main:has(#massedit-toggle:checked) #library-container {
 .table-prog-bar {
 	position: absolute;
 	inset: 0;
-	background-color: var(--error-color);
+	background-color: var(--accent-color);
 	
 	transition: width 150ms ease-in-out,
 				background-color 150ms ease-in-out;
+}
+
+/* Green when fully complete */
+.list-prog-bar[style*="width: 100%"],
+.table-prog-bar[style*="width: 100%"] {
+	background-color: var(--success-color);
 }
 
 .list-prog-num,
@@ -265,12 +279,21 @@ main:has(#massedit-toggle:checked) #table-container {
 	width: 100%;
 	display: flex;
 	flex-wrap: wrap;
-	gap: clamp(.5rem, 4vw, 3rem);
+	gap: clamp(.5rem, 4vw, 1.5rem);
 
 	padding-top: 2rem;
 	color: var(--text-color);
 
 	font-size: .8rem;
+}
+
+#lib-stats table {
+	background-color: var(--foreground-color);
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: .75rem 1rem;
+	flex: 1 0 10rem;
+	max-width: 16rem;
 }
 
 #lib-stats th {
@@ -387,6 +410,14 @@ main:has(#massedit-toggle:checked) #lib-stats {
 
 	#lib-stats th {
 		width: 50%;
+	}
+
+	/* Table view — hide year and volume on narrow screens */
+	#table-container .table-year,
+	#table-container .table-volume,
+	#table-container thead th:nth-child(3),
+	#table-container thead th:nth-child(4) {
+		display: none;
 	}
 }
 

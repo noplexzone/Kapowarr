@@ -1,0 +1,124 @@
+.dashboard-container {
+	padding: clamp(1rem, 3vw, 2rem);
+	color: var(--text-color);
+}
+
+.dashboard-title {
+	font-size: 1.5rem;
+	font-weight: 400;
+	margin-bottom: 1.5rem;
+	padding-bottom: .5rem;
+	border-bottom: 2px solid var(--border-color);
+}
+
+.dashboard-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+	gap: 1rem;
+	margin-bottom: 1.5rem;
+}
+
+.dash-card {
+	padding: 1.25rem;
+}
+
+.dash-card h2 {
+	font-size: .85rem;
+	font-weight: 500;
+	color: var(--dimmed-text-color);
+	margin-bottom: .75rem;
+	text-transform: uppercase;
+	letter-spacing: .03em;
+}
+
+.dash-stat {
+	font-size: 1.5rem;
+	font-weight: 500;
+	color: var(--text-color);
+}
+
+.dash-stat--large {
+	font-size: 2.5rem;
+	font-weight: 300;
+}
+
+.dash-stat-row {
+	display: flex;
+	gap: 1.25rem;
+	flex-wrap: wrap;
+}
+
+.dash-stat-group {
+	display: flex;
+	flex-direction: column;
+	gap: .15rem;
+}
+
+.dash-stat-group .dash-stat {
+	font-size: 1.3rem;
+}
+
+.dash-list {
+	margin-top: .5rem;
+}
+
+.dash-list .empty-state {
+	padding: 1.5rem;
+}
+
+.dash-list-item {
+	display: flex;
+	align-items: center;
+	gap: .75rem;
+	padding: .6rem 0;
+	border-top: 1px solid var(--border-color);
+}
+
+.dash-list-item:first-child {
+	border-top: none;
+}
+
+.dash-list-item .dash-list-cover {
+	width: 2.5rem;
+	aspect-ratio: 2/3;
+	border-radius: 3px;
+	object-fit: cover;
+	background-color: var(--border-color);
+}
+
+.dash-list-item .dash-list-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.dash-list-item .dash-list-title {
+	font-size: .9rem;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.dash-list-item .dash-list-title a {
+	color: var(--text-color);
+	text-decoration: none;
+}
+
+.dash-list-item .dash-list-title a:hover {
+	color: var(--accent-color);
+	text-decoration: underline;
+}
+
+.dash-list-item .dash-list-meta {
+	font-size: .75rem;
+	color: var(--dimmed-text-color);
+}
+
+@media (max-width: 600px) {
+	.dashboard-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.dash-stat--large {
+		font-size: 2rem;
+	}
+}

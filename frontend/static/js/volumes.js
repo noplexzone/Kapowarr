@@ -75,6 +75,7 @@ class LibraryEntry {
 				this.list_entry.removeAttribute('monitored');
 				setIcon(monitored_button, icons.unmonitored, 'Unmonitored');
 			};
+			showToast(monitored ? 'Volume monitored' : 'Volume unmonitored', monitored ? 'success' : 'info');
 		});
 	};
 

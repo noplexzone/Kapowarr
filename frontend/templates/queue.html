@@ -9,64 +9,70 @@
 {% endblock %}
 
 {% block pre_build_rows %}
-<tr class="queue-entry">
+<tr class="queue-entry" data-id="" data-status="">
 	<td class="status-column"></td>
 	<td>
 		<a href="" target="_blank"></a>
+		<div class="queue-progress" style="display:none">
+			<div class="queue-progress-track">
+				<div class="queue-progress-fill"></div>
+			</div>
+			<span class="queue-progress-label"></span>
+		</div>
 	</td>
 	<td class="status-column">
-        <a href="" target="_blank"></a>
-    </td>
+		<a href="" target="_blank"></a>
+	</td>
 	<td class="number-column"></td>
 	<td class="number-column"></td>
 	<td class="number-column"></td>
 	<td class="option-column">
-        <button title="Move download up" class="move-up-dl">
+		<button title="Move download up" class="move-up-dl action-btn">
 			<img src="{{ url_for('static', filename='img/arrow_up.svg') }}">
-        </button>
-        <button title="Move download down" class="move-down-dl">
+		</button>
+		<button title="Move download down" class="move-down-dl action-btn">
 			<img src="{{ url_for('static', filename='img/arrow_down.svg') }}">
-        </button>
-		<button title="Remove download" class="remove-dl">
+		</button>
+		<button title="Remove download" class="remove-dl action-btn action-btn--danger">
 			<img src="{{ url_for('static', filename='img/delete.svg') }}">
 		</button>
-        <button title="Remove and blocklist download" class="blocklist-dl">
-            <img src="{{ url_for('static', filename='img/blocklist.svg') }}">
-        </button>
+		<button title="Remove and blocklist download" class="blocklist-dl action-btn action-btn--danger">
+			<img src="{{ url_for('static', filename='img/blocklist.svg') }}">
+		</button>
 	</td>
 </tr>
 {% endblock %}
 
 {% block main %}
 <main>
-    <section class="tool-bar-container" aria-label="Tool bar">
-        <div class="tool-bar">
-            {{ icon_button(
-                "removeall-button",
-                "Remove all downloads from the queue",
-                "delete.svg",
-                "Remove All"
-            ) }}
-        </div>
-    </section>
-    <div class="icon-text-color">
-        <table>
-            <thead>
-                <tr>
-                    <th class="status-column">Status</th>
-                    <th>Title</th>
-                    <th class="status-column">Source</th>
-                    <th class="number-column">Size</th>
-                    <th class="number-column">Speed</th>
-                    <th class="number-column">Progress</th>
-                    <th class="option-column">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="queue"></tbody>
-        </table>
-    </div>
-    <section id="empty-window" class="loading-screen">
-        <p>Queue empty</p>
-    </section>
+	<section class="tool-bar-container" aria-label="Tool bar">
+		<div class="tool-bar">
+			{{ icon_button(
+				"removeall-button",
+				"Remove all downloads from the queue",
+				"delete.svg",
+				"Remove All"
+			) }}
+		</div>
+	</section>
+	<div class="queue-container icon-text-color">
+		<table>
+			<thead>
+				<tr>
+					<th class="status-column">Status</th>
+					<th>Title</th>
+					<th class="status-column">Source</th>
+					<th class="number-column">Size</th>
+					<th class="number-column">Speed</th>
+					<th class="number-column">Progress</th>
+					<th class="option-column">Actions</th>
+				</tr>
+			</thead>
+			<tbody id="queue"></tbody>
+		</table>
+	</div>
+	<section id="empty-window" class="loading-screen">
+		<p>Queue empty</p>
+	</section>
 </main>
 {% endblock main %}

@@ -76,6 +76,10 @@
 				</a>
 				<div class="sub-nav">
 					<a
+						href="{{url_base}}/dashboard"
+						class="{% if request.path == '/dashboard' %}current-nav{% endif %}"
+					>Dashboard</a>
+					<a
 						href="{{url_base}}/add"
 						class="{% if request.path == '/add' %}current-nav{% endif %}"
 					>Add Volume</a>
@@ -199,6 +203,7 @@
 		{% block main %}
 		{% endblock %}
 	</div>
+	<div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 </body>
 </html>
 

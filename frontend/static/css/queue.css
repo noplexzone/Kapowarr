@@ -1,33 +1,132 @@
 main {
-    position: relative;
+	position: relative;
 }
 
 #empty-window {
-    position: absolute;
-    inset: 0 0 0 0;
-    background-color: var(--background-color);
+	position: absolute;
+	inset: 0;
+	background-color: var(--background-color);
 }
 
 main:has(#queue tr) #empty-window,
 main:not(:has(#queue tr)) .tool-bar-container {
-    display: none;
+	display: none;
+}
+
+.queue-container {
+	padding: clamp(.5rem, 2vw, 1.5rem);
 }
 
 table {
 	width: 100%;
 	min-width: 50rem;
-	padding: 1rem;
 	color: var(--text-color);
+	border-spacing: 0 .5rem;
 }
 
-th, td {
+thead th {
 	padding: .5rem;
+	font-size: .8rem;
+	font-weight: 500;
+	color: var(--dimmed-text-color);
+	border-bottom: 2px solid var(--border-color);
 }
 
-.queue-entry > * {
+/* ---- Queue entry card ---- */
+.queue-entry {
+	transition: background-color 200ms linear;
+}
+
+.queue-entry:hover {
+	background-color: var(--hover-color);
+}
+
+.queue-entry > td {
+	padding: .65rem .5rem;
 	border-top: 1px solid var(--border-color);
+	vertical-align: top;
 }
 
+.queue-entry:first-child > td {
+	border-top: 2px solid var(--border-color);
+}
+
+/* Left accent for actively downloading */
+.queue-entry[data-status="downloading"] > td:first-child {
+	border-left: 3px solid var(--accent-color);
+	padding-left: calc(.5rem - 3px);
+}
+
+/* ---- Status column ---- */
+.queue-entry .status-column:first-child {
+	font-size: .82rem;
+}
+
+/* ---- Title column with progress bar ---- */
+.queue-entry td:nth-child(2) {
+	width: 100%;
+}
+
+.queue-entry td:nth-child(2) > a {
+	display: block;
+	margin-bottom: .35rem;
+}
+
+/* Progress bar (hidden by default, shown by JS for downloading) */
+.queue-progress {
+	margin-top: .35rem;
+}
+
+.queue-progress-track {
+	height: 6px;
+	background-color: var(--border-color);
+	border-radius: 3px;
+	overflow: hidden;
+	width: 100%;
+}
+
+.queue-progress-fill {
+	height: 100%;
+	width: 0%;
+	background-color: var(--accent-color);
+	border-radius: 3px;
+	transition: width 300ms ease;
+}
+
+.queue-progress-label {
+	display: block;
+	font-size: .65rem;
+	color: var(--dimmed-text-color);
+	margin-top: 2px;
+}
+
+/* ---- Column widths ---- */
+.status-column {
+	width: clamp(7.5rem, 11vw, 10rem);
+}
+
+.number-column {
+	width: 6.5rem;
+	white-space: nowrap;
+}
+
+.option-column {
+	width: 9rem;
+}
+
+.option-column button:not(:last-child) {
+	margin-right: .3rem;
+}
+
+.option-column .action-btn {
+	padding: .2rem .3rem;
+}
+
+.option-column .action-btn img {
+	width: 18px;
+}
+
+/* ---- Move button visibility (preserved from original) ---- */
 .queue-entry:nth-child(1 of .queue-entry:not([data-status="downloading"])) .move-up-dl,
 .queue-entry:nth-last-child(1 of .queue-entry:not([data-status="downloading"])) .move-down-dl,
 .queue-entry[data-status="downloading"] :where(.move-up-dl, .move-down-dl) {
@@ -47,28 +146,57 @@ th, td {
 	margin-left: calc(20px + 2.75rem);
 }
 
-.status-column {
-	width: clamp(7.5rem, 11vw, 10rem);
-}
+/* ---- Responsive: stack cards on narrow screens ---- */
+@media (max-width: 720px) {
+	table { min-width: unset; }
 
-.number-column {
-	width: 6.5rem;
-}
+	.queue-entry {
+		display: grid;
+		grid-template-areas:
+			"status source"
+			"title  title"
+			"progress progress"
+			"size   speed"
+			"actions actions";
+		grid-template-columns: 1fr 1fr;
+		gap: .2rem .5rem;
+		border: 1px solid var(--border-color);
+		border-radius: 6px;
+		padding: .6rem;
+		margin-bottom: .5rem;
+		background-color: var(--foreground-color);
+	}
 
-.option-column {
-	width: 9rem;
-}
+	.queue-entry > td {
+		display: block;
+		border-top: none;
+		padding: .15rem 0;
+	}
 
-.option-column button:not(:last-child) {
-    margin-right: .5rem;
-}
+	.queue-entry td:nth-child(1) { grid-area: status; }
+	.queue-entry td:nth-child(2) { grid-area: title; }
+	.queue-entry td:nth-child(3) { grid-area: source; font-size: .8rem; }
+	.queue-entry td:nth-child(4) { grid-area: size; }
+	.queue-entry td:nth-child(5) { grid-area: speed; }
+	.queue-entry td:nth-child(6) { grid-area: progress; display: none; }
+	.queue-entry td:nth-child(7) { grid-area: actions; width: auto; }
 
-.option-column button img {
-	width: 20px;
+	.option-column {
+		display: flex;
+		gap: .3rem;
+		width: auto;
+	}
+
+	thead { display: none; }
+
+	.queue-entry[data-status="downloading"] > td:first-child {
+		border-left: 3px solid var(--accent-color);
+		padding-left: .3rem;
+	}
 }
 
 @media (min-width: 720px) {
-    main {
-        width: calc(100vw - var(--nav-width));
-    }
+	main {
+		width: calc(100vw - var(--nav-width));
+	}
 }

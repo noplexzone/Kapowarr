@@ -11,7 +11,7 @@
 {% endblock %}
 
 {% block pre_build_rows %}
-	<tr data-id="" class="issue-entry" aria-label="">
+	<tr data-id="" data-status="" class="issue-entry" aria-label="">
 		<td class="issue-monitored">
 			<button data-monitored="" data-id="" title=""></button>
 		</td>
@@ -20,6 +20,7 @@
 		<td class="issue-date"></td>
 		<td class="issue-status" title="">
 			<img src="" alt="" class="issue-status-icon">
+			<span class="chip issue-status-chip"></span>
 			<div class="issue-progress" style="display:none">
 				<div class="issue-progress-track">
 					<div class="issue-progress-fill"></div>
@@ -28,23 +29,25 @@
 			</div>
 		</td>
 		<td class="action-column" aria-label="Actions">
-			{{ icon_button('', "Auto search for this issue", "search.svg") }}
-			{{ icon_button('', "Manually search for this issue", "manual_search.svg") }}
-			{{ icon_button('', "View history for this issue", "history.svg") }}
+			<button type="button" title="Auto search for this issue" aria-label="Auto search for this issue" class="action-btn"><img src="{{ url_for('static', filename='img/search.svg') }}" alt=""></button>
+			<button type="button" title="Manually search for this issue" aria-label="Manually search for this issue" class="action-btn"><img src="{{ url_for('static', filename='img/manual_search.svg') }}" alt=""></button>
+			<button type="button" title="View history for this issue" aria-label="View history for this issue" class="action-btn"><img src="{{ url_for('static', filename='img/history.svg') }}" alt=""></button>
 		</td>
 	</tr>
 	<tr class="search-entry">
 		<td class="match-column" title="">
-			<img src="">
+			<span class="chip match-chip"></span>
 		</td>
 		<td>
 			<a href="" target="_blank"></a>
 		</td>
-		<td class="source-column"></td>
+		<td class="source-column">
+			<span class="chip source-chip"></span>
+		</td>
 		<td class="search-action-column action-list" aria-label="Actions">
-			{{ icon_button('', "Download", "download.svg") }}
-			{{ icon_button('', "Force Download", "manual_search.svg") }}
-			{{ icon_button('', "Add to blocklist", "blocklist.svg") }}
+			<button type="button" class="action-btn" title="Download" aria-label="Download"><img src="{{ url_for('static', filename='img/download.svg') }}" alt=""></button>
+			<button type="button" class="action-btn" title="Force Download" aria-label="Force Download"><img src="{{ url_for('static', filename='img/manual_search.svg') }}" alt=""></button>
+			<button type="button" class="action-btn action-btn--danger" title="Add to blocklist" aria-label="Add to blocklist"><img src="{{ url_for('static', filename='img/blocklist.svg') }}" alt=""></button>
 		</td>
 	</tr>
 	<tr class="rename-before">
@@ -534,6 +537,14 @@
 						<section id="volume-tags" aria-label="Tags"></section>
 						<p id="volume-path" aria-label="Volume folder path"></p>
 						<section id="volume-description" class="description" aria-label="Description"></section>
+						<button class="description-toggle" aria-expanded="false" aria-controls="volume-description" hidden>Show more</button>
+						<div class="hero-actions" aria-label="Quick actions">
+							<button class="action-btn action-btn--primary" onclick="document.querySelector('#refresh-button').click()">Refresh &amp; Scan</button>
+							<button class="action-btn" onclick="document.querySelector('#autosearch-button').click()">Auto-Search</button>
+							<button class="action-btn" onclick="document.querySelector('#manualsearch-button').click()">Manual Search</button>
+							<button class="action-btn" onclick="document.querySelector('#edit-button').click()">Edit</button>
+							<button class="action-btn action-btn--danger" onclick="document.querySelector('#delete-button').click()">Delete</button>
+						</div>
 					</div>
 				</div>
 				<section id="volume-description-mobile" class="description" aria-label="Description"></section>
@@ -560,5 +571,14 @@
 			</div>
 		</div>
 	</main>
+</div>
+<div id="drawer-overlay" class="drawer-overlay" hidden>
+	<aside id="drawer-panel" class="drawer-panel" role="dialog" aria-modal="true" aria-label="Issue details">
+		<div class="drawer-header">
+			<h2 id="drawer-title"></h2>
+			<button class="drawer-close" aria-label="Close drawer">&times;</button>
+		</div>
+		<div class="drawer-body" id="drawer-content"></div>
+	</aside>
 </div>
 {% endblock main %}

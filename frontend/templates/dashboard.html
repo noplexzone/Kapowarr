@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
+{% endblock %}
+
+{% block main %}
+<main>
+	<section class="tool-bar-container" aria-label="Tool bar">
+		<div class="tool-bar">
+			<button id="refresh-dashboard" title="Refresh dashboard data" class="action-btn">
+				<img src="{{ url_for('static', filename='img/refresh.svg') }}" alt="">
+				Refresh
+			</button>
+		</div>
+	</section>
+	<div class="dashboard-container">
+		<h1 class="dashboard-title">Overview</h1>
+
+		<div class="dashboard-grid">
+			<section class="card dash-card" id="card-active-downloads" aria-label="Active downloads">
+				<h2>Active Downloads</h2>
+				<div class="dash-stat dash-stat--large" id="stat-active"></div>
+				<p class="text-dimmed">Currently in queue</p>
+			</section>
+
+			<section class="card dash-card" id="card-recent-downloads" aria-label="Recent downloads">
+				<h2>Recent Downloads</h2>
+				<div class="dash-stat dash-stat--large" id="stat-recent"></div>
+				<p class="text-dimmed">Last 7 days</p>
+			</section>
+
+			<section class="card dash-card" id="card-wanted" aria-label="Wanted issues">
+				<h2>Wanted Issues</h2>
+				<div class="dash-stat dash-stat--large" id="stat-wanted"></div>
+				<p class="text-dimmed">Monitored &amp; missing</p>
+			</section>
+
+			<section class="card dash-card" id="card-library" aria-label="Library stats">
+				<h2>Library</h2>
+				<div class="dash-stat-row">
+					<div class="dash-stat-group">
+						<span class="dash-stat" id="stat-volumes">—</span>
+						<span class="text-dimmed">Volumes</span>
+					</div>
+					<div class="dash-stat-group">
+						<span class="dash-stat" id="stat-issues">—</span>
+						<span class="text-dimmed">Issues</span>
+					</div>
+					<div class="dash-stat-group">
+						<span class="dash-stat" id="stat-downloaded">—</span>
+						<span class="text-dimmed">Downloaded</span>
+					</div>
+				</div>
+			</section>
+		</div>
+
+		<section class="card dash-card" id="card-recent-list" aria-label="Recently added">
+			<h2>Recently Added</h2>
+			<div id="recent-list" class="dash-list">
+				<p class="empty-state">Loading&hellip;</p>
+			</div>
+		</section>
+	</div>
+</main>
+{% endblock main %}

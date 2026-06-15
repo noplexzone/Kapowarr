@@ -302,6 +302,64 @@ function connectToWebSocket(api_key) {
 };
 
 //
+// Toast notifications
+//
+function showToast(message, type = 'info', duration = 3000) {
+	const container = document.getElementById('toast-container');
+	if (!container) return;
+	const toast = document.createElement('div');
+	toast.className = `toast ${type}`;
+	toast.textContent = message;
+	container.appendChild(toast);
+	setTimeout(() => {
+		toast.classList.add('toast-out');
+		toast.addEventListener('animationend', () => toast.remove(), { once: true });
+	}, duration);
+}
+
+//
+// Drawer (right-side panel)
+//
+let _drawerTrigger = null;
+
+function openDrawer(title, contentHtml) {
+	const overlay = document.getElementById('drawer-overlay');
+	const titleEl = document.getElementById('drawer-title');
+	const contentEl = document.getElementById('drawer-content');
+	if (!overlay || !titleEl || !contentEl) return;
+	_drawerTrigger = document.activeElement;
+	titleEl.textContent = title;
+	contentEl.innerHTML = contentHtml;
+	overlay.hidden = false;
+	// Reset animation — re-trigger by forcing reflow
+	const panel = document.getElementById('drawer-panel');
+	panel.classList.remove('drawer-closing');
+	void panel.offsetWidth;
+	// Focus the close button
+	const closeBtn = overlay.querySelector('.drawer-close');
+	if (closeBtn) closeBtn.focus();
+}
+
+function closeDrawer() {
+	const overlay = document.getElementById('drawer-overlay');
+	if (!overlay || overlay.hidden) return;
+	const panel = document.getElementById('drawer-panel');
+	if (panel) {
+		panel.classList.add('drawer-closing');
+		panel.addEventListener('animationend', () => {
+			overlay.hidden = true;
+			panel.classList.remove('drawer-closing');
+			// Restore focus
+			if (_drawerTrigger && typeof _drawerTrigger.focus === 'function')
+				_drawerTrigger.focus();
+			_drawerTrigger = null;
+		}, { once: true });
+	} else {
+		overlay.hidden = true;
+	}
+}
+
+//
 // Size conversion
 //
 const sizes = {
@@ -341,6 +399,7 @@ function convertSize(size) {
 //
 const default_values = {
 	'lib_sorting': 'title',
+	'lib_sorting_direction': null,
 	'lib_view': 'posters',
 	'lib_filter': '',
 	'theme': 'light',
@@ -426,3 +485,20 @@ applyTheme(getLocalStorage('theme')['theme']);
 
 document.querySelector('#toggle-nav').onclick = e =>
 	document.querySelector('#nav-bar').classList.toggle('show-nav');
+
+// Drawer: Escape key and overlay click to close
+document.addEventListener('keydown', e => {
+	if (e.code === 'Escape') {
+		const drawer = document.getElementById('drawer-overlay');
+		if (drawer && !drawer.hidden) {
+			e.stopImmediatePropagation();
+			closeDrawer();
+		}
+	}
+});
+
+document.addEventListener('click', e => {
+	const overlay = document.getElementById('drawer-overlay');
+	if (overlay && !overlay.hidden && e.target === overlay)
+		closeDrawer();
+});

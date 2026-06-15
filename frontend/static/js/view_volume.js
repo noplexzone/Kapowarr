@@ -96,20 +96,36 @@ class IssueEntry {
 		.then(response => {
 			this.monitored.dataset.monitored = monitored;
 			this.setMonitorIcon();
+			this.entry.classList.toggle('is-unmonitored', !monitored);
+			showToast(monitored ? 'Issue monitored' : 'Issue unmonitored', monitored ? 'success' : 'info');
 		});
 	};
 
 	setDownloaded(downloaded) {
 		if (!this.entry) return;
 		this.hideProgress();
+		const chip = this.status.querySelector('.issue-status-chip');
 		if (downloaded) {
 			setImage(this.status, images.check, 'Issue is downloaded');
-            this.status.classList.remove('error');
-            this.status.classList.add('success');
+			this.status.classList.remove('error');
+			this.status.classList.add('success');
+			this.entry.dataset.status = 'downloaded';
+			if (chip) {
+				chip.textContent = 'Downloaded';
+				chip.className = 'chip issue-status-chip chip--success';
+			}
 		} else {
 			setImage(this.status, images.cancel, 'Issue is not downloaded');
-            this.status.classList.remove('success');
-            this.status.classList.add('error');
+			this.status.classList.remove('success');
+			this.status.classList.add('error');
+			const unmonitored = this.entry.classList.contains('is-unmonitored');
+			this.entry.dataset.status = unmonitored ? 'unmonitored' : 'missing';
+			if (chip) {
+				chip.textContent = unmonitored ? 'Unmonitored' : 'Missing';
+				chip.className = unmonitored
+					? 'chip issue-status-chip'
+					: 'chip issue-status-chip chip--error';
+			}
 		};
 	};
 
@@ -119,19 +135,32 @@ class IssueEntry {
 		const bar = this.status.querySelector('.issue-progress');
 		const fill = this.status.querySelector('.issue-progress-fill');
 		const lbl = this.status.querySelector('.issue-progress-label');
+		const chip = this.status.querySelector('.issue-status-chip');
 		if (icon) icon.style.display = 'none';
 		if (bar) bar.style.display = '';
 		if (fill) fill.style.width = `${Math.min(100, Math.max(0, percent || 0))}%`;
 		if (lbl) lbl.textContent = label || '';
 		this.status.classList.remove('success', 'error');
+		this.entry.dataset.status = 'downloading';
+		if (chip) {
+			chip.textContent = 'Downloading';
+			chip.className = 'chip issue-status-chip chip--accent';
+		}
 	};
 
 	hideProgress() {
 		if (!this.entry || !this.status) return;
 		const icon = this.status.querySelector('.issue-status-icon');
 		const bar = this.status.querySelector('.issue-progress');
+		const chip = this.status.querySelector('.issue-status-chip');
 		if (icon) icon.style.display = '';
 		if (bar) bar.style.display = 'none';
+		if (chip && chip.classList.contains('chip--accent')) {
+			chip.textContent = '';
+			chip.className = 'chip issue-status-chip';
+		}
+		if (this.entry.dataset.status === 'downloading')
+			delete this.entry.dataset.status;
 	};
 };
 
@@ -155,6 +184,7 @@ function fillTable(issues, api_key) {
 		inst.monitored.dataset.id = obj.id;
 		inst.monitored.onclick = e => inst.toggleMonitored();
 		inst.setMonitorIcon();
+		if (!obj.monitored) entry.classList.add('is-unmonitored');
 
 		// Issue number
 		inst.issue_number.innerText = obj.issue_number;
@@ -234,7 +264,20 @@ function fillPage(data, api_key) {
 		link.innerText = "link";
 		tags.appendChild(link);
 	};
-	
+
+	// Status / completion chips
+	const status_chip = document.createElement('p');
+	status_chip.className = data.monitored
+		? 'vol-status-chip vol-status-monitored'
+		: 'vol-status-chip';
+	status_chip.innerText = data.monitored ? 'Monitored' : 'Unmonitored';
+	tags.appendChild(status_chip);
+	const monitored_count = data.issues.filter(i => i.monitored).length;
+	const count_chip = document.createElement('p');
+	count_chip.className = 'vol-status-chip';
+	count_chip.innerText = `${monitored_count}/${data.issues.length} issues`;
+	tags.appendChild(count_chip);
+
 	// Path
 	const path = ViewEls.vol_data.path;
 	path.innerText = data.folder;
@@ -252,6 +295,20 @@ function fillPage(data, api_key) {
 	mapButtons(volume_id);
 
 	hide([ViewEls.views.loading], [ViewEls.views.main]);
+
+	// Description "show more" toggle — measured after main is visible
+	requestAnimationFrame(() => {
+		const desc = ViewEls.vol_data.description;
+		const toggle = document.querySelector('.description-toggle');
+		if (!toggle) return;
+		if (desc.scrollHeight > desc.clientHeight + 2)
+			toggle.hidden = false;
+		toggle.addEventListener('click', () => {
+			const expanded = desc.classList.toggle('description--expanded');
+			toggle.textContent = expanded ? 'Show less' : 'Show more';
+			toggle.setAttribute('aria-expanded', String(expanded));
+		});
+	});
 
 	const table = document.querySelector('#files-window tbody');
 	table.innerHTML = '';
@@ -271,7 +328,7 @@ function fillPage(data, api_key) {
         entry.querySelector('.gf-size').innerText = convertSize(gf.size);
         entry.querySelector('.gf-delete button').onclick = e =>
             sendAPI("DELETE", `/files/${gf.id}`, api_key)
-            .then(response => entry.remove());
+            .then(response => { entry.remove(); showToast('File deleted', 'success'); });
 
         table.appendChild(entry);
 	});
@@ -299,6 +356,7 @@ function toggleMonitored(api_key) {
 				icons.unmonitored,
 				'Volume is unmonitored. Click to monitor.'
 			);
+		showToast(monitored ? 'Volume monitored' : 'Volume unmonitored', monitored ? 'success' : 'info');
 	});
 };
 
@@ -505,25 +563,24 @@ function showManualSearch(api_key, issue_id=null) {
 			const entry = ViewEls.pre_build.manual_search.cloneNode(true);
 			tbody.appendChild(entry);
 
-			const match = entry.querySelector('.match-column');
-			if (result.match)
-				setImage(
-					match,
-					images.check,
-					'Search result matches'
-				);
-			else
-				setImage(
-					match,
-					images.cancel,
-					result.match_issue
-				);
+			// Match chip
+			const matchChip = entry.querySelector('.match-chip');
+			if (result.match) {
+				matchChip.textContent = 'Match';
+				matchChip.className = 'chip match-chip chip--success';
+			} else {
+				matchChip.textContent = result.match_issue || 'No match';
+				matchChip.className = 'chip match-chip chip--error';
+			}
 
 			const title = entry.querySelector('a');
 			title.href = result.link;
 			title.innerText = result.display_title;
 
-			entry.querySelector('.source-column').innerText = result.source;
+			// Source chip
+			const sourceChip = entry.querySelector('.source-chip');
+			sourceChip.textContent = result.source;
+			sourceChip.className = 'chip source-chip';
 
 			const download_button = entry.querySelector('.search-action-column :nth-child(1)');
 			download_button.classList.add('icon-text-color');
@@ -540,10 +597,10 @@ function showManualSearch(api_key, issue_id=null) {
 				// Show blocklist button
 				blocklist_button.onclick =
 					e => blockManualSearch(
-                        result.link, result.display_title,
-                        volume_id, issue_id,
+						result.link, result.display_title,
+						volume_id, issue_id,
 						blocklist_button,
-						match,
+						matchChip,
 						api_key
 					);
 			else
@@ -581,26 +638,22 @@ function addManualSearch(link, force, button, api_key, issue_id=null, display_ti
 };
 
 function blockManualSearch(
-    web_link, web_title,
-    volume_id, issue_id,
-    button, match,
-    api_key
+	web_link, web_title,
+	volume_id, issue_id,
+	button, matchChip,
+	api_key
 ) {
 	sendAPI('POST', '/blocklist', api_key, {}, {
-        web_link: web_link,
-        web_title: web_title,
-        volume_id: volume_id,
-        issue_id: issue_id,
+		web_link: web_link,
+		web_title: web_title,
+		volume_id: volume_id,
+		issue_id: issue_id,
 		reason_id: 4
 	})
 	.then(response => {
-        console.log(button, match);
 		button.querySelector('img').src = `${url_base}/static/img/check.svg`;
-        setImage(
-            match,
-            'cancel.svg',
-            'Link is blocklisted'
-        );
+		matchChip.textContent = 'Blocklisted';
+		matchChip.className = 'chip match-chip chip--error';
 	});
 };
 
@@ -790,16 +843,21 @@ function convertVolume(api_key, issue_id=null) {
 // Issue History
 //
 function showIssueHistory(api_key, issue_id) {
-	const table = document.querySelector('#issue-history-table');
-	const empty_msg = document.querySelector('#issue-history-window .empty-rename-message');
-	table.innerHTML = '';
+	const table = document.createElement('table');
+	const empty_msg = document.createElement('p');
+	empty_msg.className = 'empty-rename-message';
+	empty_msg.innerText = 'No history for this issue';
 
 	fetchAPI('/activity/history', api_key, {issue_id: issue_id})
 	.then(json => {
 		if (!json.result.length) {
-			hide([table], [empty_msg]);
+			openDrawer('Issue History', empty_msg.outerHTML);
 		} else {
-			hide([empty_msg], [table]);
+			table.innerHTML = '';
+			const thead = document.createElement('thead');
+			thead.innerHTML = '<tr><th>Source</th><th>Title</th><th>Downloaded At</th><th>Status</th></tr>';
+			table.appendChild(thead);
+			const tbody = document.createElement('tbody');
 			json.result.forEach(obj => {
 				const row = document.createElement('tr');
 
@@ -833,10 +891,11 @@ function showIssueHistory(api_key, issue_id) {
 				else status_td.innerText = '';
 				row.appendChild(status_td);
 
-				table.appendChild(row);
+				tbody.appendChild(row);
 			});
+			table.appendChild(tbody);
+			openDrawer('Issue History', table.outerHTML);
 		}
-		showWindow('issue-history-window');
 	});
 };
 
@@ -1276,7 +1335,7 @@ function showIssueInfo(issue_id, api_key) {
             entry.querySelector('.f-size').innerText = convertSize(f.size);
             entry.querySelector('.f-delete button').onclick = e =>
                 sendAPI("DELETE", `/files/${f.id}`, api_key)
-                .then(response => entry.remove());
+                .then(response => { entry.remove(); showToast('File deleted', 'success'); });
 
             files_table.appendChild(entry);
 		});

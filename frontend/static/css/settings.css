@@ -14,10 +14,12 @@
 .settings-container h2 {
 	margin-bottom: 1rem;
 
-	border-bottom: 1px solid var(--border-color);
+	border-bottom: 2px solid var(--border-color);
+	padding-bottom: .5rem;
 
 	font-weight: 500;
-	font-size: 1.5rem;
+	font-size: 1.1rem;
+	color: var(--text-color);
 }
 
 .settings-container h2:not(:first-of-type) {

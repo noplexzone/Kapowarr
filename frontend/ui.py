@@ -51,6 +51,11 @@ def ui_login():
     return render('login.html')
 
 
+@ui.route('/dashboard', methods=methods)
+def ui_dashboard():
+    return render('dashboard.html')
+
+
 @ui.route('/', methods=methods)
 def ui_volumes():
     return render('volumes.html')

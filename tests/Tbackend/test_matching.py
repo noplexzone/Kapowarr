@@ -92,3 +92,127 @@ def test_viz_media_volume_title_matches_normal_manga_issue_search():
         )
 
     assert match == {'match': True, 'match_issue': None}
+
+
+def test_volume_search_matches_full_coverage_result():
+    """Volume search: a result covering issues 1-5 should match a 5-issue volume."""
+    result = cast(SearchResultData, {
+        'series': 'Jujutsu Kaisen',
+        'year': 2020,
+        'volume_number': 1,
+        'special_version': SpecialVersion.NORMAL,
+        'issue_number': (1.0, 5.0),
+        'annual': False,
+        'link': 'https://example.invalid/jjk-vol1-5',
+        'display_title': 'Jujutsu Kaisen (001-005) (2020)',
+        'source': 'test',
+    })
+
+    with patch('backend.implementations.matching.blocklist_contains', return_value=False):
+        match = check_search_result_match(
+            result,
+            _volume(),
+            [
+                _issue(1.0, 'Issue 1'),
+                _issue(2.0, 'Issue 2'),
+                _issue(3.0, 'Issue 3'),
+                _issue(4.0, 'Issue 4'),
+                _issue(5.0, 'Issue 5'),
+            ],
+            {1.0: 2020, 2.0: 2020, 3.0: 2020, 4.0: 2020, 5.0: 2020},
+            calculated_issue_number=None,
+        )
+
+    assert match == {'match': True, 'match_issue': None}
+
+
+def test_volume_search_rejects_single_issue_result():
+    """Volume search: a single-issue result covering only issue 1 should NOT match."""
+    result = cast(SearchResultData, {
+        'series': 'Jujutsu Kaisen',
+        'year': 2020,
+        'volume_number': 1,
+        'special_version': SpecialVersion.NORMAL,
+        'issue_number': 1.0,
+        'annual': False,
+        'link': 'https://example.invalid/jjk-001',
+        'display_title': 'Jujutsu Kaisen 001 (2020)',
+        'source': 'test',
+    })
+
+    with patch('backend.implementations.matching.blocklist_contains', return_value=False):
+        match = check_search_result_match(
+            result,
+            _volume(),
+            [
+                _issue(1.0, 'Issue 1'),
+                _issue(2.0, 'Issue 2'),
+                _issue(3.0, 'Issue 3'),
+                _issue(4.0, 'Issue 4'),
+                _issue(5.0, 'Issue 5'),
+            ],
+            {1.0: 2020, 2.0: 2020, 3.0: 2020, 4.0: 2020, 5.0: 2020},
+            calculated_issue_number=None,
+        )
+
+    assert match == {'match': False, 'match_issue': "Doesn't cover all volume issues"}
+
+
+def test_issue_search_exact_match():
+    """Issue search: result for exactly issue 3 should match when searching issue 3."""
+    result = cast(SearchResultData, {
+        'series': 'Jujutsu Kaisen',
+        'year': 2020,
+        'volume_number': 1,
+        'special_version': SpecialVersion.NORMAL,
+        'issue_number': 3.0,
+        'annual': False,
+        'link': 'https://example.invalid/jjk-003',
+        'display_title': 'Jujutsu Kaisen 003 (2020)',
+        'source': 'test',
+    })
+
+    with patch('backend.implementations.matching.blocklist_contains', return_value=False):
+        match = check_search_result_match(
+            result,
+            _volume(),
+            [
+                _issue(1.0, 'Issue 1'),
+                _issue(2.0, 'Issue 2'),
+                _issue(3.0, 'Issue 3'),
+            ],
+            {1.0: 2020, 2.0: 2020, 3.0: 2020},
+            calculated_issue_number=3.0,
+        )
+
+    assert match == {'match': True, 'match_issue': None}
+
+
+def test_issue_search_rejects_wrong_issue():
+    """Issue search: result for issue 1 should NOT match when searching issue 3."""
+    result = cast(SearchResultData, {
+        'series': 'Jujutsu Kaisen',
+        'year': 2020,
+        'volume_number': 1,
+        'special_version': SpecialVersion.NORMAL,
+        'issue_number': 1.0,
+        'annual': False,
+        'link': 'https://example.invalid/jjk-001',
+        'display_title': 'Jujutsu Kaisen 001 (2020)',
+        'source': 'test',
+    })
+
+    with patch('backend.implementations.matching.blocklist_contains', return_value=False):
+        match = check_search_result_match(
+            result,
+            _volume(),
+            [
+                _issue(1.0, 'Issue 1'),
+                _issue(2.0, 'Issue 2'),
+                _issue(3.0, 'Issue 3'),
+            ],
+            {1.0: 2020, 2.0: 2020, 3.0: 2020},
+            calculated_issue_number=3.0,
+        )
+
+    assert match == {'match': False, 'match_issue': "Issue numbers don't match"}

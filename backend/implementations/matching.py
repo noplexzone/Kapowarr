@@ -502,16 +502,17 @@ def check_search_result_match(
         SpecialVersion.VOLUME_AS_ISSUE
     ):
         if calculated_issue_number is None:
-            # Volume search
-            if not all(
-                i in number_to_year
-                for i in force_range(issue_number)
-            ):
-                # One of the extracted issue numbers is not found in volume
-                return {
-                    'match': False,
-                    'match_issue': "Issue numbers don't match"
-                }
+            # Volume search — result must cover the full volume range
+            volume_issue_nums = [n for n in number_to_year.keys()]
+            if volume_issue_nums:
+                vol_start = min(volume_issue_nums)
+                vol_end = max(volume_issue_nums)
+                result_range = force_range(issue_number)
+                if result_range[0] > vol_start or result_range[1] < vol_end:
+                    return {
+                        'match': False,
+                        'match_issue': "Doesn't cover all volume issues"
+                    }
 
         elif issue_number != calculated_issue_number:
             # Issue search, but

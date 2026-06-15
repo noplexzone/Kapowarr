@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Notice } from '@/components/primitives';
+import { useShellStore } from '@/platform/shell/store';
 import {
   settingsQueryOptions,
   updateSettings,
@@ -24,6 +25,10 @@ import {
   addRemoteMapping,
   updateRemoteMapping,
   deleteRemoteMapping,
+  rootFoldersQueryOptions,
+  ROOT_FOLDERS_KEY,
+  addRootFolder,
+  deleteRootFolder,
 } from '../-settings.api';
 import type { AllSettings, NZBIndexer, ExternalClient, RemoteMapping } from '../-settings.types';
 import styles from './settings-page.module.css';
@@ -69,6 +74,7 @@ export function SettingsPage() {
     setThemeState(val);
     localStorage.setItem('kapowarr-theme', val);
     document.documentElement.dataset.theme = val;
+    useShellStore.getState().setTheme(val);
   };
 
   const str = (key: keyof AllSettings) => String((form[key] as string | number | boolean | null | undefined) ?? '');
@@ -211,6 +217,10 @@ export function SettingsPage() {
             <option value="store_date">Store Date</option>
           </select>
         </Field>
+      </Section>
+
+      <Section title="Root Folders">
+        <RootFoldersSection />
       </Section>
 
       <Section title="Download">
@@ -751,6 +761,76 @@ function RemoteMappingsSection() {
           <Button variant="primary" onClick={() => { resetForm(); setShowForm(true); }}>Add Remote Path Mapping</Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------- Root Folders Section ---------- */
+
+function RootFoldersSection() {
+  const queryClient = useQueryClient();
+  const { data: folders } = useSuspenseQuery(rootFoldersQueryOptions());
+  const [newPath, setNewPath] = useState('');
+  const [newSection, setNewSection] = useState('comic');
+
+  const addMutation = useMutation({
+    mutationFn: ({ folder, section }: { folder: string; section: string }) => addRootFolder(folder, section),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ROOT_FOLDERS_KEY });
+      setNewPath('');
+    },
+  });
+
+  const delMutation = useMutation({
+    mutationFn: (id: number) => deleteRootFolder(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ROOT_FOLDERS_KEY });
+    },
+  });
+
+  const formatBytes = (bytes: number | null): string => {
+    if (bytes === null || bytes === undefined) return '—';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    let size = bytes;
+    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+    return `${size.toFixed(1)} ${units[i]}`;
+  };
+
+  return (
+    <div>
+      {folders.length === 0 && <p className={styles.emptyList}>No root folders configured.</p>}
+      {folders.map(rf => (
+        <div key={rf.id} className={styles.indexerRow}>
+          <div className={styles.clientHeader}>
+            <span><strong>{rf.folder}</strong></span>
+            <span className={styles.clientType}>{rf.section}</span>
+          </div>
+          <div className={styles.clientMeta}>
+            Free: {formatBytes(rf.free_space)} / Total: {formatBytes(rf.total_space)}
+          </div>
+          <div className={styles.actionBtns}>
+            <button className={styles.smallBtn} type="button" onClick={() => delMutation.mutate(rf.id)} disabled={delMutation.isPending}>Delete</button>
+          </div>
+        </div>
+      ))}
+      <div className={styles.inlineForm}>
+        <Field label="Path">
+          <input className={styles.input} value={newPath} onChange={e => setNewPath(e.target.value)} placeholder="/path/to/comics" />
+        </Field>
+        <Field label="Section">
+          <select className={styles.select} value={newSection} onChange={e => setNewSection(e.target.value)}>
+            <option value="comic">Comics</option>
+            <option value="manga">Manga</option>
+          </select>
+        </Field>
+        <div className={styles.actionBtns}>
+          <Button variant="primary" onClick={() => addMutation.mutate({ folder: newPath, section: newSection })}
+            disabled={addMutation.isPending || !newPath.trim()}>
+            {addMutation.isPending ? 'Adding…' : 'Add Root Folder'}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

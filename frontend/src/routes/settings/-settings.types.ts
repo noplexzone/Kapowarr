@@ -85,3 +85,11 @@ export interface RemoteMapping {
   remote_path: string;
   local_path: string;
 }
+
+export interface RootFolder {
+  id: number;
+  folder: string;
+  section: string;
+  free_space: number | null;
+  total_space: number | null;
+}

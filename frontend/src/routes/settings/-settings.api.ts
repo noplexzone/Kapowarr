@@ -105,3 +105,34 @@ export async function updateRemoteMapping(id: number, data: Partial<RemoteMappin
 export async function deleteRemoteMapping(id: number): Promise<void> {
   await apiClient.delete(`remotemapping/${id}`);
 }
+
+// Root Folders
+export const ROOT_FOLDERS_KEY = ['root-folders'] as const;
+
+export interface RootFolder {
+  id: number;
+  folder: string;
+  section: string;
+  free_space: number | null;
+  total_space: number | null;
+}
+
+export function rootFoldersQueryOptions() {
+  return queryOptions({
+    queryKey: ROOT_FOLDERS_KEY,
+    queryFn: () => apiClient.get('rootfolder').then(res => readJson<RootFolder[]>(res)),
+    staleTime: 30_000,
+  });
+}
+
+export async function addRootFolder(folder: string, section: string): Promise<RootFolder> {
+  return apiClient.post('rootfolder', { json: { folder, section } }).then(res => readJson<RootFolder>(res));
+}
+
+export async function updateRootFolder(id: number, data: Partial<{ folder: string; section: string }>): Promise<void> {
+  await apiClient.put(`rootfolder/${id}`, { json: data });
+}
+
+export async function deleteRootFolder(id: number): Promise<void> {
+  await apiClient.delete(`rootfolder/${id}`);
+}

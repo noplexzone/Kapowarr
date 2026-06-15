@@ -211,15 +211,19 @@ def auth(method):
         if not request.path.endswith('/cover'):
             LOGGER.debug(f'{request.method} {request.path}')
 
-        try:
-            extract_key(request, 'api_key')
-        except (KeyNotFound, InvalidKeyValue):
-            ip = request.environ.get(
-                'HTTP_X_FORWARDED_FOR',
-                request.remote_addr
-            )
-            LOGGER.warning(f'Unauthorised request from {ip}')
-            return return_api({}, 'ApiKeyInvalid', 401)
+        # Skip api_key validation when no auth password is configured.
+        # This matches the standard *arr behaviour: a fresh install
+        # (no password set) allows requests without authentication.
+        if getattr(Settings().sv, 'auth_password', None):
+            try:
+                extract_key(request, 'api_key')
+            except (KeyNotFound, InvalidKeyValue):
+                ip = request.environ.get(
+                    'HTTP_X_FORWARDED_FOR',
+                    request.remote_addr
+                )
+                LOGGER.warning(f'Unauthorised request from {ip}')
+                return return_api({}, 'ApiKeyInvalid', 401)
 
         StartTypeHandlers.diffuse_timer(StartType.RESTART_HOSTING_CHANGES)
 

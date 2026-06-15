@@ -36,6 +36,7 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
     publisher: raw.publisher ?? '',
     volume_number: raw.volume_number ?? 0,
     special_version: raw.special_version ?? '',
+    section: raw.section ?? 'comic',
     description: raw.description ?? undefined,
     site_url: raw.site_url ?? undefined,
     monitored: Boolean(raw.monitored),

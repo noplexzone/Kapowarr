@@ -304,6 +304,7 @@ class Volume:
                 monitored, monitor_new_issues,
                 v.folder, root_folder,
                 rf.folder AS root_folder_path,
+                rf.section,
                 (
                     SELECT COUNT(*)
                     FROM issues

@@ -17,6 +17,7 @@ export interface VolumeDetailFull {
   publisher: string;
   volume_number: number;
   special_version: string;
+  section: string;
   description?: string;
   site_url?: string;
   monitored: boolean;

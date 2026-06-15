@@ -338,8 +338,11 @@ export function VolumeDetailPage() {
   return (
     <div className={styles.page}>
       <nav className={styles.breadcrumb}>
-        <Link to="/comics" className={styles.breadcrumbLink}>
-          Comics
+        <Link
+          to={volume.section === 'manga' ? '/manga' : '/comics'}
+          className={styles.breadcrumbLink}
+        >
+          {volume.section === 'manga' ? 'Manga' : 'Comics'}
         </Link>
         <span className={styles.breadcrumbSep}>/</span>
         <span className={styles.breadcrumbCurrent}>{volume.title}</span>

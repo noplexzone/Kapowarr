@@ -23,36 +23,46 @@
 		<div class="dashboard-grid">
 			<section class="card dash-card" id="card-active-downloads" aria-label="Active downloads">
 				<h2>Active Downloads</h2>
-				<div class="dash-stat dash-stat--large" id="stat-active"></div>
+				<div class="dash-stat dash-stat--large" id="stat-active">—</div>
 				<p class="text-dimmed">Currently in queue</p>
 			</section>
 
 			<section class="card dash-card" id="card-recent-downloads" aria-label="Recent downloads">
 				<h2>Recent Downloads</h2>
-				<div class="dash-stat dash-stat--large" id="stat-recent"></div>
+				<div class="dash-stat dash-stat--large" id="stat-recent">—</div>
 				<p class="text-dimmed">Last 7 days</p>
 			</section>
 
 			<section class="card dash-card" id="card-wanted" aria-label="Wanted issues">
 				<h2>Wanted Issues</h2>
-				<div class="dash-stat dash-stat--large" id="stat-wanted"></div>
-				<p class="text-dimmed">Monitored &amp; missing</p>
+				<div class="dash-stat dash-stat--large" id="stat-wanted">—</div>
+				<p class="text-dimmed">Monitored &amp; missing — comics + manga</p>
 			</section>
 
-			<section class="card dash-card" id="card-library" aria-label="Library stats">
-				<h2>Library</h2>
+			<section class="card dash-card" id="card-library-comics" aria-label="Comics library">
+				<h2>Comics Library</h2>
 				<div class="dash-stat-row">
 					<div class="dash-stat-group">
-						<span class="dash-stat" id="stat-volumes">—</span>
+						<span class="dash-stat" id="stat-comic-volumes">—</span>
 						<span class="text-dimmed">Volumes</span>
 					</div>
 					<div class="dash-stat-group">
-						<span class="dash-stat" id="stat-issues">—</span>
+						<span class="dash-stat" id="stat-comic-issues">—</span>
 						<span class="text-dimmed">Issues</span>
 					</div>
+				</div>
+			</section>
+
+			<section class="card dash-card" id="card-library-manga" aria-label="Manga library">
+				<h2>Manga Library</h2>
+				<div class="dash-stat-row">
 					<div class="dash-stat-group">
-						<span class="dash-stat" id="stat-downloaded">—</span>
-						<span class="text-dimmed">Downloaded</span>
+						<span class="dash-stat" id="stat-manga-volumes">—</span>
+						<span class="text-dimmed">Volumes</span>
+					</div>
+					<div class="dash-stat-group">
+						<span class="dash-stat" id="stat-manga-issues">—</span>
+						<span class="text-dimmed">Issues</span>
 					</div>
 				</div>
 			</section>

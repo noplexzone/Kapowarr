@@ -215,15 +215,24 @@ This flows better for ARIA.
 }
 .action-column {
 	width: 7rem;
+	display: flex;
+	align-items: center;
+	gap: .3rem;
 }
 
 .action-column > :not(:first-child) {
-	margin-left: .5rem;
+	margin-left: 0;
 }
 
 /* Compact padding for icon-only action buttons */
 .action-column .action-btn {
-	padding: .25rem;
+	padding: .2rem .3rem;
+	height: auto;
+	min-width: auto;
+}
+
+/* Override old button height rule for action column */
+.action-column button {
 	height: auto;
 }
 

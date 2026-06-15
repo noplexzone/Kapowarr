@@ -277,29 +277,38 @@ main:has(#massedit-toggle:checked) #table-container {
 /*  */
 #lib-stats {
 	width: 100%;
-	display: flex;
-	flex-wrap: wrap;
-	gap: clamp(.5rem, 4vw, 1.5rem);
-
 	padding-top: 2rem;
 	color: var(--text-color);
-
 	font-size: .8rem;
 }
 
-#lib-stats table {
+.stats-card {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .75rem 1.5rem;
 	background-color: var(--foreground-color);
 	border: 1px solid var(--border-color);
 	border-radius: 6px;
-	padding: .75rem 1rem;
-	flex: 1 0 10rem;
-	max-width: 16rem;
+	padding: 1rem 1.25rem;
 }
 
-#lib-stats th {
-	padding-right: 1rem;
-	padding-block: .25rem;
-	text-align: right;
+.stats-group {
+	display: flex;
+	flex-direction: column;
+	gap: .1rem;
+	min-width: 5rem;
+}
+
+.stats-label {
+	color: var(--dimmed-text-color);
+	font-size: .7rem;
+	text-transform: uppercase;
+	letter-spacing: .04em;
+}
+
+.stats-value {
+	font-size: 1.1rem;
+	font-weight: 500;
 }
 
 /*  */

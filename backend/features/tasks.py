@@ -183,7 +183,8 @@ class MassRenameIssue(Task):
             self._volume_id,
             self._issue_id,
             filepath_filter=self.filepath_filter,
-            update_websocket=True
+            update_websocket=True,
+            stop_fn=lambda: self.stop
         )
 
         return
@@ -431,7 +432,8 @@ class MassRenameVolume(Task):
         mass_rename(
             self._volume_id,
             filepath_filter=self.filepath_filter,
-            update_websocket=True
+            update_websocket=True,
+            stop_fn=lambda: self.stop
         )
 
         return

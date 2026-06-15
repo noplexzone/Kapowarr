@@ -9,7 +9,7 @@ from __future__ import annotations
 from os.path import abspath, basename, isdir, isfile, join, splitext
 from re import compile
 from string import Formatter
-from typing import Dict, List, Tuple, Type, Union
+from typing import Callable, Dict, List, Optional, Tuple, Type, Union
 
 from backend.base.custom_exceptions import InvalidKeyValue, IssueNotFound
 from backend.base.definitions import (SV_TO_FULL_TERM, SV_TO_SHORT_TERM,
@@ -821,7 +821,8 @@ def mass_rename(
     issue_id: Union[int, None] = None,
     filepath_filter: Union[List[str], None] = None,
     update_websocket: bool = False,
-    process_individual_files: bool = True
+    process_individual_files: bool = True,
+    stop_fn: Optional[Callable[[], bool]] = None
 ) -> List[str]:
     """Rename files so that they follow the naming formats.
 
@@ -843,6 +844,11 @@ def mass_rename(
         process_individual_files (bool, optional): Set the ownership,
             permissions and date for all folders and/or files after renaming.
             Defaults to True.
+
+        stop_fn (Optional[Callable[[], bool]], optional): Callable that
+            returns True when the rename should stop early. Checked before
+            each file rename.
+            Defaults to None.
 
     Returns:
         List[str]: The new filenames of all files, even files that haven't been
@@ -873,6 +879,8 @@ def mass_rename(
         ws = WebSocket()
         total_renames = len(renames)
         for idx, (before, after) in enumerate(renames.items()):
+            if stop_fn and stop_fn():
+                break
             ws.emit(TaskStatusEvent(
                 f'Renaming file {idx+1}/{total_renames}'
             ))
@@ -880,6 +888,8 @@ def mass_rename(
 
     else:
         for before, after in renames.items():
+            if stop_fn and stop_fn():
+                break
             rename_file(before, after)
 
     FilesDB.update_filepaths(renames)

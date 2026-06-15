@@ -1,6 +1,6 @@
-import { useState, useDeferredValue } from 'react';
+import { useState, useDeferredValue, useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
 import {
@@ -18,9 +18,18 @@ interface DiscoveryPageProps {
 
 export function DiscoveryPage({ section, type }: DiscoveryPageProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
   const [arcId, setArcId] = useState<number | null>(null);
   const [rawArcSearch, setRawArcSearch] = useState('');
   const arcSearch = useDeferredValue(rawArcSearch);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    queryClient.invalidateQueries({ queryKey: ['discovery'] });
+    // Brief visual feedback — the refetch will update isFetching
+    setTimeout(() => setRefreshing(false), 600);
+  }, [queryClient]);
 
   const setSection = (s: DiscoverySection) =>
     navigate({ to: '/discovery', search: (prev: Record<string, unknown>) => ({ ...prev, section: s }) });
@@ -50,18 +59,28 @@ export function DiscoveryPage({ section, type }: DiscoveryPageProps) {
             Story Arcs
           </button>
         </div>
-        <div className={styles.sectionToggle}>
+        <div className={styles.toolbarRight}>
+          <div className={styles.sectionToggle}>
+            <button
+              className={`${styles.sectionBtn}${section === 'comic' ? ` ${styles.sectionActive}` : ''}`}
+              onClick={() => setSection('comic')}
+            >
+              Comics
+            </button>
+            <button
+              className={`${styles.sectionBtn}${section === 'manga' ? ` ${styles.sectionActive}` : ''}`}
+              onClick={() => setSection('manga')}
+            >
+              Manga
+            </button>
+          </div>
           <button
-            className={`${styles.sectionBtn}${section === 'comic' ? ` ${styles.sectionActive}` : ''}`}
-            onClick={() => setSection('comic')}
+            className={styles.refreshBtn}
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh from ComicVine"
           >
-            Comics
-          </button>
-          <button
-            className={`${styles.sectionBtn}${section === 'manga' ? ` ${styles.sectionActive}` : ''}`}
-            onClick={() => setSection('manga')}
-          >
-            Manga
+            ↻
           </button>
         </div>
       </div>

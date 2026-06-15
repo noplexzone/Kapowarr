@@ -58,6 +58,35 @@
   overflow: hidden;
 }
 
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.refreshBtn {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.refreshBtn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.refreshBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .sectionBtn {
   padding: 0.35rem 0.75rem;
   background: none;

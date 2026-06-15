@@ -48,7 +48,13 @@ _NON_ENGLISH_PUBLISHERS = frozenset({
     # English-language manga publishers / imprints
     'viz media', 'viz', 'tokyopop', 'yen press', 'seven seas entertainment',
     'vertical', 'vertical comics', 'udon entertainment',
-    'digital manga publishing', 'gen manga', 'aurora publishing',
+    'digital manga publishing', 'digital manga guild', 'gen manga', 'aurora publishing',
+    # English-language manga publishers / imprints (extended)
+    'j-novel club', 'cross infinite world', 'one peace books',
+    'manga planet', 'ghost ship', 'fakku books',
+    'irodori comics', 'denpa', 'ablaze manga', 'cmx', 'bandai entertainment',
+    # The shorter alias so substring check catches "Seven Seas" without "Entertainment"
+    'seven seas',
     # French/European manga publishers
     'pika edition', 'pika', 'taifu comics', 'ki-oon', 'kana',
     'kurokawa', 'tonkam', 'delcourt tonkam', 'glenat manga',
@@ -872,7 +878,9 @@ class ComicVine:
                     for v in (vol_page.get('results') or []):
                         pub = ((v.get('publisher') or {}).get('name') or '').lower()
                         if (pub in _NON_ENGLISH_PUBLISHERS
-                                or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)):
+                                or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
+                                or pub in _ENGLISH_MANGA_PUBLISHERS
+                                or any(p in pub for p in _ENGLISH_MANGA_PUBLISHERS)):
                             non_english_vol_ids.add(int(v['id']))
 
         vol_ids_int = tuple(
@@ -960,6 +968,10 @@ class ComicVine:
             pub = ((v.get('publisher') or {}).get('name') or '').lower()
             return pub in _NON_ENGLISH_PUBLISHERS or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
 
+        def _is_english_manga_pub(v: Dict[str, Any]) -> bool:
+            pub = ((v.get('publisher') or {}).get('name') or '').lower()
+            return pub in _ENGLISH_MANGA_PUBLISHERS or any(p in pub for p in _ENGLISH_MANGA_PUBLISHERS)
+
         def _has_non_ascii_title(v: Dict[str, Any]) -> bool:
             return any(ord(c) > 127 for c in (v.get('name') or ''))
 
@@ -967,6 +979,7 @@ class ComicVine:
             v for v in all_results
             if _year(v) >= cutoff
             and not _is_non_english(v)
+            and not _is_english_manga_pub(v)
             and not _has_non_ascii_title(v)
         ]
         formatted = [self.__format_volume_output(v) for v in pre_filtered]

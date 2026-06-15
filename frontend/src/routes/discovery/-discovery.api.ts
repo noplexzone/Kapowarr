@@ -11,6 +11,7 @@ export function discoveryVolumeQueryOptions(type: 'upcoming' | 'new', section: D
         .then(res => readJson<any[]>(res))
         .then(items => items.map(item => normalizeDiscoveryItem(item, type))),
     staleTime: 5 * 60_000,
+    refetchOnMount: false,
   });
 }
 
@@ -53,6 +54,7 @@ export function storyArcsQueryOptions(query: string, section: DiscoverySection) 
         .then(res => readJson<StoryArc[]>(res)),
     staleTime: 5 * 60_000,
     enabled: query.length >= 2,
+    refetchOnMount: false,
   });
 }
 

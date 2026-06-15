@@ -308,6 +308,7 @@ function NZBIndexersSection() {
   const [formData, setFormData] = useState({ name: '', base_url: '', api_key: '', categories: '', enabled: true });
   const [testResult, setTestResult] = useState<{success: boolean; description: string | null} | null>(null);
   const [testPending, setTestPending] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
 
   const addMutation = useMutation({
     mutationFn: (data: Partial<NZBIndexer>) => addNzbIndexer(data),
@@ -337,6 +338,7 @@ function NZBIndexersSection() {
     setEditingId(null);
     setFormData({ name: '', base_url: '', api_key: '', categories: '', enabled: true });
     setTestResult(null);
+    setShowSecret(false);
   };
 
   const startEdit = (idx: NZBIndexer) => {
@@ -393,7 +395,13 @@ function NZBIndexersSection() {
             <input className={styles.input} value={formData.base_url} onChange={e => setFormData(prev => ({ ...prev, base_url: e.target.value }))} />
           </Field>
           <Field label="API Key">
-            <input className={styles.input} value={formData.api_key} onChange={e => setFormData(prev => ({ ...prev, api_key: e.target.value }))} />
+            <div style={{display:'flex', gap:'0.25rem', alignItems:'center'}}>
+              <input className={styles.input} type={showSecret ? 'text' : 'password'}
+                value={formData.api_key}
+                onChange={e => setFormData(prev => ({ ...prev, api_key: e.target.value }))} />
+              <button type="button" className={styles.smallBtn} onClick={() => setShowSecret(s => !s)}
+                title={showSecret ? 'Hide' : 'Show'}>{showSecret ? '🙈' : '👁️'}</button>
+            </div>
           </Field>
           <Field label="Categories">
             <input className={styles.input} value={formData.categories} onChange={e => setFormData(prev => ({ ...prev, categories: e.target.value }))} />
@@ -443,9 +451,15 @@ function ExternalClientsSection() {
   });
   const [testResult, setTestResult] = useState<{success: boolean; description: string | null} | null>(null);
   const [testPending, setTestPending] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
 
-  const torrentClients = clients.filter(c => c.download_type === 'torrent');
-  const usenetClients = clients.filter(c => c.download_type === 'usenet');
+  // Backend returns download_type as integer: 1=direct, 2=torrent, 3=usenet
+  const downloadTypeName = (t: number | string): string => {
+    if (typeof t === 'string') return t;
+    return ({ 1: 'direct', 2: 'torrent', 3: 'usenet' })[t] ?? String(t);
+  };
+  const torrentClients = clients.filter(c => String(c.download_type) === '2' || c.download_type === 'torrent');
+  const usenetClients = clients.filter(c => String(c.download_type) === '3' || c.download_type === 'usenet');
   const optionsEntries = Object.entries(clientOptions || {});
 
   const addMutation = useMutation({
@@ -477,6 +491,7 @@ function ExternalClientsSection() {
     setEditingId(null);
     setFormData({ client_type: '', title: '', base_url: '', username: '', password: '', api_token: '', category: '' });
     setTestResult(null);
+    setShowSecret(false);
   };
 
   const startEdit = (c: ExternalClient) => {
@@ -544,7 +559,7 @@ function ExternalClientsSection() {
         <div key={c.id} className={styles.clientCard}>
           <div className={styles.clientHeader}>
             <span><strong>{c.title}</strong></span>
-            <span className={styles.clientType}>{c.client_type}</span>
+            <span className={styles.clientType}>{downloadTypeName(c.download_type)} — {c.client_type}</span>
           </div>
           <div className={styles.clientMeta}>{c.base_url}</div>
           {c.category && <div className={styles.clientMeta}>Category: {c.category}</div>}
@@ -571,7 +586,7 @@ function ExternalClientsSection() {
             <select className={styles.select} value={formData.client_type} onChange={e => setFormData(prev => ({ ...prev, client_type: e.target.value }))}>
               <option value="">Select client type…</option>
               {filteredOptions.map(([key, opt]) => (
-                <option key={key} value={key}>{key} ({opt.download_type})</option>
+                <option key={key} value={key}>{key} ({downloadTypeName(opt.download_type)})</option>
               ))}
             </select>
           </Field>
@@ -585,10 +600,22 @@ function ExternalClientsSection() {
             <input className={styles.input} value={formData.username} onChange={e => setFormData(prev => ({ ...prev, username: e.target.value }))} />
           </Field>
           <Field label="Password">
-            <input className={styles.input} type="password" value={formData.password} onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))} />
+            <div style={{display:'flex', gap:'0.25rem', alignItems:'center'}}>
+              <input className={styles.input} type={showSecret ? 'text' : 'password'}
+                value={formData.password}
+                onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))} />
+              <button type="button" className={styles.smallBtn} onClick={() => setShowSecret(s => !s)}
+                title={showSecret ? 'Hide' : 'Show'}>{showSecret ? '🙈' : '👁️'}</button>
+            </div>
           </Field>
           <Field label="API Token">
-            <input className={styles.input} value={formData.api_token} onChange={e => setFormData(prev => ({ ...prev, api_token: e.target.value }))} />
+            <div style={{display:'flex', gap:'0.25rem', alignItems:'center'}}>
+              <input className={styles.input} type={showSecret ? 'text' : 'password'}
+                value={formData.api_token}
+                onChange={e => setFormData(prev => ({ ...prev, api_token: e.target.value }))} />
+              <button type="button" className={styles.smallBtn} onClick={() => setShowSecret(s => !s)}
+                title={showSecret ? 'Hide' : 'Show'}>{showSecret ? '🙈' : '👁️'}</button>
+            </div>
           </Field>
           <Field label="Category">
             <input className={styles.input} value={formData.category} onChange={e => setFormData(prev => ({ ...prev, category: e.target.value }))} />

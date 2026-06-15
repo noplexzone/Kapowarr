@@ -64,7 +64,7 @@ export interface NZBIndexer {
 
 export interface ExternalClient {
   id: number;
-  download_type: string;
+  download_type: string | number;
   client_type: string;
   title: string;
   base_url: string;

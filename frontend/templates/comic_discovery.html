@@ -34,7 +34,7 @@
 		<p class="disc-card-title"></p>
 		<p class="disc-card-issue-num"></p>
 		<p class="disc-card-date"></p>
-		<button class="disc-add-btn">+ Add Series</button>
+		<button class="disc-add-btn action-btn--primary">+ Add Series</button>
 	</div>
 </div>
 {% endblock pre_build_els %}
@@ -94,7 +94,7 @@
 {% block main %}
 <main>
 	<div>
-		<div id="disc-header">
+		<div class="card" id="disc-header">
 			<h1>Discover Comics</h1>
 			<div id="disc-tabs">
 				<button class="disc-tab active" data-tab="upcoming">Upcoming Releases</button>
@@ -109,7 +109,7 @@
 
 		<div id="disc-error" class="hidden">
 			<p>Failed to load results. Check your ComicVine API key and try again.</p>
-			<button id="disc-retry-btn">Retry</button>
+			<button id="disc-retry-btn" class="action-btn--primary">Retry</button>
 		</div>
 
 		<div id="disc-empty" class="hidden">

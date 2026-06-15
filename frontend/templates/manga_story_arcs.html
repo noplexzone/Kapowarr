@@ -33,7 +33,7 @@
 		<p class="arc-vol-title"></p>
 		<p class="arc-vol-meta"></p>
 	</div>
-	<button class="arc-add-btn arc-vol-add">+ Add</button>
+	<button class="arc-add-btn arc-vol-add action-btn--primary">+ Add</button>
 </div>
 {% endblock pre_build_els %}
 
@@ -110,11 +110,11 @@
 {% block main %}
 <main>
 	<div>
-		<div id="arc-header">
+		<div class="card" id="arc-header">
 			<h1>Manga Story Arcs</h1>
 			<div id="arc-search-bar">
 				<input type="text" id="arc-input" placeholder="Search story arcs…">
-				<button id="arc-search-btn">Search</button>
+				<button id="arc-search-btn" class="action-btn--primary">Search</button>
 			</div>
 		</div>
 
@@ -125,7 +125,7 @@
 
 		<div id="arc-error" class="hidden">
 			<p>Failed to load results. Check your ComicVine API key and try again.</p>
-			<button id="arc-retry-btn">Retry</button>
+			<button id="arc-retry-btn" class="action-btn--primary">Retry</button>
 		</div>
 
 		<div id="arc-empty" class="hidden">

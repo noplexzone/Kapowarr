@@ -119,15 +119,18 @@
 {% block main %}
 <main>
 	<div>
-		<form class="search-bar icon-text-color" aria-label="Search Bar">
-			<button type="submit" id="search-button" title="Start the search">
-				<img src="{{url_base}}/static/img/search.svg" alt="">
-			</button>
-			<input type="text" id="search-input" required autofocus aria-label="Search term">
-			<button type="button" id="search-cancel-button" title="Clear search">
-				<img src="{{url_base}}/static/img/cancel.svg" alt="">
-			</button>
-		</form>
+		<div class="card">
+			<h1>Add Volume</h1>
+			<form class="search-bar icon-text-color" aria-label="Search Bar">
+				<button type="submit" id="search-button" title="Start the search">
+					<img src="{{url_base}}/static/img/search.svg" alt="">
+				</button>
+				<input type="text" id="search-input" required autofocus aria-label="Search term">
+				<button type="button" id="search-cancel-button" title="Clear search">
+					<img src="{{url_base}}/static/img/cancel.svg" alt="">
+				</button>
+			</form>
+		</div>
 		<section id="search-explain" aria-label="Explanation">
 			<p>It's easy to add a new volume, just start typing the name of the volume you want to add</p>
 			<br>
@@ -148,7 +151,7 @@
 			<p>A root folder can be added at Settings -> Media Management -> Root Folders</p>
 		</section>
 		<section id="search-results" class="hidden" aria-label="Search Results">
-			<div class="filter-bar" aria-label="Filter Bar">
+			<div class="filter-bar card--flat" aria-label="Filter Bar">
 				<select id="filter-translations" aria-label="Filter translations">
 					<option value="all">All Languages</option>
 					<option value="only-english">Only English</option>

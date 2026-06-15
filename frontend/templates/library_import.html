@@ -20,7 +20,8 @@
 {% block main %}
 <main>
 	<div id="start-window">
-		<div id="bulk-mode">
+		<div class="card" id="bulk-mode">
+			<h1>Library Import</h1>
 			<p>Scans folders for ComicVine IDs. Folders already in your library are skipped. Volumes without a ComicVine ID are shown but excluded from the import by default.</p>
 			<ul>
 				<li><strong>Without title matching:</strong> reads <code>ComicInfo.xml</code> only — instant, zero API calls, full rate limit available for importing.</li>
@@ -66,23 +67,23 @@
 					</tr>
 				</tbody>
 			</table>
-			<button id="run-bulk-scan-button">Scan</button>
+			<button id="run-bulk-scan-button" class="action-btn--primary">Scan</button>
 		</div>
 	</div>
 	<div id="loading-window" class="hidden">
-		<h2>Loading...</h2>
+		<h2 class="section-header">Loading...</h2>
 		<p id="bulk-loading-progress" class="hidden"></p>
 		<button id="scan-cancel-button" class="hidden">Stop Scan</button>
 	</div>
 	<div id="no-result-window" class="hidden">
-		<h2>No results</h2>
+		<h2 class="section-header">No results</h2>
 		<button class="cancel-button">Go Back</button>
 	</div>
 	<div id="bulk-list-window" class="hidden">
-		<div class="action-container">
+		<div class="card--flat action-container">
 			<button id="bulk-cancel-button">Cancel</button>
-			<button id="bulk-import-button" title="Import all checked volumes that have a ComicVine ID. Runs as a background task.">Import Selected</button>
-			<button id="bulk-delete-unmatched-button" title="Permanently delete all folders that have no ComicVine ID match">Delete All Unmatched</button>
+			<button id="bulk-import-button" class="action-btn--primary" title="Import all checked volumes that have a ComicVine ID. Runs as a background task.">Import Selected</button>
+			<button id="bulk-delete-unmatched-button" class="action-btn--danger" title="Permanently delete all folders that have no ComicVine ID match">Delete All Unmatched</button>
 		</div>
 		<p id="bulk-summary"></p>
 		<div class="table-container icon-text-color">

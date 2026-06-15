@@ -22,8 +22,8 @@
 	<td class="fc-suggested hidden"></td>
 	<td class="fc-accept hidden"><input type="checkbox" class="fc-accept-cb"></td>
 	<td class="fc-actions">
-		<a class="fc-goto" href="">View</a>
-		<button class="fc-fix-btn">Fix Match</button>
+		<a class="fc-goto action-btn" href="">View</a>
+		<button class="fc-fix-btn action-btn">Fix Match</button>
 	</td>
 </tr>
 <tr class="fc-search-result" data-cv_id="">
@@ -32,7 +32,7 @@
 	<td class="fcs-issues"></td>
 	<td class="fcs-publisher"></td>
 	<td class="fcs-type"></td>
-	<td><button class="fcs-select-btn">Select</button></td>
+	<td><button class="fcs-select-btn action-btn">Select</button></td>
 </tr>
 {% endblock pre_build_rows %}
 
@@ -63,7 +63,8 @@
 
 {% block main %}
 <main>
-	<div id="fc-controls">
+	<div class="card" id="fc-controls">
+		<h1>Mismatch Review</h1>
 		<div id="fc-filter-row">
 			<label for="fc-filter">Show:</label>
 			<select id="fc-filter">
@@ -74,7 +75,7 @@
 			</select>
 		</div>
 		<div id="fc-autosuggest-bar">
-			<button id="fc-autosuggest-btn">Auto-Suggest Matches</button>
+			<button id="fc-autosuggest-btn" class="action-btn--primary">Auto-Suggest Matches</button>
 			<button id="fc-cancel-suggest-btn" class="hidden">Cancel</button>
 			<button id="fc-apply-accepted-btn" class="hidden">Apply Accepted</button>
 			<span id="fc-suggest-progress"></span>

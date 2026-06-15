@@ -139,6 +139,19 @@ export async function downloadIssue(
   );
 }
 
+export async function downloadVolume(
+  volumeId: number,
+  link: string,
+  displayTitle: string,
+): Promise<{ result: number | null; fail_reason: string | null }> {
+  const response = await apiClient.post(`volumes/${volumeId}/download`, {
+    json: { link, force_match: false, display_title: displayTitle },
+  });
+  return readJson<{ result: number | null; fail_reason: string | null }>(
+    response,
+  );
+}
+
 export async function addToBlocklist(
   link: string,
   displayTitle: string,

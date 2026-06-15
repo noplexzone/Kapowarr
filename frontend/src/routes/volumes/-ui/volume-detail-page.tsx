@@ -14,6 +14,7 @@ import {
   manualSearchIssue,
   fetchIssueHistory,
   downloadIssue,
+  downloadVolume,
   addToBlocklist,
   updateVolume,
   fetchRootFolders,
@@ -158,6 +159,18 @@ export function VolumeDetailPage() {
       forceMatch: boolean;
       displayTitle: string;
     }) => downloadIssue(issueId, link, forceMatch, displayTitle),
+    onSuccess: () => setActionMsg('Download queued.'),
+    onError: (err) => setActionMsg('Download failed: ' + (err as Error).message),
+  });
+
+  const downloadVolumeMutation = useMutation({
+    mutationFn: ({
+      link,
+      displayTitle,
+    }: {
+      link: string;
+      displayTitle: string;
+    }) => downloadVolume(id, link, displayTitle),
     onSuccess: () => setActionMsg('Download queued.'),
     onError: (err) => setActionMsg('Download failed: ' + (err as Error).message),
   });
@@ -571,23 +584,6 @@ export function VolumeDetailPage() {
                       >
                         Download
                       </Button>
-                      <Button
-                        variant="secondary"
-                        disabled={
-                          downloadIssueMutation.isPending &&
-                          downloadIssueMutation.variables?.link === result.link
-                        }
-                        onClick={() =>
-                          downloadIssueMutation.mutate({
-                            issueId: manualSearchIssueId!,
-                            link: result.link,
-                            forceMatch: true,
-                            displayTitle: result.display_title,
-                          })
-                        }
-                      >
-                        Force
-                      </Button>
                       {result.match_issue !== null &&
                         !result.match_issue.includes('blocklist') && (
                           <Button
@@ -731,6 +727,7 @@ export function VolumeDetailPage() {
                   <th className={styles.thMatch}>Match</th>
                   <th>Title</th>
                   <th className={styles.thSource}>Source</th>
+                  <th className={styles.thAction}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -752,6 +749,38 @@ export function VolumeDetailPage() {
                       </a>
                     </td>
                     <td className={styles.sourceCell}>{result.source}</td>
+                    <td className={styles.actionCell}>
+                      <Button
+                        variant="primary"
+                        disabled={
+                          downloadVolumeMutation.isPending &&
+                          downloadVolumeMutation.variables?.link === result.link
+                        }
+                        onClick={() =>
+                          downloadVolumeMutation.mutate({
+                            link: result.link,
+                            displayTitle: result.display_title,
+                          })
+                        }
+                      >
+                        Download
+                      </Button>
+                      {result.match_issue !== null &&
+                        !result.match_issue.includes('blocklist') && (
+                          <Button
+                            variant="ghost"
+                            disabled={blocklistMutation.isPending}
+                            onClick={() =>
+                              blocklistMutation.mutate({
+                                link: result.link,
+                                displayTitle: result.display_title,
+                              })
+                            }
+                          >
+                            Block
+                          </Button>
+                        )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

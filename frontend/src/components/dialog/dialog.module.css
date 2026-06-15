@@ -13,7 +13,7 @@
   transform: translate(-50%, -50%);
   z-index: 101;
   min-width: 360px;
-  max-width: min(90vw, 640px);
+  max-width: min(90vw, 800px);
   max-height: 85vh;
   display: flex;
   flex-direction: column;

@@ -21,12 +21,15 @@ import {
   searchVolumes,
   rematchVolume,
   refreshVolume,
+  fetchRenamePreview,
+  submitRename,
 } from '../-volumes.api';
 import type {
   IssueDetail,
   ManualSearchResult,
   IssueHistoryEntry,
   ComicVineSearchResult,
+  RenameEntry,
 } from '../-volumes.types';
 import { sanitizeHtml } from './sanitize';
 import styles from './volume-detail-page.module.css';
@@ -102,6 +105,13 @@ export function VolumeDetailPage() {
   const [fixMatchedTitle, setFixMatchedTitle] = useState('');
   const [fixShowConfirm, setFixShowConfirm] = useState(false);
   const [fixReplacing, setFixReplacing] = useState(false);
+
+  // Rename dialog
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameEntries, setRenameEntries] = useState<RenameEntry[]>([]);
+  const [renameLoading, setRenameLoading] = useState(false);
+  const [renameChecked, setRenameChecked] = useState<Set<string>>(new Set());
+  const [renameSubmitting, setRenameSubmitting] = useState(false);
 
   const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
 
@@ -268,6 +278,60 @@ export function VolumeDetailPage() {
     setHistoryIssueId(null);
     setHistoryEntries([]);
   }, []);
+
+  const handleOpenRename = useCallback(async () => {
+    setRenameOpen(true);
+    setRenameLoading(true);
+    setRenameEntries([]);
+    setRenameChecked(new Set());
+    try {
+      const entries = await fetchRenamePreview(id);
+      setRenameEntries(entries);
+      setRenameChecked(new Set(entries.map(e => e.before)));
+    } catch {
+      setRenameEntries([]);
+    } finally {
+      setRenameLoading(false);
+    }
+  }, [id]);
+
+  const closeRename = useCallback(() => {
+    setRenameOpen(false);
+    setRenameEntries([]);
+    setRenameChecked(new Set());
+  }, []);
+
+  const toggleRenameCheck = useCallback((filepath: string) => {
+    setRenameChecked(prev => {
+      const next = new Set(prev);
+      if (next.has(filepath)) next.delete(filepath);
+      else next.add(filepath);
+      return next;
+    });
+  }, []);
+
+  const toggleAllRenames = useCallback((checked: boolean) => {
+    if (checked) {
+      setRenameChecked(new Set(renameEntries.map(e => e.before)));
+    } else {
+      setRenameChecked(new Set());
+    }
+  }, [renameEntries]);
+
+  const handleSubmitRename = useCallback(async () => {
+    const filepaths = [...renameChecked];
+    if (!filepaths.length) return;
+    setRenameSubmitting(true);
+    try {
+      await submitRename(id, filepaths);
+      setActionMsg('Rename queued.');
+      closeRename();
+    } catch (err) {
+      setActionMsg('Rename failed: ' + (err as Error).message);
+    } finally {
+      setRenameSubmitting(false);
+    }
+  }, [id, renameChecked, closeRename]);
 
   const openEdit = useCallback(() => {
     if (!volume) return;
@@ -454,6 +518,9 @@ export function VolumeDetailPage() {
             </Button>
             <Button variant="ghost" onClick={openFixMatch}>
               Fix Match
+            </Button>
+            <Button variant="ghost" onClick={handleOpenRename}>
+              Preview Rename
             </Button>
             <Button
               variant="ghost"
@@ -1008,6 +1075,82 @@ export function VolumeDetailPage() {
                 </table>
               )}
             </div>
+          )}
+        </DialogBody>
+      </DialogFrame>
+
+      {/* ── Rename Dialog ──────────────────────────────────── */}
+      <DialogFrame
+        open={renameOpen}
+        onOpenChange={(open) => {
+          if (!open) closeRename();
+        }}
+      >
+        <DialogHeader
+          title={
+            renameLoading
+              ? 'Loading rename preview…'
+              : renameEntries.length === 0
+                ? 'Nothing to Rename'
+                : `Preview Rename — ${volume.title}`
+          }
+          onClose={closeRename}
+        />
+        <DialogBody>
+          {renameLoading && (
+            <p className={styles.dialogStatus}>Loading rename preview…</p>
+          )}
+          {!renameLoading && renameEntries.length === 0 && (
+            <p className={styles.dialogStatus}>Nothing to rename.</p>
+          )}
+          {!renameLoading && renameEntries.length > 0 && (
+            <>
+              <table className={styles.renameTable}>
+                <thead>
+                  <tr>
+                    <th className={styles.renameCheck}>
+                      <input
+                        type="checkbox"
+                        checked={
+                          renameEntries.length > 0 &&
+                          renameChecked.size === renameEntries.length
+                        }
+                        onChange={(e) => toggleAllRenames(e.target.checked)}
+                      />
+                    </th>
+                    <th>Before</th>
+                    <th>After</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renameEntries.map((entry) => (
+                    <tr key={entry.before}>
+                      <td className={styles.renameCheck}>
+                        <input
+                          type="checkbox"
+                          checked={renameChecked.has(entry.before)}
+                          onChange={() => toggleRenameCheck(entry.before)}
+                        />
+                      </td>
+                      <td className={styles.renamePath}>{entry.before}</td>
+                      <td className={styles.renamePath}>{entry.after}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className={styles.renameActions}>
+                <Button
+                  variant="primary"
+                  disabled={renameChecked.size === 0 || renameSubmitting}
+                  onClick={handleSubmitRename}
+                >
+                  {renameSubmitting ? 'Renaming…' : 'Rename'}
+                </Button>
+                <Button variant="ghost" onClick={closeRename}>
+                  Cancel
+                </Button>
+              </div>
+            </>
           )}
         </DialogBody>
       </DialogFrame>

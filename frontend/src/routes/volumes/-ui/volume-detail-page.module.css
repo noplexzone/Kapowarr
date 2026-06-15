@@ -542,3 +542,48 @@
 .thFixAction {
   width: 5rem;
 }
+
+/* ── Rename dialog ──────────────────────────────── */
+.renameTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-bottom: 0.75rem;
+}
+
+.renameTable th {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.renameTable td {
+  padding: 0.35rem 0.5rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+.renameCheck {
+  width: 2.5rem;
+  text-align: center;
+}
+
+.renameCheck input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.renamePath {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.renameActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}

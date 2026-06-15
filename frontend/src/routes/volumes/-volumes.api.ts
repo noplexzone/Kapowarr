@@ -6,6 +6,7 @@ import type {
   IssueHistoryEntry,
   RootFolder,
   ComicVineSearchResult,
+  RenameEntry,
 } from './-volumes.types';
 
 export const VOLUME_FULL_KEY = (id: number) =>
@@ -209,6 +210,28 @@ export async function rematchVolume(
 export async function refreshVolume(volumeId: number): Promise<{ id: number }> {
   const response = await apiClient.post('system/tasks', {
     json: { cmd: 'refresh_and_scan', volume_id: volumeId },
+  });
+  return readJson<{ id: number }>(response);
+}
+
+export async function fetchRenamePreview(
+  volumeId: number,
+): Promise<RenameEntry[]> {
+  const response = await apiClient.get(`volumes/${volumeId}/rename`);
+  const data = await readJson<Record<string, string>>(response);
+  return Object.entries(data).map(([before, after]) => ({ before, after }));
+}
+
+export async function submitRename(
+  volumeId: number,
+  filepaths: string[],
+): Promise<{ id: number }> {
+  const response = await apiClient.post('system/tasks', {
+    json: {
+      cmd: 'mass_rename',
+      volume_id: volumeId,
+      filepath_filter: filepaths,
+    },
   });
   return readJson<{ id: number }>(response);
 }

@@ -73,3 +73,8 @@ export interface ComicVineSearchResult {
   description: string;
   special_version: string;
 }
+
+export interface RenameEntry {
+  before: string;
+  after: string;
+}

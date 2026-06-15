@@ -200,7 +200,7 @@ main:has(#massedit-toggle:checked) #library-container {
 /* Green when fully complete */
 .list-prog-bar[style*="width: 100%"],
 .table-prog-bar[style*="width: 100%"] {
-	background-color: var(--success-color);
+	background-color: var(--success-color) !important;
 }
 
 .list-prog-num,

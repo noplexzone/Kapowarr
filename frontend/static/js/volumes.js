@@ -108,11 +108,6 @@ class LibraryEntry {
 			table_bar.style.backgroundColor =
 				'var(--success-color)';
 
-		else if (this.list_entry.hasAttribute('monitored'))
-			list_bar.style.backgroundColor =
-			table_bar.style.backgroundColor =
-				'var(--accent-color)';
-
 		else
 			list_bar.style.backgroundColor =
 			table_bar.style.backgroundColor =

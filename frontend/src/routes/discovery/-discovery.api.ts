@@ -26,6 +26,7 @@ function normalizeDiscoveryItem(item: any, type: 'upcoming' | 'new'): DiscoveryV
       issue_number: item.issue_number,
       cover_date: item.cover_date,
       id: item.issue_id,
+      // Upcoming issues don't have year/publisher/issue_count from the backend
     };
   }
   // New volumes returns VolumeMetadata — already in the right shape

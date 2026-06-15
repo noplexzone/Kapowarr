@@ -107,6 +107,48 @@
   overflow: hidden;
 }
 
+.overlayActions {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem;
+  background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  pointer-events: none;
+}
+
+.overlayAddBtn {
+  pointer-events: auto;
+  width: 100%;
+  padding: 0.4em 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: var(--accent);
+  color: #000;
+  transition: opacity 0.15s;
+}
+.overlayAddBtn:hover {
+  opacity: 0.85;
+}
+
+.overlayInLibrary {
+  pointer-events: auto;
+  width: 100%;
+  padding: 0.4em 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  text-align: center;
+  background: rgba(0,0,0,0.55);
+  color: #4ade80;
+  border: 1px solid #4ade8066;
+}
+
 .cover {
   width: 100%;
   height: 100%;

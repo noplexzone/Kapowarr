@@ -1,7 +1,7 @@
 import { useState, useDeferredValue } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Button } from '@/components/primitives';
+import { Badge } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
 import {
   discoveryVolumeQueryOptions,
@@ -122,25 +122,31 @@ function VolumeCard({ volume, onClick }: { volume: DiscoveryVolume; onClick: (v:
         ) : (
           <div className={styles.coverPlaceholder}>📚</div>
         )}
-        {isAdded && <div className={styles.addedBadge}>✓</div>}
+        <div className={styles.overlayActions}>
+          {isAdded ? (
+            <span className={styles.overlayInLibrary}>✓ In Library</span>
+          ) : (
+            <button className={styles.overlayAddBtn} onClick={() => onClick(volume)}>+ Add</button>
+          )}
+        </div>
       </div>
       <div className={styles.cardBody}>
         <div className={styles.cardTitle}>{volume.title}</div>
-        <div className={styles.cardMeta}>
-          {[
-            volume.year,
-            volume.publisher,
-            volume.issue_count != null ? `${volume.issue_count} issue${volume.issue_count !== 1 ? 's' : ''}` : null,
-            volume.date_added,
-          ].filter(Boolean).join(' · ')}
-        </div>
-        <div className={styles.actionBtns}>
-          {isAdded ? (
-            <span className={styles.disabledLabel}>In Library</span>
-          ) : (
-            <Button variant="primary" onClick={() => onClick(volume)}>+ Add</Button>
-          )}
-        </div>
+        {volume.issue_number != null ? (
+          <div className={styles.cardMeta}>
+            {volume.issue_number ? `#${volume.issue_number}` : ''}
+            {volume.cover_date ? ` · ${volume.cover_date}` : ''}
+          </div>
+        ) : (
+          <div className={styles.cardMeta}>
+            {[
+              volume.year,
+              volume.publisher,
+              volume.issue_count != null ? `${volume.issue_count} issue${volume.issue_count !== 1 ? 's' : ''}` : null,
+              volume.date_added,
+            ].filter(Boolean).join(' · ')}
+          </div>
+        )}
       </div>
     </div>
   );

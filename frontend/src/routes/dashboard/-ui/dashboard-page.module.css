@@ -16,7 +16,7 @@
 .statsRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 @media (max-width: 600px) {
@@ -25,52 +25,24 @@
   }
 }
 
-/* ── Mini stat row (Queue + Wanted) ──────────────── */
-
-.miniStatsRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-}
-
-@media (max-width: 600px) {
-  .miniStatsRow {
-    grid-template-columns: 1fr;
-  }
-}
-
-.miniStatCard {
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
+.statCard {
+  padding: 1.25rem 1rem;
 }
 
 .statCardAccent {
   border-left: 3px solid var(--accent);
 }
 
-.statValue {
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: var(--accent);
-  line-height: 1;
-}
-
-.statLabel {
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  font-weight: 500;
-}
-
 /* ── Per-section stat card ───────────────────────── */
 
 .statSectionLabel {
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.85rem;
+  font-weight: 700;
   color: var(--text);
-  margin-bottom: 0.3rem;
+  text-align: center;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .statSectionRow {

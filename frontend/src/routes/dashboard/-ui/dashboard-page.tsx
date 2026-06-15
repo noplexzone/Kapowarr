@@ -26,8 +26,6 @@ export function DashboardPage() {
     comicStats != null ? Math.max(0, comicStats.issues - comicStats.downloaded_issues) : null;
   const mangaWanted =
     mangaStats != null ? Math.max(0, mangaStats.issues - mangaStats.downloaded_issues) : null;
-  const totalWanted =
-    comicWanted != null && mangaWanted != null ? comicWanted + mangaWanted : null;
 
   return (
     <div className={styles.page}>
@@ -48,18 +46,6 @@ export function DashboardPage() {
           downloaded={mangaStats?.downloaded_issues ?? null}
           wanted={mangaWanted}
         />
-      </div>
-
-      {/* ── Mini stat row (Queue + Wanted) ── */}
-      <div className={styles.miniStatsRow}>
-        <Card className={styles.miniStatCard}>
-          <div className={styles.statValue}>{queueItems.length}</div>
-          <div className={styles.statLabel}>In Queue</div>
-        </Card>
-        <Card className={styles.miniStatCard}>
-          <div className={styles.statValue}>{totalWanted ?? '—'}</div>
-          <div className={styles.statLabel}>Wanted</div>
-        </Card>
       </div>
 
       {/* ── Recent activity + Queue ── */}

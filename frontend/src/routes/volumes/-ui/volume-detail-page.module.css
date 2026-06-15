@@ -164,6 +164,31 @@
   margin-top: 0.25rem;
 }
 
+/* ── Action box ──────────────────────────────────── */
+.actionBox {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0.75rem 1rem;
+  margin-top: 0.25rem;
+}
+
+.actionBoxTitle {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.actionBtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 /* ── Sections ────────────────────────────────────── */
 .section {
   border: 1px solid var(--border);

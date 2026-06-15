@@ -1430,7 +1430,7 @@ function IssueRow({
             disabled={isAutoSearching}
             onClick={onAutoSearch}
           >
-            {isAutoSearching ? '…' : '🔍'}
+            {isAutoSearching ? '…' : <SearchIcon />}
           </button>
           <button
             type="button"
@@ -1439,7 +1439,7 @@ function IssueRow({
             aria-label="Manually search for this issue"
             onClick={onManualSearch}
           >
-            🧑
+            <PersonIcon />
           </button>
           <button
             type="button"
@@ -1448,7 +1448,7 @@ function IssueRow({
             aria-label="View history for this issue"
             onClick={onHistory}
           >
-            🕐
+            <HistoryIcon />
           </button>
         </div>
       </td>

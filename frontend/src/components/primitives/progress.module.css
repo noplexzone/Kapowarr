@@ -10,5 +10,13 @@
   height: 100%;
   background: var(--accent);
   border-radius: 999px;
-  transition: width 0.3s ease;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.success {
+  background: var(--success);
+}
+
+.danger {
+  background: var(--danger);
 }

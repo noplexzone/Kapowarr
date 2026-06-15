@@ -12,6 +12,7 @@ interface ComicTableRowProps {
 
 export function ComicTableRow({ volume, selected, onSelect }: ComicTableRowProps) {
   const progressPct = getProgressPercent(volume.progress);
+  const progressTone = progressPct >= 100 ? 'success' : 'danger';
 
   return (
     <tr className={styles.row}>
@@ -36,7 +37,7 @@ export function ComicTableRow({ volume, selected, onSelect }: ComicTableRowProps
         {volume.volume_number ? `Vol. ${volume.volume_number}` : '—'}
       </td>
       <td className={styles.progressCell}>
-        <Progress value={progressPct} />
+        <Progress value={progressPct} tone={progressTone} />
         <span className={styles.progressLabel}>
           {getProgressLabel(volume.progress)}
         </span>

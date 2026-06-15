@@ -68,6 +68,7 @@ export function VolumeDetailPage() {
     volume.issue_count > 0
       ? Math.round((volume.issues_downloaded / volume.issue_count) * 100)
       : 0;
+  const progressTone = progressPct >= 100 ? 'success' : 'danger';
 
   return (
     <div className={styles.page}>
@@ -105,7 +106,7 @@ export function VolumeDetailPage() {
           </div>
 
           <div className={styles.progressRow}>
-            <Progress value={progressPct} />
+            <Progress value={progressPct} tone={progressTone} />
             <span className={styles.progressText}>
               {volume.issues_downloaded} / {volume.issue_count} issues
             </span>

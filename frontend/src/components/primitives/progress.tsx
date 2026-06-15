@@ -2,12 +2,15 @@ import { forwardRef, type HTMLAttributes } from 'react';
 import clsx from 'clsx';
 import styles from './progress.module.css';
 
+export type ProgressTone = 'accent' | 'success' | 'danger';
+
 export interface ProgressProps extends HTMLAttributes<HTMLDivElement> {
   value: number;
+  tone?: ProgressTone;
 }
 
 export const Progress = forwardRef<HTMLDivElement, ProgressProps>(
-  ({ value, className, ...props }, ref) => {
+  ({ value, tone = 'accent', className, ...props }, ref) => {
     const clampedValue = Math.max(0, Math.min(100, value));
 
     return (
@@ -21,7 +24,7 @@ export const Progress = forwardRef<HTMLDivElement, ProgressProps>(
         {...props}
       >
         <div
-          className={styles.fill}
+          className={clsx(styles.fill, styles[tone])}
           style={{ width: `${clampedValue}%` }}
         />
       </div>

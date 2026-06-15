@@ -16,6 +16,7 @@ interface ComicCardProps {
 
 export function ComicCard({ volume, onSearch }: ComicCardProps) {
   const progressPct = getProgressPercent(volume.progress);
+  const progressTone = progressPct >= 100 ? 'success' : 'danger';
 
   return (
     <Card className={styles.card}>
@@ -43,7 +44,7 @@ export function ComicCard({ volume, onSearch }: ComicCardProps) {
         <p className={styles.subtitle}>{formatVolumeSubtitle(volume)}</p>
 
         <div className={styles.progressRow}>
-          <Progress value={progressPct} />
+          <Progress value={progressPct} tone={progressTone} />
           <span className={styles.progressLabel}>
             {getProgressLabel(volume.progress)}
           </span>

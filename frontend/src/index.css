@@ -1,0 +1,204 @@
+/* ══════════════════════════════════════════════
+   Kapowarr Design Tokens — CSS Custom Properties
+   These power the React SPA.
+   Each theme variant overrides the light defaults.
+   ══════════════════════════════════════════════ */
+
+/* ── Base (light) ─────────────────────────────── */
+:root,
+[data-theme='light'] {
+  --surface: #f6f6f6;
+  --surface-raised: #ffffff;
+  --text: #464b51;
+  --text-dim: #808080;
+  --accent: #ebc700;
+  --accent-rgb: 235, 199, 0;
+  --border: #dde6e9;
+  --nav-width: clamp(160px, 20vw, 210px);
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Dark mode ───────────────────────────────── */
+[data-theme='dark-mode'] {
+  --surface: #202020;
+  --surface-raised: #272727;
+  --text: #dde6e9;
+  --text-dim: #c5c5c5;
+  --accent: #ebc700;
+  --accent-rgb: 235, 199, 0;
+  --border: #7f7f7f;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Batman (dark w/ gold accent — default) ──── */
+[data-theme='batman-mode'] {
+  --surface: #1a1a1a;
+  --surface-raised: #2a2a2a;
+  --text: #e8e8e8;
+  --text-dim: #9a9a9a;
+  --accent: #f5c518;
+  --accent-rgb: 245, 197, 24;
+  --border: #3d3d3d;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Spider-Man (dark navy / red accent) ─────── */
+[data-theme='spiderman-mode'] {
+  --surface: #0d1b2e;
+  --surface-raised: #162540;
+  --text: #e8e8e8;
+  --text-dim: #8899bb;
+  --accent: #e63946;
+  --accent-rgb: 230, 57, 70;
+  --border: #2a4070;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Invincible (deep blue / gold accent) ────── */
+[data-theme='invincible-mode'] {
+  --surface: #05152a;
+  --surface-raised: #0a2040;
+  --text: #e8f0ff;
+  --text-dim: #7090cc;
+  --accent: #f7d51d;
+  --accent-rgb: 247, 213, 29;
+  --border: #1e4070;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Superman (blue / red) ───────────────────── */
+[data-theme='superman-mode'] {
+  --surface: #0b2840;
+  --surface-raised: #123759;
+  --text: #eef2f7;
+  --text-dim: #8aa9c7;
+  --accent: #e83f3f;
+  --accent-rgb: 232, 63, 63;
+  --border: #1e4d7a;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Iron Man (red / gold) ────────────────────── */
+[data-theme='ironman-mode'] {
+  --surface: #1a0a0a;
+  --surface-raised: #2d1414;
+  --text: #f0e0c0;
+  --text-dim: #b08060;
+  --accent: #f5c518;
+  --accent-rgb: 245, 197, 24;
+  --border: #4a2828;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Wonder Woman (dark / gold) ──────────────── */
+[data-theme='wonderwoman-mode'] {
+  --surface: #1a1128;
+  --surface-raised: #2a1d3d;
+  --text: #f0e6ff;
+  --text-dim: #a890cc;
+  --accent: #f5c518;
+  --accent-rgb: 245, 197, 24;
+  --border: #3d2a60;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Flash (dark / yellow) ──────────────────── */
+[data-theme='flash-mode'] {
+  --surface: #1a1a0a;
+  --surface-raised: #2a2a14;
+  --text: #f0f0d0;
+  --text-dim: #b0b080;
+  --accent: #f5c518;
+  --accent-rgb: 245, 197, 24;
+  --border: #4a4a28;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Green Lantern (dark green) ──────────────── */
+[data-theme='greenlantern-mode'] {
+  --surface: #0a1a0a;
+  --surface-raised: #142a14;
+  --text: #d0f0d0;
+  --text-dim: #80b080;
+  --accent: #3bd83b;
+  --accent-rgb: 59, 216, 59;
+  --border: #284a28;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Captain America (navy / red) ────────────── */
+[data-theme='captainamerica-mode'] {
+  --surface: #0b1428;
+  --surface-raised: #142040;
+  --text: #eaf0f7;
+  --text-dim: #809abb;
+  --accent: #e83f3f;
+  --accent-rgb: 232, 63, 63;
+  --border: #1e2e5a;
+  --success: #54db68;
+  --info: #3b82f6;
+  --warning: #eab308;
+  --danger: #db5461;
+}
+
+/* ── Global reset (lightweight) ───────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+}
+
+body {
+  background: var(--surface);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  width: 100%;
+  display: block;
+}
+
+button {
+  cursor: pointer;
+}

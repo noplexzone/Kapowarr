@@ -16,3 +16,13 @@ export interface VolumeStats {
   files?: number;
   total_file_size?: number;
 }
+
+export interface VolumeCard {
+  id: number;
+  title: string;
+  year: number | null;
+  publisher: string | null;
+  issue_count: number;
+  issues_downloaded: number;
+  section: 'comics' | 'manga';
+}

@@ -1,10 +1,16 @@
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useSuspenseQuery, useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/primitives';
-import { systemAboutQueryOptions, downloadLogs } from '../-system.api';
+import { systemAboutQueryOptions, downloadLogs, fetchLogTail } from '../-system.api';
 import styles from './system-status-page.module.css';
 
 export function SystemStatusPage() {
   const { data: about } = useSuspenseQuery(systemAboutQueryOptions());
+  const { data: logTail } = useQuery({
+    queryKey: ['system', 'logs', 'tail'],
+    queryFn: fetchLogTail,
+    refetchInterval: 5_000,
+    staleTime: 0,
+  });
 
   return (
     <div className={styles.page}>
@@ -26,6 +32,11 @@ export function SystemStatusPage() {
         {about.uptime != null && (
           <InfoRow label="Uptime" value={formatUptime(Number(about.uptime))} />
         )}
+      </div>
+
+      <div className={styles.logSection}>
+        <h2 className={styles.logTitle}>Live Logs</h2>
+        <pre className={styles.logOutput}>{logTail ?? 'Loading logs…'}</pre>
       </div>
     </div>
   );

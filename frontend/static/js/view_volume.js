@@ -866,7 +866,7 @@ function showIssueHistory(api_key, issue_id) {
 				row.appendChild(source_td);
 
 				const title_td = document.createElement('td');
-				const displayTitle = obj.web_title || obj.web_sub_title || obj.file_title || obj.source || 'Unknown';
+				const displayTitle = obj.web_title || obj.file_title || obj.web_sub_title || obj.source || 'Unknown';
 				if (obj.web_link) {
 					const a = document.createElement('a');
 					a.href = obj.web_link;

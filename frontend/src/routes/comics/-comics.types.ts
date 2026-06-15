@@ -29,6 +29,12 @@ export const VIEW_LABELS: Record<string, string> = {
   table: 'Table',
 };
 
+export const FILTER_LABELS: Record<string, string> = {
+  '': 'All',
+  wanted: 'Wanted',
+  monitored: 'Monitored',
+};
+
 export const STORAGE_KEY_SORT = 'kapowarr_sort';
 export const STORAGE_KEY_VIEW = 'kapowarr_view';
 export const STORAGE_KEY_FILTER = 'kapowarr_filter';

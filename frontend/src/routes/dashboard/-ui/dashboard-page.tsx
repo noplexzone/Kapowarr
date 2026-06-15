@@ -1,54 +1,64 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Card, Badge, Progress } from '@/components/primitives';
+import { Card, Badge } from '@/components/primitives';
+import { getCoverUrl } from '@/routes/comics/-comics.helpers';
 import {
-  navBadgesQueryOptions,
-  volumeStatsQueryOptions,
+  comicStatsQueryOptions,
+  mangaStatsQueryOptions,
+  recentlyAddedQueryOptions,
   dashboardQueueQueryOptions,
   dashboardHistoryQueryOptions,
-  dashboardTasksQueryOptions,
 } from '../-dashboard.api';
 import styles from './dashboard-page.module.css';
 
 export function DashboardPage() {
-  const { data: badges } = useQuery(navBadgesQueryOptions());
-  const { data: stats } = useQuery(volumeStatsQueryOptions());
+  const { data: comicStats } = useQuery(comicStatsQueryOptions());
+  const { data: mangaStats } = useQuery(mangaStatsQueryOptions());
+  const { data: comicRecent } = useQuery(recentlyAddedQueryOptions('comic'));
+  const { data: mangaRecent } = useQuery(recentlyAddedQueryOptions('manga'));
   const { data: queueData } = useQuery(dashboardQueueQueryOptions());
   const { data: historyData } = useQuery(dashboardHistoryQueryOptions());
-  const { data: tasksData } = useQuery(dashboardTasksQueryOptions());
 
   const queueItems = Array.isArray(queueData) ? queueData : [];
-  const historyEntries = (historyData?.entries ?? []).slice(0, 5);
-  const recentTasks = (Array.isArray(tasksData) ? tasksData : []).slice(0, 3);
+  const historyEntries = (historyData?.entries ?? []).slice(0, 6);
 
-  const totalVolumes = stats?.volumes ?? badges?.volumes ?? null;
-  const downloadedIssues = stats?.downloaded_issues ?? null;
-  const wantedIssues = stats != null ? Math.max(0, stats.issues - stats.downloaded_issues) : null;
-  const queueCount = queueItems.length > 0 ? queueItems.length : (badges?.queue ?? null);
+  const comicWanted =
+    comicStats != null ? Math.max(0, comicStats.issues - comicStats.downloaded_issues) : null;
+  const mangaWanted =
+    mangaStats != null ? Math.max(0, mangaStats.issues - mangaStats.downloaded_issues) : null;
+  const totalWanted =
+    comicWanted != null && mangaWanted != null ? comicWanted + mangaWanted : null;
 
   return (
     <div className={styles.page}>
       <h1 className={styles.pageTitle}>Dashboard</h1>
 
+      {/* ── Stats row ── */}
       <div className={styles.statsRow}>
+        <SectionStatCard
+          label="Comics"
+          volumes={comicStats?.volumes ?? null}
+          downloaded={comicStats?.downloaded_issues ?? null}
+          wanted={comicWanted}
+          accent
+        />
+        <SectionStatCard
+          label="Manga"
+          volumes={mangaStats?.volumes ?? null}
+          downloaded={mangaStats?.downloaded_issues ?? null}
+          wanted={mangaWanted}
+        />
         <Card className={styles.statCard}>
-          <div className={styles.statValue}>{totalVolumes ?? '—'}</div>
-          <div className={styles.statLabel}>Total Volumes</div>
+          <div className={styles.statValue}>{queueItems.length}</div>
+          <div className={styles.statLabel}>In Queue</div>
         </Card>
         <Card className={styles.statCard}>
-          <div className={styles.statValue}>{downloadedIssues ?? '—'}</div>
-          <div className={styles.statLabel}>Downloaded Issues</div>
-        </Card>
-        <Card className={styles.statCard}>
-          <div className={styles.statValue}>{queueCount ?? '—'}</div>
-          <div className={styles.statLabel}>Queue Count</div>
-        </Card>
-        <Card className={styles.statCard}>
-          <div className={styles.statValue}>{wantedIssues ?? '—'}</div>
-          <div className={styles.statLabel}>Wanted Issues</div>
+          <div className={styles.statValue}>{totalWanted ?? '—'}</div>
+          <div className={styles.statLabel}>Wanted</div>
         </Card>
       </div>
 
+      {/* ── Recent activity + Queue ── */}
       <div className={styles.gridRow}>
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
@@ -66,7 +76,9 @@ export function DashboardPage() {
                   <div key={entry.id} className={styles.listRow}>
                     <div className={styles.rowMain}>
                       <span className={styles.rowTitle}>{entry.title}</span>
-                      <span className={styles.rowMeta}>{entry.source}</span>
+                      <span className={styles.rowMeta}>
+                        {entry.source} · {new Date(entry.downloaded_at).toLocaleDateString()}
+                      </span>
                     </div>
                     <Badge
                       tone={
@@ -98,16 +110,12 @@ export function DashboardPage() {
               <div className={styles.empty}>Queue is empty</div>
             ) : (
               <div className={styles.listItems}>
-                {queueItems.slice(0, 5).map((entry) => (
+                {queueItems.slice(0, 5).map((entry: any) => (
                   <div key={entry.id} className={styles.listRow}>
                     <div className={styles.rowMain}>
                       <span className={styles.rowTitle}>{entry.title}</span>
-                      <Progress
-                        value={entry.progress_is_percent ? entry.progress : 0}
-                        className={styles.queueProgress}
-                      />
                     </div>
-                    <Badge tone="info">{entry.status}</Badge>
+                    <Badge tone="info">{entry.status ?? 'downloading'}</Badge>
                   </div>
                 ))}
               </div>
@@ -116,36 +124,144 @@ export function DashboardPage() {
         </section>
       </div>
 
-      {recentTasks.length > 0 && (
+      {/* ── Recently added ── */}
+      <div className={styles.gridRow}>
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>System Tasks</h2>
-            <Link to="/system/tasks" className={styles.sectionLink}>
+            <h2 className={styles.sectionTitle}>
+              <span className={styles.sectionBadge}>Comics</span>{' '}
+              Recently Added
+            </h2>
+            <Link to="/comics" className={styles.sectionLink}>
               View all
             </Link>
           </div>
-          <Card className={styles.sectionCard}>
-            <div className={styles.listItems}>
-              {recentTasks.map((task) => (
-                <div key={task.id} className={styles.listRow}>
-                  <span className={styles.rowTitle}>{task.display}</span>
-                  <Badge
-                    tone={
-                      task.status === 'done'
-                        ? 'success'
-                        : task.status === 'running'
-                          ? 'info'
-                          : 'neutral'
-                    }
+          {!comicRecent || comicRecent.length === 0 ? (
+            <Card className={styles.emptyCard}>
+              <div className={styles.empty}>No comics yet</div>
+            </Card>
+          ) : (
+            <div className={styles.coverGrid}>
+              {comicRecent.map((v) => (
+                <Card key={v.id} className={styles.coverCard}>
+                  <Link
+                    to="/volumes/$volumeId"
+                    params={{ volumeId: String(v.id) }}
+                    className={styles.coverLink}
                   >
-                    {task.status}
-                  </Badge>
-                </div>
+                    <img
+                      src={getCoverUrl(v.id)}
+                      alt=""
+                      className={styles.coverImg}
+                      loading="lazy"
+                    />
+                  </Link>
+                  <div className={styles.coverInfo}>
+                    <Link
+                      to="/volumes/$volumeId"
+                      params={{ volumeId: String(v.id) }}
+                      className={styles.coverTitle}
+                    >
+                      {v.title}
+                    </Link>
+                    <span className={styles.coverMeta}>
+                      {v.year ?? ''}
+                      {v.year && v.publisher ? ' · ' : ''}
+                      {v.publisher ?? ''}
+                    </span>
+                  </div>
+                </Card>
               ))}
             </div>
-          </Card>
+          )}
         </section>
-      )}
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>
+              <span className={styles.sectionBadge}>Manga</span>{' '}
+              Recently Added
+            </h2>
+            <Link to="/manga" className={styles.sectionLink}>
+              View all
+            </Link>
+          </div>
+          {!mangaRecent || mangaRecent.length === 0 ? (
+            <Card className={styles.emptyCard}>
+              <div className={styles.empty}>No manga yet</div>
+            </Card>
+          ) : (
+            <div className={styles.coverGrid}>
+              {mangaRecent.map((v) => (
+                <Card key={v.id} className={styles.coverCard}>
+                  <Link
+                    to="/volumes/$volumeId"
+                    params={{ volumeId: String(v.id) }}
+                    className={styles.coverLink}
+                  >
+                    <img
+                      src={getCoverUrl(v.id)}
+                      alt=""
+                      className={styles.coverImg}
+                      loading="lazy"
+                    />
+                  </Link>
+                  <div className={styles.coverInfo}>
+                    <Link
+                      to="/volumes/$volumeId"
+                      params={{ volumeId: String(v.id) }}
+                      className={styles.coverTitle}
+                    >
+                      {v.title}
+                    </Link>
+                    <span className={styles.coverMeta}>
+                      {v.year ?? ''}
+                      {v.year && v.publisher ? ' · ' : ''}
+                      {v.publisher ?? ''}
+                    </span>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
+  );
+}
+
+/* ── Per-section stat card ── */
+
+function SectionStatCard({
+  label,
+  volumes,
+  downloaded,
+  wanted,
+  accent,
+}: {
+  label: string;
+  volumes: number | null;
+  downloaded: number | null;
+  wanted: number | null;
+  accent?: boolean;
+}) {
+  return (
+    <Card className={`${styles.statCard} ${accent ? styles.statCardAccent : ''}`}>
+      <div className={styles.statSectionLabel}>{label}</div>
+      <div className={styles.statSectionRow}>
+        <div className={styles.statSectionItem}>
+          <div className={styles.statSectionValue}>{volumes ?? '—'}</div>
+          <div className={styles.statSectionDetail}>Volumes</div>
+        </div>
+        <div className={styles.statSectionItem}>
+          <div className={styles.statSectionValue}>{downloaded ?? '—'}</div>
+          <div className={styles.statSectionDetail}>Downloaded</div>
+        </div>
+        <div className={styles.statSectionItem}>
+          <div className={styles.statSectionValue}>{wanted ?? '—'}</div>
+          <div className={styles.statSectionDetail}>Wanted</div>
+        </div>
+      </div>
+    </Card>
   );
 }

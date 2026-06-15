@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { useSearch, useNavigate } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
 import { volumeListQueryOptions } from '../-comics.api';
 import { volumesSearchSchema, type ViewOption, type SectionType } from '../-comics.types';
@@ -9,6 +9,7 @@ import {
   FILTER_OPTIONS,
   VIEW_OPTIONS,
   SORT_LABELS,
+  FILTER_LABELS,
   VIEW_LABELS,
   STORAGE_KEY_SORT,
   STORAGE_KEY_VIEW,
@@ -37,44 +38,46 @@ function setStorageVal(key: string, val: unknown) {
 }
 
 export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
-  const search = useSearch({ strict: false });
   const navigate = useNavigate();
-  const validated = volumesSearchSchema.parse(search);
-  const { data } = useSuspenseQuery(volumeListQueryOptions(1, validated, section));
 
-  // Hydrate from localStorage on first mount when no URL params exist
-  const hydrated = useRef(false);
-  useEffect(() => {
-    if (hydrated.current) return;
-    hydrated.current = true;
+  // Read raw URL params to detect what's actually in the URL (not schema-parsed defaults)
+  const rawParams = new URLSearchParams(window.location.search);
+  const rawSort = rawParams.get('sort');
+  const rawView = rawParams.get('view');
+  const rawFilter = rawParams.get('filter');
 
+  // Hydrate from localStorage when no URL param is present
+  const [hydrated] = useState(() => {
     const patch: Record<string, unknown> = {};
-
-    if (!('sort' in search) || search.sort === undefined) {
-      const storedSort = getStorageVal<string | null>(STORAGE_KEY_SORT, null);
-      if (storedSort && SORT_OPTIONS.includes(storedSort as any)) {
-        patch.sort = storedSort;
-      }
+    if (!rawSort) {
+      const stored = getStorageVal<string | null>(STORAGE_KEY_SORT, null);
+      if (stored && SORT_OPTIONS.includes(stored as any)) patch.sort = stored;
     }
-
-    if (!('view' in search) || search.view === undefined) {
-      const storedView = getStorageVal<string | null>(STORAGE_KEY_VIEW, null);
-      if (storedView && VIEW_OPTIONS.includes(storedView as any)) {
-        patch.view = storedView;
-      }
+    if (!rawView) {
+      const stored = getStorageVal<string | null>(STORAGE_KEY_VIEW, null);
+      if (stored && VIEW_OPTIONS.includes(stored as any)) patch.view = stored;
     }
-
-    if (!('filter' in search) || search.filter === undefined) {
-      const storedFilter = getStorageVal<string | null>(STORAGE_KEY_FILTER, null);
-      if (storedFilter && FILTER_OPTIONS.includes(storedFilter as any)) {
-        patch.filter = storedFilter;
-      }
+    if (!rawFilter) {
+      const stored = getStorageVal<string | null>(STORAGE_KEY_FILTER, null);
+      if (stored && FILTER_OPTIONS.includes(stored as any)) patch.filter = stored;
     }
+    return patch;
+  });
 
-    if (Object.keys(patch).length > 0) {
-      navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...patch }), replace: true });
+  // Defer navigation to localStorage defaults in a useEffect so React hooks are stable
+  const hydrationDone = useRef(false);
+  useEffect(() => {
+    if (hydrationDone.current) return;
+    hydrationDone.current = true;
+    if (Object.keys(hydrated).length > 0) {
+      navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...hydrated }), replace: true });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After hydration navigation, fetch with merged params
+  const search = { sort: rawSort, view: rawView, filter: rawFilter };
+  const validated = volumesSearchSchema.parse(search);
+  const { data } = useSuspenseQuery(volumeListQueryOptions(1, validated, section));
 
   const [view, setView] = useState<ViewOption>(validated.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -129,7 +132,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
           >
             {FILTER_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
-                {opt || 'All'}
+                {FILTER_LABELS[opt] ?? (opt || 'All')}
               </option>
             ))}
           </select>

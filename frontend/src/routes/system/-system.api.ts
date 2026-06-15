@@ -41,3 +41,13 @@ export async function downloadLogs(): Promise<void> {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+export async function fetchLogTail(): Promise<string> {
+  const base = getUrlBase();
+  const apiKey = localStorage.getItem('kapowarr_api_key') ?? '';
+  const response = await fetch(`${base}/api/system/logs?tail=50`, {
+    headers: apiKey ? { 'X-Api-Key': apiKey } : {},
+  });
+  const data = await response.json();
+  return data?.result ?? 'No logs available';
+}

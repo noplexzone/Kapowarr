@@ -26,7 +26,7 @@ function fillHistory(api_key) {
 			const titleLink = entry.querySelector('a');
 			titleLink.href = obj.web_link;
 			// Never show raw web_link as display text
-			const displayTitle = obj.web_title || obj.web_sub_title || obj.file_title || obj.source || 'Unknown';
+			const displayTitle = obj.web_title || obj.file_title || obj.web_sub_title || obj.source || 'Unknown';
 			titleLink.innerText = displayTitle;
 			titleLink.title = displayTitle;
 			if (obj.web_sub_title && obj.web_sub_title !== displayTitle)

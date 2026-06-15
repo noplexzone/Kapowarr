@@ -49,3 +49,35 @@
   color: var(--text);
   font-family: monospace;
 }
+
+/* ── Live logs ───────────────────────────────────── */
+
+.logSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.logTitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.logOutput {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: #111;
+  color: #d4d4d4;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 400px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

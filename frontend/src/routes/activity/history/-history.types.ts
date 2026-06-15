@@ -2,7 +2,7 @@ export interface HistoryEntry {
   id: number;
   title: string;
   source: string;
-  downloaded_at: string;
+  downloaded_at: number;
   state: string;
 }
 

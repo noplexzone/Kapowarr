@@ -311,6 +311,13 @@ def api_about():
 @auth
 def api_logs():
     sio = get_log_file_contents()
+    tail = extract_key(request, 'tail', False)
+
+    if tail is not None:
+        # Return last N lines as plain text
+        lines = sio.getvalue().splitlines()
+        tail_lines = lines[-int(tail):] if tail else lines
+        return return_api('\n'.join(tail_lines))
 
     return send_file(
         BytesIO(sio.getvalue().encode('utf-8')),

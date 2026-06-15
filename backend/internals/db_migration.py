@@ -1264,3 +1264,44 @@ def _migrate_add_source_name_to_download_history():
         ALTER TABLE download_history ADD COLUMN source_name TEXT;
     """)
     return
+
+
+@DatabaseMigrationHandler.register_handler(53)
+def _migrate_backfill_source_name():
+    """Backfill source_name for existing download_history rows that were
+    created before migration 52 added the column. New entries get source_name
+    set at queue time; old ones have it NULL."""
+    db = get_db()
+
+    # 1. Non-Usenet entries: source IS the source_name
+    #    GetComics, Pixeldrain, MediaFire, Mega, Suwayomi all store their
+    #    display name directly in the source column.
+    db.execute("""
+        UPDATE download_history
+        SET source_name = source
+        WHERE source_name IS NULL
+          AND source IS NOT NULL
+          AND source != 'Usenet';
+    """)
+
+    # 2. Usenet entries: match web_link prefix against configured NZB indexers
+    #    to recover the indexer name (e.g. 'NZBGeek').
+    db.execute("""
+        UPDATE download_history
+        SET source_name = (
+            SELECT ni.name
+            FROM nzb_indexers ni
+            WHERE download_history.web_link LIKE ni.base_url || '%'
+            LIMIT 1
+        )
+        WHERE source_name IS NULL
+          AND source = 'Usenet'
+          AND web_link IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM nzb_indexers
+              WHERE download_history.web_link LIKE nzb_indexers.base_url || '%'
+          );
+    """)
+
+    db.connection.commit()
+    return

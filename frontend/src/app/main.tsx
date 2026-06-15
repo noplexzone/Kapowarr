@@ -23,6 +23,7 @@ const queryClient = new QueryClient({
 
 const router = createRouter({
   routeTree,
+  basepath: '/ui',
   context: {
     queryClient,
     shell: { profile: 1 },

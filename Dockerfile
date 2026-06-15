@@ -1,8 +1,6 @@
 ARG DISTRO=bookworm
 ARG PYTHON=3.13
 
-FROM python:${PYTHON}-slim-${DISTRO} AS python
-
 # --- Node Build Stage ---
 FROM node:22-slim AS node-builder
 WORKDIR /app/frontend
@@ -14,23 +12,20 @@ COPY frontend/ ./
 RUN npm run build
 
 # --- Python Build Stage ---
-FROM rust:slim-${DISTRO} AS builder
+# Use Python slim as the base (it already has Python), install Rust on top
+# to compile C-extension wheels, then copy them to the runtime stage.
+FROM python:${PYTHON}-slim-${DISTRO} AS builder
 WORKDIR /wheels
 
-# Install Build Dependencies
+# Install Build Dependencies + Rust
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential libssl-dev libffi-dev pkg-config && \
+        build-essential libssl-dev libffi-dev pkg-config \
+        cargo rustc && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy Python From Python Stage — use explicit image ref for legacy builder compat
-COPY --from=python:${PYTHON}-slim-${DISTRO} /usr/local /usr/local
-COPY --from=python:${PYTHON}-slim-${DISTRO} /usr/lib /usr/lib
-COPY --from=python:${PYTHON}-slim-${DISTRO} /lib /lib
-COPY --from=python:${PYTHON}-slim-${DISTRO} /etc /etc
-
 # Compile Wheels
-COPY requirements.txt .
+COPY requirements.txt ./
 RUN pip3 wheel --wheel-dir=/wheels -r requirements.txt
 
 # --- Runtime Stage ---

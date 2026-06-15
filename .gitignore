@@ -23,6 +23,10 @@ pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
+
+# Node
+node_modules/
+frontend/dist/
 *.egg
 MANIFEST
 

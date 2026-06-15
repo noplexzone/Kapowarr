@@ -1,0 +1,52 @@
+import { useSuspenseQuery } from '@tanstack/react-query';
+import { Button } from '@/components/primitives';
+import { systemAboutQueryOptions, downloadLogs } from '../-system.api';
+import styles from './system-status-page.module.css';
+
+export function SystemStatusPage() {
+  const { data: about } = useSuspenseQuery(systemAboutQueryOptions());
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.toolbar}>
+        <h1 className={styles.title}>System Status</h1>
+        <Button variant="secondary" onClick={downloadLogs}>
+          Download Logs
+        </Button>
+      </div>
+
+      <div className={styles.infoGrid}>
+        <InfoRow label="Version" value={about.version} />
+        <InfoRow label="Python Version" value={about.python_version} />
+        <InfoRow label="Database Version" value={about.database_version} />
+        <InfoRow label="Platform" value={about.platform} />
+        {about.start_time && (
+          <InfoRow label="Start Time" value={new Date(about.start_time).toLocaleString()} />
+        )}
+        {about.uptime != null && (
+          <InfoRow label="Uptime" value={formatUptime(Number(about.uptime))} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string | undefined }) {
+  return (
+    <div className={styles.infoRow}>
+      <span className={styles.infoLabel}>{label}</span>
+      <span className={styles.infoValue}>{value ?? '—'}</span>
+    </div>
+  );
+}
+
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const parts: string[] = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  parts.push(`${m}m`);
+  return parts.join(' ');
+}

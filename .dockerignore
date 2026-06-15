@@ -160,3 +160,8 @@ temp_downloads/*
 docs/
 requirements-dev.txt
 release.sh
+
+# Frontend (Node) — built inside Docker
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo

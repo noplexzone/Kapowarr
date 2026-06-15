@@ -1,0 +1,222 @@
+import { useState, useCallback } from 'react';
+import { Badge, Button, Notice } from '@/components/primitives';
+import { DialogFrame, DialogHeader, DialogBody, DialogFooter } from '@/components/dialog';
+import { scanBulk, importSelected, deleteUnmatched } from '../-import.api';
+import type { BulkScanItem, ImportSelection } from '../-import.types';
+import styles from './import-page.module.css';
+
+interface ImportPageProps {
+  section: 'comic' | 'manga';
+}
+
+export function ImportPage({ section }: ImportPageProps) {
+  const [folderFilter, setFolderFilter] = useState('');
+  const [fuzzyFallback, setFuzzyFallback] = useState(false);
+  const [quick, setQuick] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [items, setItems] = useState<BulkScanItem[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [error, setError] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [success, setSuccess] = useState('');
+
+  const startScan = useCallback(async () => {
+    setScanning(true);
+    setItems([]);
+    setSelected(new Set());
+    setError('');
+    setSuccess('');
+
+    try {
+      for await (const item of scanBulk(folderFilter, fuzzyFallback, quick)) {
+        setItems(prev => [...prev, item]);
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setScanning(false);
+    }
+  }, [folderFilter, fuzzyFallback, quick]);
+
+  const toggleSelect = (folder: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setSelected(new Set(items.filter(i => i.matched).map(i => i.folder)));
+  };
+
+  const handleImport = async () => {
+    setImporting(true);
+    setError('');
+    try {
+      const payload: ImportSelection[] = items
+        .filter(item => selected.has(item.folder) && item.matched && item.cv_id != null)
+        .map(item => ({
+          folder: item.folder,
+          cv_id: String(item.cv_id),
+          file_title: item.file_title,
+        }));
+      await importSelected(payload);
+      setSuccess(`Imported ${payload.length} item${payload.length !== 1 ? 's' : ''}.`);
+      setSelected(new Set());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setConfirmDelete(false);
+    const folders = items.filter(i => !i.matched).map(i => i.folder);
+    try {
+      await deleteUnmatched(folders);
+      setItems(prev => prev.filter(i => i.matched));
+      setSuccess(`Deleted ${folders.length} unmatched folder${folders.length !== 1 ? 's' : ''}.`);
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  const unmatchedCount = items.filter(i => !i.matched).length;
+  const matchedCount = items.filter(i => i.matched).length;
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.toolbar}>
+        <h1 className={styles.pageTitle}>Library Import</h1>
+        <Badge tone={section === 'comic' ? 'info' : 'neutral'}>
+          {section === 'comic' ? 'Comics' : 'Manga'}
+        </Badge>
+      </div>
+
+      <div className={styles.scanForm}>
+        <div className={styles.formRow}>
+          <label className={styles.label}>Folder Filter</label>
+          <input
+            className={styles.input}
+            placeholder="/path/to/filter"
+            value={folderFilter}
+            onChange={e => setFolderFilter(e.target.value)}
+            disabled={scanning}
+          />
+        </div>
+        <div className={styles.checkboxRow}>
+          <label>
+            <input type="checkbox" checked={fuzzyFallback} onChange={e => setFuzzyFallback(e.target.checked)} disabled={scanning} />
+            {' '}Fuzzy Fallback
+          </label>
+          <label>
+            <input type="checkbox" checked={quick} onChange={e => setQuick(e.target.checked)} disabled={scanning} />
+            {' '}Quick Scan
+          </label>
+        </div>
+        <div>
+          <Button variant="primary" onClick={startScan} disabled={scanning}>
+            {scanning ? 'Scanning…' : 'Start Scan'}
+          </Button>
+        </div>
+      </div>
+
+      {error && <Notice tone="danger">{error}</Notice>}
+      {success && <Notice tone="success">{success}</Notice>}
+
+      {scanning && items.length > 0 && (
+        <div className={styles.scanProgress}>Scanned {items.length} folders…</div>
+      )}
+
+      {!scanning && items.length === 0 ? (
+        <div className={styles.empty}>Start a scan to detect volumes</div>
+      ) : (
+        <>
+          <div className={styles.resultToolbar}>
+            <span className={styles.resultCount}>
+              {items.length} folders found · {matchedCount} matched · {unmatchedCount} unmatched
+            </span>
+            <div className={styles.resultActions}>
+              {matchedCount > 0 && (
+                <Button variant="ghost" onClick={selectAll} disabled={scanning}>
+                  Select All
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                onClick={handleImport}
+                disabled={selected.size === 0 || importing}
+              >
+                {importing ? 'Importing…' : `Import Selected (${selected.size})`}
+              </Button>
+              {unmatchedCount > 0 && (
+                <Button variant="secondary" onClick={() => setConfirmDelete(true)}>
+                  Delete Unmatched ({unmatchedCount})
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Folder</th>
+                  <th>Title</th>
+                  <th>Matched Title</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.folder}>
+                    <td>
+                      {item.matched && (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(item.folder)}
+                          onChange={() => toggleSelect(item.folder)}
+                        />
+                      )}
+                    </td>
+                    <td className={styles.folderCell}>{item.folder}</td>
+                    <td>{item.file_title}</td>
+                    <td>{item.match_title ?? '—'}</td>
+                    <td>
+                      <Badge tone={item.matched ? 'success' : 'danger'}>
+                        {item.matched ? 'Matched' : 'Unmatched'}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {confirmDelete && (
+        <DialogFrame open onOpenChange={open => !open && setConfirmDelete(false)}>
+          <DialogHeader title="Delete Unmatched Folders" onClose={() => setConfirmDelete(false)} />
+          <DialogBody>
+            <p>
+              Delete {unmatchedCount} unmatched folder{unmatchedCount !== 1 ? 's' : ''}?
+              This cannot be undone.
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <div className={styles.dialogActions}>
+              <Button variant="ghost" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+              <Button variant="primary" onClick={handleDelete}>Delete</Button>
+            </div>
+          </DialogFooter>
+        </DialogFrame>
+      )}
+    </div>
+  );
+}

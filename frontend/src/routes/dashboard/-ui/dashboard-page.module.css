@@ -1,0 +1,150 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.pageTitle {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+
+/* ── Stats row ───────────────────────────────────── */
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .statsRow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 500px) {
+  .statsRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.statCard {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.statValue {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.statLabel {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+/* ── 2-column grid ───────────────────────────────── */
+.gridRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 800px) {
+  .gridRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Section ─────────────────────────────────────── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sectionTitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.sectionLink {
+  font-size: 0.8rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.sectionLink:hover {
+  text-decoration: underline;
+}
+
+.sectionCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── List rows ───────────────────────────────────── */
+.listItems {
+  display: flex;
+  flex-direction: column;
+}
+
+.listRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.listRow:last-child {
+  border-bottom: none;
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.rowTitle {
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowMeta {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.queueProgress {
+  margin-top: 0.2rem;
+}
+
+.empty {
+  padding: 1.25rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-align: center;
+}

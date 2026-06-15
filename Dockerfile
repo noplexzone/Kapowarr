@@ -3,7 +3,17 @@ ARG PYTHON=3.13
 
 FROM python:${PYTHON}-slim-${DISTRO} AS python
 
-# --- Build Stage ---
+# --- Node Build Stage ---
+FROM node:22-slim AS node-builder
+WORKDIR /app/frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+# --- Python Build Stage ---
 FROM rust:slim-${DISTRO} AS builder
 WORKDIR /wheels
 
@@ -48,6 +58,9 @@ ARG CACHE_BUST=0
 COPY . .
 RUN chmod -R 755 /app && \
     find /app -name "*.sh" -exec sed -i 's/\r$//' {} +
+
+# Copy built SPA from Node stage (overwrites source files with dist)
+COPY --from=node-builder /app/frontend/dist /app/frontend/dist
 
 ENV PUID=0 \
     PGID=0 \

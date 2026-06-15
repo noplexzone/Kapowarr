@@ -2,18 +2,22 @@
 
 from io import BytesIO
 from json import dumps
-from typing import Any
+from os.path import exists, join
 
-from flask import Blueprint, redirect, render_template, send_file
+from flask import Blueprint, redirect, send_file, send_from_directory
 
+from backend.base.files import folder_path
 from backend.internals.server import Server
 
 ui = Blueprint('ui', __name__)
 methods = ['GET']
 
 
-def render(filename: str, **kwargs: Any) -> str:
-    return render_template(filename, url_base=Server.url_base, **kwargs)
+def spa_redirect(path: str = ''):
+    """Redirect a legacy URL to the equivalent SPA path under /ui/."""
+    base = Server.url_base
+    target = f'{base}/ui/{path}' if path else f'{base}/ui/'
+    return redirect(target)
 
 
 @ui.route('/manifest.json', methods=methods)
@@ -46,138 +50,169 @@ def ui_manifest():
     ), 200
 
 
+# Root → SPA dashboard
+@ui.route('/', methods=methods)
+def ui_root():
+    return spa_redirect()
+
+
+# Dashboard redirect
+@ui.route('/dashboard', methods=methods)
+def ui_dashboard():
+    return spa_redirect()
+
+
+# Legacy login → SPA login
 @ui.route('/login', methods=methods)
 def ui_login():
-    return render('login.html')
+    return spa_redirect('login')
 
 
-@ui.route('/', methods=methods)
-def ui_dashboard():
-    return render('dashboard.html')
-
-
-@ui.route('/dashboard', methods=methods)
-def ui_dashboard_redirect():
-    return redirect(f'{Server.url_base}/')
-
-
+# Comics
 @ui.route('/comics', methods=methods)
 def ui_volumes():
-    return render('volumes.html')
+    return spa_redirect('comics')
 
 
 @ui.route('/add', methods=methods)
 def ui_add_volume():
-    return render('add_volume.html')
+    return spa_redirect('add')
 
 
+# Library import
 @ui.route('/library-import', methods=methods)
 def ui_library_import():
-    return render('library_import.html')
+    return spa_redirect('import')
 
 
+# Mismatch review
 @ui.route('/mismatch-review', methods=methods)
 def ui_mismatch_review():
-    return render('folder_check.html')
+    return spa_redirect('mismatch-review')
 
 
 @ui.route('/manga/mismatch-review', methods=methods)
 def ui_manga_mismatch_review():
-    return render('folder_check.html')
+    return spa_redirect('mismatch-review?section=manga')
 
 
+# Discovery
 @ui.route('/discovery', methods=methods)
 def ui_discovery():
-    return render('comic_discovery.html')
+    return spa_redirect('discovery')
 
 
 @ui.route('/story-arcs', methods=methods)
 def ui_story_arcs():
-    return render('story_arcs.html')
+    return spa_redirect('discovery?type=story-arcs')
 
 
+# Manga
 @ui.route('/manga', methods=methods)
 def ui_manga_library():
-    return render('manga_library.html')
+    return spa_redirect('manga')
 
 
 @ui.route('/manga/add', methods=methods)
 def ui_manga_add():
-    return render('manga_add.html')
+    return spa_redirect('add?section=manga')
 
 
 @ui.route('/manga/discovery', methods=methods)
 def ui_manga_discovery():
-    return render('manga_discovery.html')
+    return spa_redirect('discovery?section=manga')
 
 
 @ui.route('/manga/story-arcs', methods=methods)
 def ui_manga_story_arcs():
-    return render('manga_story_arcs.html')
+    return spa_redirect('discovery?section=manga&type=story-arcs')
 
 
+# Volume detail
 @ui.route('/volumes/<id>', methods=methods)
 def ui_view_volume(id):
-    return render('view_volume.html')
+    return spa_redirect(f'volumes/{id}')
 
 
+# Activity
 @ui.route('/activity/queue', methods=methods)
 def ui_queue():
-    return render('queue.html')
+    return spa_redirect('activity/queue')
 
 
 @ui.route('/activity/history', methods=methods)
 def ui_history():
-    return render('history.html')
+    return spa_redirect('activity/history')
 
 
 @ui.route('/activity/blocklist', methods=methods)
 def ui_blocklist():
-    return render('blocklist.html')
+    return spa_redirect('activity/blocklist')
 
 
+# System
 @ui.route('/system/status', methods=methods)
 def ui_status():
-    return render('status.html')
+    return spa_redirect('system/status')
 
 
 @ui.route('/system/tasks', methods=methods)
 def ui_tasks():
-    return render('tasks.html')
+    return spa_redirect('system/tasks')
 
 
+# Settings
 @ui.route('/settings', methods=methods)
 def ui_settings():
-    return redirect(f'{Server.url_base}/settings/mediamanagement')
+    return spa_redirect('settings')
 
 
 @ui.route('/settings/mediamanagement', methods=methods)
 def ui_mediamanagement():
-    return render('settings_mediamanagement.html')
+    return spa_redirect('settings')
 
 
 @ui.route('/settings/download', methods=methods)
 def ui_download():
-    return render('settings_download.html')
+    return spa_redirect('settings')
 
 
 @ui.route('/settings/downloadclients', methods=methods)
 def ui_download_clients():
-    return redirect(f'{Server.url_base}/settings/download')
+    return spa_redirect('settings')
 
 
 @ui.route('/settings/indexers', methods=methods)
 def ui_indexers():
-    return render('settings_indexers.html')
+    return spa_redirect('settings')
 
 
 @ui.route('/settings/metadata', methods=methods)
 def ui_metadata():
-    return render('settings_metadata.html')
+    return spa_redirect('settings')
 
 
 @ui.route('/settings/general', methods=methods)
 def ui_general():
-    return render('settings_general.html')
+    return spa_redirect('settings')
 
 
+# ── SPA entry point ───────────────────────────────────────────────────────────
+SPA_DIR = folder_path('frontend', 'dist')
+
+
+@ui.route('/ui/', defaults={'path': ''}, methods=methods)
+@ui.route('/ui/<path:path>', methods=methods)
+def ui_spa(path: str):
+    index_path = join(SPA_DIR, 'index.html')
+
+    # Serve static assets directly
+    if path and exists(join(SPA_DIR, path)):
+        return send_from_directory(SPA_DIR, path)
+
+    # All other paths → index.html for client-side routing
+    if exists(index_path):
+        return send_file(index_path)
+
+    # Fallback: dev mode message
+    return 'SPA not built. Run "cd frontend && npm run build" to build the React UI.', 503

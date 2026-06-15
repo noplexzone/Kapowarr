@@ -1,0 +1,13 @@
+.shell {
+  display: grid;
+  grid-template-columns: var(--nav-width) 1fr;
+  grid-template-rows: 1fr;
+  min-height: 100vh;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.content {
+  padding: 1.5rem;
+  overflow-y: auto;
+}

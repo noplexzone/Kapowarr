@@ -1,0 +1,33 @@
+export interface AllSettings {
+  host: string;
+  port: number;
+  url_base: string;
+  auth_password: string;
+  auth_username: string;
+  timezone: string;
+  log_level: string;
+  volume_folder_naming: string;
+  file_naming: string;
+  file_naming_empty: string;
+  file_naming_special_version: string;
+  file_naming_vai: string;
+  volume_as_issue: boolean;
+  volume_as_issue_padding: number;
+  volume_regex: string;
+  volume_regex_issue: string;
+  comic_source_priority: string[];
+  manga_source_priority: string[];
+  getcomics_service_preference: string;
+  suwayomi_base_url: string;
+  suwayomi_username: string;
+  suwayomi_password: string;
+  comicvine_api_key: string;
+  nzb_indexer_url: string;
+  nzb_indexer_api_key: string;
+  proxy_type: string;
+  proxy_host: string;
+  proxy_port: number;
+  proxy_username: string;
+  proxy_password: string;
+  [key: string]: unknown;
+}

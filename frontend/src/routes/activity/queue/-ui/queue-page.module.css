@@ -1,0 +1,104 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.toolbarTitle {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 1rem;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table thead th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.table tbody td {
+  padding: 0.65rem 0.75rem;
+  font-size: 0.88rem;
+  vertical-align: middle;
+}
+
+.titleLink {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.titleLink:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.taskLabel {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 0.15rem;
+}
+
+.progressCell {
+  min-width: 120px;
+}
+
+.progressBar {
+  margin-top: 0.25rem;
+}
+
+.progressText {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.actions {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.sizeSpeed {
+  white-space: nowrap;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}

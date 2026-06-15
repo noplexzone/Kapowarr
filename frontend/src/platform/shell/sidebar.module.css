@@ -1,0 +1,116 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  border-right: 1px solid var(--border);
+  height: 100vh;
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.brandIcon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+  font-size: 0.9rem;
+  border-radius: 6px;
+}
+
+.brandText {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.nav {
+  flex: 1;
+  padding: 0.5rem 0;
+}
+
+.navGroup {
+  margin-bottom: 0.25rem;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+}
+
+.navItem:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.navItem.active {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #000;
+}
+
+.subNav {
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  margin-left: 1.25rem;
+}
+
+.subNavItem {
+  display: block;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.subNavItem:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.subNavItem.subActive {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.footer {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  text-align: center;
+}

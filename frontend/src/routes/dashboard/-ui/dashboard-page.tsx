@@ -33,7 +33,7 @@ export function DashboardPage() {
     <div className={styles.page}>
       <h1 className={styles.pageTitle}>Dashboard</h1>
 
-      {/* ── Stats row ── */}
+      {/* ── Section stats row (Comics + Manga) ── */}
       <div className={styles.statsRow}>
         <SectionStatCard
           label="Comics"
@@ -48,11 +48,15 @@ export function DashboardPage() {
           downloaded={mangaStats?.downloaded_issues ?? null}
           wanted={mangaWanted}
         />
-        <Card className={styles.statCard}>
+      </div>
+
+      {/* ── Mini stat row (Queue + Wanted) ── */}
+      <div className={styles.miniStatsRow}>
+        <Card className={styles.miniStatCard}>
           <div className={styles.statValue}>{queueItems.length}</div>
           <div className={styles.statLabel}>In Queue</div>
         </Card>
-        <Card className={styles.statCard}>
+        <Card className={styles.miniStatCard}>
           <div className={styles.statValue}>{totalWanted ?? '—'}</div>
           <div className={styles.statLabel}>Wanted</div>
         </Card>

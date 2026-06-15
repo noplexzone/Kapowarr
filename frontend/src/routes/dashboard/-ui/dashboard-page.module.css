@@ -15,27 +15,36 @@
 
 .statsRow {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
 }
 
-@media (max-width: 1000px) {
-  .statsRow {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 500px) {
+@media (max-width: 600px) {
   .statsRow {
     grid-template-columns: 1fr;
   }
 }
 
-.statCard {
+/* ── Mini stat row (Queue + Wanted) ──────────────── */
+
+.miniStatsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .miniStatsRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.miniStatCard {
   padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .statCardAccent {
@@ -66,12 +75,14 @@
 
 .statSectionRow {
   display: flex;
-  gap: 1rem;
+  gap: 0;
 }
 
 .statSectionItem {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.05rem;
 }
 

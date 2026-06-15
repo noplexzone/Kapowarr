@@ -69,10 +69,14 @@ export function VolumeDetailPage() {
   const queryClient = useQueryClient();
   const [actionMsg, setActionMsg] = useState('');
 
-  // Manual search dialog
+  // Issue manual search dialog
   const [manualSearchIssueId, setManualSearchIssueId] = useState<number | null>(null);
   const [manualResults, setManualResults] = useState<ManualSearchResult[]>([]);
   const [manualSearching, setManualSearching] = useState(false);
+
+  // Volume-level manual search dialog
+  const [volManualResults, setVolManualResults] = useState<ManualSearchResult[]>([]);
+  const [volManualSearching, setVolManualSearching] = useState(false);
 
   // Issue history dialog
   const [historyIssueId, setHistoryIssueId] = useState<number | null>(null);
@@ -122,7 +126,17 @@ export function VolumeDetailPage() {
 
   const manualSearchVolMutation = useMutation({
     mutationFn: () => manualSearchVolume(id),
-    onSuccess: () => setActionMsg('Manual search started.'),
+    onSuccess: (data) => {
+      setVolManualResults(data);
+      setVolManualSearching(false);
+      if (data.length === 0) {
+        setActionMsg('Manual search returned no results.');
+      }
+    },
+    onError: (err) => {
+      setVolManualSearching(false);
+      setActionMsg('Manual search failed: ' + (err as Error).message);
+    },
   });
 
   const autoSearchIssueMutation = useMutation({
@@ -207,9 +221,20 @@ export function VolumeDetailPage() {
     }
   }, []);
 
+  const handleVolumeManualSearch = useCallback(() => {
+    setVolManualSearching(true);
+    setVolManualResults([]);
+    manualSearchVolMutation.mutate();
+  }, [manualSearchVolMutation]);
+
   const closeManualSearch = useCallback(() => {
     setManualSearchIssueId(null);
     setManualResults([]);
+  }, []);
+
+  const closeVolumeManualSearch = useCallback(() => {
+    setVolManualResults([]);
+    setVolManualSearching(false);
   }, []);
 
   const handleShowHistory = useCallback(async (issueId: number) => {
@@ -395,21 +420,21 @@ export function VolumeDetailPage() {
               onClick={() => refreshMutation.mutate()}
               disabled={refreshMutation.isPending}
             >
-              Refresh & Scan
+              {refreshMutation.isPending ? '⟳ Scanning…' : 'Refresh & Scan'}
             </Button>
             <Button
               variant="primary"
               onClick={() => autoSearchMutation.mutate()}
               disabled={autoSearchMutation.isPending}
             >
-              Auto Search
+              {autoSearchMutation.isPending ? '⟳ Searching…' : 'Auto Search'}
             </Button>
             <Button
               variant="secondary"
-              onClick={() => manualSearchVolMutation.mutate()}
-              disabled={manualSearchVolMutation.isPending}
+              onClick={handleVolumeManualSearch}
+              disabled={volManualSearching}
             >
-              Manual Search
+              {volManualSearching ? '⟳ Searching…' : 'Manual Search'}
             </Button>
             <Button variant="ghost" onClick={openEdit}>
               Edit
@@ -671,6 +696,64 @@ export function VolumeDetailPage() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          )}
+        </DialogBody>
+      </DialogFrame>
+
+      {/* ── Volume-Level Manual Search Dialog ───────────────── */}
+      <DialogFrame
+        open={volManualResults.length > 0 || volManualSearching}
+        onOpenChange={(open) => {
+          if (!open) closeVolumeManualSearch();
+        }}
+      >
+        <DialogHeader
+          title={
+            volManualSearching
+              ? 'Searching…'
+              : `Manual Search — ${volume.title}`
+          }
+          onClose={closeVolumeManualSearch}
+        />
+        <DialogBody>
+          {volManualSearching && (
+            <p className={styles.dialogStatus}>Searching for downloads…</p>
+          )}
+          {!volManualSearching && volManualResults.length === 0 && (
+            <p className={styles.dialogStatus}>No results found.</p>
+          )}
+          {!volManualSearching && volManualResults.length > 0 && (
+            <table className={styles.searchResultTable}>
+              <thead>
+                <tr>
+                  <th className={styles.thMatch}>Match</th>
+                  <th>Title</th>
+                  <th className={styles.thSource}>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {volManualResults.map((result, i) => (
+                  <tr key={i}>
+                    <td>
+                      <Badge tone={result.match ? 'success' : 'neutral'}>
+                        {result.match ? 'Match' : result.match_issue || 'No match'}
+                      </Badge>
+                    </td>
+                    <td>
+                      <a
+                        href={result.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.resultTitle}
+                      >
+                        {result.display_title}
+                      </a>
+                    </td>
+                    <td className={styles.sourceCell}>{result.source}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}

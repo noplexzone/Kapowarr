@@ -73,12 +73,20 @@ export async function deleteVolume(id: number): Promise<void> {
   await apiClient.delete(`volumes/${id}`);
 }
 
-export async function autoSearchVolume(id: number): Promise<void> {
-  await apiClient.post(`volumes/${id}/download`);
+export async function autoSearchVolume(
+  id: number,
+): Promise<{ id: number }> {
+  const response = await apiClient.post('system/tasks', {
+    json: { cmd: 'auto_search', volume_id: id },
+  });
+  return readJson<{ id: number }>(response);
 }
 
-export async function manualSearchVolume(id: number): Promise<void> {
-  await apiClient.post(`volumes/${id}/manualsearch`);
+export async function manualSearchVolume(
+  id: number,
+): Promise<ManualSearchResult[]> {
+  const response = await apiClient.get(`volumes/${id}/manualsearch`);
+  return readJson<ManualSearchResult[]>(response);
 }
 
 // ── Per-issue actions ─────────────────────────────────────────────

@@ -116,6 +116,11 @@
   margin-bottom: 0.25rem;
 }
 
+.navParent {
+  display: flex;
+  align-items: center;
+}
+
 .navItem {
   display: flex;
   align-items: center;
@@ -200,6 +205,37 @@
 .subNavIcon {
   flex-shrink: 0;
   opacity: 0.7;
+}
+
+/* ── Chevron & collapse ─────────────────────── */
+.chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: transform 0.2s ease, color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.chevron:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.subNavCollapsed {
+  display: none;
 }
 
 /* ── Footer ──────────────────────────────────── */

@@ -208,7 +208,7 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
           if (!hasChildren) {
             return (
               <div key={item.to + item.label} className={styles.navGroup}>
-                <Link to={item.to as any} className={clsx(styles.navItem, active && styles.active)} onClick={onClose}>
+                <Link to={item.to as any} className={clsx(styles.navItem, active && styles.active)} onClick={onClose} title={sidebarCollapsed ? item.label : undefined}>
                   <NavIcon name={item.label} className={styles.navIcon} />
                   {!sidebarCollapsed && <span>{item.label}</span>}
                   {badge != null && badge > 0 && <span className={styles.badge}>{badge}</span>}
@@ -221,17 +221,19 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
             <div key={item.to + item.label} className={styles.navGroup}>
               {!sidebarCollapsed ? (
                 <div className={styles.navParent}>
-                  <Link to={item.to as any} className={clsx(styles.navItem, active && styles.active)} onClick={onClose}>
+                  <Link to={item.to as any} className={clsx(styles.navItem, active && styles.active)} onClick={onClose} title={sidebarCollapsed ? item.label : undefined}>
                     <NavIcon name={item.label} className={styles.navIcon} />
                     <span>{item.label}</span>
                     {badge != null && badge > 0 && <span className={styles.badge}>{badge}</span>}
                   </Link>
-                  <button type="button" className={clsx(styles.chevron, isExpanded && styles.chevronOpen)} onClick={(e) => { e.preventDefault(); toggleGroup(item.label); }} aria-label={isExpanded ? `Collapse ${item.label}` : `Expand ${item.label}`} aria-expanded={isExpanded}>
-                    ▸
+                  <button type="button" className={clsx(styles.chevron, isExpanded && styles.chevronOpen)} onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleGroup(item.label); }} aria-label={isExpanded ? `Collapse ${item.label}` : `Expand ${item.label}`} aria-expanded={isExpanded}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
                   </button>
                 </div>
               ) : (
-                <Link to={item.to as any} className={clsx(styles.navItem, active && styles.active)} onClick={onClose}>
+                <Link to={item.to as any} className={clsx(styles.navItem, active && styles.active)} onClick={onClose} title={sidebarCollapsed ? item.label : undefined}>
                   <NavIcon name={item.label} className={styles.navIcon} />
                   {badge != null && badge > 0 && <span className={styles.badge}>{badge}</span>}
                 </Link>
@@ -239,7 +241,7 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
 
               <div className={clsx(styles.subNav, (!isExpanded || sidebarCollapsed) && styles.subNavCollapsed)} aria-hidden={!isExpanded || sidebarCollapsed || undefined} inert={isExpanded && !sidebarCollapsed ? undefined : true}>
                 {item.children!.map((child) => (
-                  <Link key={child.to} to={child.to as any} className={clsx(styles.subNavItem, isSubActive(child, pathname) && styles.subActive)} onClick={onClose} tabIndex={isExpanded && !sidebarCollapsed ? 0 : -1}>
+                  <Link key={child.to} to={child.to as any} className={clsx(styles.subNavItem, isSubActive(child, pathname) && styles.subActive)} onClick={onClose} tabIndex={isExpanded && !sidebarCollapsed ? 0 : -1} title={sidebarCollapsed ? child.label : undefined}>
                     <NavIcon name={child.label} className={styles.subNavIcon} />
                     <span>{child.label}</span>
                   </Link>

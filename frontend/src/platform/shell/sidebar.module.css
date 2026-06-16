@@ -121,11 +121,14 @@
   align-items: center;
 }
 
+.navParent .navItem {
+  flex: 1;
+}
+
 .navItem {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  justify-content: space-between;
   padding: 0.5rem 1.25rem;
   font-size: 0.875rem;
   font-weight: 500;

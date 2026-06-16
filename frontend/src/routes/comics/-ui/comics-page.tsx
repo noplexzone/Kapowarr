@@ -38,52 +38,64 @@ function setStorageVal(key: string, val: unknown) {
   } catch { /* storage full, silently ignore */ }
 }
 
+/** Read URL params from the live address bar and fold in localStorage
+ *  preferences for any param the URL didn't supply.  URL wins. */
+function buildMergedSearch(routerSearch: Record<string, unknown>): Record<string, unknown> {
+  const urlParams = new URLSearchParams(window.location.search);
+  const merged = { ...routerSearch };
+
+  if (!urlParams.has('sort')) {
+    const stored = getStorageVal<string | null>(STORAGE_KEY_SORT, null);
+    if (stored && (SORT_OPTIONS as readonly string[]).includes(stored)) merged.sort = stored;
+  }
+  if (!urlParams.has('view')) {
+    const stored = getStorageVal<string | null>(STORAGE_KEY_VIEW, null);
+    if (stored && (VIEW_OPTIONS as readonly string[]).includes(stored)) merged.view = stored;
+  }
+  if (!urlParams.has('filter')) {
+    const stored = getStorageVal<string | null>(STORAGE_KEY_FILTER, null);
+    if (stored && (FILTER_OPTIONS as readonly string[]).includes(stored)) merged.filter = stored;
+  }
+  if (!urlParams.has('search')) {
+    const stored = getStorageVal<string | null>(STORAGE_KEY_SEARCH, null);
+    if (stored) merged.search = stored;
+  }
+
+  return merged;
+}
+
 export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   const navigate = useNavigate();
 
-  // Hydrate from localStorage on first mount when URL has no explicit params.
-  // Read window.location.search directly — useSearch() always returns Zod defaults
-  // so we can't detect whether a param was actually in the URL from there.
-  const [hydrated] = useState(() => {
-    const rawParams = new URLSearchParams(window.location.search);
-    const patch: Record<string, unknown> = {};
-    if (!rawParams.get('sort')) {
-      const stored = getStorageVal<string | null>(STORAGE_KEY_SORT, null);
-      if (stored && SORT_OPTIONS.includes(stored as any)) patch.sort = stored;
-    }
-    if (!rawParams.get('view')) {
-      const stored = getStorageVal<string | null>(STORAGE_KEY_VIEW, null);
-      if (stored && VIEW_OPTIONS.includes(stored as any)) patch.view = stored;
-    }
-    if (!rawParams.get('filter')) {
-      const stored = getStorageVal<string | null>(STORAGE_KEY_FILTER, null);
-      if (stored && FILTER_OPTIONS.includes(stored as any)) patch.filter = stored;
-    }
-    if (!rawParams.get('search')) {
-      const stored = getStorageVal<string | null>(STORAGE_KEY_SEARCH, null);
-      if (stored) patch.search = stored;
-    }
-    return patch;
-  });
+  // Merge localStorage preferences into URL search params on initial render.
+  // URL params take priority over localStorage (explicit ?sort=title wins).
+  const rawSearch = useSearch({ strict: false }) as Record<string, unknown>;
+  const mergedSearch = buildMergedSearch(rawSearch);
+  const validated = volumesSearchSchema.parse(mergedSearch);
+  const { data } = useSuspenseQuery(volumeListQueryOptions(1, validated, section));
 
-  const hydrationDone = useRef(false);
+  // Sync URL to localStorage values on first mount so the address bar
+  // reflects the user's saved preferences.
+  const urlSynced = useRef(false);
   useEffect(() => {
-    if (hydrationDone.current) return;
-    hydrationDone.current = true;
-    if (Object.keys(hydrated).length > 0) {
+    if (urlSynced.current) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const sync: Record<string, unknown> = {};
+    if (!urlParams.has('sort') && mergedSearch.sort && mergedSearch.sort !== 'title') {
+      sync.sort = mergedSearch.sort;
+    }
+    if (!urlParams.has('view') && mergedSearch.view && mergedSearch.view !== 'posters') {
+      sync.view = mergedSearch.view;
+    }
+    if (Object.keys(sync).length > 0) {
+      urlSynced.current = true;
       navigate({
         to: section === 'comic' ? '/comics' : '/manga',
-        search: (prev: any) => ({ ...prev, ...hydrated }),
+        search: (prev: any) => ({ ...prev, ...sync }),
         replace: true,
       });
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Use the router's reactive search so sort/filter/view/search changes
-  // trigger a stable re-fetch via useSuspenseQuery.
-  const rawSearch = useSearch({ strict: false }) as Record<string, unknown>;
-  const validated = volumesSearchSchema.parse(rawSearch);
-  const { data } = useSuspenseQuery(volumeListQueryOptions(1, validated, section));
+  }, []); // eslint-disable-line
 
   const [view, setView] = useState<ViewOption>(validated.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());

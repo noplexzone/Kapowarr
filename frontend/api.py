@@ -3,7 +3,7 @@
 from asyncio import run
 from datetime import datetime
 from io import BytesIO
-from os import makedirs
+from os import makedirs, remove
 from os.path import basename, exists, join, splitext
 from typing import Any, Dict, List, Tuple, Type, Union
 
@@ -1817,6 +1817,21 @@ def api_files(f_id: int):
     elif request.method == 'DELETE':
         delete_issue_file(f_id)
         return return_api({})
+
+
+@api.route('/files/raw', methods=['DELETE'])
+@error_handler
+@auth
+def api_files_raw():
+    """Delete a file from disk by filepath. Used for unmatched files without DB records."""
+    data: dict = request.get_json() or {}
+    filepath = data.get('filepath', '')
+    if not filepath or not exists(filepath):
+        raise KeyNotFound('filepath')
+    if not filepath.startswith('/'):
+        raise InvalidKeyValue('filepath', filepath)
+    remove(filepath)
+    return return_api({})
 
 
 # =====================

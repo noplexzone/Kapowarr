@@ -28,6 +28,7 @@ import {
   fetchManualMatch,
   submitManualMatch,
   deleteFile,
+  deleteRawFile,
 } from '../-volumes.api';
 import type {
   IssueDetail,
@@ -187,6 +188,8 @@ export function VolumeDetailPage() {
     Record<string, number>
   >({});
   const [manageLoading, setManageLoading] = useState(false);
+  const [unmatchedChecked, setUnmatchedChecked] = useState<Set<string>>(new Set());
+  const [unmatchedDeleting, setUnmatchedDeleting] = useState(false);
 
   const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
 
@@ -413,6 +416,8 @@ export function VolumeDetailPage() {
     setManageDeleting(false);
     setManageForceMatching(false);
     setForceMatchTargets({});
+    setUnmatchedChecked(new Set());
+    setUnmatchedDeleting(false);
     setManageIssuesOpen(true);
     setManageLoading(true);
     try {
@@ -537,6 +542,84 @@ export function VolumeDetailPage() {
     },
     [id, forceMatchTargets, queryClient],
   );
+
+  const toggleUnmatchedCheck = useCallback((filepath: string) => {
+    setUnmatchedChecked(prev => {
+      const next = new Set(prev);
+      if (next.has(filepath)) next.delete(filepath);
+      else next.add(filepath);
+      return next;
+    });
+  }, []);
+
+  const toggleAllUnmatched = useCallback((checked: boolean, filepaths: string[]) => {
+    if (checked) {
+      setUnmatchedChecked(new Set(filepaths));
+    } else {
+      setUnmatchedChecked(new Set());
+    }
+  }, []);
+
+  const handleDeleteUnmatchedSelected = useCallback(async () => {
+    if (unmatchedChecked.size === 0) return;
+    setUnmatchedDeleting(true);
+    const filepaths = [...unmatchedChecked];
+    let deleted = 0;
+    try {
+      for (const fp of filepaths) {
+        // Try file_id-based delete first, fall back to raw filepath delete
+        const match = unmatchedFiles.find(m => m.filepath === fp);
+        if (match?.file_id != null) {
+          await deleteFile(match.file_id);
+        } else {
+          await deleteRawFile(fp);
+        }
+        deleted++;
+      }
+      setActionMsg(`Deleted ${deleted} unmatched file(s).`);
+      queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+      setUnmatchedChecked(new Set());
+      // Refresh manual match data
+      const matches = await fetchManualMatch(id);
+      setManualMatches(matches);
+      setUnmatchedFiles(
+        matches.filter((m) => m.issue_ids.length === 0 && !m.general_file),
+      );
+    } catch (err) {
+      setActionMsg('Delete failed: ' + (err as Error).message);
+    } finally {
+      setUnmatchedDeleting(false);
+    }
+  }, [unmatchedChecked, unmatchedFiles, id, queryClient]);
+
+  const handleDeleteAllUnmatched = useCallback(async () => {
+    if (unmatchedFiles.length === 0) return;
+    if (!window.confirm(`Delete all ${unmatchedFiles.length} unmatched files?`)) return;
+    setUnmatchedDeleting(true);
+    let deleted = 0;
+    try {
+      for (const uf of unmatchedFiles) {
+        if (uf.file_id != null) {
+          await deleteFile(uf.file_id);
+        } else {
+          await deleteRawFile(uf.filepath);
+        }
+        deleted++;
+      }
+      setActionMsg(`Deleted ${deleted} unmatched file(s).`);
+      queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+      setUnmatchedChecked(new Set());
+      const matches = await fetchManualMatch(id);
+      setManualMatches(matches);
+      setUnmatchedFiles(
+        matches.filter((m) => m.issue_ids.length === 0 && !m.general_file),
+      );
+    } catch (err) {
+      setActionMsg('Delete all failed: ' + (err as Error).message);
+    } finally {
+      setUnmatchedDeleting(false);
+    }
+  }, [unmatchedFiles, id, queryClient]);
 
   const openEdit = useCallback(() => {
     if (!volume) return;
@@ -1524,6 +1607,21 @@ export function VolumeDetailPage() {
                   <table className={styles.renameTable}>
                     <thead>
                       <tr>
+                        <th className={styles.renameCheck}>
+                          <input
+                            type="checkbox"
+                            checked={
+                              unmatchedFiles.length > 0 &&
+                              unmatchedChecked.size === unmatchedFiles.length
+                            }
+                            onChange={(e) =>
+                              toggleAllUnmatched(
+                                e.target.checked,
+                                unmatchedFiles.map(uf => uf.filepath),
+                              )
+                            }
+                          />
+                        </th>
                         <th>Filename</th>
                         <th className={styles.thActions}>
                           Force Match To
@@ -1534,8 +1632,23 @@ export function VolumeDetailPage() {
                       {unmatchedFiles.map((uf) => {
                         const fn =
                           uf.filepath.split(/[/\\]/).pop() || uf.filepath;
+                        const matchedIssueIds = new Set(
+                          manualMatches.flatMap(m => m.issue_ids),
+                        );
+                        const unmatchedIssues = volume.issues.filter(
+                          issue => !matchedIssueIds.has(issue.id),
+                        );
                         return (
                           <tr key={uf.filepath}>
+                            <td className={styles.renameCheck}>
+                              <input
+                                type="checkbox"
+                                checked={unmatchedChecked.has(uf.filepath)}
+                                onChange={() =>
+                                  toggleUnmatchedCheck(uf.filepath)
+                                }
+                              />
+                            </td>
                             <td className={styles.issueFilename}>
                               <span className={styles.filenameLine}>
                                 {fn}
@@ -1561,7 +1674,7 @@ export function VolumeDetailPage() {
                                 <option value="">
                                   Select issue…
                                 </option>
-                                {volume.issues.map((issue) => (
+                                {unmatchedIssues.map((issue) => (
                                   <option
                                     key={issue.id}
                                     value={issue.id}
@@ -1590,6 +1703,26 @@ export function VolumeDetailPage() {
                       })}
                     </tbody>
                   </table>
+                  <div className={styles.renameActions}>
+                    <Button
+                      variant="primary"
+                      disabled={
+                        unmatchedChecked.size === 0 || unmatchedDeleting
+                      }
+                      onClick={handleDeleteUnmatchedSelected}
+                    >
+                      {unmatchedDeleting
+                        ? 'Deleting…'
+                        : 'Delete Selected'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={unmatchedDeleting}
+                      onClick={handleDeleteAllUnmatched}
+                    >
+                      Delete All
+                    </Button>
+                  </div>
                 </>
               )}
 

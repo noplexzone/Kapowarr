@@ -289,3 +289,7 @@ export async function submitManualMatch(
 export async function deleteFile(fileId: number): Promise<void> {
   await apiClient.delete(`files/${fileId}`);
 }
+
+export async function deleteRawFile(filepath: string): Promise<void> {
+  await apiClient.delete('files/raw', { json: { filepath } });
+}

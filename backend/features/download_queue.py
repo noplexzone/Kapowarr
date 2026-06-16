@@ -87,6 +87,10 @@ class DownloadHandler(metaclass=Singleton):
             if e.source == DownloadSource.MEGA:
                 self._remove_mega(exclude_id=download.id)
 
+        except Exception as e:
+            LOGGER.error(f'Download {download.id} failed with unexpected error: {e}', exc_info=True)
+            download.stop(DownloadState.FAILED_STATE)
+
         ws.emit(status_event)
         if download.state == DownloadState.SHUTDOWN_STATE:
             PostProcessor.shutdown(download)

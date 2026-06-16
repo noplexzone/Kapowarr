@@ -1222,7 +1222,7 @@ class TaskHandler(metaclass=Singleton):
             next_run = get_db().execute(
                 "SELECT MIN(next_run) FROM task_intervals"
             ).fetchone()[0]
-        timedelta = next_run - round(time()) + 1
+        timedelta = max(1, next_run - round(time()) + 1)
         LOGGER.debug(f'Next interval task is in {timedelta} seconds')
 
         self.task_interval_waiter = Timer(timedelta, self.__check_intervals)
@@ -1238,7 +1238,8 @@ class TaskHandler(metaclass=Singleton):
             self.task_interval_waiter.cancel()
 
         if self.queue:
-            self.queue[0]['task'].stop = True
+            for entry in self.queue:
+                entry['task'].stop = True
             self.queue[0]['thread'].join()
 
         return
@@ -1349,7 +1350,7 @@ class TaskHandler(metaclass=Singleton):
         task['task'].stop = True
         task['thread'].join()
         self.queue.remove(task)
-        LOGGER.info(f'Removed task: {task["task"].display_name} ({task_id})')
+        LOGGER.info(f'Removed task: {task["task"].display_title} ({task_id})')
         WebSocket().emit(TaskEndedEvent(task['task']))
         return
 

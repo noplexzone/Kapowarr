@@ -465,7 +465,7 @@ def check_search_result_match(
 
     if not (
         match_special_version(
-            volume_data.special_version,
+            volume_data.special_version.value,
             result['special_version'],
             volume_data.title,
             result['issue_number']

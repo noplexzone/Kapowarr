@@ -43,7 +43,7 @@ def _pick_best_cv_result(
         if year_matches:
             best = max(year_matches, key=lambda r: r.get('issue_count') or 0)
             return best['comicvine_id'], 'volume'
-    return results[0]['comicvine_id'], 'volume'
+    return max(results, key=lambda r: r.get('issue_count') or 0)['comicvine_id'], 'volume'
 
 
 def read_comicinfo_cv_id(cbz_path: str) -> Union[Tuple[int, str], None]:

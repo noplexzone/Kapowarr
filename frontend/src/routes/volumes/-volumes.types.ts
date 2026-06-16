@@ -7,6 +7,7 @@ export interface IssueDetail {
   downloaded: boolean;
   size: number;
   issue_folder?: string;
+  file_ids: number[];
 }
 
 export interface VolumeDetailFull {

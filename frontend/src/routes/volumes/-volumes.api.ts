@@ -66,6 +66,9 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
                 ? i.files.reduce((sum: number, f: any) => sum + (f.size ?? 0), 0)
                 : 0,
           issue_folder: i.issue_folder ?? undefined,
+          file_ids: Array.isArray(i.files)
+            ? i.files.map((f: any) => f.id)
+            : [],
         }))
       : [],
   };

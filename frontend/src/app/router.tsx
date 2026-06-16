@@ -21,6 +21,7 @@ import { SystemTasksPage } from '@/routes/system/-ui/system-tasks-page';
 import { DiscoveryPage } from '@/routes/discovery/-ui/discovery-page';
 import { ImportPage } from '@/routes/import/-ui/import-page';
 import { VolumeDetailPage } from '@/routes/volumes/-ui/volume-detail-page';
+import { ReaderPage } from '@/routes/reader/-ui/reader-page';
 import { MismatchPage } from '@/routes/mismatch/-ui/mismatch-page';
 import { volumesSearchSchema } from '@/routes/comics/-comics.types';
 import { volumeListQueryOptions } from '@/routes/comics/-comics.api';
@@ -145,6 +146,13 @@ const volumeDetailRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'volumes/$volumeId',
   component: VolumeDetailPage,
+});
+
+// Comic reader
+const readerRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'read/$fileId',
+  component: ReaderPage,
 });
 
 // Manga library
@@ -382,6 +390,7 @@ export const routeTree = rootRoute.addChildren([
     comicsRoute,
     comicsAddRedirectRoute,
     volumeDetailRoute,
+    readerRoute,
     mangaRoute,
     mangaAddRedirectRoute,
     addRoute,

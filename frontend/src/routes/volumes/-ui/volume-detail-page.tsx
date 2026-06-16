@@ -75,6 +75,15 @@ function HistoryIcon() {
   );
 }
 
+function PencilIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+      <path d="m15 5 4 4"/>
+    </svg>
+  );
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -610,28 +619,28 @@ export function VolumeDetailPage() {
                 variant="secondary"
                 onClick={() => refreshMutation.mutate()}
                 disabled={refreshMutation.isPending}
+                title={refreshMutation.isPending ? 'Scanning…' : 'Refresh & Scan'}
               >
                 <RefreshIcon />
-                {refreshMutation.isPending ? 'Scanning…' : 'Refresh & Scan'}
               </Button>
               <Button
                 variant="primary"
                 onClick={() => autoSearchMutation.mutate()}
                 disabled={autoSearchMutation.isPending}
+                title={autoSearchMutation.isPending ? 'Searching…' : 'Auto Search'}
               >
                 <SearchIcon />
-                {autoSearchMutation.isPending ? 'Searching…' : 'Auto Search'}
               </Button>
               <Button
                 variant="secondary"
                 onClick={handleVolumeManualSearch}
                 disabled={volManualSearching}
+                title={volManualSearching ? 'Searching…' : 'Manual Search'}
               >
                 <PersonIcon />
-                {volManualSearching ? 'Searching…' : 'Manual Search'}
               </Button>
-              <Button variant="secondary" onClick={openEdit}>
-                Edit
+              <Button variant="secondary" onClick={openEdit} title="Edit">
+                <PencilIcon />
               </Button>
               <Button variant="secondary" onClick={openFixMatch}>
                 Fix Match

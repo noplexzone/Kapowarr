@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { useShellStore } from './store';
 import { queueQueryOptions, QUEUE_KEY } from '@/routes/activity/queue/-queue.api';
 import { useSocketEvent } from '@/platform/socketio/socket';
+import { systemAboutQueryOptions } from '@/routes/system/-system.api';
 import { NavIcon } from './nav-icons';
 import styles from './sidebar.module.css';
 
@@ -66,6 +67,20 @@ const DEFAULT_EXPANDED: Record<string, boolean> = {
   Manga: true,
   Activity: false,
   System: false,
+};
+
+const THEMES: Record<string, string> = {
+  Light: 'light',
+  Dark: 'dark-mode',
+  Batman: 'batman-mode',
+  'Spider-Man': 'spiderman-mode',
+  Invincible: 'invincible-mode',
+  Superman: 'superman-mode',
+  'Iron Man': 'ironman-mode',
+  'Wonder Woman': 'wonderwoman-mode',
+  'The Flash': 'flash-mode',
+  'Green Lantern': 'greenlantern-mode',
+  'Captain America': 'captainamerica-mode',
 };
 
 function loadGroupState(): Record<string, boolean> {

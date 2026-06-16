@@ -263,3 +263,26 @@
   color: var(--text-dim);
   text-align: center;
 }
+
+/* ── Tight mobile ─────────────────────────────────── */
+@media (max-width: 480px) {
+  .page {
+    gap: 0.5rem;
+  }
+
+  .statCard {
+    padding: 0.75rem;
+  }
+
+  .coverGrid {
+    gap: 0.35rem;
+  }
+
+  .coverInfo {
+    padding: 0.25rem 0.3rem;
+  }
+
+  .listRow {
+    padding: 0.35rem 0.5rem;
+  }
+}

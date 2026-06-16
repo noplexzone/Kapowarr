@@ -27,19 +27,30 @@ def ui_manifest():
             {
                 "name": "Kapowarr",
                 "short_name": "Kapowarr",
-                "description": "Kapowarr is a software to build and manage a comic book library, fitting in the *arr suite of software.",
+                "description": "Comic and manga library manager",
                 "display": "standalone",
-                "orientation": "portrait-primary",
+                "orientation": "any",
                 "start_url": f"{Server.url_base}/",
                 "scope": f"{Server.url_base}/",
                 "id": f"{Server.url_base}/",
-                "background_color": "#464b51",
-                "theme_color": "#ebc700",
+                "theme_color": "#1a1a1a",
+                "background_color": "#1a1a1a",
                 "icons": [
                     {
-                        "src": f"{Server.url_base}/static/img/favicon.svg",
+                        "src": f"{Server.url_base}/ui/icon-192.png",
+                        "sizes": "192x192",
+                        "type": "image/png"
+                    },
+                    {
+                        "src": f"{Server.url_base}/ui/icon-512.png",
+                        "sizes": "512x512",
+                        "type": "image/png"
+                    },
+                    {
+                        "src": f"{Server.url_base}/ui/favicon.svg",
+                        "sizes": "any",
                         "type": "image/svg+xml",
-                        "sizes": "any"
+                        "purpose": "any maskable"
                     }
                 ]
             },

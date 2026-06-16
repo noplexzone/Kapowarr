@@ -57,6 +57,7 @@
   }
 
   .content {
+    padding: 0.75rem;
     padding-top: 3.5rem;
   }
 }

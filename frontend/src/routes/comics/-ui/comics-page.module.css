@@ -168,3 +168,33 @@
   font-weight: 500;
   color: var(--text);
 }
+
+/* ── Mobile ───────────────────────────────────────── */
+@media (max-width: 480px) {
+  .posterGrid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.5rem;
+  }
+
+  .searchBar {
+    width: 92%;
+    min-width: unset;
+    bottom: 0.5rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 8px;
+  }
+
+  .statsBar {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .toolbar {
+    gap: 0.35rem;
+  }
+
+  .page {
+    padding-bottom: 3.5rem;
+  }
+}

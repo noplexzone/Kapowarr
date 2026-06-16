@@ -301,6 +301,7 @@ export function VolumeDetailPage() {
     onSuccess: () => {
       setFixReplacing(true);
       setFixSearchStatus('Rematching… fetching new metadata from ComicVine.');
+      queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
     },
     onError: (err) => {
       setFixSearchStatus('Rematch failed: ' + (err as Error).message);

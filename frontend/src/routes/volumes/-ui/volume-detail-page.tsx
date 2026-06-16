@@ -685,6 +685,7 @@ export function VolumeDetailPage() {
                 <th className={styles.thDate}>Release Date</th>
                 <th className={styles.thStatus}>Status</th>
                 <th className={styles.thSize}>Size</th>
+                <th className={styles.thFilename}>Filename</th>
                 <th className={styles.thActions}>Actions</th>
               </tr>
             </thead>
@@ -1330,7 +1331,7 @@ export function VolumeDetailPage() {
                     </th>
                     <th>#</th>
                     <th>Title</th>
-                    <th>Status</th>
+                    <th>Filename</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1347,22 +1348,14 @@ export function VolumeDetailPage() {
                       <td className={styles.issueTitle}>
                         {issue.title || '—'}
                       </td>
-                      <td>
-                        <Badge
-                          tone={
-                            issue.downloaded
-                              ? 'success'
-                              : issue.monitored
-                                ? 'warning'
-                                : 'neutral'
-                          }
-                        >
-                          {issue.downloaded
-                            ? 'Downloaded'
-                            : issue.monitored
-                              ? 'Wanted'
-                              : 'Unmonitored'}
-                        </Badge>
+                      <td className={styles.issueFilename}>
+                        {issue.filenames.length > 0
+                          ? issue.filenames.map((f, i) => (
+                              <span key={i} className={styles.filenameLine}>
+                                {f}
+                              </span>
+                            ))
+                          : '—'}
                       </td>
                     </tr>
                   ))}
@@ -1437,6 +1430,15 @@ function IssueRow({
       </td>
       <td className={styles.issueSize}>
         {issue.size > 0 ? formatFileSize(issue.size) : '—'}
+      </td>
+      <td className={styles.issueFilename}>
+        {issue.filenames.length > 0
+          ? issue.filenames.map((f, i) => (
+              <span key={i} className={styles.filenameLine}>
+                {f}
+              </span>
+            ))
+          : '—'}
       </td>
       <td className={styles.actionsCell}>
         <div className={styles.issueActions}>

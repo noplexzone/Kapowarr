@@ -326,6 +326,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Filename column ─────────────────────────────── */
+.thFilename {
+  width: auto;
+  text-align: left;
+}
+
+.issueFilename {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  max-width: 18rem;
+  overflow: hidden;
+}
+
+.filenameLine {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.35;
+}
+
 /* ── Actions column ──────────────────────────────── */
 .thActions {
   width: 8rem;

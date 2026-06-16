@@ -8,6 +8,7 @@ export interface IssueDetail {
   size: number;
   issue_folder?: string;
   file_ids: number[];
+  filenames: string[];
 }
 
 export interface VolumeDetailFull {

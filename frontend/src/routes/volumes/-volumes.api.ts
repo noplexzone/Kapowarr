@@ -69,6 +69,12 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
           file_ids: Array.isArray(i.files)
             ? i.files.map((f: any) => f.id)
             : [],
+          filenames: Array.isArray(i.files)
+            ? i.files.map((f: any) => {
+                const path: string = f.filepath ?? '';
+                return path.split(/[/\\]/).pop() || path;
+              })
+            : [],
         }))
       : [],
   };

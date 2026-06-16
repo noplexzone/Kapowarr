@@ -1,9 +1,9 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
 import { volumeListQueryOptions } from '../-comics.api';
-import { volumesSearchSchema, type ViewOption, type SectionType } from '../-comics.types';
+import { type ViewOption, type SectionType, type VolumesSearch } from '../-comics.types';
 import {
   SORT_OPTIONS,
   FILTER_OPTIONS,
@@ -24,80 +24,20 @@ interface ComicsPageProps {
   section?: SectionType;
 }
 
-function getStorageVal<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw) as T;
-  } catch { /* corrupt storage, ignore */ }
-  return fallback;
-}
-
 function setStorageVal(key: string, val: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(val));
   } catch { /* storage full, silently ignore */ }
 }
 
-/** Read URL params from the live address bar and fold in localStorage
- *  preferences for any param the URL didn't supply.  URL wins. */
-function buildMergedSearch(routerSearch: Record<string, unknown>): Record<string, unknown> {
-  const urlParams = new URLSearchParams(window.location.search);
-  const merged = { ...routerSearch };
-
-  if (!urlParams.has('sort')) {
-    const stored = getStorageVal<string | null>(STORAGE_KEY_SORT, null);
-    if (stored && (SORT_OPTIONS as readonly string[]).includes(stored)) merged.sort = stored;
-  }
-  if (!urlParams.has('view')) {
-    const stored = getStorageVal<string | null>(STORAGE_KEY_VIEW, null);
-    if (stored && (VIEW_OPTIONS as readonly string[]).includes(stored)) merged.view = stored;
-  }
-  if (!urlParams.has('filter')) {
-    const stored = getStorageVal<string | null>(STORAGE_KEY_FILTER, null);
-    if (stored && (FILTER_OPTIONS as readonly string[]).includes(stored)) merged.filter = stored;
-  }
-  if (!urlParams.has('search')) {
-    const stored = getStorageVal<string | null>(STORAGE_KEY_SEARCH, null);
-    if (stored) merged.search = stored;
-  }
-
-  return merged;
-}
 
 export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   const navigate = useNavigate();
 
-  // Merge localStorage preferences into URL search params on initial render.
-  // URL params take priority over localStorage (explicit ?sort=title wins).
-  const rawSearch = useSearch({ strict: false }) as Record<string, unknown>;
-  const mergedSearch = buildMergedSearch(rawSearch);
-  const validated = volumesSearchSchema.parse(mergedSearch);
-  const { data } = useSuspenseQuery(volumeListQueryOptions(1, validated, section));
+  const search = useSearch({ strict: false }) as VolumesSearch;
+  const { data } = useSuspenseQuery(volumeListQueryOptions(1, search, section));
 
-  // Sync URL to localStorage values on first mount so the address bar
-  // reflects the user's saved preferences.
-  const urlSynced = useRef(false);
-  useEffect(() => {
-    if (urlSynced.current) return;
-    const urlParams = new URLSearchParams(window.location.search);
-    const sync: Record<string, unknown> = {};
-    if (!urlParams.has('sort') && mergedSearch.sort && mergedSearch.sort !== 'title') {
-      sync.sort = mergedSearch.sort;
-    }
-    if (!urlParams.has('view') && mergedSearch.view && mergedSearch.view !== 'posters') {
-      sync.view = mergedSearch.view;
-    }
-    if (Object.keys(sync).length > 0) {
-      urlSynced.current = true;
-      navigate({
-        to: section === 'comic' ? '/comics' : '/manga',
-        search: (prev: any) => ({ ...prev, ...sync }),
-        replace: true,
-      });
-    }
-  }, []); // eslint-disable-line
-
-  const [view, setView] = useState<ViewOption>(validated.view);
+  const [view, setView] = useState<ViewOption>(search.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const updateSearch = useCallback(
@@ -146,7 +86,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
 
           <select
             className={styles.select}
-            value={validated.filter}
+            value={search.filter}
             onChange={(e) => updateSearch({ filter: e.target.value })}
           >
             {FILTER_OPTIONS.map((opt) => (
@@ -158,7 +98,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
 
           <select
             className={styles.select}
-            value={validated.sort}
+            value={search.sort}
             onChange={(e) => updateSearch({ sort: e.target.value })}
           >
             {SORT_OPTIONS.map((opt) => (
@@ -233,10 +173,10 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
           className={styles.searchInput}
           type="search"
           placeholder="Search volumes..."
-          value={validated.search ?? ''}
+          value={search.search ?? ''}
           onChange={(e) => updateSearch({ search: e.target.value || undefined })}
         />
-        {validated.search && (
+        {search.search && (
           <span className={styles.searchCount}>
             {total} result{total !== 1 ? 's' : ''}
           </span>

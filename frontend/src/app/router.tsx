@@ -36,6 +36,35 @@ export interface RouterContext {
   shell: { profile: number };
 }
 
+// ── Persistence helpers ───────────────────────────────────────────────────
+
+const STORAGE_KEYS = {
+  sort: 'kapowarr_sort',
+  view: 'kapowarr_view',
+  filter: 'kapowarr_filter',
+} as const;
+
+const SORT_VALUES = ['title','volume_number','year','recently_added','recently_released','publisher','wanted'] as const;
+
+/** If the Zod default (sort=title) is in play, check localStorage for the
+ *  user's last saved sort and return a redirect to carry it into the URL. */
+function redirectFromLocalStorage(deps: Record<string, unknown>, path: string) {
+  if (deps.sort !== 'title') return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.sort);
+    if (!raw) return null;
+    const stored = JSON.parse(raw);
+    if (stored && stored !== 'title' && (SORT_VALUES as readonly string[]).includes(stored)) {
+      return redirect({
+        to: path,
+        search: { ...deps, sort: stored },
+        replace: true,
+      });
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 // ── Root (renders <Outlet /> only — no wrapper) ────────────────────────────────
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: function RootLayout() {
@@ -90,6 +119,12 @@ const comicsRoute = createRoute({
     search: search.search,
   }),
   loader: async ({ context, deps }: any) => {
+    // If sort is still the Zod default, check localStorage for a saved preference
+    // and redirect to persist it in the URL so it survives navigation.
+    if (deps.sort === 'title') {
+      const redirectTo = redirectFromLocalStorage(deps, '/comics');
+      if (redirectTo) throw redirectTo;
+    }
     await context.queryClient.ensureQueryData(
       volumeListQueryOptions(1, deps, 'comic'),
     );
@@ -125,6 +160,10 @@ const mangaRoute = createRoute({
     search: search.search,
   }),
   loader: async ({ context, deps }: any) => {
+    if (deps.sort === 'title') {
+      const redirectTo = redirectFromLocalStorage(deps, '/manga');
+      if (redirectTo) throw redirectTo;
+    }
     await context.queryClient.ensureQueryData(
       volumeListQueryOptions(1, deps, 'manga'),
     );

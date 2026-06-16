@@ -4,7 +4,7 @@ from asyncio import run
 from datetime import datetime
 from io import BytesIO
 from os import makedirs
-from os.path import basename, join
+from os.path import basename, exists, join, splitext
 from typing import Any, Dict, List, Tuple, Type, Union
 
 import json as _json
@@ -35,6 +35,7 @@ from backend.features.tasks import (BulkLibraryImport, ImportFilesVolume,
                                     delete_task_history, get_task_history,
                                     get_task_planning, record_and_track_download,
                                     task_library)
+from backend.features.reader import clear_cache, get_page, get_page_count, serve_pdf_file
 from backend.implementations.blocklist import (add_to_blocklist,
                                                delete_blocklist,
                                                delete_blocklist_entry,
@@ -1185,6 +1186,106 @@ def api_issues(id: int):
     elif request.method == 'DELETE':
         issue.delete()
         return return_api({})
+
+
+# =====================
+# Comic Reader — serve pages from CBZ/CBR/PDF files
+# =====================
+@api.route('/files/<int:file_id>/info', methods=['GET'])
+@error_handler
+@auth
+def api_file_info(file_id: int):
+    """Get page count and file metadata for the reader."""
+    file_data = FilesDB.get_data(file_id)
+    if not file_data:
+        raise KeyNotFound('file_id')
+
+    filepath = file_data['filepath']
+    if not exists(filepath):
+        raise KeyNotFound('filepath')
+
+    ext = splitext(filepath)[1].lower()
+    is_pdf = ext == '.pdf'
+
+    page_count = 0 if is_pdf else get_page_count(filepath)
+
+    return return_api({
+        'file_id': file_id,
+        'filepath': filepath,
+        'file_type': ext.lstrip('.'),
+        'page_count': page_count,
+        'is_pdf': is_pdf,
+        'size': file_data.get('size', 0),
+    })
+
+
+@api.route('/files/<int:file_id>/page/<int:page_num>', methods=['GET'])
+@error_handler
+@auth
+def api_file_page(file_id: int, page_num: int):
+    """Serve a single page from a comic file as an image."""
+    file_data = FilesDB.get_data(file_id)
+    if not file_data:
+        raise KeyNotFound('file_id')
+
+    filepath = file_data['filepath']
+    if not exists(filepath):
+        raise KeyNotFound('filepath')
+
+    ext = splitext(filepath)[1].lower()
+
+    if ext == '.pdf':
+        if page_num == 0:
+            pdf_bytes, mimetype, filename = serve_pdf_file(filepath)
+            return Response(
+                pdf_bytes,
+                mimetype=mimetype,
+                headers={
+                    'Content-Disposition':
+                        f'inline; filename="{filename}"',
+                    'Cache-Control': 'private, max-age=3600',
+                }
+            ), 200
+        else:
+            raise InvalidKeyValue('page_num', page_num)
+
+    try:
+        image_bytes, mimetype = get_page(filepath, page_num)
+    except IndexError:
+        raise InvalidKeyValue('page_num', page_num)
+    except ValueError as e:
+        raise InvalidKeyValue('file_type', str(e))
+
+    return Response(
+        image_bytes,
+        mimetype=mimetype,
+        headers={'Cache-Control': 'private, max-age=3600'}
+    ), 200
+
+
+@api.route('/files/<int:file_id>/raw', methods=['GET'])
+@error_handler
+@auth
+def api_file_raw(file_id: int):
+    """Serve the raw file for browser-native handling (PDFs)."""
+    file_data = FilesDB.get_data(file_id)
+    if not file_data:
+        raise KeyNotFound('file_id')
+
+    filepath = file_data['filepath']
+    if not exists(filepath):
+        raise KeyNotFound('filepath')
+
+    ext = splitext(filepath)[1].lower()
+    mimetype = 'application/pdf' if ext == '.pdf' else \
+        'application/octet-stream'
+
+    return send_file(
+        filepath,
+        mimetype=mimetype,
+        as_attachment=False,
+        download_name=basename(filepath),
+    ), 200
 
 
 # =====================

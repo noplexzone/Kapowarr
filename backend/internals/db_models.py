@@ -5,7 +5,7 @@ Interacting with the database
 """
 
 from os import stat
-from typing import Dict, Iterable, List, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 from backend.base.custom_exceptions import FileNotFound
 from backend.base.definitions import FileData, GeneralFileData
@@ -243,6 +243,19 @@ class FilesDB:
             """
         )
         return
+
+    @staticmethod
+    def get_data(file_id: int) -> Optional[dict]:
+        """Get a single file's data by ID.
+
+        Returns:
+            Optional[dict]: Dict with id, filepath, size keys,
+                or None if not found.
+        """
+        return get_db().execute(
+            "SELECT id, filepath, size FROM files WHERE id = ?",
+            (file_id,)
+        ).fetchonedict()
 
 
 class GeneralFilesDB:

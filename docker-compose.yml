@@ -3,8 +3,8 @@ services:
     container_name: kapowarr
     image: mrcas/kapowarr:latest
     environment:
-      - PUID=0
-      - PGID=0
+      - PUID=99
+      - PGID=100
       - TZ=Etc/UTC
     volumes:
       - "kapowarr-db:/app/db"

@@ -24,6 +24,7 @@ from backend.implementations.suwayomi import (SUWAYOMI_SCHEME,
                                               make_suwayomi_volume_link,
                                               parse_suwayomi_link)
 from backend.implementations.volumes import Volume
+from backend.internals.settings import Settings
 
 
 _SOURCE_PRIORITY_FALLBACK = 999
@@ -281,11 +282,6 @@ class SearchSuwayomi(SearchSource):
 
         return results
 
-
-# If a volume-level search returns at least this many results with zero matches,
-# skip per-issue fallbacks: the source is returning max/broad results for this
-# series title and per-issue queries will produce equally irrelevant hits.
-_BROAD_RESULT_SKIP_THRESHOLD = 50
 
 
 def _extract_series_title(query: str) -> str:
@@ -956,7 +952,7 @@ def auto_search(
     if (
         missing_issues
         and not chosen_downloads
-        and len(all_results) >= _BROAD_RESULT_SKIP_THRESHOLD
+        and len(all_results) >= Settings().sv.auto_search_broad_result_threshold
     ):
         LOGGER.info(
             'Auto search: skipping %d per-issue fallback(s) for volume %d '

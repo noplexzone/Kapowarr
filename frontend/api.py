@@ -239,6 +239,11 @@ def auth(method):
     return wrapper
 
 
+@api.route('/health')
+def api_health():
+    return {'healthy': True}, 200
+
+
 @api.route('/auth', methods=['POST'])
 def api_auth():
     settings = Settings().get_settings()

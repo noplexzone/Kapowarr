@@ -90,7 +90,7 @@ LOGGING_CONFIG = {
             "formatter": "detailed",
             "filename": "",
             "maxBytes": 1_000_000,
-            "backupCount": 1,
+            "backupCount": 3,
             "do_rollover": True
         }
     },

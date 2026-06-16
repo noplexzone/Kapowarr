@@ -25,7 +25,7 @@ clean_title_regex = compile(
     r'((?<=annual)s|/|\-|–|\+|,|\.|\!|:|#|\bthe\s|\band\b|&|’|\'|\"|\bone[\-\s]?shot\b|\bhard[\-\s]?cover\b|\bomnibus\b|\btpb\b)'
 )
 publisher_prefix_regex = compile(
-    r'^(?:viz(?:\.media|\s+media)?|idw\s+publishing|dark\s+horse(?:\s+comics)?|image\s+comics|boom\s+studios)\s+',
+    r'^(?:viz(?:\.media|\s+media)?|idw\s+publishing|dark\s+horse(?:\s+comics)?|image\s+comics|boom\s+studios|kodansha\s+comics|yen\s+press|seven\s+seas|vertical|fantagraphics|drawn\s+&\s+quarterly|archie|ablaze)\s+',
     IGNORECASE
 )
 

@@ -75,6 +75,7 @@ class BroadResultSkipTests(unittest.TestCase):
         """Run auto_search(volume_id=1) mocking manual_search to return n_results."""
         original_manual_search = search_module.manual_search
         original_volume = search_module.Volume
+        original_Settings = search_module.Settings
 
         calls = []  # (volume_id, issue_id) per manual_search call
 
@@ -82,13 +83,21 @@ class BroadResultSkipTests(unittest.TestCase):
             calls.append((volume_id, issue_id))
             return _make_unmatched_results(n_results)
 
+        class _FakeSV:
+            auto_search_broad_result_threshold = 50
+
+        class _FakeSettings:
+            sv = _FakeSV()
+
         try:
             search_module.manual_search = fake_manual_search
             search_module.Volume = lambda vid: _FakeVolume()
+            search_module.Settings = lambda: _FakeSettings()
             result = search_module.auto_search(1)
         finally:
             search_module.manual_search = original_manual_search
             search_module.Volume = original_volume
+            search_module.Settings = original_Settings
 
         return result, calls
 

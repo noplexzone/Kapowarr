@@ -171,6 +171,7 @@ class SettingsValues(PublicSettingsValues):
     backup_host: str = '0.0.0.0'
     backup_port: int = 5656
     backup_url_base: str = ''
+    auto_search_broad_result_threshold: int = 50
 
 
 task_intervals = {

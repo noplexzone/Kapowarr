@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
@@ -39,6 +39,38 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
 
   const [view, setView] = useState<ViewOption>(search.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  // Local search text for instant typing; debounced sync to URL/query
+  const [searchText, setSearchText] = useState(search.search ?? '');
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync external URL search into local state (e.g. browser back/forward)
+  useEffect(() => {
+    setSearchText(search.search ?? '');
+  }, [search.search]);
+
+  // Debounced: flush local text to URL after 350ms of inactivity
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      const trimmed = searchText.trim();
+      const current = search.search ?? '';
+      if (trimmed !== current) {
+        setStorageVal(STORAGE_KEY_SEARCH, trimmed || undefined);
+        navigate({
+          to: section === 'comic' ? '/comics' : '/manga',
+          search: (prev: any) => ({
+            ...prev,
+            search: trimmed || undefined,
+            offset: 0,
+          }),
+        });
+      }
+    }, 350);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchText]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateSearch = useCallback(
     (patch: Record<string, unknown>) => {
@@ -173,8 +205,8 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
           className={styles.searchInput}
           type="search"
           placeholder="Search volumes..."
-          value={search.search ?? ''}
-          onChange={(e) => updateSearch({ search: e.target.value || undefined })}
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
         />
         {search.search && (
           <span className={styles.searchCount}>

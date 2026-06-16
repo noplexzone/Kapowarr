@@ -624,7 +624,7 @@ export function VolumeDetailPage() {
                 <RefreshIcon />
               </Button>
               <Button
-                variant="primary"
+                variant="secondary"
                 onClick={() => autoSearchMutation.mutate()}
                 disabled={autoSearchMutation.isPending}
                 title={autoSearchMutation.isPending ? 'Searching…' : 'Auto Search'}

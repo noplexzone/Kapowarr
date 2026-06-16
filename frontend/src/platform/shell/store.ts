@@ -8,6 +8,7 @@ interface ShellState {
 }
 
 const THEME_KEY = 'hero_theme';
+const SIDEBAR_KEY = 'sidebar_collapsed';
 
 function loadTheme(): string {
   try {
@@ -17,12 +18,25 @@ function loadTheme(): string {
   }
 }
 
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export const useShellStore = create<ShellState>((set) => ({
   theme: loadTheme(),
-  sidebarCollapsed: false,
+  sidebarCollapsed: loadSidebarCollapsed(),
   setTheme: (theme) => {
     localStorage.setItem(THEME_KEY, theme);
     set({ theme });
   },
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  toggleSidebar: () =>
+    set((s) => {
+      const next = !s.sidebarCollapsed;
+      localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0');
+      return { sidebarCollapsed: next };
+    }),
 }));

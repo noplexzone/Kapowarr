@@ -7,6 +7,11 @@
   overflow-y: auto;
   position: sticky;
   top: 0;
+  transition: width 0.2s ease;
+}
+
+.sidebar.collapsed {
+  overflow-x: hidden;
 }
 
 .brand {
@@ -17,9 +22,89 @@
   border-bottom: 1px solid var(--border);
 }
 
+.collapsed .brand {
+  justify-content: center;
+  padding: 1rem 0.5rem;
+}
+
 .brandIcon {
   width: 28px;
   height: 28px;
+}
+
+.brandText {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* ── Search bar ───────────────────────────── */
+
+.searchBar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0.75rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.collapsed .searchBar {
+  margin: 0.5rem auto;
+  padding: 0.4rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.collapsed .searchBar:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.searchBar:focus-within {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.collapsed .searchBar:focus-within {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.searchIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.collapsed .searchIcon {
+  width: 20px;
+  height: 20px;
+}
+
+.searchBar:focus-within .searchIcon {
+  color: var(--accent);
+}
+
+.searchInput {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 0.8rem;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.searchInput::placeholder {
+  color: var(--text-dim);
 }
 
 .nav {
@@ -34,13 +119,15 @@
 .navItem {
   display: flex;
   align-items: center;
+  gap: 0.6rem;
   justify-content: space-between;
   padding: 0.5rem 1.25rem;
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-dim);
   text-decoration: none;
-  transition: color 0.15s, background 0.15s;
+  border-left: 3px solid transparent;
+  transition: color 0.2s, background 0.2s, border-color 0.2s, font-weight 0.2s;
 }
 
 .navItem:hover {
@@ -48,9 +135,17 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+.collapsed .navItem {
+  justify-content: center;
+  padding: 0.6rem 0;
+  gap: 0;
+}
+
 .navItem.active {
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.08);
+  font-weight: 700;
+  border-left-color: var(--accent);
 }
 
 .badge {
@@ -74,13 +169,16 @@
 }
 
 .subNavItem {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   padding: 0.3rem 0.75rem;
   font-size: 0.8rem;
   color: var(--text-dim);
   text-decoration: none;
   border-radius: 4px;
-  transition: color 0.15s, background 0.15s;
+  border-left: 3px solid transparent;
+  transition: color 0.2s, background 0.2s, border-color 0.2s, font-weight 0.2s;
 }
 
 .subNavItem:hover {
@@ -91,12 +189,110 @@
 .subNavItem.subActive {
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.08);
+  font-weight: 700;
+  border-left-color: var(--accent);
 }
 
+.navIcon {
+  flex-shrink: 0;
+}
+
+.subNavIcon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* ── Footer ──────────────────────────────────── */
+
 .footer {
-  padding: 0.75rem 1.25rem;
+  padding: 0.75rem 1rem;
   font-size: 0.7rem;
   color: var(--text-dim);
   border-top: 1px solid var(--border);
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.footerVersion {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.footerThemeSelect {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.footerAttribution {
+  opacity: 0.6;
+}
+
+.footerAttribution a {
+  color: var(--accent);
+}
+
+.footerAttribution a:hover {
+  text-decoration: underline;
+}
+
+/* ── Collapse toggle button ──────────────────── */
+
+.collapseToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.6rem 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.collapseToggle:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Collapsed-mode hiding ──────────────────── */
+
+.collapsed .footer {
+  display: none;
+}
+
+.collapsed .badge {
+  display: none;
+}
+
+.collapsed .subNav {
+  display: none;
+}
+
+/* ── Mobile overlay ────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: var(--nav-width);
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+
+  .sidebar.overlayOpen {
+    transform: translateX(0);
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.3);
+  }
 }

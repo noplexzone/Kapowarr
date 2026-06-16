@@ -1,13 +1,62 @@
 .shell {
   display: grid;
-  grid-template-columns: var(--nav-width) 1fr;
+  grid-template-columns: var(--nav-column-width, var(--nav-width)) 1fr;
   grid-template-rows: 1fr;
   min-height: 100vh;
   background: var(--surface);
   color: var(--text);
+  transition: grid-template-columns 0.2s ease;
 }
 
 .content {
   padding: 1.5rem;
   overflow-y: auto;
+}
+
+/* ── Hamburger ─────────────────────────────────── */
+.hamburger {
+  display: none;
+}
+
+/* ── Backdrop ──────────────────────────────────── */
+.backdrop {
+  display: none;
+}
+
+/* ── Mobile breakpoint ──────────────────────────── */
+@media (max-width: 768px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .hamburger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 50;
+    width: 2.25rem;
+    height: 2.25rem;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 90;
+  }
+
+  .content {
+    padding-top: 3.5rem;
+  }
 }

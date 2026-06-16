@@ -29,11 +29,8 @@ class FilesDB:
             cursor.execute("""
                 SELECT DISTINCT f.id, filepath, size
                 FROM files f
-                INNER JOIN issues_files if
-                INNER JOIN issues i
-                ON
-                    f.id = if.file_id
-                    AND if.issue_id = i.id
+                INNER JOIN issues_files if ON f.id = if.file_id
+                INNER JOIN issues i ON if.issue_id = i.id
                 WHERE volume_id = ?
                 ORDER BY filepath;
                 """,
@@ -93,11 +90,8 @@ class FilesDB:
             SELECT i.volume_id
             FROM
                 files f
-                INNER JOIN issues_files if
-                INNER JOIN issues i
-            ON
-                f.id = if.file_id
-                AND if.issue_id = i.id
+                INNER JOIN issues_files if ON f.id = if.file_id
+                INNER JOIN issues i ON if.issue_id = i.id
             WHERE f.filepath = ?
             LIMIT 1;
             """,
@@ -128,11 +122,8 @@ class FilesDB:
             SELECT DISTINCT
                 i.calculated_issue_number
             FROM issues i
-            INNER JOIN issues_files if
-            INNER JOIN files f
-            ON
-                i.id = if.issue_id
-                AND if.file_id = f.id
+            INNER JOIN issues_files if ON i.id = if.issue_id
+            INNER JOIN files f ON if.file_id = f.id
             WHERE f.filepath = ?
             ORDER BY calculated_issue_number;
             """,

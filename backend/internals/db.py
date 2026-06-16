@@ -476,6 +476,8 @@ CREATE TABLE IF NOT EXISTS download_history(
     source_name TEXT,
     downloaded_at INTEGER NOT NULL CHECK (downloaded_at > 0),
     success BOOL,
+    task_history_id INTEGER,
+    failure_reason TEXT,
 
     FOREIGN KEY (volume_id) REFERENCES volumes(id)
         ON DELETE SET NULL,
@@ -485,7 +487,17 @@ CREATE TABLE IF NOT EXISTS download_history(
 CREATE TABLE IF NOT EXISTS task_history(
     task_name NOT NULL,
     display_title NOT NULL,
-    run_at INTEGER NOT NULL
+    run_at INTEGER NOT NULL,
+    queued_at INTEGER,
+    started_at INTEGER,
+    volume_id INTEGER,
+    issue_id INTEGER,
+    details TEXT,
+
+    FOREIGN KEY (volume_id) REFERENCES volumes(id)
+        ON DELETE SET NULL,
+    FOREIGN KEY (issue_id) REFERENCES issues(id)
+        ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS task_intervals(
     task_name PRIMARY KEY,

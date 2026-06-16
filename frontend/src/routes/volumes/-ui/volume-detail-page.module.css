@@ -642,6 +642,43 @@
   cursor: pointer;
 }
 
+.dialogSubhead {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin: 1rem 0 0.5rem 0;
+  padding: 0 0.25rem;
+}
+
+.dialogSubhead:first-child {
+  margin-top: 0;
+}
+
+.filenameDeleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 0.35rem;
+  padding: 0;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.filenameDeleteBtn:hover {
+  color: #e00;
+  border-color: #e00;
+  background: rgba(255, 0, 0, 0.08);
+}
+
 .renamePath {
   font-family: monospace;
   font-size: 0.75rem;

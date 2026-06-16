@@ -8,6 +8,7 @@ import type {
   ComicVineSearchResult,
   RenameEntry,
   IssueData,
+  FileMatch,
 } from './-volumes.types';
 
 export const VOLUME_FULL_KEY = (id: number) =>
@@ -269,6 +270,20 @@ export async function submitRename(
 export async function fetchIssueData(issueId: number): Promise<IssueData> {
   const response = await apiClient.get(`issues/${issueId}`);
   return readJson<IssueData>(response);
+}
+
+export async function fetchManualMatch(
+  volumeId: number,
+): Promise<FileMatch[]> {
+  const response = await apiClient.get(`volumes/${volumeId}/manualmatch`);
+  return readJson<FileMatch[]>(response);
+}
+
+export async function submitManualMatch(
+  volumeId: number,
+  matches: FileMatch[],
+): Promise<void> {
+  await apiClient.put(`volumes/${volumeId}/manualmatch`, { json: matches });
 }
 
 export async function deleteFile(fileId: number): Promise<void> {

@@ -81,6 +81,14 @@ export interface RenameEntry {
   after: string;
 }
 
+export interface FileMatch {
+  file_id?: number;
+  filepath: string;
+  issue_ids: number[];
+  general_file: boolean;
+  forced_match: boolean;
+}
+
 export interface IssueFile {
   id: number;
   filepath: string;

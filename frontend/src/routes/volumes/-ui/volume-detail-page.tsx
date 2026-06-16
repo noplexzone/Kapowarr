@@ -25,6 +25,9 @@ import {
   submitRename,
   deleteIssue,
   forceMatchIssue,
+  fetchManualMatch,
+  submitManualMatch,
+  deleteFile,
 } from '../-volumes.api';
 import type {
   IssueDetail,
@@ -32,6 +35,7 @@ import type {
   IssueHistoryEntry,
   ComicVineSearchResult,
   RenameEntry,
+  FileMatch,
 } from '../-volumes.types';
 import { sanitizeHtml } from './sanitize';
 import styles from './volume-detail-page.module.css';
@@ -177,6 +181,12 @@ export function VolumeDetailPage() {
   const [manageChecked, setManageChecked] = useState<Set<number>>(new Set());
   const [manageDeleting, setManageDeleting] = useState(false);
   const [manageForceMatching, setManageForceMatching] = useState(false);
+  const [manualMatches, setManualMatches] = useState<FileMatch[]>([]);
+  const [unmatchedFiles, setUnmatchedFiles] = useState<FileMatch[]>([]);
+  const [forceMatchTargets, setForceMatchTargets] = useState<
+    Record<string, number>
+  >({});
+  const [manageLoading, setManageLoading] = useState(false);
 
   const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
 
@@ -398,12 +408,28 @@ export function VolumeDetailPage() {
     }
   }, [id, renameChecked, closeRename]);
 
-  const openManageIssues = useCallback(() => {
+  const openManageIssues = useCallback(async () => {
     setManageChecked(new Set());
     setManageDeleting(false);
     setManageForceMatching(false);
+    setForceMatchTargets({});
     setManageIssuesOpen(true);
-  }, []);
+    setManageLoading(true);
+    try {
+      const matches = await fetchManualMatch(id);
+      setManualMatches(matches);
+      setUnmatchedFiles(
+        matches.filter(
+          (m) => m.issue_ids.length === 0 && !m.general_file,
+        ),
+      );
+    } catch {
+      setManualMatches([]);
+      setUnmatchedFiles([]);
+    } finally {
+      setManageLoading(false);
+    }
+  }, [id]);
 
   const closeManageIssues = useCallback(() => {
     setManageIssuesOpen(false);
@@ -462,6 +488,55 @@ export function VolumeDetailPage() {
       setManageForceMatching(false);
     }
   }, [manageChecked, id, queryClient]);
+
+  const handleDeleteFile = useCallback(
+    async (fileId: number, filename: string) => {
+      if (!window.confirm(`Delete "${filename}"?`)) return;
+      try {
+        await deleteFile(fileId);
+        setActionMsg(`Deleted "${filename}".`);
+        queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+        // Refresh manual match data
+        const matches = await fetchManualMatch(id);
+        setManualMatches(matches);
+        setUnmatchedFiles(
+          matches.filter((m) => m.issue_ids.length === 0 && !m.general_file),
+        );
+      } catch (err) {
+        setActionMsg('Delete file failed: ' + (err as Error).message);
+      }
+    },
+    [id, queryClient],
+  );
+
+  const handleForceMatchFile = useCallback(
+    async (filepath: string) => {
+      const issueId = forceMatchTargets[filepath];
+      if (!issueId) return;
+      try {
+        await submitManualMatch(id, [
+          {
+            filepath,
+            issue_ids: [issueId],
+            general_file: false,
+            forced_match: true,
+          },
+        ]);
+        setActionMsg('Force match submitted. Refresh & Scan to apply.');
+        queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+        // Refresh manual match data
+        const matches = await fetchManualMatch(id);
+        setManualMatches(matches);
+        setUnmatchedFiles(
+          matches.filter((m) => m.issue_ids.length === 0 && !m.general_file),
+        );
+        setForceMatchTargets({});
+      } catch (err) {
+        setActionMsg('Force match failed: ' + (err as Error).message);
+      }
+    },
+    [id, forceMatchTargets, queryClient],
+  );
 
   const openEdit = useCallback(() => {
     if (!volume) return;
@@ -682,10 +757,10 @@ export function VolumeDetailPage() {
               <tr>
                 <th className={styles.thNum}>#</th>
                 <th>Title</th>
+                <th className={styles.thFilename}>Filename</th>
                 <th className={styles.thDate}>Release Date</th>
                 <th className={styles.thStatus}>Status</th>
                 <th className={styles.thSize}>Size</th>
-                <th className={styles.thFilename}>Filename</th>
                 <th className={styles.thActions}>Actions</th>
               </tr>
             </thead>
@@ -1307,76 +1382,222 @@ export function VolumeDetailPage() {
           onClose={closeManageIssues}
         />
         <DialogBody>
-          {volume.issues.length === 0 ? (
+          {manageLoading ? (
+            <p className={styles.dialogStatus}>Loading…</p>
+          ) : volume.issues.length === 0 && unmatchedFiles.length === 0 ? (
             <p className={styles.dialogStatus}>No issues to manage.</p>
           ) : (
             <>
-              <table className={styles.renameTable}>
-                <thead>
-                  <tr>
-                    <th className={styles.renameCheck}>
-                      <input
-                        type="checkbox"
-                        checked={
-                          volume.issues.length > 0 &&
-                          manageChecked.size === volume.issues.length
-                        }
-                        onChange={(e) =>
-                          toggleAllManage(
-                            e.target.checked,
-                            volume.issues.map(i => i.id),
-                          )
-                        }
-                      />
-                    </th>
-                    <th>#</th>
-                    <th>Title</th>
-                    <th>Filename</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {volume.issues.map((issue) => (
-                    <tr key={issue.id}>
-                      <td className={styles.renameCheck}>
-                        <input
-                          type="checkbox"
-                          checked={manageChecked.has(issue.id)}
-                          onChange={() => toggleManageCheck(issue.id)}
-                        />
-                      </td>
-                      <td className={styles.issueNum}>#{issue.issue_number}</td>
-                      <td className={styles.issueTitle}>
-                        {issue.title || '—'}
-                      </td>
-                      <td className={styles.issueFilename}>
-                        {issue.filenames.length > 0
-                          ? issue.filenames.map((f, i) => (
-                              <span key={i} className={styles.filenameLine}>
-                                {f}
+              {volume.issues.length > 0 && (
+                <>
+                  <h4 className={styles.dialogSubhead}>Matched Issues</h4>
+                  <table className={styles.renameTable}>
+                    <thead>
+                      <tr>
+                        <th className={styles.renameCheck}>
+                          <input
+                            type="checkbox"
+                            checked={
+                              volume.issues.length > 0 &&
+                              manageChecked.size === volume.issues.length
+                            }
+                            onChange={(e) =>
+                              toggleAllManage(
+                                e.target.checked,
+                                volume.issues.map(i => i.id),
+                              )
+                            }
+                          />
+                        </th>
+                        <th>#</th>
+                        <th>Title</th>
+                        <th>Filename</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {volume.issues.map((issue) => (
+                        <tr key={issue.id}>
+                          <td className={styles.renameCheck}>
+                            <input
+                              type="checkbox"
+                              checked={manageChecked.has(issue.id)}
+                              onChange={() => toggleManageCheck(issue.id)}
+                            />
+                          </td>
+                          <td className={styles.issueNum}>
+                            #{issue.issue_number}
+                          </td>
+                          <td className={styles.issueTitle}>
+                            {issue.title || '—'}
+                          </td>
+                          <td className={styles.issueFilename}>
+                            {issue.filenames.length > 0
+                              ? issue.filenames.map((f, i) => {
+                                  const mf = manualMatches.find(
+                                    (m) =>
+                                      m.filepath.endsWith(f) ||
+                                      m.filepath === f,
+                                  );
+                                  const fid = mf?.file_id;
+                                  return (
+                                    <span
+                                      key={i}
+                                      className={styles.filenameLine}
+                                    >
+                                      {f}
+                                      {fid != null && (
+                                        <button
+                                          type="button"
+                                          className={
+                                            styles.filenameDeleteBtn
+                                          }
+                                          title={`Delete "${f}"`}
+                                          aria-label={`Delete "${f}"`}
+                                          onClick={() =>
+                                            handleDeleteFile(fid, f)
+                                          }
+                                        >
+                                          ×
+                                        </button>
+                                      )}
+                                    </span>
+                                  );
+                                })
+                              : '—'}
+                          </td>
+                          <td>
+                            <Badge
+                              tone={
+                                issue.downloaded
+                                  ? 'success'
+                                  : issue.monitored
+                                    ? 'warning'
+                                    : 'neutral'
+                              }
+                            >
+                              {issue.downloaded
+                                ? 'Downloaded'
+                                : issue.monitored
+                                  ? 'Wanted'
+                                  : 'Unmonitored'}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className={styles.renameActions}>
+                    <Button
+                      variant="primary"
+                      disabled={
+                        manageChecked.size === 0 ||
+                        manageDeleting ||
+                        manageForceMatching
+                      }
+                      onClick={handleDeleteSelected}
+                    >
+                      {manageDeleting ? 'Deleting…' : 'Delete Selected'}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={
+                        manageChecked.size === 0 ||
+                        manageDeleting ||
+                        manageForceMatching
+                      }
+                      onClick={handleForceMatchSelected}
+                    >
+                      {manageForceMatching
+                        ? 'Matching…'
+                        : 'Force Match Selected'}
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {unmatchedFiles.length > 0 && (
+                <>
+                  <h4 className={styles.dialogSubhead}>
+                    Unmatched Files ({unmatchedFiles.length})
+                  </h4>
+                  <table className={styles.renameTable}>
+                    <thead>
+                      <tr>
+                        <th>Filename</th>
+                        <th className={styles.thActions}>
+                          Force Match To
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unmatchedFiles.map((uf) => {
+                        const fn =
+                          uf.filepath.split(/[/\\]/).pop() || uf.filepath;
+                        return (
+                          <tr key={uf.filepath}>
+                            <td className={styles.issueFilename}>
+                              <span className={styles.filenameLine}>
+                                {fn}
                               </span>
-                            ))
-                          : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                            </td>
+                            <td className={styles.actionsCell}>
+                              <select
+                                className={styles.editSelect}
+                                value={forceMatchTargets[uf.filepath] ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setForceMatchTargets((prev) => {
+                                    const next = { ...prev };
+                                    if (val) {
+                                      next[uf.filepath] = Number(val);
+                                    } else {
+                                      delete next[uf.filepath];
+                                    }
+                                    return next;
+                                  });
+                                }}
+                              >
+                                <option value="">
+                                  Select issue…
+                                </option>
+                                {volume.issues.map((issue) => (
+                                  <option
+                                    key={issue.id}
+                                    value={issue.id}
+                                  >
+                                    #{issue.issue_number}
+                                    {issue.title
+                                      ? ` — ${issue.title}`
+                                      : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              <Button
+                                variant="primary"
+                                disabled={
+                                  !forceMatchTargets[uf.filepath]
+                                }
+                                onClick={() =>
+                                  handleForceMatchFile(uf.filepath)
+                                }
+                              >
+                                Match
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
+              )}
+
               <div className={styles.renameActions}>
                 <Button
-                  variant="primary"
-                  disabled={manageChecked.size === 0 || manageDeleting || manageForceMatching}
-                  onClick={handleDeleteSelected}
-                >
-                  {manageDeleting ? 'Deleting…' : 'Delete Selected'}
-                </Button>
-                <Button
                   variant="secondary"
-                  disabled={manageChecked.size === 0 || manageDeleting || manageForceMatching}
-                  onClick={handleForceMatchSelected}
+                  onClick={closeManageIssues}
                 >
-                  {manageForceMatching ? 'Matching…' : 'Force Match Selected'}
-                </Button>
-                <Button variant="secondary" onClick={closeManageIssues}>
                   Close
                 </Button>
               </div>
@@ -1410,6 +1631,15 @@ function IssueRow({
     <tr className={styles.issueRow}>
       <td className={styles.issueNum}>#{issue.issue_number}</td>
       <td className={styles.issueTitle}>{issue.title || '—'}</td>
+      <td className={styles.issueFilename}>
+        {issue.filenames.length > 0
+          ? issue.filenames.map((f, i) => (
+              <span key={i} className={styles.filenameLine}>
+                {f}
+              </span>
+            ))
+          : '—'}
+      </td>
       <td className={styles.issueDate}>{issue.release_date || '—'}</td>
       <td>
         <Badge
@@ -1430,15 +1660,6 @@ function IssueRow({
       </td>
       <td className={styles.issueSize}>
         {issue.size > 0 ? formatFileSize(issue.size) : '—'}
-      </td>
-      <td className={styles.issueFilename}>
-        {issue.filenames.length > 0
-          ? issue.filenames.map((f, i) => (
-              <span key={i} className={styles.filenameLine}>
-                {f}
-              </span>
-            ))
-          : '—'}
       </td>
       <td className={styles.actionsCell}>
         <div className={styles.issueActions}>

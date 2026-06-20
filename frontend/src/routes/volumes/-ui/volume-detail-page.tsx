@@ -187,6 +187,7 @@ export function VolumeDetailPage() {
   const [forceMatchTargets, setForceMatchTargets] = useState<
     Record<string, number>
   >({});
+  const [deleteVolumeFolder, setDeleteVolumeFolder] = useState(false);
   const [manageLoading, setManageLoading] = useState(false);
   const [unmatchedChecked, setUnmatchedChecked] = useState<Set<string>>(new Set());
   const [unmatchedDeleting, setUnmatchedDeleting] = useState(false);
@@ -200,7 +201,7 @@ export function VolumeDetailPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: () => deleteVolume(id),
+    mutationFn: () => deleteVolume(id, deleteVolumeFolder),
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: VOLUME_FULL_KEY(id) });
       queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
@@ -1254,17 +1255,31 @@ export function VolumeDetailPage() {
               <Button variant="secondary" onClick={() => setEditOpen(false)}>
                 Cancel
               </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (window.confirm(`Delete "${volume.title}"? This cannot be undone.`)) {
-                    deleteMutation.mutate();
-                  }
-                }}
-                disabled={deleteMutation.isPending}
-              >
-                {deleteMutation.isPending ? 'Deleting…' : 'Delete Volume'}
-              </Button>
+              <div className={styles.deleteVolumeBlock}>
+                <label className={styles.deleteFolderOption}>
+                  <input
+                    type="checkbox"
+                    checked={deleteVolumeFolder}
+                    onChange={(e) => setDeleteVolumeFolder(e.target.checked)}
+                    disabled={deleteMutation.isPending}
+                  />
+                  <span>Also delete volume folder</span>
+                </label>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    const folderWarning = deleteVolumeFolder
+                      ? '\n\nThe volume folder and its files will also be deleted from disk.'
+                      : '';
+                    if (window.confirm(`Delete "${volume.title}" from the library? This cannot be undone.${folderWarning}`)) {
+                      deleteMutation.mutate();
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                >
+                  {deleteMutation.isPending ? 'Deleting…' : 'Delete Volume'}
+                </Button>
+              </div>
             </div>
           </div>
         </DialogBody>

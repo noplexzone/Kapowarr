@@ -81,8 +81,14 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
   };
 }
 
-export async function deleteVolume(id: number): Promise<void> {
-  await apiClient.delete(`volumes/${id}`);
+export async function deleteVolume(
+  id: number,
+  deleteFolder = false,
+): Promise<void> {
+  const response = await apiClient.delete(`volumes/${id}`, {
+    searchParams: { delete_folder: String(deleteFolder) },
+  });
+  await readJson<Record<string, never>>(response);
 }
 
 export async function autoSearchVolume(

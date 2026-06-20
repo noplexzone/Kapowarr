@@ -1088,7 +1088,11 @@ def api_volume(id: int):
         return return_api(None)
 
     elif request.method == 'DELETE':
-        delete_folder = extract_key(request, 'delete_folder')
+        delete_folder = extract_key(
+            request,
+            'delete_folder',
+            check_existence=False
+        )
         volume.delete(delete_folder=delete_folder)
         return return_api({})
 

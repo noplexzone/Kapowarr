@@ -520,9 +520,29 @@
 
 .editActions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
   justify-content: flex-end;
   margin-top: 0.5rem;
+}
+
+.deleteVolumeBlock {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.deleteFolderOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.deleteFolderOption input[type="checkbox"] {
+  accent-color: var(--accent);
 }
 
 /* ── Fix Match ────────────────────────────────────── */

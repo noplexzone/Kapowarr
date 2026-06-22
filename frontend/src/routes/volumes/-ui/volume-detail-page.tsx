@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react';
+import { useSocketEvent } from '@/platform/socketio/socket';
+import type { QueueEntry } from '@/routes/activity/queue/-queue.types';
 import { useParams, useNavigate, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button, Progress } from '@/components/primitives';
@@ -136,6 +138,7 @@ export function VolumeDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [actionMsg, setActionMsg] = useState('');
+  const [queueEntries, setQueueEntries] = useState<Map<number, QueueEntry>>(new Map());
 
   // Issue manual search dialog
   const [manualSearchIssueId, setManualSearchIssueId] = useState<number | null>(null);
@@ -193,6 +196,43 @@ export function VolumeDetailPage() {
   const [unmatchedDeleting, setUnmatchedDeleting] = useState(false);
 
   const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
+
+  // Track active downloads for this volume
+  useSocketEvent<Partial<QueueEntry> & { id: number }>('queue_added', useCallback((data) => {
+    const issueId = data.issue_id;
+    if (data.volume_id === id && issueId != null) {
+      setQueueEntries(prev => {
+        const next = new Map(prev);
+        next.set(issueId, { ...data } as QueueEntry);
+        return next;
+      });
+    }
+  }, [id]));
+
+  useSocketEvent<Partial<QueueEntry> & { id: number }>('queue_status', useCallback((data) => {
+    const issueId = data.issue_id;
+    if (data.volume_id === id && issueId != null) {
+      setQueueEntries(prev => {
+        const next = new Map(prev);
+        const existing = next.get(issueId);
+        next.set(issueId, { ...existing, ...data } as QueueEntry);
+        return next;
+      });
+    }
+  }, [id]));
+
+  useSocketEvent<{ id: number }>('queue_ended', useCallback((data) => {
+    setQueueEntries(prev => {
+      const next = new Map(prev);
+      for (const [issueId, entry] of next) {
+        if (entry.id === data.id) {
+          next.delete(issueId);
+          break;
+        }
+      }
+      return next;
+    });
+  }, []));
 
   const rootFoldersQuery = useQuery({
     queryKey: ['rootFolders'],
@@ -855,6 +895,7 @@ export function VolumeDetailPage() {
                   key={issue.id}
                   issue={issue}
                   volumeId={id}
+                  queueEntry={queueEntries.get(issue.id)}
                   onAutoSearch={() =>
                     autoSearchIssueMutation.mutate({ volumeId: id, issueId: issue.id })
                   }
@@ -1763,6 +1804,7 @@ export function VolumeDetailPage() {
 interface IssueRowProps {
   issue: IssueDetail;
   volumeId: number;
+  queueEntry?: QueueEntry;
   onAutoSearch: () => void;
   onManualSearch: () => void;
   onHistory: () => void;
@@ -1771,6 +1813,7 @@ interface IssueRowProps {
 
 function IssueRow({
   issue,
+  queueEntry,
   onAutoSearch,
   onManualSearch,
   onHistory,
@@ -1791,21 +1834,40 @@ function IssueRow({
       </td>
       <td className={styles.issueDate}>{issue.release_date || '—'}</td>
       <td>
-        <Badge
-          tone={
-            issue.downloaded
-              ? 'success'
+        {queueEntry ? (
+          <div className={styles.downloadProgress}>
+            <Progress
+              value={
+                queueEntry.progress_is_percent !== false
+                  ? Math.round(queueEntry.progress)
+                  : queueEntry.size > 0
+                    ? Math.round((queueEntry.progress / queueEntry.size) * 100)
+                    : 0
+              }
+              tone="success"
+              className={styles.issueProgressBar}
+            />
+            <span className={styles.queueTaskLabel}>
+              {queueEntry.task_label || 'Downloading'}
+            </span>
+          </div>
+        ) : (
+          <Badge
+            tone={
+              issue.downloaded
+                ? 'success'
+                : issue.monitored
+                  ? 'warning'
+                  : 'neutral'
+            }
+          >
+            {issue.downloaded
+              ? 'Downloaded'
               : issue.monitored
-                ? 'warning'
-                : 'neutral'
-          }
-        >
-          {issue.downloaded
-            ? 'Downloaded'
-            : issue.monitored
-              ? 'Wanted'
-              : 'Unmonitored'}
-        </Badge>
+                ? 'Wanted'
+                : 'Unmonitored'}
+          </Badge>
+        )}
       </td>
       <td className={styles.issueSize}>
         {issue.size > 0 ? formatFileSize(issue.size) : '—'}

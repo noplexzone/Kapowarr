@@ -711,3 +711,19 @@
   gap: 0.5rem;
   justify-content: flex-end;
 }
+.downloadProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 120px;
+}
+
+.issueProgressBar {
+  width: 100%;
+}
+
+.queueTaskLabel {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}

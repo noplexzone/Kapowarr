@@ -214,7 +214,11 @@ class SuwayomiClient:
             f"{self._base_url}/api/v1/manga/{manga_id}"
             f"/chapter/{chapter_source_order}/page/{page_index}"
         )
-        resp = self._ssn.get(url, timeout=30)
+        resp = self._ssn.get(
+            url,
+            headers={'Connection': 'close'},
+            timeout=(5, 30),
+        )
         resp.raise_for_status()
         return resp.content
 

@@ -1,7 +1,8 @@
 .track {
   width: 100%;
-  height: 6px;
+  height: 10px;
   background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 999px;
   overflow: hidden;
 }

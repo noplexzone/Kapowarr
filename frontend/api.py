@@ -102,6 +102,16 @@ def extract_key(request, key: str, check_existence: bool = True) -> Any:
         Any: The formatted value of the key.
     """
     value: Any = request.values.get(key)
+    if value is None:
+        get_json = getattr(request, 'get_json', None)
+        if callable(get_json):
+            try:
+                json_body = get_json(silent=True)
+            except TypeError:
+                json_body = get_json()
+            if isinstance(json_body, dict):
+                value = json_body.get(key)
+
     if value is None and key == 'api_key':
         value = (
             request.headers.get('x-api-key')
@@ -155,7 +165,9 @@ def extract_key(request, key: str, check_existence: bool = True) -> Any:
 
         elif key in ('monitor', 'delete_folder', 'rename_files', 'only_english',
                     'limit_parent_folder', 'force_match'):
-            if value == 'true':
+            if isinstance(value, bool):
+                pass
+            elif value == 'true':
                 value = True
             elif value == 'false':
                 value = False

@@ -88,9 +88,13 @@ finally:
 
 
 class _Request:
-    def __init__(self, values=None, headers=None):
+    def __init__(self, values=None, headers=None, json_body=None):
         self.values = values or {}
         self.headers = headers or {}
+        self._json_body = json_body
+
+    def get_json(self, silent=False):
+        return self._json_body
 
 
 class ImportAuthHeaderTests(unittest.TestCase):
@@ -106,6 +110,16 @@ class ImportAuthHeaderTests(unittest.TestCase):
         request = _Request(values={'api_key': 'secret-key'})
 
         self.assertEqual(api.extract_key(request, 'api_key'), 'secret-key')
+
+    def test_json_body_key_is_read_when_not_in_values(self):
+        request = _Request(json_body={'link': 'suwayomi:1756:10515,10516'})
+
+        self.assertEqual(api.extract_key(request, 'link'), 'suwayomi:1756:10515,10516')
+
+    def test_json_boolean_is_valid_for_force_match(self):
+        request = _Request(json_body={'force_match': False})
+
+        self.assertIs(api.extract_key(request, 'force_match'), False)
 
 
 if __name__ == '__main__':

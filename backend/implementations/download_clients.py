@@ -147,6 +147,10 @@ class BaseDirectDownload(Download):
         return self._speed
 
     @property
+    def progress_is_percent(self) -> bool:
+        return getattr(self, '_progress_is_percent', self._size != -1)
+
+    @property
     def task_label(self) -> str:
         return self._task_label
 
@@ -424,6 +428,7 @@ class BaseDirectDownload(Download):
             'size': self._size,
             'status': self._state.value,
             'progress': self._progress,
+            'progress_is_percent': self.progress_is_percent,
             'speed': self._speed,
             'task_label': getattr(self, '_task_label', '')
         }
@@ -1184,8 +1189,11 @@ class SuwayomiDownload(BaseDirectDownload):
         self._id = None
         self._state = DownloadState.QUEUED_STATE
         self._progress = 0.0
+        self._progress_is_percent = True
         self._speed = 0.0
         self._size = -1
+        self._bytes_downloaded = 0
+        self._last_progress_at = perf_counter()
         self._task_label = 'Queued'
         self._download_thread = None
         self._download_folder = settings.download_folder
@@ -1268,14 +1276,22 @@ class SuwayomiDownload(BaseDirectDownload):
 
         self._task_label = 'Building CBZ'
         self._progress = 0.0
+        self._speed = 0.0
+        self._bytes_downloaded = 0
+        self._last_progress_at = perf_counter()
         ws.emit(QueueStatusEvent(self))
 
-        def _on_page(done: int, total: int) -> None:
+        def _on_page(done: int, total: int, bytes_read: int = 0) -> None:
             if total <= 0:
                 return
-            self._progress = done / total * 100
-            if done % 5 == 0 or done == total:
-                ws.emit(QueueStatusEvent(self))
+            now = perf_counter()
+            elapsed = max(now - self._last_progress_at, 0.001)
+            self._last_progress_at = now
+            self._bytes_downloaded += max(bytes_read, 0)
+            self._size = self._bytes_downloaded
+            self._speed = round(max(bytes_read, 0) / elapsed, 2)
+            self._progress = round(done / total * 100, 2)
+            ws.emit(QueueStatusEvent(self))
 
         try:
             ok = client.create_cbz(
@@ -1345,8 +1361,11 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
         self._id = None
         self._state = DownloadState.QUEUED_STATE
         self._progress = 0.0
+        self._progress_is_percent = True
         self._speed = 0.0
         self._size = -1
+        self._bytes_downloaded = 0
+        self._last_progress_at = perf_counter()
         self._task_label = 'Queued'
         self._download_thread = None
         self._download_folder = settings.download_folder
@@ -1391,6 +1410,7 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
         total_chapters = len(chapter_ids)
 
         self._state = DownloadState.DOWNLOADING_STATE
+        self._task_label = 'Preparing'
         ws.emit(QueueStatusEvent(self))
 
         # Collect chapter info in order
@@ -1433,6 +1453,8 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
                 return
 
             chapter_info.append((source_order, page_count))
+            self._progress = round((idx + 1) / total_chapters * 50, 2) if total_chapters else 0.0
+            ws.emit(QueueStatusEvent(self))
 
         LOGGER.info(
             'SuwayomiVolume: all %d chapters downloaded; building PDF',
@@ -1440,15 +1462,23 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
         )
 
         self._task_label = 'Assembling PDF'
-        self._progress = 0.0
+        self._progress = 50.0
+        self._speed = 0.0
+        self._bytes_downloaded = 0
+        self._last_progress_at = perf_counter()
         ws.emit(QueueStatusEvent(self))
 
-        def _on_page(done: int, total: int) -> None:
+        def _on_page(done: int, total: int, bytes_read: int = 0) -> None:
             if total <= 0:
                 return
-            self._progress = done / total * 100
-            if done % 5 == 0 or done == total:
-                ws.emit(QueueStatusEvent(self))
+            now = perf_counter()
+            elapsed = max(now - self._last_progress_at, 0.001)
+            self._last_progress_at = now
+            self._bytes_downloaded += max(bytes_read, 0)
+            self._size = self._bytes_downloaded
+            self._speed = round(max(bytes_read, 0) / elapsed, 2)
+            self._progress = round(50.0 + (done / total * 50.0), 2)
+            ws.emit(QueueStatusEvent(self))
 
         try:
             ok = client.create_pdf_from_chapters(

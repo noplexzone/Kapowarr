@@ -106,11 +106,22 @@ interface QueueRowProps {
 
 function statusTone(status: string): 'info' | 'success' | 'danger' | 'neutral' {
   switch (status) {
-    case 'downloading': return 'info';
+    case 'downloading':
+    case 'importing':
+    case 'seeding':
+      return 'success';
     case 'completed': return 'success';
     case 'failed': return 'danger';
     default: return 'neutral';
   }
+}
+
+function formatStatus(status: string): string {
+  if (!status) return 'Unknown';
+  return status
+    .split(/[_-]/g)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function formatBytes(bytes: number): string {
@@ -128,7 +139,7 @@ function formatSpeed(bps: number): string {
 }
 
 function resolveProgress(entry: QueueEntry): number {
-  if (entry.progress_is_percent) return entry.progress;
+  if (entry.progress_is_percent !== false) return Math.round(entry.progress);
   if (entry.size > 0) return Math.round((entry.progress / entry.size) * 100);
   return 0;
 }
@@ -141,7 +152,7 @@ function QueueRow({ entry, index, total, onMove, onRemove }: QueueRowProps) {
     <tr>
       <td>
         <Badge tone={statusTone(entry.status)}>
-          {entry.status}
+          {formatStatus(entry.status)}
         </Badge>
         {entry.task_label && (
           <div className={styles.taskLabel}>{entry.task_label}</div>
@@ -164,8 +175,10 @@ function QueueRow({ entry, index, total, onMove, onRemove }: QueueRowProps) {
       <td className={styles.progressCell}>
         {isDownloading ? (
           <>
-            <Progress value={pct} className={styles.progressBar} />
-            <div className={styles.progressText}>{pct}%</div>
+            <div className={styles.progressWrap}>
+              <Progress value={pct} tone="success" className={styles.progressBar} />
+              <span className={styles.progressText}>{pct}%</span>
+            </div>
           </>
         ) : (
           <span className={styles.progressText}>—</span>

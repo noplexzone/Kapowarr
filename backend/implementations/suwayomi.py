@@ -240,7 +240,7 @@ class SuwayomiClient:
                 ext = _detect_image_ext(data)
                 zf.writestr(f"{i + 1:04d}.{ext}", data)
                 if progress_cb is not None:
-                    progress_cb(i + 1, page_count)
+                    progress_cb(i + 1, page_count, len(data))
         return True
 
     def create_pdf_from_chapters(
@@ -281,7 +281,7 @@ class SuwayomiClient:
                         temp_paths.append(tf.name)
                     fetched += 1
                     if progress_cb is not None and total_pages > 0:
-                        progress_cb(fetched, total_pages)
+                        progress_cb(fetched, total_pages, len(data))
 
             if not temp_paths:
                 return False

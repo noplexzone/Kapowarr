@@ -79,16 +79,25 @@
 }
 
 .progressCell {
-  min-width: 120px;
+  min-width: 170px;
+}
+
+.progressWrap {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) 3rem;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .progressBar {
-  margin-top: 0.25rem;
+  width: 100%;
 }
 
 .progressText {
   font-size: 0.75rem;
   color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .actions {

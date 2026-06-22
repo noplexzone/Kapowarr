@@ -168,6 +168,52 @@ def move_to_dest(download: Download) -> None:
     return
 
 
+def replace_existing_issue_files(download: Download) -> None:
+    """Remove old files already linked to the downloaded issue.
+
+    Manual issue downloads are replacement operations. If the new file has a
+    different filename from the currently-monitored file, a normal scan would
+    otherwise link both files to the same issue and leave them side-by-side.
+    """
+    issue_id = download.issue_id
+    if issue_id is None or not isinstance(download.covered_issues, float):
+        return
+
+    new_paths = set(download.files)
+    try:
+        existing_files = FilesDB.fetch(issue_id=issue_id)
+    except Exception as e:
+        LOGGER.debug(
+            'Could not fetch existing issue files for replacement: issue=%s error=%s',
+            issue_id, e,
+        )
+        return
+
+    replaced_any = False
+    for file_data in existing_files:
+        filepath = file_data.get('filepath')
+        file_id = file_data.get('id')
+        if not filepath or filepath in new_paths:
+            continue
+
+        LOGGER.info(
+            'Replacing existing file for issue %s: %s',
+            issue_id, filepath,
+        )
+        if exists(filepath):
+            delete_file_folder(filepath)
+        if file_id is not None:
+            FilesDB.delete_file(file_id)
+        else:
+            FilesDB.delete_filepath(filepath)
+        replaced_any = True
+
+    if replaced_any:
+        commit()
+
+    return
+
+
 def move_torrent_to_dest(download: TorrentDownload) -> None:
     """
     Move folder downloaded using torrent from download folder to
@@ -402,6 +448,7 @@ class PostProcessor:
         add_to_history,
         move_to_dest,
         rename_with_proper_extension,
+        replace_existing_issue_files,
         add_file_to_database,
         convert_file,
         set_file_properties
@@ -507,6 +554,7 @@ class PostProcessorNZB(PostProcessor):
         add_to_history,
         move_nzb_to_dest,
         rename_with_proper_extension,
+        replace_existing_issue_files,
         add_file_to_database,
         rename_nzb_files,
         convert_file,

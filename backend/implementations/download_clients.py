@@ -1413,11 +1413,12 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
         self._task_label = 'Preparing'
         ws.emit(QueueStatusEvent(self))
 
-        # Collect chapter info in order
+        # Collect chapter info in order. This phase occupies the first half of
+        # the visible progress range; PDF assembly occupies the second half.
         chapter_info: List[Tuple[int, int]] = []
         for idx, ch_id in enumerate(chapter_ids):
             self._task_label = f'Downloading {idx + 1}/{total_chapters}'
-            self._progress = idx / total_chapters * 100 if total_chapters else 0.0
+            self._progress = round(idx / total_chapters * 50, 2) if total_chapters else 0.0
             ws.emit(QueueStatusEvent(self))
 
             LOGGER.info(

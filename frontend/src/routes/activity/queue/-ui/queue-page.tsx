@@ -146,7 +146,7 @@ function resolveProgress(entry: QueueEntry): number {
 
 function QueueRow({ entry, index, total, onMove, onRemove }: QueueRowProps) {
   const pct = resolveProgress(entry);
-  const isDownloading = entry.status === 'downloading';
+  const isActive = ['downloading', 'importing', 'seeding'].includes(entry.status);
 
   return (
     <tr>
@@ -173,7 +173,7 @@ function QueueRow({ entry, index, total, onMove, onRemove }: QueueRowProps) {
         <span className={styles.sizeSpeed}>{formatSpeed(entry.speed)}</span>
       </td>
       <td className={styles.progressCell}>
-        {isDownloading ? (
+        {isActive ? (
           <>
             <div className={styles.progressWrap}>
               <Progress value={pct} tone="success" className={styles.progressBar} />

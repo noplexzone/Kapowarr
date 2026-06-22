@@ -84,6 +84,18 @@ def test_queue_status_event_includes_progress_percent_flag():
     assert body['task_label'] == 'Downloading 1/4'
 
 
+def test_suwayomi_volume_download_phase_uses_half_progress_scale():
+    import inspect
+
+    from backend.implementations.download_clients import SuwayomiVolumeDownload
+
+    source = inspect.getsource(SuwayomiVolumeDownload.run)
+
+    assert "idx / total_chapters * 100" not in source
+    assert "idx / total_chapters * 50" in source
+    assert "(idx + 1) / total_chapters * 50" in source
+
+
 def test_replace_existing_issue_files_deletes_old_linked_file(monkeypatch):
     from backend.features import post_processing
 

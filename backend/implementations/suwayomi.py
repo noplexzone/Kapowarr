@@ -111,7 +111,7 @@ class SuwayomiClient:
         data = self._gql("""
             query {
                 mangas(filter: {inLibrary: {equalTo: true}}) {
-                    nodes { id title }
+                    nodes { id title source { id name lang } }
                 }
             }
         """)

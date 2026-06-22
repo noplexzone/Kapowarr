@@ -340,6 +340,44 @@ class ManualSearchVAIBundleTest(unittest.TestCase):
         )
 
 
+
+
+class SearchSuwayomiSourcePriorityTest(unittest.TestCase):
+    """Multiple in-library manga with the same title must be ordered by configured source priority."""
+
+    def test_search_results_follow_configured_suwayomi_source_priority(self):
+        from backend.features.search import SearchSuwayomi
+
+        class FakeClient:
+            def is_configured(self):
+                return True
+
+            def get_library_manga(self):
+                return [
+                    {'id': 200, 'title': 'Jujutsu Kaisen', 'source': {'id': 'secondary', 'name': 'Secondary'}},
+                    {'id': 100, 'title': 'Jujutsu Kaisen', 'source': {'id': 'preferred', 'name': 'Preferred'}},
+                ]
+
+            def get_chapters(self, manga_id):
+                return [
+                    {'id': manga_id + 1, 'chapterNumber': 1.0},
+                    {'id': manga_id + 2, 'chapterNumber': 2.0},
+                ]
+
+        class FakeSettings:
+            sv = type('SV', (), {'suwayomi_source_ids': ['preferred', 'secondary']})()
+
+        search = SearchSuwayomi.__new__(SearchSuwayomi)
+        search.query = 'Jujutsu Kaisen Vol. 1'
+
+        with patch('backend.features.search.SuwayomiClient', return_value=FakeClient()), \
+             patch('backend.internals.settings.Settings', return_value=FakeSettings()):
+            results = search._search_sync()
+
+        self.assertTrue(results[0]['link'].startswith('suwayomi:100:'))
+        self.assertTrue(results[1]['link'].startswith('suwayomi:100:'))
+        self.assertTrue(results[2]['link'].startswith('suwayomi:200:'))
+
 # ---------------------------------------------------------------------------
 # parse_suwayomi_volume_link routing: single vs. multi-chapter
 # ---------------------------------------------------------------------------

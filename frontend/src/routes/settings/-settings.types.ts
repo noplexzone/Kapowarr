@@ -93,3 +93,10 @@ export interface RootFolder {
   free_space: number | null;
   total_space: number | null;
 }
+
+
+export interface SuwayomiSource {
+  id: string;
+  name: string;
+  lang?: string | null;
+}

@@ -244,6 +244,18 @@ class SearchSuwayomi(SearchSource):
             LOGGER.warning('Suwayomi library search failed: %s', e)
             return []
 
+        from backend.internals.settings import Settings
+        configured_source_ids = list(Settings().sv.suwayomi_source_ids)
+        if configured_source_ids:
+            source_rank = {str(sid): idx for idx, sid in enumerate(configured_source_ids)}
+            default_rank = len(source_rank)
+
+            def _source_rank(manga: dict) -> tuple:
+                source = manga.get('source') or {}
+                return (source_rank.get(str(source.get('id', '')), default_rank),)
+
+            library = sorted(library, key=_source_rank)
+
         results: List[SearchResultData] = []
         title_lower = series_title.lower()
         for manga in library:

@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Notice } from '@/components/primitives';
 import { useShellStore } from '@/platform/shell/store';
 import {
   settingsQueryOptions,
   updateSettings,
   SETTINGS_KEY,
+  suwayomiSourcesQueryOptions,
   nzbIndexersQueryOptions,
   NZB_INDEXERS_KEY,
   addNzbIndexer,
@@ -30,7 +31,7 @@ import {
   addRootFolder,
   deleteRootFolder,
 } from '../-settings.api';
-import type { AllSettings, NZBIndexer, ExternalClient, RemoteMapping } from '../-settings.types';
+import type { AllSettings, NZBIndexer, ExternalClient, RemoteMapping, SuwayomiSource } from '../-settings.types';
 import styles from './settings-page.module.css';
 
 const HOSTING_KEYS = new Set(['host', 'port', 'url_base']);
@@ -44,6 +45,11 @@ export function SettingsPage() {
   const [theme, setThemeState] = useState<string>(
     () => document.documentElement.dataset.theme || 'batman-mode'
   );
+  const { data: suwayomiSourcesData, isFetching: suwayomiSourcesFetching } = useQuery({
+    ...suwayomiSourcesQueryOptions(),
+    enabled: Boolean(form.suwayomi_base_url),
+  });
+  const suwayomiSources = suwayomiSourcesData?.sources ?? [];
 
   const mutation = useMutation({
     mutationFn: (data: Partial<AllSettings>) => updateSettings(data),
@@ -258,8 +264,13 @@ export function SettingsPage() {
         <Field label="Suwayomi Password">
           <input className={styles.input} type="password" value={str('suwayomi_password')} onChange={e => set('suwayomi_password', e.target.value)} />
         </Field>
-        <Field label="Suwayomi Source IDs">
-          <input className={styles.input} value={arr('suwayomi_source_ids').join(', ')} onChange={e => set('suwayomi_source_ids', e.target.value.split(',').map(s => s.trim()))} />
+        <Field label="Suwayomi Source Priority">
+          <SuwayomiSourcePriority
+            value={arr('suwayomi_source_ids')}
+            sources={suwayomiSources}
+            loading={suwayomiSourcesFetching}
+            onChange={v => set('suwayomi_source_ids', v)}
+          />
         </Field>
       </Section>
 
@@ -836,6 +847,76 @@ function RootFoldersSection() {
 }
 
 /* ---------- Shared UI Helpers ---------- */
+
+
+function SuwayomiSourcePriority({
+  value,
+  sources,
+  loading,
+  onChange,
+}: {
+  value: string[];
+  sources: SuwayomiSource[];
+  loading: boolean;
+  onChange: (v: string[]) => void;
+}) {
+  const sourceById = new Map(sources.map(source => [String(source.id), source]));
+  const availableToAdd = sources.filter(source => !value.includes(String(source.id)) && source.name !== 'Local source');
+
+  const move = (idx: number, dir: 'up' | 'down') => {
+    const target = dir === 'up' ? idx - 1 : idx + 1;
+    if (target < 0 || target >= value.length) return;
+    const next = [...value];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    onChange(next);
+  };
+
+  const remove = (id: string) => {
+    onChange(value.filter(sourceId => sourceId !== id));
+  };
+
+  const add = (id: string) => {
+    if (!id || value.includes(id)) return;
+    onChange([...value, id]);
+  };
+
+  const labelFor = (id: string) => {
+    const source = sourceById.get(id);
+    if (!source) return id;
+    const lang = source.lang ? ` · ${source.lang}` : '';
+    return `${source.name}${lang} (${source.id})`;
+  };
+
+  return (
+    <div className={styles.priorityList}>
+      {loading && <div className={styles.clientMeta}>Loading Suwayomi sources…</div>}
+      {!loading && sources.length === 0 && (
+        <div className={styles.emptyList}>No Suwayomi sources found. Check the base URL, then save and refresh this page.</div>
+      )}
+      {value.length === 0 && sources.length > 0 && (
+        <div className={styles.clientMeta}>No source priority set. Add sources below in preferred order.</div>
+      )}
+      {value.map((id, idx) => (
+        <div key={id} className={styles.priorityItem}>
+          <span className={styles.priorityLabel}>{idx + 1}. {labelFor(id)}</span>
+          <div className={styles.priorityActions}>
+            <button className={styles.priorityBtn} type="button" onClick={() => move(idx, 'up')} disabled={idx === 0}>↑</button>
+            <button className={styles.priorityBtn} type="button" onClick={() => move(idx, 'down')} disabled={idx === value.length - 1}>↓</button>
+            <button className={styles.priorityBtn} type="button" onClick={() => remove(id)}>×</button>
+          </div>
+        </div>
+      ))}
+      {availableToAdd.length > 0 && (
+        <select className={styles.select} value="" onChange={e => { add(e.target.value); e.currentTarget.value = ''; }}>
+          <option value="">Add Suwayomi source…</option>
+          {availableToAdd.map(source => (
+            <option key={source.id} value={String(source.id)}>{source.name}{source.lang ? ` · ${source.lang}` : ''} ({source.id})</option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
 
 function Section({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   return (

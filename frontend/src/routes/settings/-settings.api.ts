@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { apiClient, readJson } from '@/app/api-client';
-import type { AllSettings, NZBIndexer, ExternalClient, ClientOption, RemoteMapping } from './-settings.types';
+import type { AllSettings, NZBIndexer, ExternalClient, ClientOption, RemoteMapping, SuwayomiSource } from './-settings.types';
 
 export const SETTINGS_KEY = ['settings'] as const;
 
@@ -18,6 +18,16 @@ export async function updateSettings(data: Partial<AllSettings>): Promise<void> 
 
 export async function resetKeys(keys: string[]): Promise<void> {
   await apiClient.delete('settings', { json: { reset_keys: keys } });
+}
+
+export const SUWAYOMI_SOURCES_KEY = ['suwayomi-sources'] as const;
+
+export function suwayomiSourcesQueryOptions() {
+  return queryOptions({
+    queryKey: SUWAYOMI_SOURCES_KEY,
+    queryFn: () => apiClient.get('settings/suwayomi/sources').then(res => readJson<{ sources: SuwayomiSource[] }>(res)),
+    staleTime: 60_000,
+  });
 }
 
 // NZB Indexers

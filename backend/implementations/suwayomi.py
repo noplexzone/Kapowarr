@@ -210,14 +210,15 @@ class SuwayomiClient:
         Suwayomi addresses chapters by their sourceOrder (position) when
         serving page images through the REST endpoint.
         """
+        import requests as _requests
         url = (
             f"{self._base_url}/api/v1/manga/{manga_id}"
             f"/chapter/{chapter_source_order}/page/{page_index}"
         )
-        resp = self._ssn.get(
+        resp = _requests.get(
             url,
-            headers={'Connection': 'close'},
-            timeout=(5, 30),
+            auth=self._ssn.auth if self._ssn.auth else None,
+            timeout=(10, 45),
         )
         resp.raise_for_status()
         return resp.content

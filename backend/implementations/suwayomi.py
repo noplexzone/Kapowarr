@@ -273,11 +273,34 @@ class SuwayomiClient:
         fetched = 0
         temp_paths: List[str] = []
         try:
+            _max_page_retries = 3
             for source_order, page_count in chapters:
                 for i in range(page_count):
                     if stop_event.is_set():
                         return False
-                    data = self.get_page_image(manga_id, source_order, i)
+                    for _attempt in range(_max_page_retries):
+                        try:
+                            data = self.get_page_image(
+                                manga_id, source_order, i,
+                            )
+                            break
+                        except RequestException as e:
+                            resp = getattr(e, 'response', None)
+                            status = (
+                                resp.status_code
+                                if resp is not None else None
+                            )
+                            if status is not None and status < 500:
+                                raise
+                            if _attempt == _max_page_retries - 1:
+                                raise
+                            if stop_event.is_set():
+                                return False
+                            LOGGER.debug(
+                                'Retrying page %d/%d after %s',
+                                i + 1, page_count, e,
+                            )
+                            stop_event.wait(timeout=2)
                     ext = _detect_image_ext(data)
                     with tempfile.NamedTemporaryFile(
                         delete=False, suffix=f'.{ext}'

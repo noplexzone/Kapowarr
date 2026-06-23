@@ -13,7 +13,8 @@ from __future__ import annotations
 import os
 import tempfile
 import zipfile
-from concurrent.futures import ProcessPoolExecutor, TimeoutError as FutureTimeoutError
+import subprocess
+import sys as _sys
 from threading import Event
 from time import sleep
 from typing import Dict, List, Optional, Tuple
@@ -36,24 +37,45 @@ POLL_INTERVAL = 5
 _PILLOW_CONVERT_TIMEOUT = 5.0
 
 
-def _pillow_convert_to_jpeg(image_data: bytes) -> bytes:
-    """Convert raw image bytes to RGB JPEG via Pillow.
+# Inline Python script that reads raw image bytes on stdin,
+# converts to RGB JPEG via Pillow, and writes result to stdout.
+# Used by _pillow_convert_safe so a hung C-extension can be killed
+# with SIGKILL (subprocess timeout), which always works.
+_PILLOW_SUBPROCESS_SCRIPT = (
+    'import sys;'
+    'from io import BytesIO;'
+    'from PIL import Image as I;'
+    'd=sys.stdin.buffer.read();'
+    'i=I.open(BytesIO(d));'
+    'm=i.mode;'
+    'i=i.convert("RGB") if m in ("RGBA","P","LA","PA") '
+    'or m not in ("RGB","L","1") else i;'
+    'b=BytesIO();'
+    'i.save(b,format="JPEG",quality=95);'
+    'sys.stdout.buffer.write(b.getvalue())'
+)
 
-    This function is designed to run in a subprocess so a C-extension
-    hang inside Pillow (convert/save on malformed image data) can be
-    terminated by the caller without taking down the whole download.
+
+def _pillow_convert_safe(image_data: bytes) -> bytes:
+    """Convert image bytes to RGB JPEG via a subprocess with timeout.
+
+    Runs Pillow in an isolated child process so a C-extension hang
+    inside decode/convert/save can be killed cleanly.  Returns the
+    JPEG bytes on success, or the original raw bytes on timeout/error
+    so img2pdf can attempt to handle the page directly.
     """
-    from io import BytesIO
-    from PIL import Image as PILImage
-
-    img = PILImage.open(BytesIO(image_data))
-    if img.mode in ('RGBA', 'P', 'LA', 'PA'):
-        img = img.convert('RGB')
-    elif img.mode not in ('RGB', 'L', '1'):
-        img = img.convert('RGB')
-    buf = BytesIO()
-    img.save(buf, format='JPEG', quality=95)
-    return buf.getvalue()
+    try:
+        proc = subprocess.run(
+            [_sys.executable, '-c', _PILLOW_SUBPROCESS_SCRIPT],
+            input=image_data,
+            capture_output=True,
+            timeout=_PILLOW_CONVERT_TIMEOUT,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return proc.stdout
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+        pass
+    return image_data
 
 
 def make_suwayomi_link(manga_id: int, chapter_id: int) -> str:
@@ -308,28 +330,12 @@ class SuwayomiClient:
             # img2pdf receives only clean, well-known image data.
             # This avoids img2pdf's internal ThreadPoolExecutor hanging
             # on exotic image formats or corrupt page data from Suwayomi.
-            _convert_executor = ProcessPoolExecutor(max_workers=1)
             for source_order, page_count in chapters:
                 for i in range(page_count):
                     if stop_event.is_set():
-                        _convert_executor.shutdown(wait=False)
                         return False
                     data = self.get_page_image(manga_id, source_order, i)
-                    try:
-                        future = _convert_executor.submit(
-                            _pillow_convert_to_jpeg, data,
-                        )
-                        jpeg_data = future.result(
-                            timeout=_PILLOW_CONVERT_TIMEOUT,
-                        )
-                    except (FutureTimeoutError, Exception):
-                        # Pillow hung or failed — pass raw bytes
-                        # and let img2pdf attempt to handle it.
-                        _convert_executor.shutdown(wait=False)
-                        _convert_executor = ProcessPoolExecutor(
-                            max_workers=1,
-                        )
-                        jpeg_data = data
+                    jpeg_data = _pillow_convert_safe(data)
                     with tempfile.NamedTemporaryFile(
                         delete=False, suffix='.jpg'
                     ) as tf:
@@ -339,7 +345,6 @@ class SuwayomiClient:
                     if progress_cb is not None and total_pages > 0:
                         progress_cb(fetched, total_pages, len(jpeg_data))
 
-            _convert_executor.shutdown(wait=True)
             if not temp_paths:
                 return False
 

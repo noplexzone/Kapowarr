@@ -28,13 +28,15 @@ SUWAYOMI_SOURCE_NAME = "Suwayomi"
 # Seconds between polling Suwayomi for chapter download status.
 POLL_INTERVAL = 5
 
-# ProcessPoolExecutor created at module level (main thread) so
-# worker processes are forked before any threads exist.  Download
-# threads submit img2pdf work to it via _img2pdf_convert().
+# ProcessPoolExecutor created at module level using the 'spawn'
+# context so it doesn't interfere with set_start_method('spawn')
+# in Kapowarr.py.  Spawn also avoids the thread+fork deadlock
+# because child processes are brand-new interpreters.
 import atexit as _atexit
+import multiprocessing as _mp
 from concurrent.futures import ProcessPoolExecutor as _PPE,     TimeoutError as _FutureTimeoutError
 
-_IMG2PDF_WORKER = _PPE(max_workers=1)
+_IMG2PDF_WORKER = _PPE(max_workers=1, mp_context=_mp.get_context('spawn'))
 _IMG2PDF_TIMEOUT = 120
 _atexit.register(lambda: _IMG2PDF_WORKER.shutdown(wait=False))
 

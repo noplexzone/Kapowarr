@@ -238,32 +238,38 @@ class SearchSuwayomi(SearchSource):
         if not series_title:
             return []
 
-        try:
-            library = client.get_library_manga()
-        except Exception as e:
-            LOGGER.warning('Suwayomi library search failed: %s', e)
-            return []
-
         from backend.internals.settings import Settings
         configured_source_ids = list(Settings().sv.suwayomi_source_ids)
+        source_rank: Dict[str, int] = {}
+        default_rank = 0
         if configured_source_ids:
             source_rank = {str(sid): idx for idx, sid in enumerate(configured_source_ids)}
             default_rank = len(source_rank)
 
-            def _source_rank(manga: dict) -> tuple:
-                source = manga.get('source') or {}
-                return (source_rank.get(str(source.get('id', '')), default_rank),)
+        # --- library pass ---
+        try:
+            library = client.get_library_manga()
+        except Exception as e:
+            LOGGER.warning('Suwayomi library search failed: %s', e)
+            library = []
 
-            library = sorted(library, key=_source_rank)
+        if configured_source_ids:
+            def _lib_rank(manga: dict) -> tuple:
+                src = manga.get('source') or {}
+                return (source_rank.get(str(src.get('id', '')), default_rank),)
+            library = sorted(library, key=_lib_rank)
 
         results: List[SearchResultData] = []
+        seen_manga_ids: set = set()
         title_lower = series_title.lower()
+
         for manga in library:
             manga_title: str = manga.get('title', '')
             if title_lower not in manga_title.lower():
                 continue
-
             manga_id: int = manga['id']
+            seen_manga_ids.add(manga_id)
+            sw_source = (manga.get('source') or {}).get('name', '')
             try:
                 chapters = client.get_chapters(manga_id)
             except Exception as e:
@@ -272,17 +278,14 @@ class SearchSuwayomi(SearchSource):
                     manga_id, e,
                 )
                 continue
-
+            src_tag = f" [{sw_source}]" if sw_source else ""
             for ch in chapters:
                 ch_number = ch.get('chapterNumber')
                 if ch_number is None or ch_number < 0:
                     continue
-
                 results.append({
                     'link': make_suwayomi_link(manga_id, ch['id']),
-                    'display_title': (
-                        f"{manga_title} - Ch. {ch_number:.4g}"
-                    ),
+                    'display_title': f"{manga_title} - Ch. {ch_number:.4g}{src_tag}",
                     'source': SUWAYOMI_SOURCE_NAME,
                     'series': manga_title,
                     'year': None,
@@ -290,7 +293,72 @@ class SearchSuwayomi(SearchSource):
                     'special_version': None,
                     'issue_number': float(ch_number),
                     'annual': False,
+                    '_sw_source': sw_source,
                 })
+
+        # --- per-source pass: search configured sources for mangas not in library ---
+        try:
+            all_sources = client.get_sources()
+        except Exception as e:
+            LOGGER.warning('Suwayomi: failed to fetch sources: %s', e)
+            all_sources = []
+
+        if configured_source_ids:
+            source_by_id = {s["id"]: s for s in all_sources}
+            ordered_sources = [
+                source_by_id[str(sid)]
+                for sid in configured_source_ids
+                if str(sid) in source_by_id
+                and source_by_id[str(sid)].get("name") != "Local source"
+            ]
+        else:
+            ordered_sources = [s for s in all_sources if s.get("name") != "Local source"]
+
+        for source in ordered_sources:
+            source_id = source["id"]
+            source_name = source.get("name", source_id)
+            try:
+                source_mangas = client.search_source(source_id, series_title)
+            except Exception as e:
+                LOGGER.debug(
+                    "Suwayomi: source search failed for '%s': %s", source_name, e
+                )
+                continue
+            for manga in source_mangas:
+                manga_title_lower = manga["title"].lower()
+                if title_lower not in manga_title_lower and manga_title_lower not in title_lower:
+                    continue
+                manga_id = manga["id"]
+                if manga_id in seen_manga_ids:
+                    continue
+                seen_manga_ids.add(manga_id)
+                manga_title = manga["title"]
+                try:
+                    chapters = client.fetch_manga_chapters(manga_id)
+                except Exception as e:
+                    LOGGER.debug(
+                        "Suwayomi: failed to fetch chapters for '%s' via '%s': %s",
+                        manga_title, source_name, e,
+                    )
+                    continue
+                for ch in chapters:
+                    ch_number = ch.get('chapterNumber')
+                    if ch_number is None or ch_number < 0:
+                        continue
+                    results.append({
+                        'link': make_suwayomi_link(manga_id, ch['id']),
+                        'display_title': (
+                            f"{manga_title} - Ch. {ch_number:.4g} [{source_name}]"
+                        ),
+                        'source': SUWAYOMI_SOURCE_NAME,
+                        'series': manga_title,
+                        'year': None,
+                        'volume_number': None,
+                        'special_version': None,
+                        'issue_number': float(ch_number),
+                        'annual': False,
+                        '_sw_source': source_name,
+                    })
 
         return results
 
@@ -469,6 +537,7 @@ def _build_suwayomi_bundle_for_issue(
     target = set(chapter_numbers)
     manga_chapters: Dict[int, Dict[float, int]] = {}
     manga_titles: Dict[int, str] = {}
+    manga_source_names: Dict[int, str] = {}
     for result in search_results:
         link = result.get('link', '')
         if not link.startswith(SUWAYOMI_SCHEME):
@@ -486,6 +555,10 @@ def _build_suwayomi_bundle_for_issue(
             continue
         manga_chapters.setdefault(manga_id, {})[ch_num] = ch_id
         manga_titles.setdefault(manga_id, result.get('series', ''))
+        if manga_id not in manga_source_names:
+            sw_src = result.get('_sw_source', '')  # type: ignore[call-overload]
+            if sw_src:
+                manga_source_names[manga_id] = sw_src
     for manga_id, num_to_id in manga_chapters.items():
         if not target.issubset(set(num_to_id.keys())):
             continue
@@ -494,11 +567,12 @@ def _build_suwayomi_bundle_for_issue(
         ch_nums_sorted = [n for n, _ in sorted_pairs]
         manga_title = manga_titles.get(manga_id, '')
         display_vol = display_volume_number if display_volume_number is not None else volume_data.volume_number
+        src_tag = f" [{manga_source_names[manga_id]}]" if manga_id in manga_source_names else ""
         return {
             'link': make_suwayomi_volume_link(manga_id, ch_ids),
             'display_title': (
                 f"{manga_title} - Vol. {display_vol} "
-                f"(Ch. {ch_nums_sorted[0]:.4g}–{ch_nums_sorted[-1]:.4g})"
+                f"(Ch. {ch_nums_sorted[0]:.4g}–{ch_nums_sorted[-1]:.4g}){src_tag}"
             ),
             'source': SUWAYOMI_SOURCE_NAME,
             'series': manga_title,
@@ -771,9 +845,11 @@ def _try_bundle_suwayomi_chapters(
             continue
 
         manga_title = results[0]['series']
+        sw_src = results[0].get('_sw_source', '')  # type: ignore[call-overload]
+        src_tag = f" [{sw_src}]" if sw_src else ""
         return {
             'link': make_suwayomi_volume_link(manga_id, chapter_ids),
-            'display_title': f"{manga_title} - Vol. {volume_data.volume_number}",
+            'display_title': f"{manga_title} - Vol. {volume_data.volume_number}{src_tag}",
             'source': SUWAYOMI_SOURCE_NAME,
             'series': manga_title,
             'year': None,

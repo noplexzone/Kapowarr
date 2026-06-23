@@ -314,16 +314,24 @@ class SearchSuwayomi(SearchSource):
         else:
             ordered_sources = [s for s in all_sources if s.get("name") != "Local source"]
 
+        LOGGER.info(
+            'Suwayomi per-source pass: searching %d sources for "%s"',
+            len(ordered_sources), series_title,
+        )
         for source in ordered_sources:
             source_id = source["id"]
             source_name = source.get("name", source_id)
             try:
                 source_mangas = client.search_source(source_id, series_title)
             except Exception as e:
-                LOGGER.debug(
+                LOGGER.info(
                     "Suwayomi: source search failed for '%s': %s", source_name, e
                 )
                 continue
+            LOGGER.info(
+                'Suwayomi: source "%s" returned %d results',
+                source_name, len(source_mangas),
+            )
             for manga in source_mangas:
                 manga_title_lower = manga["title"].lower()
                 if title_lower not in manga_title_lower and manga_title_lower not in title_lower:

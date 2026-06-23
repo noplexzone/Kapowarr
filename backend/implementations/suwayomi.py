@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import tempfile
 import zipfile
+from concurrent.futures import ProcessPoolExecutor, TimeoutError as FutureTimeoutError
 from threading import Event
 from time import sleep
 from typing import Dict, List, Optional, Tuple
@@ -28,6 +29,31 @@ SUWAYOMI_SOURCE_NAME = "Suwayomi"
 
 # Seconds between polling Suwayomi for chapter download status.
 POLL_INTERVAL = 5
+
+# Timeout for Pillow image conversion in subprocess (seconds).
+# Pages that cannot be converted within this window are passed
+# through as raw bytes so img2pdf can attempt to handle them.
+_PILLOW_CONVERT_TIMEOUT = 5.0
+
+
+def _pillow_convert_to_jpeg(image_data: bytes) -> bytes:
+    """Convert raw image bytes to RGB JPEG via Pillow.
+
+    This function is designed to run in a subprocess so a C-extension
+    hang inside Pillow (convert/save on malformed image data) can be
+    terminated by the caller without taking down the whole download.
+    """
+    from io import BytesIO
+    from PIL import Image as PILImage
+
+    img = PILImage.open(BytesIO(image_data))
+    if img.mode in ('RGBA', 'P', 'LA', 'PA'):
+        img = img.convert('RGB')
+    elif img.mode not in ('RGB', 'L', '1'):
+        img = img.convert('RGB')
+    buf = BytesIO()
+    img.save(buf, format='JPEG', quality=95)
+    return buf.getvalue()
 
 
 def make_suwayomi_link(manga_id: int, chapter_id: int) -> str:
@@ -282,26 +308,27 @@ class SuwayomiClient:
             # img2pdf receives only clean, well-known image data.
             # This avoids img2pdf's internal ThreadPoolExecutor hanging
             # on exotic image formats or corrupt page data from Suwayomi.
-            from io import BytesIO
-            from PIL import Image as PILImage
-
+            _convert_executor = ProcessPoolExecutor(max_workers=1)
             for source_order, page_count in chapters:
                 for i in range(page_count):
                     if stop_event.is_set():
+                        _convert_executor.shutdown(wait=False)
                         return False
                     data = self.get_page_image(manga_id, source_order, i)
                     try:
-                        img = PILImage.open(BytesIO(data))
-                        if img.mode in ('RGBA', 'P', 'LA', 'PA'):
-                            img = img.convert('RGB')
-                        elif img.mode not in ('RGB', 'L', '1'):
-                            img = img.convert('RGB')
-                        buf = BytesIO()
-                        img.save(buf, format='JPEG', quality=95)
-                        jpeg_data = buf.getvalue()
-                    except Exception:
-                        # If Pillow cannot decode it, pass raw bytes
+                        future = _convert_executor.submit(
+                            _pillow_convert_to_jpeg, data,
+                        )
+                        jpeg_data = future.result(
+                            timeout=_PILLOW_CONVERT_TIMEOUT,
+                        )
+                    except (FutureTimeoutError, Exception):
+                        # Pillow hung or failed — pass raw bytes
                         # and let img2pdf attempt to handle it.
+                        _convert_executor.shutdown(wait=False)
+                        _convert_executor = ProcessPoolExecutor(
+                            max_workers=1,
+                        )
                         jpeg_data = data
                     with tempfile.NamedTemporaryFile(
                         delete=False, suffix='.jpg'
@@ -312,6 +339,7 @@ class SuwayomiClient:
                     if progress_cb is not None and total_pages > 0:
                         progress_cb(fetched, total_pages, len(jpeg_data))
 
+            _convert_executor.shutdown(wait=True)
             if not temp_paths:
                 return False
 

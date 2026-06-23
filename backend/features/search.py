@@ -578,9 +578,26 @@ def _build_suwayomi_bundle_for_issue(
             mid, sorted(nums.keys()),
             'FULL' if not missing else f'missing {sorted(missing)}',
         )
+    def _source_covers_target(source_nums, target_nums):
+        """Return True if source chapter numbers cover the target range.
+
+        Decimal extra chapters (e.g. 262.2) are leniently matched against
+        their integer floor (262.0) so sources without decimal variants
+        still qualify.
+        """
+        src_set = set(source_nums)
+        for tn in target_nums:
+            if tn in src_set:
+                continue
+            # Lenient: target 262.2 → match source 262.0
+            if tn != int(tn) and float(int(tn)) in src_set:
+                continue
+            return False
+        return True
+
     bundles: List[SearchResultData] = []
     for manga_id, num_to_id in manga_chapters.items():
-        if not target.issubset(set(num_to_id.keys())):
+        if not _source_covers_target(num_to_id.keys(), target):
             continue
         sorted_pairs = sorted(num_to_id.items(), key=lambda x: x[0])
         ch_ids = [cid for _, cid in sorted_pairs]

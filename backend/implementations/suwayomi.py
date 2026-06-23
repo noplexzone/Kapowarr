@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+import subprocess
+import sys as _sys
 import zipfile
 from threading import Event
 from time import sleep
@@ -28,6 +30,50 @@ SUWAYOMI_SOURCE_NAME = "Suwayomi"
 
 # Seconds between polling Suwayomi for chapter download status.
 POLL_INTERVAL = 5
+
+# Timeout for img2pdf conversion in subprocess (seconds).
+# img2pdf's internal ThreadPoolExecutor can hang on certain image
+# formats; running it in a subprocess lets us SIGKILL it cleanly.
+_IMG2PDF_TIMEOUT = 120
+
+
+def _img2pdf_convert(paths: "List[str]") -> bytes:
+    """Run img2pdf.convert() in a subprocess with timeout.
+
+    img2pdf's ThreadPoolExecutor can deadlock on exotic image formats
+    (WebP variants, malformed PNG chunks).  Running in a child process
+    with a timeout ensures the download thread never blocks forever.
+    The output PDF is written to a temp file to avoid buffering the
+    entire file in memory.
+    """
+    import json as _json
+    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as outf:
+        out_path = outf.name
+    try:
+        script = (
+            'import sys,json,img2pdf;'
+            'paths=json.loads(sys.stdin.read());'
+            'data=img2pdf.convert(paths);'
+            'open(sys.argv[1],"wb").write(data)'
+        )
+        proc = subprocess.run(
+            [_sys.executable, '-c', script, out_path],
+            input=_json.dumps(paths).encode(),
+            capture_output=True,
+            timeout=_IMG2PDF_TIMEOUT,
+        )
+        if proc.returncode != 0:
+            stderr = proc.stderr.decode(errors='replace')[:500]
+            raise RuntimeError(
+                f'img2pdf subprocess failed (rc={proc.returncode}): {stderr}'
+            )
+        with open(out_path, 'rb') as f:
+            return f.read()
+    finally:
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass
 
 def make_suwayomi_link(manga_id: int, chapter_id: int) -> str:
     """Encode manga/chapter IDs as a Kapowarr download_link."""
@@ -267,8 +313,6 @@ class SuwayomiClient:
 
         Returns True on success, False if stopped or no pages collected.
         """
-        import img2pdf
-
         total_pages = sum(pc for _, pc in chapters)
         fetched = 0
         temp_paths: List[str] = []
@@ -317,7 +361,7 @@ class SuwayomiClient:
             if stop_event.is_set():
                 return False
 
-            pdf_bytes = img2pdf.convert(temp_paths)
+            pdf_bytes = _img2pdf_convert(temp_paths)
             with open(dest_path, 'wb') as f:
                 f.write(pdf_bytes)
 

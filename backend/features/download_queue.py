@@ -843,10 +843,10 @@ class DownloadHandler(metaclass=Singleton):
         for download in self.queue[::-1]:
             self.remove(download.id)
 
-        for download in self.queue:
-            if download.download_thread is not None:
-                download.download_thread.join()
-
+        # Clean up any remaining rows in the DB table.  We deliberately
+        # do NOT join() the download threads here — a stuck Suwayomi
+        # thread would block the API response forever and the caller
+        # would never see the queue clear.
         get_db().execute(
             "DELETE FROM download_queue;"
         )

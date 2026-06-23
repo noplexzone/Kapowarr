@@ -111,7 +111,9 @@ function statusTone(status: string): 'info' | 'success' | 'danger' | 'neutral' {
     case 'seeding':
       return 'success';
     case 'completed': return 'success';
-    case 'failed': return 'danger';
+    case 'failed':
+    case 'canceled':
+      return 'danger';
     default: return 'neutral';
   }
 }

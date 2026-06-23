@@ -28,43 +28,6 @@ SUWAYOMI_SOURCE_NAME = "Suwayomi"
 # Seconds between polling Suwayomi for chapter download status.
 POLL_INTERVAL = 5
 
-# ProcessPoolExecutor created at module level using the 'spawn'
-# context so it doesn't interfere with set_start_method('spawn')
-# in Kapowarr.py.  Spawn also avoids the thread+fork deadlock
-# because child processes are brand-new interpreters.
-import atexit as _atexit
-import multiprocessing as _mp
-from concurrent.futures import ProcessPoolExecutor as _PPE,     TimeoutError as _FutureTimeoutError
-
-_IMG2PDF_WORKER = _PPE(max_workers=1, mp_context=_mp.get_context('spawn'))
-_IMG2PDF_TIMEOUT = 120
-_atexit.register(lambda: _IMG2PDF_WORKER.shutdown(wait=False))
-
-
-def _img2pdf_convert(paths: "List[str]") -> bytes:
-    """Run img2pdf.convert() in the pre-forked worker process.
-
-    img2pdf's ThreadPoolExecutor can deadlock on exotic image formats
-    (WebP variants, malformed PNG chunks).  The worker process was
-    forked from the main thread before any download threads existed,
-    avoiding the thread+fork deadlock.
-    """
-    future = _IMG2PDF_WORKER.submit(_img2pdf_worker, paths)
-    try:
-        return future.result(timeout=_IMG2PDF_TIMEOUT)
-    except _FutureTimeoutError:
-        # Worker is hung - terminate it and create a replacement
-        _IMG2PDF_WORKER.shutdown(wait=False)
-        # The replacement won't help for this download, but future
-        # ones will get a fresh worker.
-        raise RuntimeError('img2pdf conversion timed out after 120s')
-
-
-def _img2pdf_worker(paths: "List[str]") -> bytes:
-    """Standalone worker: convert image files to PDF bytes via img2pdf."""
-    import img2pdf as _img2pdf
-    return _img2pdf.convert(paths)
-
 def make_suwayomi_link(manga_id: int, chapter_id: int) -> str:
     """Encode manga/chapter IDs as a Kapowarr download_link."""
     return f"suwayomi:{manga_id}:{chapter_id}"
@@ -351,7 +314,8 @@ class SuwayomiClient:
             if stop_event.is_set():
                 return False
 
-            pdf_bytes = _img2pdf_convert(temp_paths)
+            import img2pdf
+            pdf_bytes = img2pdf.convert(temp_paths)
             with open(dest_path, 'wb') as f:
                 f.write(pdf_bytes)
 

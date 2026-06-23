@@ -111,7 +111,8 @@ class DownloadHandler(metaclass=Singleton):
 
             PostProcessor.success(download)
 
-        self.queue.remove(download)
+        if download in self.queue:
+            self.queue.remove(download)
         ws.emit(RemovedFromQueueEvent(download))
 
         self._process_queue()
@@ -794,26 +795,16 @@ class DownloadHandler(metaclass=Singleton):
         if not download.download_thread:
             return
 
-        prev_state = download.state
-        was_thread_running = download.download_thread.is_alive()
         download.stop()
         WebSocket().emit(QueueStatusEvent(download))
 
-        if (
-            # Direct download
-            not isinstance(download, ExternalDownload)
-            and (
-                # Download was queued when we stopped it
-                prev_state == DownloadState.QUEUED_STATE
-                or
-                (
-                    # Download errored out without catching it
-                    prev_state == DownloadState.DOWNLOADING_STATE
-                    and not was_thread_running
-                )
-            )
-        ):
-            self.queue.remove(download)
+        if not isinstance(download, ExternalDownload):
+            # Remove from the in-memory queue immediately.  The download
+            # thread may still be running — when it returns,
+            # __run_download() detects that the download is no longer in
+            # the queue and skips the duplicate removal.
+            if download in self.queue:
+                self.queue.remove(download)
             PostProcessor.canceled(download)
             WebSocket().emit(RemovedFromQueueEvent(download))
 

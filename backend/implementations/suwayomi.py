@@ -278,20 +278,39 @@ class SuwayomiClient:
         chapter_pdfs: List[str] = []
         try:
             # --- Phase 1: Download all pages ---
+            # Pre-convert every page to RGB JPEG via Pillow so that
+            # img2pdf receives only clean, well-known image data.
+            # This avoids img2pdf's internal ThreadPoolExecutor hanging
+            # on exotic image formats or corrupt page data from Suwayomi.
+            from io import BytesIO
+            from PIL import Image as PILImage
+
             for source_order, page_count in chapters:
                 for i in range(page_count):
                     if stop_event.is_set():
                         return False
                     data = self.get_page_image(manga_id, source_order, i)
-                    ext = _detect_image_ext(data)
+                    try:
+                        img = PILImage.open(BytesIO(data))
+                        if img.mode in ('RGBA', 'P', 'LA', 'PA'):
+                            img = img.convert('RGB')
+                        elif img.mode not in ('RGB', 'L', '1'):
+                            img = img.convert('RGB')
+                        buf = BytesIO()
+                        img.save(buf, format='JPEG', quality=95)
+                        jpeg_data = buf.getvalue()
+                    except Exception:
+                        # If Pillow cannot decode it, pass raw bytes
+                        # and let img2pdf attempt to handle it.
+                        jpeg_data = data
                     with tempfile.NamedTemporaryFile(
-                        delete=False, suffix=f'.{ext}'
+                        delete=False, suffix='.jpg'
                     ) as tf:
-                        tf.write(data)
+                        tf.write(jpeg_data)
                         temp_paths.append(tf.name)
                     fetched += 1
                     if progress_cb is not None and total_pages > 0:
-                        progress_cb(fetched, total_pages, len(data))
+                        progress_cb(fetched, total_pages, len(jpeg_data))
 
             if not temp_paths:
                 return False

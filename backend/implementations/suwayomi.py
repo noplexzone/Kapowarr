@@ -266,6 +266,17 @@ class SuwayomiClient:
 
         Returns True on success, False if stopped or no pages collected.
         """
+        # Global safety timeout: set stop_event after 10 minutes to prevent
+        # any path from hanging the download thread indefinitely.
+        _safety_timer = None
+        try:
+            import threading as _thr
+            _safety_timer = _thr.Timer(600.0, stop_event.set)
+            _safety_timer.daemon = True
+            _safety_timer.start()
+        except Exception:
+            pass
+
         total_pages = sum(pc for _, pc in chapters)
         fetched = 0
         temp_paths: List[str] = []
@@ -290,12 +301,18 @@ class SuwayomiClient:
                             if status is not None and status < 500:
                                 raise
                             if _attempt == _max_page_retries - 1:
+                                LOGGER.error(
+                                    'Page %d/%d failed after %d retries: %s',
+                                    i + 1, page_count,
+                                    _max_page_retries, e,
+                                )
                                 raise
                             if stop_event.is_set():
                                 return False
-                            LOGGER.debug(
-                                'Retrying page %d/%d after %s',
-                                i + 1, page_count, e,
+                            LOGGER.info(
+                                'Retrying page %d/%d (attempt %d/%d) after %s',
+                                i + 1, page_count,
+                                _attempt + 2, _max_page_retries, e,
                             )
                             stop_event.wait(timeout=2)
                     ext = _detect_image_ext(data)
@@ -309,9 +326,13 @@ class SuwayomiClient:
                         progress_cb(fetched, total_pages, len(data))
 
             if not temp_paths:
+                if _safety_timer is not None:
+                    _safety_timer.cancel()
                 return False
 
             if stop_event.is_set():
+                if _safety_timer is not None:
+                    _safety_timer.cancel()
                 return False
 
             import img2pdf
@@ -319,9 +340,13 @@ class SuwayomiClient:
             with open(dest_path, 'wb') as f:
                 f.write(pdf_bytes)
 
+            if _safety_timer is not None:
+                _safety_timer.cancel()
             return True
 
         finally:
+            if _safety_timer is not None:
+                _safety_timer.cancel()
             for path in temp_paths:
                 try:
                     os.unlink(path)

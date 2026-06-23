@@ -567,6 +567,7 @@ def _build_suwayomi_bundle_for_issue(
             sw_src = result.get('_sw_source', '')  # type: ignore[call-overload]
             if sw_src:
                 manga_source_names[manga_id] = sw_src
+    bundles: List[SearchResultData] = []
     for manga_id, num_to_id in manga_chapters.items():
         if not target.issubset(set(num_to_id.keys())):
             continue
@@ -576,7 +577,7 @@ def _build_suwayomi_bundle_for_issue(
         manga_title = manga_titles.get(manga_id, '')
         display_vol = display_volume_number if display_volume_number is not None else volume_data.volume_number
         src_tag = f" [{manga_source_names[manga_id]}]" if manga_id in manga_source_names else ""
-        return {
+        bundles.append({
             'link': make_suwayomi_volume_link(manga_id, ch_ids),
             'display_title': (
                 f"{manga_title} - Vol. {display_vol} "
@@ -589,8 +590,8 @@ def _build_suwayomi_bundle_for_issue(
             'special_version': None,
             'issue_number': calculated_issue_number,
             'annual': False,
-        }
-    return None
+        })
+    return bundles
 
 
 async def search_multiple_queries(
@@ -750,15 +751,15 @@ def manual_search(
                     search_results
                 )
             else:
-                bundle = _build_suwayomi_bundle_for_issue(
+                bundles = _build_suwayomi_bundle_for_issue(
                     search_results, ch_nums or [], volume_data,
                     calculated_issue_number,
                     display_volume_number=int(calculated_issue_number),
                 )
-                if bundle is not None:
-                    # Drop ALL individual Suwayomi chapter links (no comma in id
-                    # portion) so only the verified bundle represents Suwayomi.
-                    search_results = [bundle] + _remove_individual_suwayomi_results(
+                if bundles:
+                    # Drop ALL individual Suwayomi chapter links so only the
+                    # verified bundles (one per source) represent Suwayomi.
+                    search_results = bundles + _remove_individual_suwayomi_results(
                         search_results
                     )
                 elif ch_nums:
@@ -803,7 +804,7 @@ def _try_bundle_suwayomi_chapters(
     all_results: List,
     searchable_issues: List[Tuple[int, float]],
     volume_data: VolumeData,
-) -> Union[MatchedSearchResultData, None]:
+) -> Union[List[MatchedSearchResultData], None]:
     """Try to bundle individual Suwayomi chapter results into one volume link.
 
     For each manga in the Suwayomi results, checks if its chapters cover all
@@ -963,15 +964,15 @@ def auto_search(
         priority = _source_priority_for_volume(volume_data)
 
         if issue_id is None and 'suwayomi' in priority:
-            bundle = _try_bundle_suwayomi_chapters(
+            bundles = _try_bundle_suwayomi_chapters(
                 all_results, searchable_issues, volume_data
             )
-            if bundle:
+            if bundles:
                 LOGGER.debug(
-                    'Auto search: Suwayomi chapter bundle for volume %d',
-                    volume_id,
+                    'Auto search: Suwayomi chapter bundles for volume %d (%d sources)',
+                    volume_id, len(bundles),
                 )
-                candidates = [bundle] + [
+                candidates = bundles + [
                     r for r in candidates
                     if _search_result_source_id(r) != 'suwayomi'
                 ]

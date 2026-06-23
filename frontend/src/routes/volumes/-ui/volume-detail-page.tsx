@@ -25,7 +25,6 @@ import {
   refreshVolume,
   fetchRenamePreview,
   submitRename,
-  deleteIssue,
   forceMatchIssue,
   fetchManualMatch,
   submitManualMatch,
@@ -503,20 +502,57 @@ export function VolumeDetailPage() {
   const handleDeleteSelected = useCallback(async () => {
     if (manageChecked.size === 0) return;
     setManageDeleting(true);
-    const ids = [...manageChecked];
-    try {
-      for (const issueId of ids) {
-        await deleteIssue(issueId);
+    const checkedIds = [...manageChecked];
+    // Collect file IDs for every checked issue by cross-referencing
+    // their filenames against manualMatches (which carries file_id).
+    const fileIds: number[] = [];
+    const issues = volume?.issues ?? [];
+    for (const issueId of checkedIds) {
+      const issue = issues.find((i) => i.id === issueId);
+      if (!issue || issue.filenames.length === 0) continue;
+      for (const fn of issue.filenames) {
+        const mf = manualMatches.find(
+          (m) => m.filepath.endsWith(fn) || m.filepath === fn,
+        );
+        if (mf?.file_id != null && !fileIds.includes(mf.file_id)) {
+          fileIds.push(mf.file_id);
+        }
       }
-      setActionMsg(`Deleted ${ids.length} issue(s).`);
+    }
+    if (fileIds.length === 0) {
+      setActionMsg('No files to delete for selected issues.');
+      setManageDeleting(false);
+      return;
+    }
+    if (!window.confirm(`Delete ${fileIds.length} file(s) for ${checkedIds.length} issue(s)?`)) {
+      setManageDeleting(false);
+      return;
+    }
+    try {
+      let deleted = 0;
+      for (const fileId of fileIds) {
+        try {
+          await deleteFile(fileId);
+          deleted++;
+        } catch (e) {
+          // Continue deleting other files
+        }
+      }
+      setActionMsg(`Deleted ${deleted} file(s) for ${checkedIds.length} issue(s).`);
       queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
       setManageChecked(new Set());
+      // Refresh manual match data
+      const matches = await fetchManualMatch(id);
+      setManualMatches(matches);
+      setUnmatchedFiles(
+        matches.filter((m) => m.issue_ids.length === 0 && !m.general_file),
+      );
     } catch (err) {
       setActionMsg('Delete failed: ' + (err as Error).message);
     } finally {
       setManageDeleting(false);
     }
-  }, [manageChecked, id, queryClient]);
+  }, [manageChecked, id, queryClient, volume?.issues, manualMatches]);
 
   const handleForceMatchSelected = useCallback(async () => {
     if (manageChecked.size === 0) return;

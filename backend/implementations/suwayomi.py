@@ -12,9 +12,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-import subprocess
-import sys as _sys
-import zipfile
 from threading import Event
 from time import sleep
 from typing import Dict, List, Optional, Tuple
@@ -31,49 +28,40 @@ SUWAYOMI_SOURCE_NAME = "Suwayomi"
 # Seconds between polling Suwayomi for chapter download status.
 POLL_INTERVAL = 5
 
-# Timeout for img2pdf conversion in subprocess (seconds).
-# img2pdf's internal ThreadPoolExecutor can hang on certain image
-# formats; running it in a subprocess lets us SIGKILL it cleanly.
+# ProcessPoolExecutor created at module level (main thread) so
+# worker processes are forked before any threads exist.  Download
+# threads submit img2pdf work to it via _img2pdf_convert().
+import atexit as _atexit
+from concurrent.futures import ProcessPoolExecutor as _PPE,     TimeoutError as _FutureTimeoutError
+
+_IMG2PDF_WORKER = _PPE(max_workers=1)
 _IMG2PDF_TIMEOUT = 120
+_atexit.register(lambda: _IMG2PDF_WORKER.shutdown(wait=False))
 
 
 def _img2pdf_convert(paths: "List[str]") -> bytes:
-    """Run img2pdf.convert() in a subprocess with timeout.
+    """Run img2pdf.convert() in the pre-forked worker process.
 
     img2pdf's ThreadPoolExecutor can deadlock on exotic image formats
-    (WebP variants, malformed PNG chunks).  Running in a child process
-    with a timeout ensures the download thread never blocks forever.
-    The output PDF is written to a temp file to avoid buffering the
-    entire file in memory.
+    (WebP variants, malformed PNG chunks).  The worker process was
+    forked from the main thread before any download threads existed,
+    avoiding the thread+fork deadlock.
     """
-    import json as _json
-    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as outf:
-        out_path = outf.name
+    future = _IMG2PDF_WORKER.submit(_img2pdf_worker, paths)
     try:
-        script = (
-            'import sys,json,img2pdf;'
-            'paths=json.loads(sys.stdin.read());'
-            'data=img2pdf.convert(paths);'
-            'open(sys.argv[1],"wb").write(data)'
-        )
-        proc = subprocess.run(
-            [_sys.executable, '-c', script, out_path],
-            input=_json.dumps(paths).encode(),
-            capture_output=True,
-            timeout=_IMG2PDF_TIMEOUT,
-        )
-        if proc.returncode != 0:
-            stderr = proc.stderr.decode(errors='replace')[:500]
-            raise RuntimeError(
-                f'img2pdf subprocess failed (rc={proc.returncode}): {stderr}'
-            )
-        with open(out_path, 'rb') as f:
-            return f.read()
-    finally:
-        try:
-            os.unlink(out_path)
-        except OSError:
-            pass
+        return future.result(timeout=_IMG2PDF_TIMEOUT)
+    except _FutureTimeoutError:
+        # Worker is hung - terminate it and create a replacement
+        _IMG2PDF_WORKER.shutdown(wait=False)
+        # The replacement won't help for this download, but future
+        # ones will get a fresh worker.
+        raise RuntimeError('img2pdf conversion timed out after 120s')
+
+
+def _img2pdf_worker(paths: "List[str]") -> bytes:
+    """Standalone worker: convert image files to PDF bytes via img2pdf."""
+    import img2pdf as _img2pdf
+    return _img2pdf.convert(paths)
 
 def make_suwayomi_link(manga_id: int, chapter_id: int) -> str:
     """Encode manga/chapter IDs as a Kapowarr download_link."""

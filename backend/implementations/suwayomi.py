@@ -13,8 +13,6 @@ from __future__ import annotations
 import os
 import tempfile
 import zipfile
-import subprocess
-import sys as _sys
 from threading import Event
 from time import sleep
 from typing import Dict, List, Optional, Tuple
@@ -30,53 +28,6 @@ SUWAYOMI_SOURCE_NAME = "Suwayomi"
 
 # Seconds between polling Suwayomi for chapter download status.
 POLL_INTERVAL = 5
-
-# Timeout for Pillow image conversion in subprocess (seconds).
-# Pages that cannot be converted within this window are passed
-# through as raw bytes so img2pdf can attempt to handle them.
-_PILLOW_CONVERT_TIMEOUT = 5.0
-
-
-# Inline Python script that reads raw image bytes on stdin,
-# converts to RGB JPEG via Pillow, and writes result to stdout.
-# Used by _pillow_convert_safe so a hung C-extension can be killed
-# with SIGKILL (subprocess timeout), which always works.
-_PILLOW_SUBPROCESS_SCRIPT = (
-    'import sys;'
-    'from io import BytesIO;'
-    'from PIL import Image as I;'
-    'd=sys.stdin.buffer.read();'
-    'i=I.open(BytesIO(d));'
-    'm=i.mode;'
-    'i=i.convert("RGB") if m in ("RGBA","P","LA","PA") '
-    'or m not in ("RGB","L","1") else i;'
-    'b=BytesIO();'
-    'i.save(b,format="JPEG",quality=95);'
-    'sys.stdout.buffer.write(b.getvalue())'
-)
-
-
-def _pillow_convert_safe(image_data: bytes) -> bytes:
-    """Convert image bytes to RGB JPEG via a subprocess with timeout.
-
-    Runs Pillow in an isolated child process so a C-extension hang
-    inside decode/convert/save can be killed cleanly.  Returns the
-    JPEG bytes on success, or the original raw bytes on timeout/error
-    so img2pdf can attempt to handle the page directly.
-    """
-    try:
-        proc = subprocess.run(
-            [_sys.executable, '-c', _PILLOW_SUBPROCESS_SCRIPT],
-            input=image_data,
-            capture_output=True,
-            timeout=_PILLOW_CONVERT_TIMEOUT,
-        )
-        if proc.returncode == 0 and proc.stdout:
-            return proc.stdout
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-        pass
-    return image_data
-
 
 def make_suwayomi_link(manga_id: int, chapter_id: int) -> str:
     """Encode manga/chapter IDs as a Kapowarr download_link."""
@@ -312,38 +263,30 @@ class SuwayomiClient:
             dest_path: Output PDF file path.
             stop_event: Event to signal cancellation.
             progress_cb: Optional callable(pages_done, total_pages, bytes_delta)
-                for progress. Called during download with byte delta, and during
-                assembly with zero byte delta.
+                for per-page progress during download.
 
         Returns True on success, False if stopped or no pages collected.
         """
         import img2pdf
-        from pypdf import PdfWriter, PdfReader
 
         total_pages = sum(pc for _, pc in chapters)
         fetched = 0
         temp_paths: List[str] = []
-        chapter_pdfs: List[str] = []
         try:
-            # --- Phase 1: Download all pages ---
-            # Pre-convert every page to RGB JPEG via Pillow so that
-            # img2pdf receives only clean, well-known image data.
-            # This avoids img2pdf's internal ThreadPoolExecutor hanging
-            # on exotic image formats or corrupt page data from Suwayomi.
             for source_order, page_count in chapters:
                 for i in range(page_count):
                     if stop_event.is_set():
                         return False
                     data = self.get_page_image(manga_id, source_order, i)
-                    jpeg_data = _pillow_convert_safe(data)
+                    ext = _detect_image_ext(data)
                     with tempfile.NamedTemporaryFile(
-                        delete=False, suffix='.jpg'
+                        delete=False, suffix=f'.{ext}'
                     ) as tf:
-                        tf.write(jpeg_data)
+                        tf.write(data)
                         temp_paths.append(tf.name)
                     fetched += 1
                     if progress_cb is not None and total_pages > 0:
-                        progress_cb(fetched, total_pages, len(jpeg_data))
+                        progress_cb(fetched, total_pages, len(data))
 
             if not temp_paths:
                 return False
@@ -351,45 +294,14 @@ class SuwayomiClient:
             if stop_event.is_set():
                 return False
 
-            # --- Phase 2: Convert chapter-by-chapter, merge with pypdf ---
-            # Converting one chapter at a time keeps img2pdf memory bounded
-            # and avoids thread-pool deadlocks on large page counts.
-            idx = 0
-            for _source_order, page_count in chapters:
-                chapter_paths = temp_paths[idx:idx + page_count]
-                idx += page_count
-                if not chapter_paths:
-                    continue
-
-                chapter_pdf_data = img2pdf.convert(chapter_paths)
-                with tempfile.NamedTemporaryFile(
-                    delete=False, suffix='.pdf'
-                ) as ctf:
-                    ctf.write(chapter_pdf_data)
-                    chapter_pdfs.append(ctf.name)
-
-                if progress_cb is not None:
-                    progress_cb(fetched, total_pages, 0)
-
-            # Merge all chapter PDFs into the final output
-            merger = PdfWriter()
-            for cpdf in chapter_pdfs:
-                reader = PdfReader(cpdf)
-                for page in reader.pages:
-                    merger.add_page(page)
-
+            pdf_bytes = img2pdf.convert(temp_paths)
             with open(dest_path, 'wb') as f:
-                merger.write(f)
+                f.write(pdf_bytes)
 
             return True
 
         finally:
             for path in temp_paths:
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
-            for path in chapter_pdfs:
                 try:
                     os.unlink(path)
                 except OSError:

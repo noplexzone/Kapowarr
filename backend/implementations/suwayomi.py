@@ -189,7 +189,7 @@ class SuwayomiClient:
                 "Suwayomi: waiting for chapter %d (manga %d) to download…",
                 chapter_id, manga_id,
             )
-            stop_event.wait(timeout=POLL_INTERVAL)
+            sleep(POLL_INTERVAL)
 
         return None
 
@@ -314,7 +314,9 @@ class SuwayomiClient:
                                 i + 1, page_count,
                                 _attempt + 2, _max_page_retries, e,
                             )
-                            stop_event.wait(timeout=2)
+                            sleep(2)
+                            if stop_event.is_set():
+                                return False
                     ext = _detect_image_ext(data)
                     with tempfile.NamedTemporaryFile(
                         delete=False, suffix=f'.{ext}'

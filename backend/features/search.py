@@ -567,6 +567,17 @@ def _build_suwayomi_bundle_for_issue(
             sw_src = result.get('_sw_source', '')  # type: ignore[call-overload]
             if sw_src:
                 manga_source_names[manga_id] = sw_src
+    LOGGER.info(
+        'Suwayomi bundle: %d manga(s) with chapters, target=%s',
+        len(manga_chapters), sorted(target),
+    )
+    for mid, nums in manga_chapters.items():
+        missing = target - set(nums.keys())
+        LOGGER.info(
+            '  manga %d: chapters %s — %s',
+            mid, sorted(nums.keys()),
+            'FULL' if not missing else f'missing {sorted(missing)}',
+        )
     bundles: List[SearchResultData] = []
     for manga_id, num_to_id in manga_chapters.items():
         if not target.issubset(set(num_to_id.keys())):

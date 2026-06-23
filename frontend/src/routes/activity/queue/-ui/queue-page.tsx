@@ -161,7 +161,7 @@ function QueueRow({ entry, index, total, onMove, onRemove }: QueueRowProps) {
         )}
       </td>
       <td>
-        <Link to="/comics" search={{ sort: 'title', filter: '', view: 'posters', offset: 0 }} className={styles.titleLink}>
+        <Link to="/volumes/$volumeId" params={{ volumeId: String(entry.volume_id) }} className={styles.titleLink}>
           {entry.title}
         </Link>
       </td>

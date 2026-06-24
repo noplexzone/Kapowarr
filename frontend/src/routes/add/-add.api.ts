@@ -19,14 +19,14 @@ async function searchVolumes(query: string, section: string): Promise<SearchResu
 
 export function rootFoldersQueryOptions() {
   return queryOptions({
-    queryKey: ['rootfolders'],
+    queryKey: ['rootfolder'],
     queryFn: getRootFolders,
     staleTime: 300_000,
   });
 }
 
 async function getRootFolders(): Promise<RootFolder[]> {
-  const response = await apiClient.get('rootfolders');
+  const response = await apiClient.get('rootfolder');
   return readJson<RootFolder[]>(response);
 }
 

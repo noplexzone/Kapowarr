@@ -35,6 +35,9 @@ export type TaskDetails =
 export interface SystemTaskProgress {
   processed_count: number;
   total_count: number | null;
+  phase?: string | null;
+  eta_seconds?: number | null;
+  elapsed_seconds?: number | null;
 }
 
 export interface SystemTask {

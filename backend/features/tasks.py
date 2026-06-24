@@ -574,6 +574,11 @@ class UpdateAll(Task):
     display_title = 'Update All'
     category = ''
 
+    # In-progress observability (readable while task is running)
+    processed_count: int = 0
+    total_count: Union[int, None] = None
+    phase: Union[str, None] = None
+
     @property
     def volume_id(self) -> None:
         return None
@@ -593,13 +598,28 @@ class UpdateAll(Task):
         return
 
     def run(self) -> None:
-        self.message = f'Updating info on all volumes'
+        self.processed_count = 0
+        self.total_count = None
+        self.phase = None
+        self.message = 'Updating info on all volumes'
         WebSocket().emit(TaskStatusEvent(self.message))
+
+        def _on_progress(processed: int, total: int, phase: str) -> None:
+            self.processed_count = processed
+            self.total_count = total
+            self.phase = phase
+            if phase == 'fetching_metadata':
+                self.message = (
+                    f'Fetching metadata for {total} volume{"s" if total != 1 else ""}'
+                )
+            elif phase == 'scanning_files':
+                self.message = f'Scanning files ({processed}/{total})'
 
         try:
             refresh_and_scan(
                 update_websocket=True,
-                allow_skipping=self.allow_skipping
+                allow_skipping=self.allow_skipping,
+                on_progress=_on_progress,
             )
         except InvalidComicVineApiKey:
             pass
@@ -1285,6 +1305,23 @@ class TaskHandler(metaclass=Singleton):
             result['progress'] = {
                 'processed_count': getattr(t, 'processed_count', 0),
                 'total_count': getattr(t, 'total_count', None),
+            }
+        elif isinstance(t, UpdateAll):
+            processed = getattr(t, 'processed_count', 0)
+            total = getattr(t, 'total_count', None)
+            started_at = task.get('started_at')
+            eta_seconds = None
+            elapsed_seconds = None
+            if started_at is not None:
+                elapsed_seconds = round(time() - started_at)
+                if processed > 0 and total and total > processed:
+                    eta_seconds = round(elapsed_seconds / processed * (total - processed))
+            result['progress'] = {
+                'processed_count': processed,
+                'total_count': total,
+                'phase': getattr(t, 'phase', None),
+                'eta_seconds': eta_seconds,
+                'elapsed_seconds': elapsed_seconds,
             }
         return result
 

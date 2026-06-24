@@ -46,6 +46,16 @@ function issueSortValue(n: number | [number, number] | null | undefined): number
   return n;
 }
 
+function formatEta(etaSeconds: number | null | undefined): string {
+  if (etaSeconds == null) return 'calculating…';
+  const totalMins = Math.round(etaSeconds / 60);
+  if (totalMins < 1) return '< 1m remaining';
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  if (hours === 0) return `~${totalMins}m remaining`;
+  return `~${hours}h ${String(mins).padStart(2, '0')}m remaining`;
+}
+
 function taskStatusTone(status: string): 'info' | 'success' | 'danger' | 'neutral' {
   switch (status) {
     case 'running':
@@ -242,6 +252,11 @@ function DetailRowContent({ item }: { item: SystemTask | TaskHistoryEntry }) {
               {progress.processed_count}
               {progress.total_count != null ? ` / ${progress.total_count}` : ''}
             </span>
+            {'eta_seconds' in progress && (
+              <span className={styles.etaLabel}>
+                {formatEta(progress.eta_seconds)}
+              </span>
+            )}
           </div>
         )}
       </div>

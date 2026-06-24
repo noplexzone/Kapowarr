@@ -215,6 +215,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.etaLabel {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-style: italic;
+  margin-left: 0.25rem;
+}
+
 /* ── Status badge colors (inline overrides) ── */
 
 .badgeRunning {

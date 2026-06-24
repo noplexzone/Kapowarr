@@ -13,7 +13,7 @@ from io import BytesIO
 from os.path import dirname, exists, isdir, relpath
 from re import IGNORECASE, compile
 from time import time
-from typing import Any, Dict, List, Mapping, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 from typing_extensions import assert_never
 
@@ -1395,7 +1395,8 @@ def determine_special_version(volume_id: int) -> SpecialVersion:
 def refresh_and_scan(
     volume_id: Union[int, None] = None,
     update_websocket: bool = False,
-    allow_skipping: bool = True
+    allow_skipping: bool = True,
+    on_progress: Optional[Callable[[int, int, str], None]] = None,
 ) -> None:
     """Refresh and scan one or more volumes, which means to pull metadata from
     the online database and to scan for files.
@@ -1414,6 +1415,12 @@ def refresh_and_scan(
             the last 24 hours or that have the same amount of issues as what
             the metadata source reports.
             Defaults to True.
+
+        on_progress (Optional[Callable[[int, int, str], None]], optional):
+            Called with (processed_count, total_count, phase) at progress
+            checkpoints when processing multiple volumes. Phase is one of
+            'fetching_metadata' or 'scanning_files'.
+            Defaults to None.
     """
     current_time = datetime.now()
     one_day_ago = current_time - ONE_DAY
@@ -1450,6 +1457,9 @@ def refresh_and_scan(
     }
     if not cv_to_id_fetch:
         return
+
+    if on_progress and not volume_id:
+        on_progress(0, len(cv_to_id_fetch), 'fetching_metadata')
 
     # Update volumes
     cv = ComicVine()
@@ -1636,14 +1646,17 @@ def refresh_and_scan(
             Constants.DB_MAX_CONCURRENT_CONNECTIONS,
             total_count
         )) as pool:
-            if update_websocket:
-                ws = WebSocket()
+            if update_websocket or on_progress:
+                ws = WebSocket() if update_websocket else None
                 for idx, _ in enumerate(
                     pool.istarmap_unordered(scan_files, v_ids)
                 ):
-                    ws.emit(TaskStatusEvent(
-                        f'Scanned files for volume {idx+1}/{total_count}'
-                    ))
+                    if ws:
+                        ws.emit(TaskStatusEvent(
+                            f'Scanned files for volume {idx+1}/{total_count}'
+                        ))
+                    if on_progress:
+                        on_progress(idx + 1, total_count, 'scanning_files')
 
             else:
                 pool.starmap(scan_files, v_ids)

@@ -444,5 +444,176 @@ class TryBundleIgnoresBundledLinksTest(unittest.TestCase):
         self.assertIsNone(result)
 
 
+# ---------------------------------------------------------------------------
+# create_pdf_from_chapters: cover image prepending
+# Tests use sys.modules stubs so they run without the full app's dependencies.
+# ---------------------------------------------------------------------------
+
+def _suwayomi_module():
+    """Import backend.implementations.suwayomi with missing deps stubbed out."""
+    import sys, importlib
+    stubs = {}
+    for mod in ('requests', 'requests.exceptions'):
+        if mod not in sys.modules:
+            fake = MagicMock()
+            if mod == 'requests.exceptions':
+                fake.RequestException = Exception
+            stubs[mod] = fake
+    if stubs:
+        with patch.dict(sys.modules, stubs):
+            return importlib.import_module('backend.implementations.suwayomi')
+    return importlib.import_module('backend.implementations.suwayomi')
+
+
+def _minimal_png():
+    """Return a 1×1 white PNG (valid image for img2pdf)."""
+    import base64
+    return base64.b64decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAD'
+        'hQGAWjR9awAAAABJRU5ErkJggg=='
+    )
+
+
+class CreatePdfFromChaptersCoverTest(unittest.TestCase):
+    """SuwayomiClient.create_pdf_from_chapters must prepend cover as page 1."""
+
+    def _make_client_and_mod(self):
+        mod = _suwayomi_module()
+        client = mod.SuwayomiClient.__new__(mod.SuwayomiClient)
+        return client, mod
+
+    def _run_create_pdf(self, chapters, cover_image, page_data=None):
+        """Run create_pdf_from_chapters with fully-mocked img2pdf/pypdf.
+
+        Returns (batches, result) where batches is a list of lists of temp
+        paths passed to img2pdf.convert in each batch call.
+        """
+        import sys, io, tempfile, os
+        from threading import Event
+
+        client, mod = self._make_client_and_mod()
+        page_png = page_data if page_data is not None else _minimal_png()
+        client.get_page_image = lambda *a: page_png
+
+        stop = Event()
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as out:
+            out_path = out.name
+
+        try:
+            batches = []
+            fake_img2pdf = MagicMock()
+
+            def capture_convert(batch):
+                batches.append(list(batch))
+                # Return a minimal valid-enough bytes blob.
+                return b'%PDF-1.4 stub'
+
+            fake_img2pdf.convert.side_effect = capture_convert
+
+            fake_pypdf = MagicMock()
+            fake_writer = MagicMock()
+            fake_reader = MagicMock()
+            fake_reader.pages = []
+            fake_pypdf.PdfWriter.return_value = fake_writer
+            fake_pypdf.PdfReader.return_value = fake_reader
+            fake_writer.write = lambda f: f.write(b'%PDF-1.4 stub')
+
+            with patch.dict(sys.modules, {'img2pdf': fake_img2pdf, 'pypdf': fake_pypdf}):
+                result = client.create_pdf_from_chapters(
+                    manga_id=1,
+                    chapters=chapters,
+                    dest_path=out_path,
+                    stop_event=stop,
+                    cover_image=cover_image,
+                )
+        finally:
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
+
+        return batches, result
+
+    def test_cover_prepended_as_first_page(self):
+        """When cover_image provided, its temp file must be the first path assembled."""
+        cover_png = _minimal_png()
+        batches, _ = self._run_create_pdf(
+            chapters=[(1, 2)],
+            cover_image=cover_png,
+        )
+        all_paths = [p for batch in batches for p in batch]
+        self.assertGreaterEqual(len(all_paths), 3,
+            f'Expected cover + 2 chapter pages, got {len(all_paths)} paths')
+        self.assertTrue(
+            all_paths[0].endswith('.png'),
+            f'First assembled path must be the cover PNG, got {all_paths[0]}',
+        )
+
+    def test_cover_write_failure_does_not_abort_assembly(self):
+        """If the cover temp write fails, chapter pages are still assembled."""
+        import sys, io, tempfile, os
+        from threading import Event
+
+        client, mod = self._make_client_and_mod()
+        page_png = _minimal_png()
+        client.get_page_image = lambda *a: page_png
+
+        stop = Event()
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as out:
+            out_path = out.name
+
+        real_ntf = tempfile.NamedTemporaryFile
+        call_n = {'v': 0}
+
+        def ntf_failing_first(**kw):
+            call_n['v'] += 1
+            if call_n['v'] == 1:
+                raise OSError('simulated disk full')
+            return real_ntf(**kw)
+
+        try:
+            convert_calls = []
+            fake_img2pdf = MagicMock()
+            fake_img2pdf.convert.side_effect = lambda b: convert_calls.append(list(b)) or b'%PDF stub'
+
+            fake_pypdf = MagicMock()
+            fake_writer = MagicMock()
+            fake_reader = MagicMock()
+            fake_reader.pages = []
+            fake_pypdf.PdfWriter.return_value = fake_writer
+            fake_pypdf.PdfReader.return_value = fake_reader
+            fake_writer.write = lambda f: f.write(b'%PDF stub')
+
+            with patch.dict(sys.modules, {'img2pdf': fake_img2pdf, 'pypdf': fake_pypdf}), \
+                 patch('tempfile.NamedTemporaryFile', side_effect=ntf_failing_first):
+                client.create_pdf_from_chapters(
+                    manga_id=1,
+                    chapters=[(1, 1)],
+                    dest_path=out_path,
+                    stop_event=stop,
+                    cover_image=_minimal_png(),
+                )
+
+            self.assertTrue(
+                fake_img2pdf.convert.called,
+                'img2pdf.convert must be called even when cover write fails',
+            )
+        finally:
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
+
+    def test_no_cover_image_assembles_only_chapter_pages(self):
+        """Without cover_image, only chapter page temps are assembled."""
+        batches, _ = self._run_create_pdf(
+            chapters=[(1, 2)],
+            cover_image=None,
+        )
+        all_paths = [p for batch in batches for p in batch]
+        self.assertEqual(len(all_paths), 2,
+            f'Without cover exactly 2 chapter pages should be assembled, got {len(all_paths)}')
+
+
 if __name__ == '__main__':
     unittest.main()

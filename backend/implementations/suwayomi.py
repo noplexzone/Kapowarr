@@ -253,6 +253,7 @@ class SuwayomiClient:
         dest_path: str,
         stop_event: Event,
         progress_cb=None,
+        cover_image: Optional[bytes] = None,
     ) -> bool:
         """Download pages from multiple chapters and merge into one PDF.
 
@@ -281,6 +282,29 @@ class SuwayomiClient:
         fetched = 0
         temp_paths: List[str] = []
         try:
+            # Prepend cover image as page 1 if provided; does not affect
+            # chapter page progress accounting (fetched/total_pages).
+            if cover_image is not None:
+                _cover_path: Optional[str] = None
+                try:
+                    ext = _detect_image_ext(cover_image)
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=f'.{ext}'
+                    ) as tf:
+                        tf.write(cover_image)
+                        _cover_path = tf.name
+                    temp_paths.append(_cover_path)
+                    LOGGER.info('SuwayomiVolume: prepending cover image to PDF')
+                except Exception as e:
+                    LOGGER.warning(
+                        'SuwayomiVolume: failed to write cover image, skipping: %s', e,
+                    )
+                    if _cover_path is not None:
+                        try:
+                            os.unlink(_cover_path)
+                        except OSError:
+                            pass
+
             _max_page_retries = 3
             for source_order, page_count in chapters:
                 for i in range(page_count):

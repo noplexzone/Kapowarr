@@ -1462,27 +1462,6 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
             len(chapter_info),
         )
 
-        # Retrieve volume cover to prepend as page 1 of the PDF.
-        cover_image = None
-        try:
-            cover_bytes = Volume(self._volume_id).get_cover().getvalue()
-            if cover_bytes:
-                cover_image = cover_bytes
-                LOGGER.info(
-                    'SuwayomiVolume: cover image (%d bytes) will be prepended to PDF',
-                    len(cover_bytes),
-                )
-            else:
-                LOGGER.warning(
-                    'SuwayomiVolume: cover blob is empty for volume %d, skipping',
-                    self._volume_id,
-                )
-        except Exception as e:
-            LOGGER.warning(
-                'SuwayomiVolume: could not retrieve cover for volume %d, skipping: %s',
-                self._volume_id, e,
-            )
-
         self._task_label = 'Assembling PDF'
         self._progress = 50.0
         self._speed = 0.0
@@ -1507,7 +1486,6 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
                 manga_id, chapter_info,
                 self._files[0], self._stop_event,
                 progress_cb=_on_page,
-                cover_image=cover_image,
             )
         except Exception as e:
             LOGGER.error('SuwayomiVolume: failed to create PDF: %s', e)

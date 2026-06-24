@@ -2,7 +2,7 @@ import ky from 'ky';
 
 const API_KEY_STORAGE_KEY = 'kapowarr_api_key';
 
-function getApiKey(): string | null {
+export function getApiKey(): string | null {
   try {
     return localStorage.getItem(API_KEY_STORAGE_KEY);
   } catch {

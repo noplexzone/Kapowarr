@@ -1227,6 +1227,44 @@ def api_issue_cover_options(issue_id: int):
     return return_api(candidates)
 
 
+@api.route('/mangadex/cover-proxy', methods=['GET'])
+@error_handler
+@auth
+def api_mangadex_cover_proxy():
+    """Proxy MangaDex cover images so previews do not hotlink their CDN."""
+    from urllib.parse import urlparse
+    import requests as _requests
+
+    cover_url = extract_key(request, 'url')
+    if not isinstance(cover_url, str):
+        raise InvalidKeyValue('url', cover_url)
+
+    parsed_cover_url = urlparse(cover_url)
+    if (
+        parsed_cover_url.scheme != 'https'
+        or parsed_cover_url.netloc != 'uploads.mangadex.org'
+        or not parsed_cover_url.path.startswith('/covers/')
+    ):
+        raise InvalidKeyValue('url', cover_url)
+
+    resp = _requests.get(
+        cover_url,
+        headers={'User-Agent': Constants.DEFAULT_USERAGENT},
+        timeout=Constants.REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+
+    mimetype = resp.headers.get('content-type') or 'image/jpeg'
+    if not mimetype.startswith('image/'):
+        raise InvalidKeyValue('url', cover_url)
+
+    return Response(
+        resp.content,
+        mimetype=mimetype,
+        headers={'Cache-Control': 'private, max-age=3600'}
+    ), 200
+
+
 # =====================
 # Comic Reader — serve pages from CBZ/CBR/PDF files
 # =====================

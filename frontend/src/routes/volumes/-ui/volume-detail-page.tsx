@@ -3,6 +3,7 @@ import { useSocketEvent } from '@/platform/socketio/socket';
 import type { QueueEntry } from '@/routes/activity/queue/-queue.types';
 import { useParams, useNavigate, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getApiKey, getUrlBase } from '@/app/api-client';
 import { Badge, Button, Progress } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
 import { getCoverUrl } from '@/routes/comics/-comics.helpers';
@@ -45,6 +46,13 @@ import type {
 } from '../-volumes.types';
 import { sanitizeHtml } from './sanitize';
 import styles from './volume-detail-page.module.css';
+
+function getCoverPreviewSrc(candidate: CoverCandidate): string {
+  const params = new URLSearchParams({ url: candidate.thumbnail_url });
+  const apiKey = getApiKey();
+  if (apiKey) params.set('api_key', apiKey);
+  return `${getUrlBase()}/api/mangadex/cover-proxy?${params.toString()}`;
+}
 
 // ── SVG icon components ──────────────────────────────────────────
 
@@ -1665,7 +1673,7 @@ export function VolumeDetailPage() {
                   <div key={candidate.cover_id} className={styles.coverCard}>
                     <img
                       className={styles.coverThumb}
-                      src={candidate.thumbnail_url}
+                      src={getCoverPreviewSrc(candidate)}
                       alt={`Cover for ${candidate.manga_title} vol. ${candidate.volume}`}
                       loading="lazy"
                     />

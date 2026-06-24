@@ -338,9 +338,54 @@ class SuwayomiClient:
                 return False
 
             import img2pdf
-            pdf_bytes = img2pdf.convert(temp_paths)
-            with open(dest_path, 'wb') as f:
-                f.write(pdf_bytes)
+            from pypdf import PdfWriter, PdfReader
+
+            # Convert pages in small batches with logging to pinpoint
+            # which page image causes img2pdf to hang.
+            _BATCH_SIZE = 5
+            batch_pdfs: List[str] = []
+            try:
+                for _batch_start in range(0, len(temp_paths), _BATCH_SIZE):
+                    _batch_end = min(_batch_start + _BATCH_SIZE, len(temp_paths))
+                    _batch = temp_paths[_batch_start:_batch_end]
+                    _first = _batch_start + 1
+                    _last = _batch_end
+                    _sizes = []
+                    for _p in _batch:
+                        try:
+                            _sizes.append(str(os.path.getsize(_p)))
+                        except OSError:
+                            _sizes.append('?')
+                    LOGGER.info(
+                        'PDF assembly: pages %d–%d of %d (%s bytes)',
+                        _first, _last, len(temp_paths),
+                        ', '.join(_sizes),
+                    )
+                    _pdf_data = img2pdf.convert(_batch)
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix='.pdf'
+                    ) as _btf:
+                        _btf.write(_pdf_data)
+                        batch_pdfs.append(_btf.name)
+
+                LOGGER.info(
+                    'PDF assembly: merging %d batch PDFs into final output',
+                    len(batch_pdfs),
+                )
+                merger = PdfWriter()
+                for _bp in batch_pdfs:
+                    reader = PdfReader(_bp)
+                    for page in reader.pages:
+                        merger.add_page(page)
+
+                with open(dest_path, 'wb') as f:
+                    merger.write(f)
+            finally:
+                for _bp in batch_pdfs:
+                    try:
+                        os.unlink(_bp)
+                    except OSError:
+                        pass
 
             if _safety_timer is not None:
                 _safety_timer.cancel()

@@ -4,7 +4,7 @@ from asyncio import run
 from datetime import datetime
 from io import BytesIO
 from os import makedirs, remove
-from os.path import basename, exists, join, splitext
+from os.path import basename, dirname, exists, getsize, join, splitext
 from typing import Any, Dict, List, Tuple, Type, Union
 
 import json as _json
@@ -14,7 +14,7 @@ from flask import Blueprint, Response, request, send_file, stream_with_context
 from backend.base.custom_exceptions import (InvalidKeyValue,
                                             KeyNotFound, TaskNotFound)
 from backend.base.definitions import (BlocklistReason, BlocklistReasonID,
-                                      CredentialData, CredentialSource,
+                                      Constants, CredentialData, CredentialSource,
                                       DownloadSource, FileMatch,
                                       KapowarrException, LibraryFilter,
                                       LibrarySorting, MonitorScheme,
@@ -1205,6 +1205,29 @@ def api_issues(id: int):
 
 
 # =====================
+# Issue cover art
+# =====================
+
+@api.route('/issues/<int:issue_id>/cover-options', methods=['GET'])
+@error_handler
+@auth
+def api_issue_cover_options(issue_id: int):
+    """Return MangaDex cover candidates for a given issue's print volume."""
+    from backend.implementations.mangadex import find_volume_cover_candidates
+
+    issue = Library.get_issue(issue_id)
+    issue_data = issue.get_data()
+    volume = Library.get_volume(issue_data.volume_id)
+    volume_data = volume.get_data()
+
+    candidates = find_volume_cover_candidates(
+        volume_data.title,
+        issue_data.calculated_issue_number,
+    )
+    return return_api(candidates)
+
+
+# =====================
 # Comic Reader — serve pages from CBZ/CBR/PDF files
 # =====================
 @api.route('/files/<int:file_id>/info', methods=['GET'])
@@ -1833,6 +1856,126 @@ def api_files(f_id: int):
     elif request.method == 'DELETE':
         delete_issue_file(f_id)
         return return_api({})
+
+
+@api.route('/files/<int:file_id>/cover-page', methods=['POST'])
+@error_handler
+@auth
+def api_file_add_cover_page(file_id: int):
+    """Prepend (or append) a downloaded cover image as a page in a PDF file.
+
+    Body: { cover_url: str, position?: "prepend" | "append" }
+    Response: { file_id, backup_path, size }
+
+    A timestamped backup of the original is created before any modification.
+    Only PDF files are supported.
+    """
+    import shutil
+    import tempfile
+
+    data = request.get_json(silent=True) or {}
+    cover_url = data.get('cover_url')
+    position = data.get('position', 'prepend')
+
+    if not cover_url or not isinstance(cover_url, str):
+        raise KeyNotFound('cover_url')
+    from urllib.parse import urlparse
+    parsed_cover_url = urlparse(cover_url)
+    if (
+        parsed_cover_url.scheme != 'https'
+        or parsed_cover_url.netloc != 'uploads.mangadex.org'
+        or not parsed_cover_url.path.startswith('/covers/')
+    ):
+        raise InvalidKeyValue('cover_url', cover_url)
+    if position not in ('prepend', 'append'):
+        raise InvalidKeyValue('position', position)
+
+    file_data = FilesDB.get_data(file_id)
+    if not file_data:
+        raise KeyNotFound('file_id')
+
+    filepath = file_data['filepath']
+    if not exists(filepath):
+        raise KeyNotFound('filepath')
+
+    ext = splitext(filepath)[1].lower()
+    if ext != '.pdf':
+        raise InvalidKeyValue('file_type', 'Only PDF files are supported')
+
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    backup_path = f"{filepath}.bak-{timestamp}"
+
+    tmp_path = None
+    try:
+        import img2pdf
+        from io import BytesIO as _BytesIO
+        from pypdf import PdfReader as _PdfReader, PdfWriter as _PdfWriter
+        import requests as _requests
+
+        shutil.copy2(filepath, backup_path)
+
+        resp = _requests.get(
+            cover_url,
+            headers={'User-Agent': Constants.DEFAULT_USERAGENT},
+            timeout=Constants.REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+
+        cover_pdf_bytes = img2pdf.convert(_BytesIO(resp.content))
+        cover_reader = _PdfReader(_BytesIO(cover_pdf_bytes))
+        original_reader = _PdfReader(filepath)
+
+        writer = _PdfWriter()
+        if position == 'prepend':
+            for page in cover_reader.pages:
+                writer.add_page(page)
+            for page in original_reader.pages:
+                writer.add_page(page)
+        else:
+            for page in original_reader.pages:
+                writer.add_page(page)
+            for page in cover_reader.pages:
+                writer.add_page(page)
+
+        dir_path = dirname(filepath)
+        with tempfile.NamedTemporaryFile(
+            dir=dir_path, delete=False, suffix='.pdf'
+        ) as tmp:
+            tmp_path = tmp.name
+            writer.write(tmp)
+
+        shutil.move(tmp_path, filepath)
+        tmp_path = None
+
+        new_size = getsize(filepath)
+        get_db().execute(
+            "UPDATE files SET size = ? WHERE id = ?",
+            (new_size, file_id),
+        )
+        clear_cache()
+
+        return return_api({
+            'file_id': file_id,
+            'backup_path': backup_path,
+            'size': new_size,
+        })
+
+    except KapowarrException:
+        raise
+    except Exception as e:
+        LOGGER.error("Failed to add cover page to %s: %s", filepath, e)
+        if not exists(filepath) and exists(backup_path):
+            try:
+                shutil.copy2(backup_path, filepath)
+            except OSError:
+                pass
+        return return_api({}, f'Failed to add cover page: {e}', 500)
+    finally:
+        if tmp_path:
+            try:
+                remove(tmp_path)
+            except OSError:
+                pass
 
 
 @api.route('/files/raw', methods=['DELETE'])

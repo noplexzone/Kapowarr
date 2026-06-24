@@ -9,6 +9,8 @@ import type {
   RenameEntry,
   IssueData,
   FileMatch,
+  CoverCandidate,
+  AddCoverResult,
 } from './-volumes.types';
 
 export const VOLUME_FULL_KEY = (id: number) =>
@@ -298,4 +300,27 @@ export async function deleteFile(fileId: number): Promise<void> {
 
 export async function deleteRawFile(filepath: string): Promise<void> {
   await apiClient.delete('files/raw', { json: { filepath } });
+}
+
+// ── Cover art ─────────────────────────────────────────────────────
+
+export async function fetchCoverOptions(
+  issueId: number,
+): Promise<CoverCandidate[]> {
+  const response = await apiClient.get(`issues/${issueId}/cover-options`, {
+    timeout: 30000,
+  });
+  return readJson<CoverCandidate[]>(response);
+}
+
+export async function addCoverPage(
+  fileId: number,
+  coverUrl: string,
+  position: 'prepend' | 'append' = 'prepend',
+): Promise<AddCoverResult> {
+  const response = await apiClient.post(`files/${fileId}/cover-page`, {
+    json: { cover_url: coverUrl, position },
+    timeout: 60000,
+  });
+  return readJson<AddCoverResult>(response);
 }

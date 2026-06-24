@@ -95,6 +95,25 @@ export interface IssueFile {
   size: number;
 }
 
+export interface CoverCandidate {
+  source: string;
+  manga_id: string;
+  manga_title: string;
+  volume: string;
+  cover_id: string;
+  file_name: string;
+  image_url: string;
+  thumbnail_url: string;
+  locale?: string | null;
+  description?: string | null;
+}
+
+export interface AddCoverResult {
+  file_id: number;
+  backup_path: string;
+  size: number;
+}
+
 export interface IssueData {
   id: number;
   volume_id: number;

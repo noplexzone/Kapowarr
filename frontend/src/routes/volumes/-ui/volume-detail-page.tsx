@@ -30,6 +30,8 @@ import {
   submitManualMatch,
   deleteFile,
   deleteRawFile,
+  fetchCoverOptions,
+  addCoverPage,
 } from '../-volumes.api';
 import type {
   IssueDetail,
@@ -38,6 +40,8 @@ import type {
   ComicVineSearchResult,
   RenameEntry,
   FileMatch,
+  CoverCandidate,
+  AddCoverResult,
 } from '../-volumes.types';
 import { sanitizeHtml } from './sanitize';
 import styles from './volume-detail-page.module.css';
@@ -193,6 +197,18 @@ export function VolumeDetailPage() {
   const [manageLoading, setManageLoading] = useState(false);
   const [unmatchedChecked, setUnmatchedChecked] = useState<Set<string>>(new Set());
   const [unmatchedDeleting, setUnmatchedDeleting] = useState(false);
+
+  // Add Cover dialog
+  const [coverDialog, setCoverDialog] = useState<{
+    fileId: number;
+    issueId: number;
+    filename: string;
+  } | null>(null);
+  const [coverCandidates, setCoverCandidates] = useState<CoverCandidate[]>([]);
+  const [coverLoading, setCoverLoading] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
+  const [coverApplyingUrl, setCoverApplyingUrl] = useState<string | null>(null);
+  const [coverApplyResult, setCoverApplyResult] = useState<AddCoverResult | null>(null);
 
   const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
 
@@ -698,6 +714,63 @@ export function VolumeDetailPage() {
       setUnmatchedDeleting(false);
     }
   }, [unmatchedFiles, id, queryClient]);
+
+  const openCoverDialog = useCallback(
+    async (fileId: number, issueId: number, filename: string) => {
+      setCoverDialog({ fileId, issueId, filename });
+      setCoverCandidates([]);
+      setCoverLoading(true);
+      setCoverError(null);
+      setCoverApplyResult(null);
+      try {
+        const candidates = await fetchCoverOptions(issueId);
+        setCoverCandidates(candidates);
+      } catch (err) {
+        setCoverError(
+          'Failed to fetch cover options: ' + (err as Error).message,
+        );
+      } finally {
+        setCoverLoading(false);
+      }
+    },
+    [],
+  );
+
+  const closeCoverDialog = useCallback(() => {
+    setCoverDialog(null);
+    setCoverCandidates([]);
+    setCoverError(null);
+    setCoverApplyResult(null);
+  }, []);
+
+  const handleApplyCover = useCallback(
+    async (imageUrl: string) => {
+      if (!coverDialog) return;
+      if (
+        !window.confirm(
+          'Add this cover page to the PDF?\n\nA timestamped backup of the original will be created automatically.',
+        )
+      )
+        return;
+      setCoverApplyingUrl(imageUrl);
+      try {
+        const result = await addCoverPage(coverDialog.fileId, imageUrl);
+        setCoverApplyResult(result);
+        setActionMsg(`Cover page added. Backup: ${result.backup_path}`);
+        queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+        const matches = await fetchManualMatch(id);
+        setManualMatches(matches);
+        setUnmatchedFiles(
+          matches.filter((m) => m.issue_ids.length === 0 && !m.general_file),
+        );
+      } catch (err) {
+        setCoverError('Failed to add cover: ' + (err as Error).message);
+      } finally {
+        setCoverApplyingUrl(null);
+      }
+    },
+    [coverDialog, id, queryClient],
+  );
 
   const openEdit = useCallback(() => {
     if (!volume) return;
@@ -1546,6 +1619,92 @@ export function VolumeDetailPage() {
         </DialogBody>
       </DialogFrame>
 
+      {/* ── Add Cover Dialog ────────────────────────────── */}
+      <DialogFrame
+        open={coverDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) closeCoverDialog();
+        }}
+      >
+        <DialogHeader
+          title={
+            coverLoading
+              ? 'Searching for covers…'
+              : coverDialog
+                ? `Add Cover Page — ${coverDialog.filename}`
+                : 'Add Cover Page'
+          }
+          onClose={closeCoverDialog}
+        />
+        <DialogBody>
+          {coverLoading && (
+            <p className={styles.dialogStatus}>
+              Searching MangaDex for covers…
+            </p>
+          )}
+          {!coverLoading && coverError && (
+            <p className={styles.dialogStatus}>{coverError}</p>
+          )}
+          {!coverLoading && !coverError && coverCandidates.length === 0 && (
+            <p className={styles.dialogStatus}>
+              No cover art found for this volume on MangaDex.
+            </p>
+          )}
+          {!coverLoading && !coverError && coverCandidates.length > 0 && (
+            <>
+              {coverApplyResult && (
+                <div className={styles.coverResultMsg}>
+                  Cover page added successfully. Backup:{' '}
+                  <code className={styles.coverBackupPath}>
+                    {coverApplyResult.backup_path}
+                  </code>
+                </div>
+              )}
+              <div className={styles.coverGrid}>
+                {coverCandidates.map((candidate) => (
+                  <div key={candidate.cover_id} className={styles.coverCard}>
+                    <img
+                      className={styles.coverThumb}
+                      src={candidate.thumbnail_url}
+                      alt={`Cover for ${candidate.manga_title} vol. ${candidate.volume}`}
+                      loading="lazy"
+                    />
+                    <div className={styles.coverCardMeta}>
+                      <div className={styles.coverCardTitle}>
+                        {candidate.manga_title}
+                      </div>
+                      <div className={styles.coverCardInfo}>
+                        <span>Vol. {candidate.volume}</span>
+                        {candidate.locale && (
+                          <span> · {candidate.locale}</span>
+                        )}
+                        <span> · {candidate.source}</span>
+                      </div>
+                      {candidate.description && (
+                        <div className={styles.coverCardDesc}>
+                          {candidate.description}
+                        </div>
+                      )}
+                    </div>
+                    <div className={styles.coverCardActions}>
+                      <Button
+                        variant="primary"
+                        disabled={coverApplyingUrl === candidate.image_url}
+                        onClick={() => handleApplyCover(candidate.image_url)}
+                      >
+                        {coverApplyingUrl === candidate.image_url
+                          ? 'Applying…'
+                          : 'Use This Cover'}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </DialogBody>
+      </DialogFrame>
+
       {/* ── Manage Issues Dialog ──────────────────────────── */}
       <DialogFrame
         open={manageIssuesOpen}
@@ -1616,12 +1775,34 @@ export function VolumeDetailPage() {
                                       m.filepath === f,
                                   );
                                   const fid = mf?.file_id;
+                                  const isPdf = f
+                                    .toLowerCase()
+                                    .endsWith('.pdf');
                                   return (
                                     <span
                                       key={i}
                                       className={styles.filenameLine}
                                     >
                                       {f}
+                                      {fid != null && isPdf && (
+                                        <button
+                                          type="button"
+                                          className={
+                                            styles.filenameAddCoverBtn
+                                          }
+                                          title={`Add cover page to "${f}"`}
+                                          aria-label={`Add cover page to "${f}"`}
+                                          onClick={() =>
+                                            openCoverDialog(
+                                              fid,
+                                              issue.id,
+                                              f,
+                                            )
+                                          }
+                                        >
+                                          +
+                                        </button>
+                                      )}
                                       {fid != null && (
                                         <button
                                           type="button"

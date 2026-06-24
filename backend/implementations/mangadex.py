@@ -113,6 +113,16 @@ class MangaDexClient:
         resp.raise_for_status()
         return parse_aggregate_volume_map(resp.json())
 
+    def get_covers(self, manga_id: str) -> List[dict]:
+        """Fetch up to 100 cover art records for a manga."""
+        resp = self._ssn.get(
+            f"{self._base_url}/cover",
+            params=[("manga[]", manga_id), ("limit", "100")],
+            timeout=Constants.REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json().get("data") or []
+
 
 def _iter_titles(manga: dict) -> Iterable[str]:
     attrs = manga.get("attributes") or {}
@@ -156,6 +166,71 @@ def _select_best_candidate(candidates: List[dict], title: str) -> Optional[dict]
     if not (best_score[0] or best_score[1]):
         return None
     return best
+
+
+def find_volume_cover_candidates(title: str, volume_number: float) -> List[dict]:
+    """Find MangaDex cover art records matching a title and print volume number.
+
+    Returns a list of candidate dicts with keys: source, manga_id, manga_title,
+    volume, cover_id, file_name, image_url, thumbnail_url, locale, description.
+    Returns an empty list on any error or when no match is found.
+    """
+    if not title:
+        return []
+
+    vol_str = (
+        str(int(volume_number))
+        if volume_number == int(volume_number)
+        else str(volume_number)
+    )
+
+    client = MangaDexClient()
+    try:
+        candidates = client.search_manga(title)
+        manga = _select_best_candidate(candidates, title)
+        if manga is None:
+            return []
+
+        manga_id = manga["id"]
+        attrs = manga.get("attributes") or {}
+        manga_title = next(iter((attrs.get("title") or {}).values()), title)
+
+        covers = client.get_covers(manga_id)
+        matched = [
+            c for c in covers
+            if (c.get("attributes") or {}).get("volume") == vol_str
+        ]
+
+        results = []
+        for cover in matched:
+            cover_attrs = cover.get("attributes") or {}
+            file_name = cover_attrs.get("fileName", "")
+            cover_id = cover.get("id", "")
+            image_url = (
+                f"https://uploads.mangadex.org/covers/{manga_id}/{file_name}"
+            )
+            thumbnail_url = (
+                f"https://uploads.mangadex.org/covers/{manga_id}/{file_name}.256.jpg"
+            )
+            results.append({
+                "source": "MangaDex",
+                "manga_id": manga_id,
+                "manga_title": manga_title,
+                "volume": vol_str,
+                "cover_id": cover_id,
+                "file_name": file_name,
+                "image_url": image_url,
+                "thumbnail_url": thumbnail_url,
+                "locale": cover_attrs.get("locale"),
+                "description": cover_attrs.get("description"),
+            })
+        return results
+
+    except (KeyError, RequestException, ValueError) as e:
+        LOGGER.warning(
+            "MangaDex cover search failed for %s vol %s: %s", title, vol_str, e
+        )
+        return []
 
 
 @lru_cache(maxsize=256)

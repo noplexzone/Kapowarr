@@ -4,7 +4,8 @@ export interface SearchResult {
   year: number;
   publisher: string;
   volume_number: number;
-  cover_url: string;
+  cover_url?: string;
+  cover_link?: string;
   description?: string;
   aliases?: string;
   translated?: boolean;

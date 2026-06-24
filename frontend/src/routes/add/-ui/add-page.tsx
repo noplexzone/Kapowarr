@@ -93,12 +93,19 @@ interface ResultCardProps {
   onClick: (result: SearchResult) => void;
 }
 
+function getCoverSrc(result: SearchResult): string | null {
+  if (result.cover_link) return result.cover_link;
+  if (result.cover_url) {
+    if (/^https?:\/\//i.test(result.cover_url)) return result.cover_url;
+    const base = getUrlBase();
+    return `${base}/api/${result.cover_url.replace(/^\/+/, '')}`;
+  }
+  return null;
+}
+
 function ResultCard({ result, onClick }: ResultCardProps) {
   const isAdded = result.id != null;
-  const base = getUrlBase();
-  const coverSrc = result.cover_url
-    ? `${base}/api/${result.cover_url}`
-    : null;
+  const coverSrc = getCoverSrc(result);
 
   return (
     <div
@@ -149,7 +156,6 @@ interface AddModalProps {
 }
 
 function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
-  const base = getUrlBase();
   const defaultFolder = rootFolders[0]?.id ?? 0;
 
   const [rootFolderId, setRootFolderId] = useState(defaultFolder);
@@ -178,7 +184,7 @@ function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
     });
   };
 
-  const coverSrc = result.cover_url ? `${base}/api/${result.cover_url}` : null;
+  const coverSrc = getCoverSrc(result);
 
   return (
     <DialogFrame open onOpenChange={(open) => !open && onClose()}>

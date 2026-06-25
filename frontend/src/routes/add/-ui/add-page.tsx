@@ -22,9 +22,10 @@ export function AddPage({ section }: AddPageProps) {
   const [rawQuery, setRawQuery] = useState('');
   const query = useDeferredValue(rawQuery);
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
+  const [metadataSource, setMetadataSource] = useState<'comicvine' | 'mangadex'>('comicvine');
 
   const { data: results = [], isFetching } = useQuery({
-    ...searchVolumesQueryOptions(query, section),
+    ...searchVolumesQueryOptions(query, section, metadataSource),
     enabled: query.length >= 2,
   });
 
@@ -34,7 +35,7 @@ export function AddPage({ section }: AddPageProps) {
   const placeholder = `Search ${sectionLabel}…`;
 
   const openModal = useCallback((result: SearchResult) => {
-    if (result.id != null) {
+    if ((result.id ?? result.already_added) != null) {
       navigate({ to: '/comics', search: { sort: 'title', filter: '', view: 'posters', offset: 0 } });
       return;
     }
@@ -54,6 +55,17 @@ export function AddPage({ section }: AddPageProps) {
         />
         <div className={styles.sectionToggle}>
           <Badge tone={section === 'comic' ? 'info' : 'neutral'}>{sectionLabel}</Badge>
+          {section === 'manga' && (
+            <select
+              className={styles.sourceSelect}
+              value={metadataSource}
+              onChange={(e) => setMetadataSource(e.target.value as 'comicvine' | 'mangadex')}
+              title="Metadata source"
+            >
+              <option value="comicvine">ComicVine</option>
+              <option value="mangadex">MangaDex</option>
+            </select>
+          )}
         </div>
       </div>
 
@@ -65,7 +77,7 @@ export function AddPage({ section }: AddPageProps) {
         <div className={styles.results}>
           {results.map((result) => (
             <ResultCard
-              key={result.comicvine_id}
+              key={`${result.metadata_source ?? 'comicvine'}:${result.metadata_id ?? result.comicvine_id}`}
               result={result}
               onClick={openModal}
             />
@@ -104,7 +116,7 @@ function getCoverSrc(result: SearchResult): string | null {
 }
 
 function ResultCard({ result, onClick }: ResultCardProps) {
-  const isAdded = result.id != null;
+  const isAdded = (result.id ?? result.already_added) != null;
   const coverSrc = getCoverSrc(result);
 
   return (
@@ -126,9 +138,9 @@ function ResultCard({ result, onClick }: ResultCardProps) {
       <div className={styles.cardBody}>
         <div className={styles.cardTitle}>{result.title}</div>
         <div className={styles.cardMeta}>
-          {result.year} · Vol. {result.volume_number}
+          {result.year ?? '—'} · {result.issue_count ? `${result.issue_count} vols` : `Vol. ${result.volume_number}`}
         </div>
-        <div className={styles.cardMeta}>{result.publisher}</div>
+        <div className={styles.cardMeta}>{result.publisher} · {result.metadata_source === 'mangadex' ? 'MangaDex' : 'ComicVine'}</div>
       </div>
     </div>
   );
@@ -174,6 +186,8 @@ function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
   const handleSubmit = () => {
     mutation.mutate({
       comicvine_id: result.comicvine_id,
+      metadata_source: result.metadata_source ?? 'comicvine',
+      metadata_id: result.metadata_id,
       root_folder_id: rootFolderId,
       monitor_volume: monitorVolume,
       monitor_issues: monitorIssues,
@@ -190,7 +204,7 @@ function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
     <DialogFrame open onOpenChange={(open) => !open && onClose()}>
       <DialogHeader
         title={`Add ${result.title}`}
-        meta={<Badge tone="neutral">{result.year}</Badge>}
+        meta={<Badge tone="neutral">{result.metadata_source === 'mangadex' ? 'MangaDex' : (result.year ?? '—')}</Badge>}
         onClose={onClose}
       />
       <DialogBody>

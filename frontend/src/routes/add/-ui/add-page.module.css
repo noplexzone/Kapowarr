@@ -28,7 +28,16 @@
 
 .sectionToggle {
   display: flex;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sourceSelect {
+  padding: 0.35em 0.5em;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 .results {

@@ -10,12 +10,13 @@ print volumes to chapter numbers.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Dict, Iterable, List, Optional
+from hashlib import blake2b
+from typing import Dict, Iterable, List, Optional, Union
 
 from requests import Session
 from requests.exceptions import RequestException
 
-from backend.base.definitions import Constants
+from backend.base.definitions import Constants, VolumeMetadata
 from backend.base.logging import LOGGER
 
 MANGADEX_API_URL = "https://api.mangadex.org"
@@ -93,12 +94,22 @@ class MangaDexClient:
         """Search MangaDex for manga title candidates."""
         resp = self._ssn.get(
             f"{self._base_url}/manga",
-            params={"title": title, "limit": limit},
+            params=[("title", title), ("limit", limit), ("includes[]", "cover_art")],
             timeout=Constants.REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
         payload = resp.json()
         return payload.get("data") or []
+
+    def get_manga(self, mangadex_id: str) -> dict:
+        """Fetch one MangaDex manga by UUID."""
+        resp = self._ssn.get(
+            f"{self._base_url}/manga/{mangadex_id}",
+            params=[("includes[]", "cover_art")],
+            timeout=Constants.REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json().get("data") or {}
 
     def get_aggregate_volume_map(self, mangadex_id: str) -> VolumeChapterMap:
         """Fetch and parse the English aggregate map, including unavailable chapters."""
@@ -122,6 +133,143 @@ class MangaDexClient:
         )
         resp.raise_for_status()
         return resp.json().get("data") or []
+
+
+def mangadex_surrogate_id(*parts: str) -> int:
+    """Return a deterministic negative integer ID for MangaDex compatibility.
+
+    Kapowarr still has integer ComicVine-ID columns in several places.  MangaDex
+    UUIDs are stored separately as metadata_id; this surrogate only keeps legacy
+    integer fields unique and safely outside ComicVine's positive ID range.
+    """
+    raw = "|".join(str(p) for p in parts)
+    digest = blake2b(raw.encode("utf-8"), digest_size=4).digest()
+    return -int.from_bytes(digest, "big") - 1
+
+
+def _first_title(manga: dict, fallback: str = "") -> str:
+    attrs = manga.get("attributes") or {}
+    title = attrs.get("title") or {}
+    if isinstance(title, dict):
+        if title.get("en"):
+            return str(title["en"])
+        for value in title.values():
+            if value:
+                return str(value)
+    return fallback
+
+
+def _cover_links(manga: dict) -> tuple[str, str]:
+    manga_id = manga.get("id") or ""
+    for rel in manga.get("relationships") or []:
+        if rel.get("type") != "cover_art":
+            continue
+        file_name = (rel.get("attributes") or {}).get("fileName")
+        if not file_name:
+            continue
+        return (
+            f"https://uploads.mangadex.org/covers/{manga_id}/{file_name}.256.jpg",
+            f"https://uploads.mangadex.org/covers/{manga_id}/{file_name}",
+        )
+    return "", ""
+
+
+def _numbered_volume_keys(mapping: VolumeChapterMap) -> List[float]:
+    numbered = sorted(k for k in mapping if k > 0)
+    if numbered:
+        return numbered
+    return sorted(mapping)
+
+
+def format_mangadex_issue_rows(mangadex_id: str, mapping: VolumeChapterMap) -> List[dict]:
+    """Convert a MangaDex aggregate volume map into Kapowarr issue rows."""
+    rows: List[dict] = []
+    for volume_number in _numbered_volume_keys(mapping):
+        chapters = sorted(mapping.get(volume_number) or [])
+        if volume_number == int(volume_number):
+            issue_number = str(int(volume_number))
+        else:
+            issue_number = str(volume_number)
+        if chapters:
+            chapter_text = ", ".join(
+                str(int(c)) if c == int(c) else str(c)
+                for c in chapters
+            )
+            description = f"MangaDex volume {issue_number}; chapters: {chapter_text}"
+        else:
+            description = f"MangaDex volume {issue_number}"
+        rows.append({
+            "comicvine_id": mangadex_surrogate_id(mangadex_id, issue_number),
+            "issue_number": issue_number,
+            "calculated_issue_number": float(volume_number),
+            "title": f"Volume {issue_number}",
+            "date": None,
+            "description": description,
+        })
+    if not rows:
+        rows.append({
+            "comicvine_id": mangadex_surrogate_id(mangadex_id, "volume"),
+            "issue_number": "1",
+            "calculated_issue_number": 1.0,
+            "title": "Volume 1",
+            "date": None,
+            "description": "MangaDex volume",
+        })
+    return rows
+
+
+def format_mangadex_volume_result(manga: dict, mapping: Union[VolumeChapterMap, None] = None) -> VolumeMetadata:
+    attrs = manga.get("attributes") or {}
+    mangadex_id = str(manga.get("id") or "")
+    title = _first_title(manga, mangadex_id)
+    thumb, cover = _cover_links(manga)
+    issue_count = len(_numbered_volume_keys(mapping or {})) if mapping else 0
+    if not issue_count:
+        try:
+            issue_count = int(attrs.get("lastVolume") or 0)
+        except (TypeError, ValueError):
+            issue_count = 0
+    return {
+        "comicvine_id": mangadex_surrogate_id(mangadex_id),
+        "metadata_source": "mangadex",
+        "metadata_id": mangadex_id,
+        "title": title,
+        "year": attrs.get("year"),
+        "volume_number": 1,
+        "cover_link": thumb or cover,
+        "cover": None,
+        "description": attrs.get("description", {}).get("en") if isinstance(attrs.get("description"), dict) else "",
+        "site_url": f"https://mangadex.org/title/{mangadex_id}",
+        "aliases": [t for t in _iter_titles(manga) if t != title],
+        "publisher": "MangaDex",
+        "issue_count": issue_count,
+        "translated": True,
+        "already_added": None,
+        "issues": None,
+        "date_added": None,
+    }
+
+
+def search_mangadex_volumes(title: str, limit: int = 10) -> List[VolumeMetadata]:
+    """Search MangaDex and return Kapowarr add-volume compatible results."""
+    if not title:
+        return []
+    client = MangaDexClient()
+    try:
+        results: List[VolumeMetadata] = []
+        for manga in client.search_manga(title, limit=limit):
+            mangadex_id = str(manga.get("id") or "")
+            if not mangadex_id:
+                continue
+            try:
+                mapping = client.get_aggregate_volume_map(mangadex_id)
+            except RequestException:
+                mapping = {}
+            results.append(format_mangadex_volume_result(manga, mapping))
+        return results
+    except (KeyError, RequestException, ValueError) as e:
+        LOGGER.warning("MangaDex volume search failed for %s: %s", title, e)
+        return []
 
 
 def _iter_titles(manga: dict) -> Iterable[str]:

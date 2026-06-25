@@ -2,17 +2,17 @@ import { queryOptions } from '@tanstack/react-query';
 import { apiClient, readJson } from '@/app/api-client';
 import type { SearchResult, RootFolder } from './-add.types';
 
-export function searchVolumesQueryOptions(query: string, section: string) {
+export function searchVolumesQueryOptions(query: string, section: string, metadataSource = 'comicvine') {
   return queryOptions({
-    queryKey: ['volumes', 'search', query, section],
-    queryFn: () => searchVolumes(query, section),
+    queryKey: ['volumes', 'search', query, section, metadataSource],
+    queryFn: () => searchVolumes(query, section, metadataSource),
     enabled: query.length >= 2,
     staleTime: 60_000,
   });
 }
 
-async function searchVolumes(query: string, section: string): Promise<SearchResult[]> {
-  const sp = new URLSearchParams({ query, section });
+async function searchVolumes(query: string, section: string, metadataSource: string): Promise<SearchResult[]> {
+  const sp = new URLSearchParams({ query, section, metadata_source: metadataSource });
   const response = await apiClient.get('volumes/search', { searchParams: sp });
   return readJson<SearchResult[]>(response);
 }
@@ -32,6 +32,8 @@ async function getRootFolders(): Promise<RootFolder[]> {
 
 export interface AddVolumePayload {
   comicvine_id: number;
+  metadata_source?: 'comicvine' | 'mangadex';
+  metadata_id?: string;
   root_folder_id: number;
   monitor_volume: boolean;
   monitor_issues: boolean;

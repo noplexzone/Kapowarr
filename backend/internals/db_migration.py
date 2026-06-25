@@ -1305,3 +1305,21 @@ def _migrate_backfill_source_name():
 
     db.connection.commit()
     return
+
+
+@DatabaseMigrationHandler.register_handler(54)
+def _migrate_add_metadata_source_to_volumes():
+    cursor = get_db()
+    cursor.executescript("""
+        ALTER TABLE volumes
+            ADD COLUMN metadata_source VARCHAR(50) NOT NULL DEFAULT 'comicvine';
+        ALTER TABLE volumes
+            ADD COLUMN metadata_id TEXT NOT NULL DEFAULT '';
+    """)
+    cursor.execute("""
+        UPDATE volumes
+        SET metadata_id = CAST(comicvine_id AS TEXT)
+        WHERE metadata_source = 'comicvine'
+            AND (metadata_id IS NULL OR metadata_id = '');
+    """)
+    return

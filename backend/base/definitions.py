@@ -628,6 +628,8 @@ class IssueMetadata(TypedDict):
 
 class VolumeMetadata(TypedDict):
     comicvine_id: int
+    metadata_source: str
+    metadata_id: str
     title: str
     year: Union[int, None]
     volume_number: int
@@ -784,6 +786,8 @@ class VolumeData:
     special_version: SpecialVersion
     special_version_locked: bool
     last_cv_fetch: int
+    metadata_source: str = 'comicvine'
+    metadata_id: str = ''
 
 
 @dataclass

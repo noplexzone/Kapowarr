@@ -39,6 +39,9 @@ from backend.implementations.comicvine import ComicVine
 from backend.implementations.file_matching import scan_files
 from backend.implementations.file_processing import mass_process_files
 from backend.implementations.matching import match_title
+from backend.implementations.mangadex import (MangaDexClient, format_mangadex_issue_rows,
+                                             format_mangadex_volume_result,
+                                             mangadex_surrogate_id)
 from backend.implementations.root_folders import RootFolders
 from backend.internals.db import commit, get_db
 from backend.internals.db_models import FilesDB, GeneralFilesDB
@@ -269,7 +272,7 @@ class Volume:
         data = get_db().execute(
             """
             SELECT
-                id, comicvine_id,
+                id, comicvine_id, metadata_source, metadata_id,
                 title, alt_title,
                 year, publisher, volume_number,
                 description, site_url,
@@ -296,7 +299,7 @@ class Volume:
         """
         volume_info = get_db().execute("""
             SELECT
-                v.id, comicvine_id,
+                v.id, comicvine_id, metadata_source, metadata_id,
                 title, year, publisher,
                 volume_number,
                 special_version, special_version_locked,
@@ -1187,6 +1190,8 @@ class Library:
                 """
                 INSERT INTO volumes(
                     comicvine_id,
+                    metadata_source,
+                    metadata_id,
                     title,
                     alt_title,
                     year,
@@ -1202,7 +1207,7 @@ class Library:
                     special_version,
                     special_version_locked
                 ) VALUES (
-                    :comicvine_id, :title, :alt_title,
+                    :comicvine_id, :metadata_source, :metadata_id, :title, :alt_title,
                     :year, :publisher, :volume_number, :description,
                     :site_url, :monitored, :monitor_new_issues,
                     :root_folder, :custom_folder,
@@ -1211,6 +1216,8 @@ class Library:
                 """,
                 {
                     "comicvine_id": vd["comicvine_id"],
+                    "metadata_source": "comicvine",
+                    "metadata_id": str(vd["comicvine_id"]),
                     "title": vd["title"],
                     "alt_title": (vd["aliases"] or [None])[0],
                     "year": vd["year"],
@@ -1319,6 +1326,168 @@ class Library:
 
         return volume_id
 
+
+
+    @classmethod
+    def _metadata_to_id(cls, metadata_source: str, metadata_id: str) -> Union[int, None]:
+        """Find the local volume ID for a metadata source/id pair."""
+        result = get_db().execute(
+            """
+            SELECT id
+            FROM volumes
+            WHERE metadata_source = ?
+                AND metadata_id = ?
+            LIMIT 1;
+            """,
+            (metadata_source, metadata_id)
+        ).fetchone()
+        return result[0] if result else None
+
+    @classmethod
+    def add_mangadex(
+        cls,
+        mangadex_id: str,
+        root_folder_id: int,
+        monitored: bool,
+        monitor_scheme: MonitorScheme = MonitorScheme.ALL,
+        monitor_new_issues: bool = True,
+        volume_folder: Union[str, None] = None,
+        special_version: Union[SpecialVersion, None] = None,
+        auto_search: bool = False
+    ) -> int:
+        """Add a MangaDex-backed manga volume to the library."""
+        from backend.implementations.naming import generate_volume_folder_path
+
+        if not mangadex_id:
+            raise InvalidKeyValue('metadata_id', mangadex_id)
+
+        potential_volume_id = cls._metadata_to_id('mangadex', mangadex_id)
+        if potential_volume_id:
+            raise VolumeAlreadyAdded(mangadex_surrogate_id(mangadex_id), potential_volume_id)
+
+        root_folder = RootFolders().get_one(root_folder_id)
+        client = MangaDexClient()
+        manga = client.get_manga(mangadex_id)
+        if not manga:
+            raise InvalidKeyValue('metadata_id', mangadex_id)
+
+        mapping = client.get_aggregate_volume_map(mangadex_id)
+        vd = format_mangadex_volume_result(manga, mapping)
+        issue_rows = format_mangadex_issue_rows(mangadex_id, mapping)
+
+        cursor = get_db()
+        with cursor:
+            volume_id = cursor.execute(
+                """
+                INSERT INTO volumes(
+                    comicvine_id,
+                    metadata_source,
+                    metadata_id,
+                    title,
+                    alt_title,
+                    year,
+                    publisher,
+                    volume_number,
+                    description,
+                    site_url,
+                    monitored,
+                    monitor_new_issues,
+                    root_folder,
+                    custom_folder,
+                    last_cv_fetch,
+                    special_version,
+                    special_version_locked
+                ) VALUES (
+                    :comicvine_id, :metadata_source, :metadata_id,
+                    :title, :alt_title,
+                    :year, :publisher, :volume_number, :description,
+                    :site_url, :monitored, :monitor_new_issues,
+                    :root_folder, :custom_folder,
+                    :last_cv_fetch, :special_version, :special_version_locked
+                );
+                """,
+                {
+                    "comicvine_id": vd["comicvine_id"],
+                    "metadata_source": "mangadex",
+                    "metadata_id": mangadex_id,
+                    "title": vd["title"],
+                    "alt_title": (vd["aliases"] or [None])[0],
+                    "year": vd["year"],
+                    "publisher": vd["publisher"],
+                    "volume_number": vd["volume_number"],
+                    "description": vd["description"],
+                    "site_url": vd["site_url"],
+                    "monitored": monitored,
+                    "monitor_new_issues": monitor_new_issues,
+                    "root_folder": root_folder.id,
+                    "custom_folder": volume_folder is not None,
+                    "last_cv_fetch": round(time()),
+                    "special_version": None,
+                    "special_version_locked": special_version is not None
+                }
+            ).lastrowid
+
+            cursor.execute(
+                """
+                INSERT INTO volumes_covers(volume_id, cover)
+                VALUES (:volume_id, :cover);
+                """,
+                {"volume_id": volume_id, "cover": None}
+            )
+
+            cursor.executemany("""
+                INSERT INTO issues(
+                    volume_id,
+                    comicvine_id,
+                    issue_number,
+                    calculated_issue_number,
+                    title,
+                    date,
+                    description,
+                    monitored
+                ) VALUES (
+                    :volume_id, :comicvine_id,
+                    :issue_number, :calculated_issue_number,
+                    :title, :date, :description,
+                    :monitored
+                );
+                """,
+                ({**i, "volume_id": volume_id, "monitored": True} for i in issue_rows)
+            )
+
+            volume = Volume(volume_id)
+            if special_version is None:
+                special_version = determine_special_version(volume.id)
+            volume.update({'special_version': special_version})
+
+            folder = generate_volume_folder_path(root_folder.folder, volume.get_data(), volume_folder)
+            volume.update({'folder': folder})
+
+            if Settings().sv.create_empty_volume_folders:
+                create_folder(folder)
+                scan_files(volume_id)
+
+            volume.apply_monitor_scheme(monitor_scheme)
+            mass_process_files(volume_id)
+
+        if auto_search:
+            from backend.features.tasks import AutoSearchVolume, TaskHandler
+            TaskHandler().add(AutoSearchVolume(volume_id))
+
+        from threading import Thread
+        from backend.implementations.suwayomi import SuwayomiClient
+
+        def _sync_to_suwayomi(title: str) -> None:
+            try:
+                client = SuwayomiClient()
+                if client.is_configured():
+                    client.sync_manga_to_library(title)
+            except Exception as exc:
+                LOGGER.debug("Suwayomi auto-library sync failed for '%s': %s", title, exc)
+
+        Thread(target=_sync_to_suwayomi, args=(vd["title"],), daemon=True).start()
+        LOGGER.info('Added MangaDex volume %s as ID %d', mangadex_id, volume_id)
+        return volume_id
 
 # region Refresh & Scan
 def determine_special_version(volume_id: int) -> SpecialVersion:
@@ -1438,6 +1607,7 @@ def refresh_and_scan(
             SELECT comicvine_id, id, last_cv_fetch
             FROM volumes
             WHERE id = ?
+                AND metadata_source = 'comicvine'
             LIMIT 1;
             """,
             (volume_id,)
@@ -1448,6 +1618,7 @@ def refresh_and_scan(
             SELECT comicvine_id, id, last_cv_fetch
             FROM volumes
             WHERE last_cv_fetch <= ?
+                AND metadata_source = 'comicvine'
             ORDER BY last_cv_fetch ASC;
             """,
             (
@@ -1462,6 +1633,8 @@ def refresh_and_scan(
         for e in cursor
     }
     if not cv_to_id_fetch:
+        if volume_id:
+            scan_files(volume_id, update_websocket)
         return
 
     if on_progress and not volume_id:
@@ -1480,6 +1653,7 @@ def refresh_and_scan(
             LEFT JOIN issues i
             ON v.id = i.volume_id
             WHERE v.last_cv_fetch <= ?
+                AND v.metadata_source = 'comicvine'
             GROUP BY v.id;
             """,
             (one_day_ago.timestamp(),)

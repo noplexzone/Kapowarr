@@ -855,8 +855,32 @@ def api_volumes_search():
     if request.method == 'GET':
         query = extract_key(request, 'query')
         section = extract_key(request, 'section', False) or 'comic'
+        metadata_source = extract_key(request, 'metadata_source', False) or 'comicvine'
+        if metadata_source == 'mangadex':
+            if section != 'manga':
+                raise InvalidKeyValue('metadata_source', metadata_source)
+            from backend.implementations.mangadex import search_mangadex_volumes
+            search_results = search_mangadex_volumes(query)
+            db = get_db()
+            for r in search_results:
+                r['already_added'] = db.execute(
+                    """
+                    SELECT id
+                    FROM volumes
+                    WHERE metadata_source = 'mangadex'
+                        AND metadata_id = ?
+                    LIMIT 1;
+                    """,
+                    (r['metadata_id'],)
+                ).exists()
+            return return_api(search_results)
+        elif metadata_source != 'comicvine':
+            raise InvalidKeyValue('metadata_source', metadata_source)
+
         search_results = run(ComicVine().search_volumes(query, section=section))
         for r in search_results:
+            r['metadata_source'] = 'comicvine'
+            r['metadata_id'] = str(r['comicvine_id'])
             del r["cover"] # type: ignore
         return return_api(search_results)
 
@@ -919,15 +943,22 @@ def api_volumes():
     elif request.method == 'POST':
         data: dict = request.get_json()
 
+        metadata_source = data.get('metadata_source') or 'comicvine'
+        if metadata_source not in ('comicvine', 'mangadex'):
+            raise InvalidKeyValue('metadata_source', metadata_source)
+
         comicvine_id = data.get('comicvine_id')
-        if comicvine_id is None:
+        metadata_id = data.get('metadata_id')
+        if metadata_source == 'comicvine' and comicvine_id is None:
             raise KeyNotFound('comicvine_id')
+        if metadata_source == 'mangadex' and not isinstance(metadata_id, str):
+            raise KeyNotFound('metadata_id')
 
         root_folder_id = data.get('root_folder_id')
         if root_folder_id is None:
             raise KeyNotFound('root_folder_id')
 
-        monitor = data.get('monitor', True)
+        monitor = data.get('monitor', data.get('monitor_volume', True))
         if not isinstance(monitor, bool):
             raise InvalidKeyValue('monitor', monitor)
 
@@ -937,7 +968,7 @@ def api_volumes():
         except ValueError:
             raise InvalidKeyValue("monitoring_scheme", monitoring_scheme)
 
-        monitor_new_issues = data.get('monitor_new_issues', True)
+        monitor_new_issues = data.get('monitor_new_issues', data.get('monitor_issues', True))
         if not isinstance(monitor_new_issues, bool):
             raise InvalidKeyValue('monitor_new_issues', monitor_new_issues)
 
@@ -956,16 +987,28 @@ def api_volumes():
             except ValueError:
                 raise InvalidKeyValue('special_version', special_version)
 
-        volume_id = Library.add(
-            comicvine_id,
-            root_folder_id,
-            monitor,
-            monitoring_scheme,
-            monitor_new_issues,
-            volume_folder,
-            sv,
-            auto_search
-        )
+        if metadata_source == 'mangadex':
+            volume_id = Library.add_mangadex(
+                metadata_id,
+                root_folder_id,
+                monitor,
+                monitoring_scheme,
+                monitor_new_issues,
+                volume_folder,
+                sv,
+                auto_search
+            )
+        else:
+            volume_id = Library.add(
+                comicvine_id,
+                root_folder_id,
+                monitor,
+                monitoring_scheme,
+                monitor_new_issues,
+                volume_folder,
+                sv,
+                auto_search
+            )
         volume_info = Library.get_volume(volume_id).get_public_data()
         return return_api(volume_info, code=201)
 

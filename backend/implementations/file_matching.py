@@ -5,6 +5,7 @@ The matching of files to issues in a volume
 """
 
 from collections import Counter
+from threading import Thread
 from os.path import basename, isdir
 from typing import Dict, List, Set, Tuple, Union
 
@@ -24,6 +25,21 @@ from backend.internals.db import commit, get_db
 from backend.internals.db_models import FilesDB
 from backend.internals.server import DownloadedStatusEvent, WebSocket
 from backend.internals.settings import Settings
+
+
+def _emit_downloaded_status_event(event: DownloadedStatusEvent) -> None:
+    """Emit downloaded-status websocket events without blocking scans.
+
+    File scans run inside download post-processing. A stalled websocket client
+    must not prevent the download from finishing and leaving the queue.
+    """
+    def _emit() -> None:
+        try:
+            WebSocket().emit(event)
+        except Exception:
+            LOGGER.exception('Failed to emit downloaded status websocket event')
+
+    Thread(target=_emit, name='DownloadedStatusEventEmit', daemon=True).start()
 
 
 # region Automatic Match
@@ -311,14 +327,14 @@ def scan_files(
         if not filepath_filter and (
             deleted_downloaded_issues or newly_downloaded_issues
         ):
-            WebSocket().emit(DownloadedStatusEvent(
+            _emit_downloaded_status_event(DownloadedStatusEvent(
                 volume_id,
                 not_downloaded_issues=deleted_downloaded_issues,
                 downloaded_issues=newly_downloaded_issues
             ))
 
         elif filepath_filter and newly_downloaded_issues:
-            WebSocket().emit(DownloadedStatusEvent(
+            _emit_downloaded_status_event(DownloadedStatusEvent(
                 volume_id,
                 downloaded_issues=newly_downloaded_issues
             ))

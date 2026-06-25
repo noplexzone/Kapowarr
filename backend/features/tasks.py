@@ -32,6 +32,21 @@ from backend.internals.server import (TaskAddedEvent, TaskEndedEvent,
                                       TaskStatusEvent, WebSocket)
 
 
+def _emit_task_event(event) -> None:
+    """Emit a websocket task event without blocking task execution.
+
+    Socket clients can stall; task workers must not depend on websocket
+    delivery to make progress.
+    """
+    def _emit() -> None:
+        try:
+            WebSocket().emit(event)
+        except Exception:
+            LOGGER.exception('Failed to emit websocket task event')
+
+    Thread(target=_emit, name='TaskEventEmit', daemon=True).start()
+
+
 class Task(ABC):
     stop: bool
     message: str
@@ -99,19 +114,18 @@ class AutoSearchIssue(Task):
         return
 
     def run(self) -> List[Tuple[str, int, Union[int, None]]]:
-        ws = WebSocket()
         volume = Volume(self._volume_id)
         volume_title = volume.vd.title
         issue_number = volume.get_issue(self._issue_id).get_data().issue_number
         self.message = f'Searching for {volume_title} #{issue_number}'
-        ws.emit(TaskStatusEvent(self.message, notification=True))
+        _emit_task_event(TaskStatusEvent(self.message, notification=True))
 
         stats: dict = {'total_found': 0, 'per_issue': []}
         results = auto_search(self._volume_id, self._issue_id, _stats=stats)
         # Per-issue search: download info is embedded in per_issue entries; no downloads array needed
         self.details = {'per_issue': stats['per_issue'], 'downloads': []}
         if results:
-            ws.emit(TaskStatusEvent(
+            _emit_task_event(TaskStatusEvent(
                 f'Found download for {volume_title} #{issue_number}',
                 notification=True
             ))
@@ -123,12 +137,12 @@ class AutoSearchIssue(Task):
         found = stats.get('total_found', 0)
         if found > 0:
             n = f'{found} result{"s" if found != 1 else ""}'
-            ws.emit(TaskStatusEvent(
+            _emit_task_event(TaskStatusEvent(
                 f'{n} found, 0 matched for {volume_title} #{issue_number}',
                 notification=True
             ))
         else:
-            ws.emit(TaskStatusEvent(
+            _emit_task_event(TaskStatusEvent(
                 f'No results found for {volume_title} #{issue_number}',
                 notification=True
             ))
@@ -276,15 +290,14 @@ class AutoSearchVolume(Task):
         return
 
     def run(self) -> List[Tuple[str, int, Union[int, None]]]:
-        ws = WebSocket()
         vol = Volume(self._volume_id)
         volume_title = vol.vd.title
         self.message = f'Searching for {volume_title}'
-        ws.emit(TaskStatusEvent(self.message, notification=True))
+        _emit_task_event(TaskStatusEvent(self.message, notification=True))
 
         def _progress(idx: int, total: int) -> None:
             self.message = f'Searching issue {idx + 1}/{total} for {volume_title}'
-            ws.emit(TaskStatusEvent(self.message))
+            _emit_task_event(TaskStatusEvent(self.message))
 
         stats: dict = {'total_found': 0, 'per_issue': []}
         results = auto_search(self._volume_id, _stats=stats, _status_cb=_progress)
@@ -316,7 +329,7 @@ class AutoSearchVolume(Task):
         }
         if results:
             n = len(results)
-            ws.emit(TaskStatusEvent(
+            _emit_task_event(TaskStatusEvent(
                 f'Found {n} download{"s" if n != 1 else ""} for {volume_title}',
                 notification=True
             ))
@@ -335,12 +348,12 @@ class AutoSearchVolume(Task):
         found = stats.get('total_found', 0)
         if found > 0:
             n = f'{found} result{"s" if found != 1 else ""}'
-            ws.emit(TaskStatusEvent(
+            _emit_task_event(TaskStatusEvent(
                 f'{n} found, 0 matched for {volume_title}',
                 notification=True
             ))
         else:
-            ws.emit(TaskStatusEvent(
+            _emit_task_event(TaskStatusEvent(
                 f'No results found for {volume_title}',
                 notification=True
             ))
@@ -1187,20 +1200,7 @@ class TaskHandler(metaclass=Singleton):
         LOGGER.info(f'Added task: {task.display_title} ({id})')
         self._process_queue()
 
-        def _emit_task_added() -> None:
-            try:
-                WebSocket().emit(TaskAddedEvent(task))
-            except Exception:
-                LOGGER.exception(
-                    'Failed to emit task-added websocket event for %s (%s)',
-                    task.display_title, id
-                )
-
-        Thread(
-            target=_emit_task_added,
-            name=f'TaskAddedEvent-{id}',
-            daemon=True
-        ).start()
+        _emit_task_event(TaskAddedEvent(task))
         return id
 
     @staticmethod

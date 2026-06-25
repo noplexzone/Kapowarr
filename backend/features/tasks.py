@@ -974,7 +974,7 @@ class DownloadBatch:
                     ('download_result', self.display_title,
                      round(time()), self.volume_id, details),
                 ).connection.commit()
-            WebSocket().emit(TaskEndedEvent(_DownloadResultTask(self.volume_id)))
+            _emit_task_event(TaskEndedEvent(_DownloadResultTask(self.volume_id)))
         except Exception:
             LOGGER.exception(
                 'Failed to write download_result for task_history_id=%d',
@@ -1117,7 +1117,7 @@ class TaskHandler(metaclass=Singleton):
                 LOGGER.exception(
                     'An error occured while trying to run a task: ')
                 task.message = 'AN ERROR OCCURED'
-                socket.emit(TaskStatusEvent(task.message))
+                _emit_task_event(TaskStatusEvent(task.message))
 
                 queued_at = None
                 started_at = None
@@ -1151,9 +1151,19 @@ class TaskHandler(metaclass=Singleton):
 
             finally:
                 if not task.stop:
-                    socket.emit(TaskEndedEvent(task))
-                    self.queue.pop(0)
+                    # Task queue progress must not depend on websocket delivery.
+                    # Remove the finished task and start the next queued task before
+                    # emitting TaskEndedEvent; otherwise a stalled socket client can
+                    # leave a completed task visible forever as "running".
+                    if self.queue and self.queue[0].get('task') is task:
+                        self.queue.pop(0)
+                    else:
+                        self.queue = [
+                            entry for entry in self.queue
+                            if entry.get('task') is not task
+                        ]
                     self._process_queue()
+                    _emit_task_event(TaskEndedEvent(task))
 
         return
 
@@ -1402,7 +1412,7 @@ class TaskHandler(metaclass=Singleton):
         task['thread'].join()
         self.queue.remove(task)
         LOGGER.info(f'Removed task: {task["task"].display_title} ({task_id})')
-        WebSocket().emit(TaskEndedEvent(task['task']))
+        _emit_task_event(TaskEndedEvent(task['task']))
         return
 
 

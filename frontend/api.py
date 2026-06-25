@@ -1936,9 +1936,8 @@ def api_file_add_cover_page(file_id: int):
     """Prepend (or append) a downloaded cover image as a page in a PDF file.
 
     Body: { cover_url: str, position?: "prepend" | "append" }
-    Response: { file_id, backup_path, size }
+    Response: { file_id, size }
 
-    A timestamped backup of the original is created before any modification.
     Only PDF files are supported.
     """
     import shutil
@@ -1982,17 +1981,12 @@ def api_file_add_cover_page(file_id: int):
     if ext != '.pdf':
         raise InvalidKeyValue('file_type', 'Only PDF files are supported')
 
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    backup_path = f"{filepath}.bak-{timestamp}"
-
     tmp_path = None
     try:
         import img2pdf
         from io import BytesIO as _BytesIO
         from pypdf import PdfReader as _PdfReader, PdfWriter as _PdfWriter
         import requests as _requests
-
-        shutil.copy2(filepath, backup_path)
 
         resp = _requests.get(
             cover_url,
@@ -2036,7 +2030,6 @@ def api_file_add_cover_page(file_id: int):
 
         return return_api({
             'file_id': file_id,
-            'backup_path': backup_path,
             'size': new_size,
         })
 
@@ -2044,11 +2037,6 @@ def api_file_add_cover_page(file_id: int):
         raise
     except Exception as e:
         LOGGER.error("Failed to add cover page to %s: %s", filepath, e)
-        if not exists(filepath) and exists(backup_path):
-            try:
-                shutil.copy2(backup_path, filepath)
-            except OSError:
-                pass
         return return_api({}, f'Failed to add cover page: {e}', 500)
     finally:
         if tmp_path:

@@ -774,11 +774,6 @@
   word-break: break-all;
 }
 
-.coverBackupPath {
-  font-family: monospace;
-  font-size: 0.75rem;
-  color: var(--text-dim);
-}
 
 .downloadProgress {
   display: flex;

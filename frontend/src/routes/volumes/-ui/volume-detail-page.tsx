@@ -747,7 +747,7 @@ export function VolumeDetailPage() {
       if (!coverDialog) return;
       if (
         !window.confirm(
-          'Add this cover page to the PDF?\n\nA timestamped backup of the original will be created automatically.',
+          'Add this cover page to the PDF?',
         )
       )
         return;
@@ -755,7 +755,7 @@ export function VolumeDetailPage() {
       try {
         const result = await addCoverPage(coverDialog.fileId, imageUrl);
         setCoverApplyResult(result);
-        setActionMsg(`Cover page added. Backup: ${result.backup_path}`);
+        setActionMsg('Cover page added.');
         queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
         const matches = await fetchManualMatch(id);
         setManualMatches(matches);
@@ -1656,10 +1656,7 @@ export function VolumeDetailPage() {
             <>
               {coverApplyResult && (
                 <div className={styles.coverResultMsg}>
-                  Cover page added successfully. Backup:{' '}
-                  <code className={styles.coverBackupPath}>
-                    {coverApplyResult.backup_path}
-                  </code>
+                  Cover page added successfully.
                 </div>
               )}
               <div className={styles.coverGrid}>

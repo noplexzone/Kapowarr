@@ -110,7 +110,6 @@ export interface CoverCandidate {
 
 export interface AddCoverResult {
   file_id: number;
-  backup_path: string;
   size: number;
 }
 

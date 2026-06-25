@@ -200,6 +200,18 @@ def find_volume_cover_candidates(title: str, volume_number: float) -> List[dict]
             c for c in covers
             if (c.get("attributes") or {}).get("volume") == vol_str
         ]
+        english_matched = [
+            c for c in matched
+            if str((c.get("attributes") or {}).get("locale") or "").lower() == "en"
+        ]
+        if english_matched:
+            matched = english_matched
+        else:
+            matched.sort(
+                key=lambda c: str(
+                    (c.get("attributes") or {}).get("locale") or ""
+                ).lower() != "en"
+            )
 
         results = []
         for cover in matched:

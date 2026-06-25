@@ -682,30 +682,6 @@
   margin-top: 0;
 }
 
-.filenameDeleteBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-left: 0.35rem;
-  padding: 0;
-  background: transparent;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  font-size: 0.75rem;
-  line-height: 1;
-  cursor: pointer;
-  flex-shrink: 0;
-  vertical-align: middle;
-}
-
-.filenameDeleteBtn:hover {
-  color: #e00;
-  border-color: #e00;
-  background: rgba(255, 0, 0, 0.08);
-}
 
 .renamePath {
   font-family: monospace;
@@ -718,31 +694,6 @@
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
-}
-/* ── Add Cover button (inline with filename) ─────── */
-.filenameAddCoverBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-left: 0.35rem;
-  padding: 0;
-  background: transparent;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  font-size: 0.85rem;
-  line-height: 1;
-  cursor: pointer;
-  flex-shrink: 0;
-  vertical-align: middle;
-}
-
-.filenameAddCoverBtn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: rgba(var(--accent-rgb, 80, 130, 255), 0.1);
 }
 
 /* ── Cover candidates grid ───────────────────────── */

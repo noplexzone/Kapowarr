@@ -125,12 +125,32 @@ class FindVolumeCoverCandidatesTest(unittest.TestCase):
         results = find_volume_cover_candidates("", 1.0)
         self.assertEqual(results, [])
 
-    def test_multiple_covers_for_same_volume(self):
+    def test_english_cover_preferred_when_available(self):
         from backend.implementations.mangadex import find_volume_cover_candidates
 
         covers = [
-            _make_cover("cov-a", "1", locale="en"),
-            _make_cover("cov-b", "1", locale="ja"),
+            _make_cover("cov-ja", "1", locale="ja"),
+            _make_cover("cov-en", "1", locale="en"),
+            _make_cover("cov-c", "2", locale="en"),
+        ]
+        client = self._make_client("manga-111", "Demo Manga", covers)
+
+        with patch(
+            "backend.implementations.mangadex.MangaDexClient",
+            return_value=client,
+        ):
+            results = find_volume_cover_candidates("Demo Manga", 1.0)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["cover_id"], "cov-en")
+        self.assertEqual(results[0]["locale"], "en")
+
+    def test_non_english_covers_returned_when_no_english_exists(self):
+        from backend.implementations.mangadex import find_volume_cover_candidates
+
+        covers = [
+            _make_cover("cov-ja", "1", locale="ja"),
+            _make_cover("cov-ko", "1", locale="ko"),
             _make_cover("cov-c", "2", locale="en"),
         ]
         client = self._make_client("manga-111", "Demo Manga", covers)
@@ -143,7 +163,7 @@ class FindVolumeCoverCandidatesTest(unittest.TestCase):
 
         self.assertEqual(len(results), 2)
         self.assertCountEqual(
-            [r["cover_id"] for r in results], ["cov-a", "cov-b"]
+            [r["cover_id"] for r in results], ["cov-ja", "cov-ko"]
         )
 
 

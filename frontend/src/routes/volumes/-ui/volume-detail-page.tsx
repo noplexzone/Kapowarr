@@ -102,6 +102,16 @@ function BookOpenIcon() {
   );
 }
 
+function CoverPageIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <circle cx="9" cy="8" r="1.5" />
+      <path d="m4 17 4.5-4.5 3.5 3.5 2-2 6 6" />
+    </svg>
+  );
+}
+
 function PencilIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -596,25 +606,6 @@ export function VolumeDetailPage() {
     }
   }, [manageChecked, id, queryClient]);
 
-  const handleDeleteFile = useCallback(
-    async (fileId: number, filename: string) => {
-      if (!window.confirm(`Delete "${filename}"?`)) return;
-      try {
-        await deleteFile(fileId);
-        setActionMsg(`Deleted "${filename}".`);
-        queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
-        // Refresh manual match data
-        const matches = await fetchManualMatch(id);
-        setManualMatches(matches);
-        setUnmatchedFiles(
-          matches.filter((m) => m.issue_ids.length === 0 && !m.general_file),
-        );
-      } catch (err) {
-        setActionMsg('Delete file failed: ' + (err as Error).message);
-      }
-    },
-    [id, queryClient],
-  );
 
   const handleForceMatchFile = useCallback(
     async (filepath: string) => {
@@ -1018,6 +1009,9 @@ export function VolumeDetailPage() {
                   }
                   onManualSearch={() => handleManualSearch(issue.id)}
                   onHistory={() => handleShowHistory(issue.id)}
+                  onAddCover={(fileId, filename) =>
+                    openCoverDialog(fileId, issue.id, filename)
+                  }
                   isAutoSearching={
                     autoSearchIssueMutation.isPending &&
                     autoSearchIssueMutation.variables?.issueId === issue.id
@@ -1776,59 +1770,14 @@ export function VolumeDetailPage() {
                           </td>
                           <td className={styles.issueFilename}>
                             {issue.filenames.length > 0
-                              ? issue.filenames.map((f, i) => {
-                                  const mf = manualMatches.find(
-                                    (m) =>
-                                      m.filepath.endsWith(f) ||
-                                      m.filepath === f,
-                                  );
-                                  const fid = mf?.file_id;
-                                  const isPdf = f
-                                    .toLowerCase()
-                                    .endsWith('.pdf');
-                                  return (
-                                    <span
-                                      key={i}
-                                      className={styles.filenameLine}
-                                    >
-                                      {f}
-                                      {fid != null && isPdf && (
-                                        <button
-                                          type="button"
-                                          className={
-                                            styles.filenameAddCoverBtn
-                                          }
-                                          title={`Add cover page to "${f}"`}
-                                          aria-label={`Add cover page to "${f}"`}
-                                          onClick={() =>
-                                            openCoverDialog(
-                                              fid,
-                                              issue.id,
-                                              f,
-                                            )
-                                          }
-                                        >
-                                          +
-                                        </button>
-                                      )}
-                                      {fid != null && (
-                                        <button
-                                          type="button"
-                                          className={
-                                            styles.filenameDeleteBtn
-                                          }
-                                          title={`Delete "${f}"`}
-                                          aria-label={`Delete "${f}"`}
-                                          onClick={() =>
-                                            handleDeleteFile(fid, f)
-                                          }
-                                        >
-                                          ×
-                                        </button>
-                                      )}
-                                    </span>
-                                  );
-                                })
+                              ? issue.filenames.map((f, i) => (
+                                  <span
+                                    key={i}
+                                    className={styles.filenameLine}
+                                  >
+                                    {f}
+                                  </span>
+                                ))
                               : '—'}
                           </td>
                           <td>
@@ -2033,6 +1982,7 @@ interface IssueRowProps {
   onAutoSearch: () => void;
   onManualSearch: () => void;
   onHistory: () => void;
+  onAddCover: (fileId: number, filename: string) => void;
   isAutoSearching: boolean;
 }
 
@@ -2042,8 +1992,15 @@ function IssueRow({
   onAutoSearch,
   onManualSearch,
   onHistory,
+  onAddCover,
   isAutoSearching,
 }: IssueRowProps) {
+  const pdfFile = issue.filenames
+    .map((filename, index) => ({ filename, fileId: issue.file_ids[index] }))
+    .find(({ filename, fileId }) =>
+      fileId != null && filename.toLowerCase().endsWith('.pdf'),
+    );
+
   return (
     <tr className={styles.issueRow}>
       <td className={styles.issueNum}>#{issue.issue_number}</td>
@@ -2127,6 +2084,17 @@ function IssueRow({
           >
             <HistoryIcon />
           </button>
+          {pdfFile && (
+            <button
+              type="button"
+              className={styles.issueActionBtn}
+              title={`Add cover page to "${pdfFile.filename}"`}
+              aria-label={`Add cover page to "${pdfFile.filename}"`}
+              onClick={() => onAddCover(pdfFile.fileId, pdfFile.filename)}
+            >
+              <CoverPageIcon />
+            </button>
+          )}
           {issue.downloaded && issue.file_ids.length > 0 && (
             <Link
               to="/read/$fileId"

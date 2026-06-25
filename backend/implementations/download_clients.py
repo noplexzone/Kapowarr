@@ -51,6 +51,7 @@ file_extension_regex = compile(r'(?<=\.|\/)[\w\d]{2,4}(?=$|;|\s|\")', IGNORECASE
 file_name_regex = compile(r'filename(?:=\"|\*=UTF-8\'\')(.*?)\.[a-z]{2,4}\"?$', IGNORECASE)
 extract_mediafire_regex = compile(r'window.location.href\s?=\s?\'https://download\d+\.mediafire.com/.*?(?=\')', IGNORECASE)
 extract_ufile_regex = compile(r'href=["\']+(https://[^"\']*ufile\.io/[^"\']+)["\']', IGNORECASE)
+suwayomi_source_detail_regex = compile(r'\[([^\[\]]+)\]\s*$')
 DOWNLOAD_CHUNK_SIZE = 4194304 # 4MB Chunks
 MEDIAFIRE_FOLDER_LINK = "https://www.mediafire.com/api/1.5/file/zip.php"
 WETRANSFER_API_LINK = "https://wetransfer.com/api/v4/transfers/{transfer_id}/download"
@@ -406,6 +407,13 @@ class BaseDirectDownload(Download):
         return
 
     def as_dict(self) -> Dict[str, Any]:
+        source_detail = None
+        web_sub_title = getattr(self, '_web_sub_title', None)
+        if self._source_type == DownloadSource.SUWAYOMI and web_sub_title:
+            source_match = suwayomi_source_detail_regex.search(web_sub_title)
+            if source_match:
+                source_detail = source_match.group(1)
+
         return {
             'id': self._id,
             'volume_id': self._volume_id,
@@ -419,6 +427,7 @@ class BaseDirectDownload(Download):
 
             'source_type': self._source_type.value,
             'source_name': self._source_name,
+            'source_detail': source_detail,
             'type': self.identifier,
 
             'file': self._files[0],

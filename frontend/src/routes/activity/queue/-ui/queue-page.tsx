@@ -166,7 +166,9 @@ function QueueRow({ entry, index, total, onMove, onRemove }: QueueRowProps) {
         </Link>
       </td>
       <td>
-        <Badge tone="neutral">{entry.source_name}</Badge>
+        <Badge tone="neutral">
+          {entry.source_detail ? `${entry.source_name} / ${entry.source_detail}` : entry.source_name}
+        </Badge>
       </td>
       <td>
         <span className={styles.sizeSpeed}>{formatBytes(entry.size)}</span>
@@ -191,7 +193,7 @@ function QueueRow({ entry, index, total, onMove, onRemove }: QueueRowProps) {
           <Button variant="ghost" onClick={() => onMove('up')} disabled={index === 0} title="Move up">↑</Button>
           <Button variant="ghost" onClick={() => onMove('down')} disabled={index === total - 1} title="Move down">↓</Button>
           <Button variant="ghost" onClick={() => onRemove(false)} title="Remove">✕</Button>
-          <Button variant="ghost" onClick={() => onRemove(true)} title="Remove & Blocklist">⊗</Button>
+          <Button variant="ghost" onClick={() => onRemove(true)} title="Remove & Blocklist">Blocklist</Button>
         </div>
       </td>
     </tr>

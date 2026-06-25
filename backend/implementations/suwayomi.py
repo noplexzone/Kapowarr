@@ -322,7 +322,20 @@ class SuwayomiClient:
                         delete=False, suffix=f'.{ext}'
                     ) as tf:
                         tf.write(data)
-                        temp_paths.append(tf.name)
+                        page_path = tf.name
+
+                    if ext == 'webp':
+                        converted_path = _convert_image_to_png_subprocess(
+                            page_path,
+                            f'manga {manga_id} chapter {source_order} page {i + 1}',
+                        )
+                        try:
+                            os.unlink(page_path)
+                        except OSError:
+                            pass
+                        page_path = converted_path
+
+                    temp_paths.append(page_path)
                     fetched += 1
                     if progress_cb is not None and total_pages > 0:
                         progress_cb(fetched, total_pages, len(data))
@@ -337,7 +350,6 @@ class SuwayomiClient:
                     _safety_timer.cancel()
                 return False
 
-            import img2pdf
             from pypdf import PdfWriter, PdfReader
 
             # Convert pages in small batches with logging to pinpoint
@@ -361,12 +373,16 @@ class SuwayomiClient:
                         _first, _last, len(temp_paths),
                         ', '.join(_sizes),
                     )
-                    _pdf_data = img2pdf.convert(_batch)
                     with tempfile.NamedTemporaryFile(
                         delete=False, suffix='.pdf'
                     ) as _btf:
-                        _btf.write(_pdf_data)
-                        batch_pdfs.append(_btf.name)
+                        batch_pdf_path = _btf.name
+                    _img2pdf_convert_subprocess(
+                        _batch,
+                        batch_pdf_path,
+                        f'pages {_first}–{_last} of {len(temp_paths)}',
+                    )
+                    batch_pdfs.append(batch_pdf_path)
 
                 LOGGER.info(
                     'PDF assembly: merging %d batch PDFs into final output',
@@ -570,6 +586,78 @@ class SuwayomiClient:
         )
         resp.raise_for_status()
 
+
+
+
+def _run_helper_subprocess(
+    code: str,
+    payload: Dict,
+    timeout: int,
+    label: str,
+) -> None:
+    """Run potentially unsafe image/PDF work out-of-process.
+
+    Pillow and img2pdf touch C/image-code paths that have previously hung inside
+    Kapowarr download threads. subprocess.run(timeout=...) enforces SIGKILL on
+    timeout, so a bad manga page fails the download cleanly instead of pinning a
+    queue slot forever.
+    """
+    import json
+    import subprocess
+    import sys
+
+    try:
+        result = subprocess.run(
+            [sys.executable, '-c', code],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f'{label} timed out after {timeout}s') from exc
+
+    if result.returncode != 0:
+        stderr = (result.stderr or result.stdout or '').strip()
+        raise RuntimeError(f'{label} failed: {stderr}')
+
+
+def _convert_image_to_png_subprocess(path: str, label: str) -> str:
+    output_path = path + '.png'
+    _run_helper_subprocess(
+        """
+import json, sys
+from PIL import Image
+payload = json.load(sys.stdin)
+with Image.open(payload['input']) as img:
+    if img.mode not in ('RGB', 'L'):
+        img = img.convert('RGB')
+    img.save(payload['output'], format='PNG')
+""",
+        {'input': path, 'output': output_path},
+        timeout=30,
+        label=f'WEBP conversion for {label}',
+    )
+    return output_path
+
+
+def _img2pdf_convert_subprocess(
+    paths: List[str],
+    output_path: str,
+    label: str,
+) -> None:
+    _run_helper_subprocess(
+        """
+import img2pdf, json, sys
+payload = json.load(sys.stdin)
+with open(payload['output'], 'wb') as f:
+    f.write(img2pdf.convert(payload['paths']))
+""",
+        {'paths': paths, 'output': output_path},
+        timeout=120,
+        label=f'PDF assembly batch {label}',
+    )
 
 def _detect_image_ext(data: bytes) -> str:
     """Guess image extension from magic bytes."""

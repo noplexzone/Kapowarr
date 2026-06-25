@@ -145,13 +145,15 @@ class DownloadHandler(metaclass=Singleton):
             if download.state == DownloadState.CANCELED_STATE:
                 download.remove_from_client(delete_files=True)
                 PostProcessor.canceled(download)
-                self.queue.remove(download)
+                if download in self.queue:
+                    self.queue.remove(download)
                 break
 
             elif download.state == DownloadState.FAILED_STATE:
                 download.remove_from_client(delete_files=True)
                 PostProcessorNZB.failed(download)
-                self.queue.remove(download)
+                if download in self.queue:
+                    self.queue.remove(download)
                 break
 
             elif download.state == DownloadState.SHUTDOWN_STATE:
@@ -161,7 +163,8 @@ class DownloadHandler(metaclass=Singleton):
                 if self.settings.sv.delete_completed_downloads:
                     download.remove_from_client(delete_files=False)
                 PostProcessorNZB.success(download)
-                self.queue.remove(download)
+                if download in self.queue:
+                    self.queue.remove(download)
                 break
 
             else:
@@ -205,13 +208,15 @@ class DownloadHandler(metaclass=Singleton):
             if download.state == DownloadState.CANCELED_STATE:
                 download.remove_from_client(delete_files=True)
                 post_processer.canceled(download)
-                self.queue.remove(download)
+                if download in self.queue:
+                    self.queue.remove(download)
                 break
 
             elif download.state == DownloadState.FAILED_STATE:
                 download.remove_from_client(delete_files=True)
                 post_processer.perm_failed(download)
-                self.queue.remove(download)
+                if download in self.queue:
+                    self.queue.remove(download)
                 break
 
             elif download.state == DownloadState.SHUTDOWN_STATE:
@@ -229,7 +234,8 @@ class DownloadHandler(metaclass=Singleton):
                 if self.settings.sv.delete_completed_downloads:
                     download.remove_from_client(delete_files=False)
                 post_processer.success(download)
-                self.queue.remove(download)
+                if download in self.queue:
+                    self.queue.remove(download)
                 break
 
             else:
@@ -254,21 +260,37 @@ class DownloadHandler(metaclass=Singleton):
         """
         active_downloads = 0
         max_downloads = self.settings.sv.concurrent_direct_downloads
-        for download in self.queue:
-            if not isinstance(download, ExternalDownload):
-                if download.state == DownloadState.DOWNLOADING_STATE:
-                    active_downloads += 1
+        active_states = {
+            DownloadState.DOWNLOADING_STATE,
+            DownloadState.SEEDING_STATE,
+        }
+        terminal_states = {
+            DownloadState.CANCELED_STATE,
+            DownloadState.FAILED_STATE,
+            DownloadState.SHUTDOWN_STATE,
+        }
 
-                elif (
-                    download.state == DownloadState.QUEUED_STATE
-                    and active_downloads < max_downloads
-                ):
-                    if download.download_thread is not None:
-                        download.download_thread.start()
-                    active_downloads += 1
+        for download in self.queue[:]:
+            if isinstance(download, ExternalDownload):
+                continue
 
-                if active_downloads >= max_downloads:
-                    break
+            if download.state in terminal_states:
+                continue
+
+            if download.state in active_states:
+                active_downloads += 1
+
+            elif (
+                download.state == DownloadState.QUEUED_STATE
+                and active_downloads < max_downloads
+            ):
+                thread = download.download_thread
+                if thread is not None and not thread.is_alive():
+                    thread.start()
+                active_downloads += 1
+
+            if active_downloads >= max_downloads:
+                break
 
         return
 
@@ -792,17 +814,14 @@ class DownloadHandler(metaclass=Singleton):
         LOGGER.info(f'Removing download with id {download_id} and {blocklist=}')
 
         download = self.get_one(download_id)
-        if not download.download_thread:
-            return
 
         download.stop()
         WebSocket().emit(QueueStatusEvent(download))
 
         if not isinstance(download, ExternalDownload):
-            # Remove from the in-memory queue immediately.  The download
-            # thread may still be running — when it returns,
-            # __run_download() detects that the download is no longer in
-            # the queue and skips the duplicate removal.
+            # Remove from the in-memory queue immediately. The download
+            # thread may still be running; when it returns, the runner
+            # checks membership before attempting duplicate removal.
             if download in self.queue:
                 self.queue.remove(download)
             PostProcessor.canceled(download)
@@ -820,6 +839,7 @@ class DownloadHandler(metaclass=Singleton):
                 reason=BlocklistReason.ADDED_BY_USER
             )
 
+        self._process_queue()
         return
 
     def _remove_mega(self, exclude_id: int) -> None:
@@ -839,9 +859,17 @@ class DownloadHandler(metaclass=Singleton):
         return
 
     def remove_all(self) -> None:
-        """Remove all downloads from the queue"""
-        for download in self.queue[::-1]:
-            self.remove(download.id)
+        """Remove all downloads from the queue without waiting on threads."""
+        downloads = self.queue[:]
+        self.queue.clear()
+        ws = WebSocket()
+
+        for download in downloads:
+            download.stop()
+            ws.emit(QueueStatusEvent(download))
+            if not isinstance(download, ExternalDownload):
+                PostProcessor.canceled(download)
+            ws.emit(RemovedFromQueueEvent(download))
 
         # Clean up any remaining rows in the DB table.  We deliberately
         # do NOT join() the download threads here — a stuck Suwayomi
@@ -851,6 +879,7 @@ class DownloadHandler(metaclass=Singleton):
             "DELETE FROM download_queue;"
         )
 
+        self._process_queue()
         return
 
     def stop_handle(self) -> None:

@@ -18,14 +18,17 @@ async function getQueue(): Promise<QueueEntry[]> {
 }
 
 export async function moveDownload(id: number, index: number): Promise<void> {
-  await apiClient.put(`activity/queue/${id}`, { json: { index } });
+  const response = await apiClient.put(`activity/queue/${id}`, { json: { index } });
+  await readJson<unknown>(response);
 }
 
 export async function removeDownload(id: number, blocklist = false): Promise<void> {
   const json = blocklist ? { blocklist: true } : undefined;
-  await apiClient.delete(`activity/queue/${id}`, json ? { json } : undefined);
+  const response = await apiClient.delete(`activity/queue/${id}`, json ? { json } : undefined);
+  await readJson<unknown>(response);
 }
 
 export async function clearQueue(): Promise<void> {
-  await apiClient.delete('activity/queue');
+  const response = await apiClient.delete('activity/queue');
+  await readJson<unknown>(response);
 }

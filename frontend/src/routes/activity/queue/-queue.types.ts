@@ -4,6 +4,7 @@ export interface QueueEntry {
   volume_id: number;
   issue_id?: number;
   source_name: string;
+  source_detail?: string | null;
   web_link?: string;
   web_title?: string;
   web_sub_title?: string;

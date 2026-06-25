@@ -136,3 +136,147 @@ def test_replace_existing_issue_files_deletes_old_linked_file(monkeypatch):
     assert deleted_paths == ['/library/Jujutsu Kaisen old.cbz']
     assert deleted_ids == [7]
     assert commits == [True]
+
+
+def test_suwayomi_queue_entry_exposes_source_detail_from_display_title():
+    from backend.base.definitions import DownloadSource, DownloadState
+    from backend.implementations.download_clients import BaseDirectDownload
+
+    download = BaseDirectDownload.__new__(BaseDirectDownload)
+    download.identifier = 'suwayomi_volume'
+    download._id = 1
+    download._volume_id = 1214
+    download._issue_id = 33047
+    download._web_link = None
+    download._web_title = None
+    download._web_sub_title = 'Jujutsu Kaisen - Vol. 29 (Ch. 255–263) [Atsumaru]'
+    download._download_link = 'suwayomi:1756:10524,10525'
+    download._pure_link = download._download_link
+    download._source_type = DownloadSource.SUWAYOMI
+    download._source_name = 'Suwayomi'
+    download._files = ['/tmp/Jujutsu Kaisen 029.pdf']
+    download._title = 'Jujutsu Kaisen 029 (2019)'
+    download._download_folder = '/tmp'
+    download._size = 1000
+    download._state = DownloadState.DOWNLOADING_STATE
+    download._progress = 50
+    download._speed = 100
+    download._task_label = 'Assembling PDF'
+
+    assert download.as_dict()['source_detail'] == 'Atsumaru'
+
+
+def test_process_queue_ignores_canceled_downloads_and_starts_waiting_slots():
+    from backend.base.definitions import DownloadState
+    from backend.features.download_queue import DownloadHandler
+
+    starts = []
+
+    class FakeThread:
+        def __init__(self, name):
+            self.name = name
+            self.started = False
+
+        def is_alive(self):
+            return self.started
+
+        def start(self):
+            starts.append(self.name)
+            self.started = True
+
+    canceled = SimpleNamespace(
+        state=DownloadState.CANCELED_STATE,
+        download_thread=FakeThread('canceled'),
+    )
+    active = SimpleNamespace(
+        state=DownloadState.DOWNLOADING_STATE,
+        download_thread=FakeThread('active'),
+    )
+    queued_a = SimpleNamespace(
+        state=DownloadState.QUEUED_STATE,
+        download_thread=FakeThread('queued-a'),
+    )
+    queued_b = SimpleNamespace(
+        state=DownloadState.QUEUED_STATE,
+        download_thread=FakeThread('queued-b'),
+    )
+
+    handler = DownloadHandler.__new__(DownloadHandler)
+    handler.settings = SimpleNamespace(
+        sv=SimpleNamespace(concurrent_direct_downloads=3)
+    )
+    handler.queue = [canceled, active, queued_a, queued_b]
+
+    DownloadHandler._process_queue(handler)
+
+    assert starts == ['queued-a', 'queued-b']
+
+
+def test_remove_active_download_releases_slot_for_next_download(monkeypatch):
+    from backend.base.definitions import DownloadState
+    from backend.features import download_queue
+    from backend.features.download_queue import DownloadHandler
+
+    events = []
+    starts = []
+    canceled = []
+
+    class FakeWebSocket:
+        def emit(self, event):
+            events.append(event)
+
+    class FakePostProcessor:
+        @staticmethod
+        def canceled(download):
+            canceled.append(download.id)
+
+    class FakeThread:
+        def __init__(self, name, alive=False):
+            self.name = name
+            self.alive = alive
+
+        def is_alive(self):
+            return self.alive
+
+        def start(self):
+            starts.append(self.name)
+            self.alive = True
+
+    class FakeDownload:
+        def __init__(self, download_id, state, thread):
+            self.id = download_id
+            self.state = state
+            self.download_thread = thread
+            self.web_link = None
+            self.web_title = None
+            self.web_sub_title = None
+            self.download_link = 'suwayomi:test'
+            self.source_type = None
+            self.volume_id = 1
+            self.issue_id = 1
+
+        def stop(self, state=DownloadState.CANCELED_STATE):
+            self.state = state
+
+    monkeypatch.setattr(download_queue, 'WebSocket', FakeWebSocket)
+    monkeypatch.setattr(download_queue, 'PostProcessor', FakePostProcessor)
+
+    active = FakeDownload(
+        1, DownloadState.DOWNLOADING_STATE, FakeThread('active', alive=True)
+    )
+    queued = FakeDownload(
+        2, DownloadState.QUEUED_STATE, FakeThread('queued')
+    )
+
+    handler = DownloadHandler.__new__(DownloadHandler)
+    handler.settings = SimpleNamespace(
+        sv=SimpleNamespace(concurrent_direct_downloads=3)
+    )
+    handler.queue = [active, queued]
+
+    DownloadHandler.remove(handler, 1)
+
+    assert handler.queue == [queued]
+    assert canceled == [1]
+    assert starts == ['queued']
+    assert events

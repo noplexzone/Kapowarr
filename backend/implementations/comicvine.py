@@ -693,6 +693,63 @@ class ComicVine:
 
             return volume_infos
 
+    async def fetch_issue_cover_candidate(
+        self,
+        issue_id: int
+    ) -> Union[Dict[str, Any], None]:
+        """Fetch a ComicVine issue cover candidate for cover-page insertion.
+
+        The issue belongs to the library's monitored ComicVine volume, so this
+        is the preferred source when MangaDex only exposes original-language
+        tankobon covers.
+        """
+        async with AsyncSession() as session:
+            result = await self.__call_api(
+                session,
+                '/issues',
+                {
+                    'field_list': (
+                        'id,issue_number,name,image,site_detail_url,volume'
+                    ),
+                    'filter': f'id:{issue_id}'
+                },
+                {'results': []}
+            )
+
+        issues = result.get('results') or []
+        if not issues:
+            return None
+
+        issue = issues[0]
+        image = issue.get('image') or {}
+        image_url = (
+            image.get('original_url')
+            or image.get('super_url')
+            or image.get('medium_url')
+            or image.get('small_url')
+        )
+        thumbnail_url = (
+            image.get('small_url')
+            or image.get('medium_url')
+            or image_url
+        )
+        if not image_url or not thumbnail_url:
+            return None
+
+        volume = issue.get('volume') or {}
+        return {
+            'source': 'ComicVine',
+            'manga_id': str(volume.get('id') or ''),
+            'manga_title': volume.get('name') or '',
+            'volume': str(issue.get('issue_number') or ''),
+            'cover_id': f"cv-{issue.get('id')}",
+            'file_name': image_url.rsplit('/', 1)[-1],
+            'image_url': image_url,
+            'thumbnail_url': thumbnail_url,
+            'locale': 'en',
+            'description': issue.get('name') or issue.get('site_detail_url'),
+        }
+
     async def fetch_issues(
         self,
         cv_ids: Sequence[Union[str, int]]

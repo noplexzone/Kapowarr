@@ -1220,10 +1220,34 @@ def api_issue_cover_options(issue_id: int):
     volume = Library.get_volume(issue_data.volume_id)
     volume_data = volume.get_data()
 
-    candidates = find_volume_cover_candidates(
+    mangadex_candidates = find_volume_cover_candidates(
         volume_data.title,
         issue_data.calculated_issue_number,
     )
+
+    comicvine_candidate = None
+    try:
+        comicvine_candidate = run(
+            ComicVine().fetch_issue_cover_candidate(issue_data.comicvine_id)
+        )
+    except KapowarrException:
+        raise
+    except Exception as e:
+        LOGGER.warning(
+            "ComicVine cover lookup failed for issue %s: %s",
+            issue_data.comicvine_id,
+            e,
+        )
+
+    if comicvine_candidate:
+        english_mangadex = [
+            c for c in mangadex_candidates
+            if str(c.get('locale') or '').lower() == 'en'
+        ]
+        candidates = [comicvine_candidate, *english_mangadex]
+    else:
+        candidates = mangadex_candidates
+
     return return_api(candidates)
 
 
@@ -1240,11 +1264,20 @@ def api_mangadex_cover_proxy():
         raise InvalidKeyValue('url', cover_url)
 
     parsed_cover_url = urlparse(cover_url)
-    if (
-        parsed_cover_url.scheme != 'https'
-        or parsed_cover_url.netloc != 'uploads.mangadex.org'
-        or not parsed_cover_url.path.startswith('/covers/')
-    ):
+    allowed_cover_url = (
+        parsed_cover_url.scheme == 'https'
+        and (
+            (
+                parsed_cover_url.netloc == 'uploads.mangadex.org'
+                and parsed_cover_url.path.startswith('/covers/')
+            )
+            or (
+                parsed_cover_url.netloc == 'comicvine.gamespot.com'
+                and parsed_cover_url.path.startswith('/a/uploads/')
+            )
+        )
+    )
+    if not allowed_cover_url:
         raise InvalidKeyValue('url', cover_url)
 
     resp = _requests.get(
@@ -1919,11 +1952,20 @@ def api_file_add_cover_page(file_id: int):
         raise KeyNotFound('cover_url')
     from urllib.parse import urlparse
     parsed_cover_url = urlparse(cover_url)
-    if (
-        parsed_cover_url.scheme != 'https'
-        or parsed_cover_url.netloc != 'uploads.mangadex.org'
-        or not parsed_cover_url.path.startswith('/covers/')
-    ):
+    allowed_cover_url = (
+        parsed_cover_url.scheme == 'https'
+        and (
+            (
+                parsed_cover_url.netloc == 'uploads.mangadex.org'
+                and parsed_cover_url.path.startswith('/covers/')
+            )
+            or (
+                parsed_cover_url.netloc == 'comicvine.gamespot.com'
+                and parsed_cover_url.path.startswith('/a/uploads/')
+            )
+        )
+    )
+    if not allowed_cover_url:
         raise InvalidKeyValue('cover_url', cover_url)
     if position not in ('prepend', 'append'):
         raise InvalidKeyValue('position', position)

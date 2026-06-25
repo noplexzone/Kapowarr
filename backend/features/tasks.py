@@ -1185,8 +1185,22 @@ class TaskHandler(metaclass=Singleton):
         }
         self.queue.append(task_data)
         LOGGER.info(f'Added task: {task.display_title} ({id})')
-        WebSocket().emit(TaskAddedEvent(task))
         self._process_queue()
+
+        def _emit_task_added() -> None:
+            try:
+                WebSocket().emit(TaskAddedEvent(task))
+            except Exception:
+                LOGGER.exception(
+                    'Failed to emit task-added websocket event for %s (%s)',
+                    task.display_title, id
+                )
+
+        Thread(
+            target=_emit_task_added,
+            name=f'TaskAddedEvent-{id}',
+            daemon=True
+        ).start()
         return id
 
     @staticmethod

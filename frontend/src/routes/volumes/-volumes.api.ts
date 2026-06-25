@@ -98,6 +98,7 @@ export async function autoSearchVolume(
 ): Promise<{ id: number }> {
   const response = await apiClient.post('system/tasks', {
     json: { cmd: 'auto_search', volume_id: id },
+    timeout: 60000,
   });
   return readJson<{ id: number }>(response);
 }
@@ -123,6 +124,7 @@ export async function autoSearchIssue(
       volume_id: volumeId,
       issue_id: issueId,
     },
+    timeout: 60000,
   });
   return readJson<{ id: number }>(response);
 }
@@ -150,6 +152,7 @@ export async function forceMatchIssue(
       volume_id: volumeId,
       issue_id: issueId,
     },
+    timeout: 60000,
   });
   return readJson<{ id: number }>(response);
 }

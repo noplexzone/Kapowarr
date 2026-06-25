@@ -58,6 +58,22 @@ WETRANSFER_API_LINK = "https://wetransfer.com/api/v4/transfers/{transfer_id}/dow
 # autopep8: on
 
 
+
+def _emit_download_status(download: Download) -> None:
+    """Emit a download status websocket event without blocking the worker.
+
+    Suwayomi downloads run inside queue worker threads. A stalled websocket
+    client must not prevent chapter enqueue/download/PDF assembly from starting.
+    """
+    def _emit() -> None:
+        try:
+            WebSocket().emit(QueueStatusEvent(download))
+        except Exception:
+            LOGGER.exception('Failed to emit websocket download status event')
+
+    Thread(target=_emit, name='DownloadStatusEmit', daemon=True).start()
+
+
 # region Base Direct Download
 class BaseDirectDownload(Download):
     @property
@@ -1245,7 +1261,7 @@ class SuwayomiDownload(BaseDirectDownload):
 
         self._state = DownloadState.DOWNLOADING_STATE
         self._task_label = 'Enqueuing'
-        ws.emit(QueueStatusEvent(self))
+        _emit_download_status(self)
 
         LOGGER.info(
             'Suwayomi: enqueuing download for manga %d chapter %d',
@@ -1260,7 +1276,7 @@ class SuwayomiDownload(BaseDirectDownload):
             return
 
         self._task_label = 'Downloading'
-        ws.emit(QueueStatusEvent(self))
+        _emit_download_status(self)
 
         chapter = client.wait_for_download(manga_id, chapter_id, self._stop_event)
         if chapter is None:
@@ -1288,7 +1304,7 @@ class SuwayomiDownload(BaseDirectDownload):
         self._speed = 0.0
         self._bytes_downloaded = 0
         self._last_progress_at = perf_counter()
-        ws.emit(QueueStatusEvent(self))
+        _emit_download_status(self)
 
         def _on_page(done: int, total: int, bytes_read: int = 0) -> None:
             if total <= 0:
@@ -1300,7 +1316,7 @@ class SuwayomiDownload(BaseDirectDownload):
             self._size = self._bytes_downloaded
             self._speed = round(max(bytes_read, 0) / elapsed, 2)
             self._progress = round(done / total * 100, 2)
-            ws.emit(QueueStatusEvent(self))
+            _emit_download_status(self)
 
         try:
             ok = client.create_cbz(
@@ -1420,7 +1436,7 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
 
         self._state = DownloadState.DOWNLOADING_STATE
         self._task_label = 'Preparing'
-        ws.emit(QueueStatusEvent(self))
+        _emit_download_status(self)
 
         # Collect chapter info in order. This phase occupies the first half of
         # the visible progress range; PDF assembly occupies the second half.
@@ -1428,7 +1444,7 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
         for idx, ch_id in enumerate(chapter_ids):
             self._task_label = f'Downloading {idx + 1}/{total_chapters} ({round(idx / total_chapters * 50)}%)'
             self._progress = round(idx / total_chapters * 50, 2) if total_chapters else 0.0
-            ws.emit(QueueStatusEvent(self))
+            _emit_download_status(self)
 
             LOGGER.info(
                 'SuwayomiVolume: enqueuing chapter %d for manga %d',
@@ -1464,7 +1480,7 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
 
             chapter_info.append((source_order, page_count))
             self._progress = round((idx + 1) / total_chapters * 50, 2) if total_chapters else 0.0
-            ws.emit(QueueStatusEvent(self))
+            _emit_download_status(self)
 
         LOGGER.info(
             'SuwayomiVolume: all %d chapters downloaded; building PDF',
@@ -1476,7 +1492,7 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
         self._speed = 0.0
         self._bytes_downloaded = 0
         self._last_progress_at = perf_counter()
-        ws.emit(QueueStatusEvent(self))
+        _emit_download_status(self)
 
         def _on_page(done: int, total: int, bytes_read: int = 0) -> None:
             if total <= 0:
@@ -1488,7 +1504,7 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
             self._size = self._bytes_downloaded
             self._speed = round(max(bytes_read, 0) / elapsed, 2)
             self._progress = round(50.0 + (done / total * 50.0), 2)
-            ws.emit(QueueStatusEvent(self))
+            _emit_download_status(self)
 
         try:
             ok = client.create_pdf_from_chapters(

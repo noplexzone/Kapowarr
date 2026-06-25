@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from asyncio import run
+from threading import Thread
 from os import listdir
 from os.path import basename, join
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Tuple, Type, Union
@@ -56,6 +57,22 @@ download_type_to_class: Dict[str, Type[Download]] = {
     c.identifier: c
     for c in get_subclasses(BaseDirectDownload)
 }
+
+
+
+def _emit_queue_event(event) -> None:
+    """Emit queue websocket events without blocking queue mutation.
+
+    A stalled websocket client must not prevent a download from being added to
+    the in-memory queue, removed from the DB, or started.
+    """
+    def _emit() -> None:
+        try:
+            WebSocket().emit(event)
+        except Exception:
+            LOGGER.exception('Failed to emit websocket queue event')
+
+    Thread(target=_emit, name='QueueEventEmit', daemon=True).start()
 
 
 class DownloadHandler(metaclass=Singleton):
@@ -413,7 +430,6 @@ class DownloadHandler(metaclass=Singleton):
                 download.download_thread = thread
                 thread.start()
 
-            WebSocket().emit(AddedToQueueEvent(download))
         return downloads
 
     # region Getting
@@ -652,6 +668,8 @@ class DownloadHandler(metaclass=Singleton):
         self.queue += result
 
         self._process_queue()
+        for download in result:
+            _emit_queue_event(AddedToQueueEvent(download))
         return [r.as_dict() for r in result], None
 
     def add_multiple(
@@ -816,7 +834,6 @@ class DownloadHandler(metaclass=Singleton):
         download = self.get_one(download_id)
 
         download.stop()
-        WebSocket().emit(QueueStatusEvent(download))
 
         if not isinstance(download, ExternalDownload):
             # Remove from the in-memory queue immediately. The download
@@ -825,7 +842,8 @@ class DownloadHandler(metaclass=Singleton):
             if download in self.queue:
                 self.queue.remove(download)
             PostProcessor.canceled(download)
-            WebSocket().emit(RemovedFromQueueEvent(download))
+            _emit_queue_event(QueueStatusEvent(download))
+            _emit_queue_event(RemovedFromQueueEvent(download))
 
         if blocklist:
             add_to_blocklist(
@@ -862,22 +880,21 @@ class DownloadHandler(metaclass=Singleton):
         """Remove all downloads from the queue without waiting on threads."""
         downloads = self.queue[:]
         self.queue.clear()
-        ws = WebSocket()
 
-        for download in downloads:
-            download.stop()
-            ws.emit(QueueStatusEvent(download))
-            if not isinstance(download, ExternalDownload):
-                PostProcessor.canceled(download)
-            ws.emit(RemovedFromQueueEvent(download))
-
-        # Clean up any remaining rows in the DB table.  We deliberately
-        # do NOT join() the download threads here — a stuck Suwayomi
-        # thread would block the API response forever and the caller
-        # would never see the queue clear.
+        # Clean up any remaining rows in the DB table before emitting websocket
+        # events.  A stalled socket client must not leave stale DB rows that are
+        # reloaded on the next restart.  We deliberately do NOT join() download
+        # threads here — a stuck Suwayomi thread would block the API response.
         get_db().execute(
             "DELETE FROM download_queue;"
         )
+
+        for download in downloads:
+            download.stop()
+            if not isinstance(download, ExternalDownload):
+                PostProcessor.canceled(download)
+            _emit_queue_event(QueueStatusEvent(download))
+            _emit_queue_event(RemovedFromQueueEvent(download))
 
         self._process_queue()
         return

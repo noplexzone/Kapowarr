@@ -522,6 +522,23 @@ def _remove_individual_suwayomi_results(
     return [r for r in search_results if not _is_individual_suwayomi_result(r)]
 
 
+def _is_trailing_decimal_extra(
+    chapter_number: float,
+    target_chapter_numbers,
+) -> bool:
+    """Return True for source-provided decimal extras after the last target.
+
+    Example: target 264–271 should include source chapter 271.5, but only
+    after the manga has already covered every required target chapter.
+    """
+    if not target_chapter_numbers or chapter_number == int(chapter_number):
+        return False
+    max_target = max(target_chapter_numbers)
+    if max_target != int(max_target):
+        return False
+    return chapter_number > max_target and int(chapter_number) == int(max_target)
+
+
 def _build_suwayomi_bundle_for_issue(
     search_results: List[SearchResultData],
     chapter_numbers: List[float],
@@ -544,6 +561,7 @@ def _build_suwayomi_bundle_for_issue(
         return None
     target = set(chapter_numbers)
     manga_chapters: Dict[int, Dict[float, int]] = {}
+    manga_trailing_extras: Dict[int, Dict[float, int]] = {}
     manga_titles: Dict[int, str] = {}
     manga_source_names: Dict[int, str] = {}
     for result in search_results:
@@ -559,9 +577,14 @@ def _build_suwayomi_bundle_for_issue(
         except (ValueError, IndexError):
             continue
         ch_num = result.get('issue_number')
-        if not isinstance(ch_num, float) or ch_num not in target:
+        if not isinstance(ch_num, float):
             continue
-        manga_chapters.setdefault(manga_id, {})[ch_num] = ch_id
+        if ch_num in target:
+            manga_chapters.setdefault(manga_id, {})[ch_num] = ch_id
+        elif _is_trailing_decimal_extra(ch_num, target):
+            manga_trailing_extras.setdefault(manga_id, {})[ch_num] = ch_id
+        else:
+            continue
         manga_titles.setdefault(manga_id, result.get('series', ''))
         if manga_id not in manga_source_names:
             sw_src = result.get('_sw_source', '')  # type: ignore[call-overload]
@@ -595,11 +618,31 @@ def _build_suwayomi_bundle_for_issue(
             return False
         return True
 
+    def _bundle_pairs_with_trailing_extras(manga_id: int, required_pairs):
+        """Return required pairs plus source epilogues after the last chapter.
+
+        Some manga sources model tankobon extras as a decimal chapter attached
+        to the final chapter number, e.g. JJK Vol. 30 has 271.5 after Ch. 271.
+        MangaDex's aggregate map may omit these.  Once required coverage is
+        complete, include same-manga decimal chapters whose floor is the last
+        required chapter so they are downloaded with the volume.
+        """
+        extras = manga_trailing_extras.get(manga_id, {})
+        if not extras:
+            return required_pairs
+        return sorted(
+            list(required_pairs) + list(extras.items()),
+            key=lambda x: x[0]
+        )
+
     bundles: List[SearchResultData] = []
     for manga_id, num_to_id in manga_chapters.items():
         if not _source_covers_target(num_to_id.keys(), target):
             continue
-        sorted_pairs = sorted(num_to_id.items(), key=lambda x: x[0])
+        required_pairs = sorted(num_to_id.items(), key=lambda x: x[0])
+        sorted_pairs = _bundle_pairs_with_trailing_extras(
+            manga_id, required_pairs
+        )
         ch_ids = [cid for _, cid in sorted_pairs]
         ch_nums_sorted = [n for n, _ in sorted_pairs]
         manga_title = manga_titles.get(manga_id, '')

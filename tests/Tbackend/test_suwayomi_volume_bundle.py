@@ -242,6 +242,72 @@ class ManualSearchVAIBundleTest(unittest.TestCase):
         bundled = [r for r in results if ',' in r.get('link', '')]
         self.assertEqual(len(bundled), 0)
 
+    def test_trailing_decimal_epilogue_is_included_in_bundle(self):
+        """JJK Vol. 30 should bundle source epilogue Ch. 271.5 with 264–271."""
+        raw = _single_chapter_results(ch_range=range(264, 272))
+        raw.append({
+            'link': 'suwayomi:1756:10541',
+            'display_title': 'Jujutsu Kaisen - Ch. 271.5',
+            'source': 'Suwayomi',
+            'series': 'Jujutsu Kaisen',
+            'year': None,
+            'volume_number': None,
+            'special_version': None,
+            'issue_number': 271.5,
+            'annual': False,
+            '_sw_source': 'Atsumaru',
+        })
+        results = _run_manual_search(
+            'Chapters 264-271',
+            raw_results=raw,
+            issue_num=30.0,
+        )
+        bundled = [r for r in results if ',' in r.get('link', '')]
+        self.assertEqual(len(bundled), 1)
+        _, _, ids_str = bundled[0]['link'].split(':', 2)
+        ids = [int(x) for x in ids_str.split(',')]
+        self.assertIn(10541, ids)
+        self.assertEqual(len(ids), 9)
+        self.assertIn('Ch. 264–271.5', bundled[0]['display_title'])
+
+    def test_trailing_decimal_does_not_cover_missing_required_chapter(self):
+        """An epilogue must not make an incomplete volume look complete."""
+        raw = _single_chapter_results(ch_range=range(264, 271))  # missing 271
+        raw.append({
+            'link': 'suwayomi:1756:10541',
+            'display_title': 'Jujutsu Kaisen - Ch. 271.5',
+            'source': 'Suwayomi',
+            'series': 'Jujutsu Kaisen',
+            'year': None,
+            'volume_number': None,
+            'special_version': None,
+            'issue_number': 271.5,
+            'annual': False,
+            '_sw_source': 'Atsumaru',
+        })
+        results = _run_manual_search(
+            'Chapters 264-271',
+            raw_results=raw,
+            issue_num=30.0,
+        )
+        bundled = [r for r in results if ',' in r.get('link', '')]
+        self.assertEqual(len(bundled), 0)
+
+    def test_decimal_target_leniency_still_allows_integer_source(self):
+        """Existing 262.2 target leniency still works when source only has 262."""
+        from backend.features.search import _build_suwayomi_bundle_for_issue
+
+        raw = _single_chapter_results(ch_range=range(255, 264))
+        bundles = _build_suwayomi_bundle_for_issue(
+            raw,
+            [255.0, 256.0, 257.0, 258.0, 259.0, 260.0, 261.0, 262.0, 262.2, 263.0],
+            _make_volume_data(),
+            29.0,
+            display_volume_number=29,
+        )
+        self.assertEqual(len(bundles), 1)
+        self.assertIn('Ch. 255–263', bundles[0]['display_title'])
+
     def test_covered_chapters_absent_from_final_results(self):
         """Individual Suwayomi chapters covered by the bundle must not appear at all."""
         results = _run_manual_search('Chapter 1 ... Chapter 7')

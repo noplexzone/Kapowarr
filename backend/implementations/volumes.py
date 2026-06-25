@@ -461,6 +461,12 @@ class Volume:
                 (self.id,)
             )
             for file in cursor:
+                if not exists(file["filepath"]):
+                    LOGGER.debug(
+                        "Skipping stale file in get_issues (not on disk): %s",
+                        file["filepath"]
+                    )
+                    continue
                 file_mapping.setdefault(file[0], []).append({
                     "id": file["file_id"],
                     "filepath": file["filepath"],
@@ -1706,12 +1712,18 @@ def delete_issue_file(file_id: int) -> None:
     volume_id = FilesDB.volume_of_file(file_data["filepath"])
     unmonitor_deleted_issues = Settings().sv.unmonitor_deleted_issues and volume_id
 
-    if volume_id:
-        vf = Library.get_volume(volume_id).vd.folder
-        delete_file_folder(file_data["filepath"])
-        delete_empty_parent_folders(dirname(file_data["filepath"]), vf)
+    if exists(file_data["filepath"]):
+        if volume_id:
+            vf = Library.get_volume(volume_id).vd.folder
+            delete_file_folder(file_data["filepath"])
+            delete_empty_parent_folders(dirname(file_data["filepath"]), vf)
+        else:
+            delete_file_folder(file_data["filepath"])
     else:
-        delete_file_folder(file_data["filepath"])
+        LOGGER.debug(
+            "File not found on disk during deletion (stale DB row): %s",
+            file_data["filepath"]
+        )
 
     cursor = get_db()
     not_downloaded_issues: List[int] = first_of_subarrays(cursor.execute("""

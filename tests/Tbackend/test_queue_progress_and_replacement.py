@@ -280,3 +280,98 @@ def test_remove_active_download_releases_slot_for_next_download(monkeypatch):
     assert canceled == [1]
     assert starts == ['queued']
     assert events
+
+
+def test_direct_download_post_processing_not_blocked_by_websocket_emit(monkeypatch):
+    from backend.base.definitions import DownloadState
+    from backend.features import download_queue
+    from backend.features.download_queue import DownloadHandler
+
+    successes = []
+    starts = []
+
+    class BlockingWebSocket:
+        def emit(self, event):
+            raise RuntimeError('simulated blocked websocket')
+
+    class FakePostProcessor:
+        @staticmethod
+        def success(download):
+            successes.append(download.id)
+
+        @staticmethod
+        def shutdown(download):  # pragma: no cover - defensive
+            raise AssertionError('unexpected shutdown')
+
+        @staticmethod
+        def canceled(download):  # pragma: no cover - defensive
+            raise AssertionError('unexpected cancel')
+
+        @staticmethod
+        def failed(download):  # pragma: no cover - defensive
+            raise AssertionError('unexpected fail')
+
+    class FakeThread:
+        def __init__(self, name, alive=False):
+            self.name = name
+            self.alive = alive
+
+        def is_alive(self):
+            return self.alive
+
+        def start(self):
+            starts.append(self.name)
+            self.alive = True
+
+    class FakeDownload:
+        def __init__(self, download_id, state, thread):
+            self.id = download_id
+            self.state = state
+            self.download_thread = thread
+            self.volume_id = 1
+            self.issue_id = 1
+            self.source_type = None
+            self.source_name = None
+            self.web_link = None
+            self.web_title = None
+            self.web_sub_title = None
+            self.download_link = 'suwayomi:test'
+            self.files = ['/tmp/test.pdf']
+            self.title = 'test'
+            self.progress = 0
+            self.progress_is_percent = True
+            self.size = -1
+            self.speed = 0
+            self.task_label = 'Queued'
+
+        def run(self):
+            self.state = DownloadState.DOWNLOADING_STATE
+
+        def stop(self, state=DownloadState.CANCELED_STATE):
+            self.state = state
+
+        def as_dict(self):
+            return {'id': self.id, 'status': self.state.value}
+
+    monkeypatch.setattr(download_queue, 'WebSocket', BlockingWebSocket)
+    monkeypatch.setattr(download_queue, 'PostProcessor', FakePostProcessor)
+
+    finished = FakeDownload(
+        1, DownloadState.QUEUED_STATE, FakeThread('finished', alive=True)
+    )
+    queued = SimpleNamespace(
+        state=DownloadState.QUEUED_STATE,
+        download_thread=FakeThread('queued'),
+    )
+
+    handler = DownloadHandler.__new__(DownloadHandler)
+    handler.settings = SimpleNamespace(
+        sv=SimpleNamespace(concurrent_direct_downloads=1)
+    )
+    handler.queue = [finished, queued]
+
+    DownloadHandler._DownloadHandler__run_download(handler, finished)
+
+    assert successes == [1]
+    assert handler.queue == [queued]
+    assert starts == ['queued']

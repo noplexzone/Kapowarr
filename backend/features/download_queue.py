@@ -94,7 +94,6 @@ class DownloadHandler(metaclass=Singleton):
         """
         LOGGER.info(f'Starting download: {download.id}')
 
-        ws = WebSocket()
         status_event = QueueStatusEvent(download)
         try:
             download.run()
@@ -108,7 +107,7 @@ class DownloadHandler(metaclass=Singleton):
             LOGGER.error(f'Download {download.id} failed with unexpected error: {e}', exc_info=True)
             download.stop(DownloadState.FAILED_STATE)
 
-        ws.emit(status_event)
+        _emit_queue_event(status_event)
         if download.state == DownloadState.SHUTDOWN_STATE:
             PostProcessor.shutdown(download)
             return
@@ -121,7 +120,7 @@ class DownloadHandler(metaclass=Singleton):
 
         elif download.state == DownloadState.DOWNLOADING_STATE:
             download.state = DownloadState.IMPORTING_STATE
-            ws.emit(status_event)
+            _emit_queue_event(status_event)
 
             # While this download is post-processing, start the next one.
             self._process_queue()
@@ -130,7 +129,7 @@ class DownloadHandler(metaclass=Singleton):
 
         if download in self.queue:
             self.queue.remove(download)
-        ws.emit(RemovedFromQueueEvent(download))
+        _emit_queue_event(RemovedFromQueueEvent(download))
 
         self._process_queue()
         return

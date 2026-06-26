@@ -23,7 +23,11 @@ export function AddPage({ section }: AddPageProps) {
   const [rawQuery, setRawQuery] = useState('');
   const [query, setQuery] = useState('');
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
-  const metadataSource: MetadataSourceFilter = section === 'manga' ? 'all' : 'comicvine';
+  const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>('comicvine');
+
+  useEffect(() => {
+    setMetadataSource('comicvine');
+  }, [section]);
 
   useEffect(() => {
     const trimmed = rawQuery.trim();
@@ -53,11 +57,14 @@ export function AddPage({ section }: AddPageProps) {
 
   const openModal = useCallback((result: SearchResult) => {
     if ((result.id ?? result.already_added) != null) {
-      navigate({ to: '/comics', search: { sort: 'title', filter: '', view: 'posters', offset: 0 } });
+      navigate({
+        to: section === 'manga' ? '/manga' : '/comics',
+        search: { sort: 'title', filter: '', view: 'posters', offset: 0 },
+      });
       return;
     }
     setModalResult(result);
-  }, [navigate]);
+  }, [navigate, section]);
 
   return (
     <div className={styles.page}>
@@ -74,9 +81,23 @@ export function AddPage({ section }: AddPageProps) {
           autoFocus
         />
         <div className={styles.sectionToggle}>
-          <Badge tone={section === 'comic' ? 'info' : 'neutral'}>{sectionLabel}</Badge>
-          {section === 'manga' && (
-            <Badge tone="neutral">ComicVine, then MangaDex</Badge>
+          {section === 'manga' ? (
+            <label className={styles.sourceField}>
+              <span className={styles.sourceLabel}>Source</span>
+              <select
+                className={styles.sourceSelect}
+                value={metadataSource}
+                onChange={(e) => {
+                  setMetadataSource(e.target.value as MetadataSourceFilter);
+                  setQuery(rawQuery.trim().length >= 2 ? rawQuery.trim() : '');
+                }}
+              >
+                <option value="comicvine">ComicVine</option>
+                <option value="mangadex">MangaDex</option>
+              </select>
+            </label>
+          ) : (
+            <Badge tone="info">ComicVine</Badge>
           )}
         </div>
       </div>

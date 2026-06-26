@@ -278,7 +278,7 @@ export function VolumeDetailPage() {
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: VOLUME_FULL_KEY(id) });
       queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
-      navigate({ to: '/comics' });
+      navigate({ to: volume?.section === 'manga' ? '/manga' : '/comics' });
     },
   });
 
@@ -1798,32 +1798,6 @@ export function VolumeDetailPage() {
                       ))}
                     </tbody>
                   </table>
-                  <div className={styles.renameActions}>
-                    <Button
-                      variant="primary"
-                      disabled={
-                        manageChecked.size === 0 ||
-                        manageDeleting ||
-                        manageForceMatching
-                      }
-                      onClick={handleDeleteSelected}
-                    >
-                      {manageDeleting ? 'Deleting…' : 'Delete Selected'}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={
-                        manageChecked.size === 0 ||
-                        manageDeleting ||
-                        manageForceMatching
-                      }
-                      onClick={handleForceMatchSelected}
-                    >
-                      {manageForceMatching
-                        ? 'Matching…'
-                        : 'Force Match Selected'}
-                    </Button>
-                  </div>
                 </>
               )}
 
@@ -1931,7 +1905,7 @@ export function VolumeDetailPage() {
                       })}
                     </tbody>
                   </table>
-                  <div className={styles.renameActions}>
+                  <div className={styles.inlineActions}>
                     <Button
                       variant="primary"
                       disabled={
@@ -1954,12 +1928,36 @@ export function VolumeDetailPage() {
                 </>
               )}
 
-              <div className={styles.renameActions}>
+              <div className={styles.manageDialogActions}>
                 <Button
                   variant="secondary"
                   onClick={closeManageIssues}
                 >
                   Close
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={
+                    manageChecked.size === 0 ||
+                    manageDeleting ||
+                    manageForceMatching
+                  }
+                  onClick={handleDeleteSelected}
+                >
+                  {manageDeleting ? 'Deleting…' : 'Delete Selected'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={
+                    manageChecked.size === 0 ||
+                    manageDeleting ||
+                    manageForceMatching
+                  }
+                  onClick={handleForceMatchSelected}
+                >
+                  {manageForceMatching
+                    ? 'Matching…'
+                    : 'Force Match Selected'}
                 </Button>
               </div>
             </>

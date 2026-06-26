@@ -710,6 +710,35 @@
   min-height: 2.75rem;
 }
 
+.inlineActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  margin-top: 0.75rem;
+}
+
+.manageDialogActions {
+  position: sticky;
+  bottom: -1.25rem;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  margin: 0.75rem -1.25rem -1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 16px rgba(0, 0, 0, 0.16);
+}
+
+.manageDialogActions button {
+  min-height: 2.75rem;
+}
+
 /* ── Cover candidates grid ───────────────────────── */
 .coverGrid {
   display: flex;

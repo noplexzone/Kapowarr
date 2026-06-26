@@ -32,8 +32,22 @@
   gap: 0.5rem;
 }
 
+.sourceField {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.sourceLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .sourceSelect {
-  padding: 0.35em 0.5em;
+  padding: 0.45em 0.65em;
   background: var(--surface-raised);
   color: var(--text);
   border: 1px solid var(--border);

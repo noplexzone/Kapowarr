@@ -1323,3 +1323,13 @@ def _migrate_add_metadata_source_to_volumes():
             AND (metadata_id IS NULL OR metadata_id = '');
     """)
     return
+
+
+@DatabaseMigrationHandler.register_handler(55)
+def _migrate_add_metadata_language_to_volumes():
+    cursor = get_db()
+    cursor.execute("""
+        ALTER TABLE volumes
+            ADD COLUMN metadata_language VARCHAR(20) NOT NULL DEFAULT 'en';
+    """)
+    return

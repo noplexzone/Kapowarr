@@ -272,7 +272,7 @@ class Volume:
         data = get_db().execute(
             """
             SELECT
-                id, comicvine_id, metadata_source, metadata_id,
+                id, comicvine_id, metadata_source, metadata_id, metadata_language,
                 title, alt_title,
                 year, publisher, volume_number,
                 description, site_url,
@@ -299,7 +299,7 @@ class Volume:
         """
         volume_info = get_db().execute("""
             SELECT
-                v.id, comicvine_id, metadata_source, metadata_id,
+                v.id, comicvine_id, metadata_source, metadata_id, metadata_language,
                 title, year, publisher,
                 volume_number,
                 special_version, special_version_locked,
@@ -1192,6 +1192,7 @@ class Library:
                     comicvine_id,
                     metadata_source,
                     metadata_id,
+                    metadata_language,
                     title,
                     alt_title,
                     year,
@@ -1207,7 +1208,7 @@ class Library:
                     special_version,
                     special_version_locked
                 ) VALUES (
-                    :comicvine_id, :metadata_source, :metadata_id, :title, :alt_title,
+                    :comicvine_id, :metadata_source, :metadata_id, :metadata_language, :title, :alt_title,
                     :year, :publisher, :volume_number, :description,
                     :site_url, :monitored, :monitor_new_issues,
                     :root_folder, :custom_folder,
@@ -1218,6 +1219,7 @@ class Library:
                     "comicvine_id": vd["comicvine_id"],
                     "metadata_source": "comicvine",
                     "metadata_id": str(vd["comicvine_id"]),
+                    "metadata_language": "en",
                     "title": vd["title"],
                     "alt_title": (vd["aliases"] or [None])[0],
                     "year": vd["year"],
@@ -1329,17 +1331,23 @@ class Library:
 
 
     @classmethod
-    def _metadata_to_id(cls, metadata_source: str, metadata_id: str) -> Union[int, None]:
-        """Find the local volume ID for a metadata source/id pair."""
+    def _metadata_to_id(
+        cls,
+        metadata_source: str,
+        metadata_id: str,
+        metadata_language: str = 'en'
+    ) -> Union[int, None]:
+        """Find the local volume ID for a metadata source/id/language tuple."""
         result = get_db().execute(
             """
             SELECT id
             FROM volumes
             WHERE metadata_source = ?
                 AND metadata_id = ?
+                AND metadata_language = ?
             LIMIT 1;
             """,
-            (metadata_source, metadata_id)
+            (metadata_source, metadata_id, metadata_language)
         ).fetchone()
         return result[0] if result else None
 
@@ -1353,7 +1361,8 @@ class Library:
         monitor_new_issues: bool = True,
         volume_folder: Union[str, None] = None,
         special_version: Union[SpecialVersion, None] = None,
-        auto_search: bool = False
+        auto_search: bool = False,
+        translated_language: str = 'en'
     ) -> int:
         """Add a MangaDex-backed manga volume to the library."""
         from backend.implementations.naming import generate_volume_folder_path
@@ -1361,9 +1370,9 @@ class Library:
         if not mangadex_id:
             raise InvalidKeyValue('metadata_id', mangadex_id)
 
-        potential_volume_id = cls._metadata_to_id('mangadex', mangadex_id)
+        potential_volume_id = cls._metadata_to_id('mangadex', mangadex_id, translated_language)
         if potential_volume_id:
-            raise VolumeAlreadyAdded(mangadex_surrogate_id(mangadex_id), potential_volume_id)
+            raise VolumeAlreadyAdded(mangadex_surrogate_id(mangadex_id, translated_language), potential_volume_id)
 
         root_folder = RootFolders().get_one(root_folder_id)
         client = MangaDexClient()
@@ -1371,8 +1380,12 @@ class Library:
         if not manga:
             raise InvalidKeyValue('metadata_id', mangadex_id)
 
-        mapping = client.get_aggregate_volume_map(mangadex_id)
-        vd = format_mangadex_volume_result(manga, mapping)
+        mapping = client.get_aggregate_volume_map(mangadex_id, translated_language)
+        try:
+            covers = client.get_covers(mangadex_id)
+        except Exception:
+            covers = []
+        vd = format_mangadex_volume_result(manga, mapping, translated_language, covers)
         issue_rows = format_mangadex_issue_rows(mangadex_id, mapping)
 
         cursor = get_db()
@@ -1383,6 +1396,7 @@ class Library:
                     comicvine_id,
                     metadata_source,
                     metadata_id,
+                    metadata_language,
                     title,
                     alt_title,
                     year,
@@ -1398,7 +1412,7 @@ class Library:
                     special_version,
                     special_version_locked
                 ) VALUES (
-                    :comicvine_id, :metadata_source, :metadata_id,
+                    :comicvine_id, :metadata_source, :metadata_id, :metadata_language,
                     :title, :alt_title,
                     :year, :publisher, :volume_number, :description,
                     :site_url, :monitored, :monitor_new_issues,
@@ -1410,6 +1424,7 @@ class Library:
                     "comicvine_id": vd["comicvine_id"],
                     "metadata_source": "mangadex",
                     "metadata_id": mangadex_id,
+                    "metadata_language": translated_language,
                     "title": vd["title"],
                     "alt_title": (vd["aliases"] or [None])[0],
                     "year": vd["year"],
@@ -1486,7 +1501,7 @@ class Library:
                 LOGGER.debug("Suwayomi auto-library sync failed for '%s': %s", title, exc)
 
         Thread(target=_sync_to_suwayomi, args=(vd["title"],), daemon=True).start()
-        LOGGER.info('Added MangaDex volume %s as ID %d', mangadex_id, volume_id)
+        LOGGER.info('Added MangaDex volume %s (%s) as ID %d', mangadex_id, translated_language, volume_id)
         return volume_id
 
 # region Refresh & Scan

@@ -2,6 +2,8 @@ export interface SearchResult {
   comicvine_id: number;
   metadata_source?: 'comicvine' | 'mangadex';
   metadata_id?: string;
+  metadata_language?: string;
+  available_languages?: string[];
   title: string;
   year: number;
   publisher: string;

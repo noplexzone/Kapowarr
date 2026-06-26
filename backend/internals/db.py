@@ -359,6 +359,7 @@ CREATE TABLE IF NOT EXISTS volumes(
     comicvine_id INTEGER NOT NULL,
     metadata_source VARCHAR(50) NOT NULL DEFAULT 'comicvine',
     metadata_id TEXT NOT NULL DEFAULT '',
+    metadata_language VARCHAR(20) NOT NULL DEFAULT 'en',
     title VARCHAR(255) NOT NULL,
     alt_title VARCHAR(255),
     year INTEGER(5),

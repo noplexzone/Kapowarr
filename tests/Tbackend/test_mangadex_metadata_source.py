@@ -55,12 +55,43 @@ def test_format_mangadex_volume_result_contains_source_identity_and_cover():
     result = format_mangadex_volume_result(manga, {1.0: [1.0, 2.0]})
 
     assert result['metadata_source'] == 'mangadex'
+    assert result['metadata_language'] == 'en'
+    assert result['available_languages'] == []
     assert result['metadata_id'] == manga['id']
     assert result['comicvine_id'] < 0
     assert result['title'] == 'Jujutsu Kaisen Modulo'
     assert result['publisher'] == 'MangaDex'
     assert result['issue_count'] == 1
     assert result['cover_link'].endswith('/cover.jpg.256.jpg')
+
+
+
+def test_format_mangadex_volume_result_prefers_first_numbered_cover():
+    manga = {
+        'id': 'f3f59f12-351a-4de7-bd51-696d0764d64e',
+        'attributes': {
+            'title': {'ja-ro': 'Jujutsu Kaisen Modulo'},
+            'availableTranslatedLanguages': ['fr', 'en'],
+            'year': 2025,
+        },
+        'relationships': [
+            {
+                'type': 'cover_art',
+                'attributes': {'fileName': 'relationship-volume-3.jpg'},
+            }
+        ],
+    }
+    covers = [
+        {'attributes': {'volume': '3', 'fileName': 'volume-3.jpg'}},
+        {'attributes': {'volume': '1', 'fileName': 'volume-1.jpg'}},
+        {'attributes': {'volume': '2', 'fileName': 'volume-2.jpg'}},
+    ]
+
+    result = format_mangadex_volume_result(manga, {1.0: [1.0]}, covers=covers)
+
+    assert result['metadata_language'] == 'en'
+    assert result['available_languages'] == ['en', 'fr']
+    assert result['cover_link'].endswith('/volume-1.jpg.256.jpg')
 
 
 def test_api_manga_search_all_sources_returns_comicvine_and_mangadex(monkeypatch):
@@ -115,6 +146,8 @@ def test_api_manga_search_all_sources_returns_comicvine_and_mangadex(monkeypatch
             'comicvine_id': -2262949737,
             'metadata_source': 'mangadex',
             'metadata_id': 'f3f59f12-351a-4de7-bd51-696d0764d64e',
+            'metadata_language': 'en',
+            'available_languages': ['en', 'fr'],
             'title': 'Jujutsu Kaisen Modulo',
             'year': 2025,
             'volume_number': 1,

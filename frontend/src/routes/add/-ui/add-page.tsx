@@ -178,6 +178,9 @@ function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
   const [monitorIssues, setMonitorIssues] = useState(true);
   const [monitoringScheme, setMonitoringScheme] = useState('all');
   const [specialVersion, setSpecialVersion] = useState('');
+  const [metadataLanguage, setMetadataLanguage] = useState(
+    result.metadata_language ?? result.available_languages?.[0] ?? 'en'
+  );
   const [autoSearch, setAutoSearch] = useState(true);
 
   const mutation = useMutation({
@@ -190,6 +193,7 @@ function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
       comicvine_id: result.comicvine_id,
       metadata_source: result.metadata_source ?? 'comicvine',
       metadata_id: result.metadata_id,
+      metadata_language: result.metadata_source === 'mangadex' ? metadataLanguage : undefined,
       root_folder_id: rootFolderId,
       monitor_volume: monitorVolume,
       monitor_issues: monitorIssues,
@@ -250,6 +254,22 @@ function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
                 ))}
               </select>
             </div>
+
+
+            {result.metadata_source === 'mangadex' && result.available_languages?.length ? (
+              <div className={styles.formField}>
+                <label className={styles.formLabel}>MangaDex Language</label>
+                <select
+                  className={styles.formSelect}
+                  value={metadataLanguage}
+                  onChange={(e) => setMetadataLanguage(e.target.value)}
+                >
+                  {result.available_languages.map((lang) => (
+                    <option key={lang} value={lang}>{lang}</option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
 
             <div className={styles.formField}>
               <label className={styles.formLabel}>Special Version</label>

@@ -111,12 +111,16 @@ class MangaDexClient:
         resp.raise_for_status()
         return resp.json().get("data") or {}
 
-    def get_aggregate_volume_map(self, mangadex_id: str) -> VolumeChapterMap:
-        """Fetch and parse the English aggregate map, including unavailable chapters."""
+    def get_aggregate_volume_map(
+        self,
+        mangadex_id: str,
+        translated_language: str = "en"
+    ) -> VolumeChapterMap:
+        """Fetch and parse an aggregate map, including unavailable chapters."""
         resp = self._ssn.get(
             f"{self._base_url}/manga/{mangadex_id}/aggregate",
             params=(
-                ("translatedLanguage[]", "en"),
+                ("translatedLanguage[]", translated_language),
                 ("includeUnavailable", "1"),
             ),
             timeout=Constants.REQUEST_TIMEOUT,
@@ -128,7 +132,11 @@ class MangaDexClient:
         """Fetch up to 100 cover art records for a manga."""
         resp = self._ssn.get(
             f"{self._base_url}/cover",
-            params=[("manga[]", manga_id), ("limit", "100")],
+            params=[
+                ("manga[]", manga_id),
+                ("limit", "100"),
+                ("order[volume]", "asc"),
+            ],
             timeout=Constants.REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
@@ -159,19 +167,59 @@ def _first_title(manga: dict, fallback: str = "") -> str:
     return fallback
 
 
-def _cover_links(manga: dict) -> tuple[str, str]:
+def _volume_sort_key(value: Union[str, None]) -> tuple[int, float, str]:
+    if value in (None, ""):
+        return (1, 0.0, "")
+    try:
+        return (0, float(value), str(value))
+    except (TypeError, ValueError):
+        return (2, 0.0, str(value))
+
+
+def _cover_url(manga_id: str, file_name: str) -> tuple[str, str]:
+    return (
+        f"https://uploads.mangadex.org/covers/{manga_id}/{file_name}.256.jpg",
+        f"https://uploads.mangadex.org/covers/{manga_id}/{file_name}",
+    )
+
+
+def _cover_links(manga: dict, covers: Union[List[dict], None] = None) -> tuple[str, str]:
     manga_id = manga.get("id") or ""
+    cover_records = covers or []
+
+    def file_name(record: dict) -> str:
+        return str((record.get("attributes") or {}).get("fileName") or "")
+
+    if cover_records:
+        # The manga relationship can point at a later or promotional cover.  For
+        # add/search cards, prefer the first numbered print-volume cover.
+        sorted_covers = sorted(
+            (c for c in cover_records if file_name(c)),
+            key=lambda c: _volume_sort_key((c.get("attributes") or {}).get("volume")),
+        )
+        if sorted_covers:
+            return _cover_url(manga_id, file_name(sorted_covers[0]))
+
     for rel in manga.get("relationships") or []:
         if rel.get("type") != "cover_art":
             continue
-        file_name = (rel.get("attributes") or {}).get("fileName")
-        if not file_name:
-            continue
-        return (
-            f"https://uploads.mangadex.org/covers/{manga_id}/{file_name}.256.jpg",
-            f"https://uploads.mangadex.org/covers/{manga_id}/{file_name}",
-        )
+        name = (rel.get("attributes") or {}).get("fileName")
+        if name:
+            return _cover_url(manga_id, str(name))
     return "", ""
+
+
+def _available_languages(manga: dict) -> List[str]:
+    attrs = manga.get("attributes") or {}
+    languages = attrs.get("availableTranslatedLanguages") or []
+    return sorted({str(lang) for lang in languages if lang})
+
+
+def _default_language(manga: dict) -> str:
+    languages = _available_languages(manga)
+    if "en" in languages:
+        return "en"
+    return languages[0] if languages else "en"
 
 
 def _numbered_volume_keys(mapping: VolumeChapterMap) -> List[float]:
@@ -218,11 +266,17 @@ def format_mangadex_issue_rows(mangadex_id: str, mapping: VolumeChapterMap) -> L
     return rows
 
 
-def format_mangadex_volume_result(manga: dict, mapping: Union[VolumeChapterMap, None] = None) -> VolumeMetadata:
+def format_mangadex_volume_result(
+    manga: dict,
+    mapping: Union[VolumeChapterMap, None] = None,
+    translated_language: Union[str, None] = None,
+    covers: Union[List[dict], None] = None,
+) -> VolumeMetadata:
     attrs = manga.get("attributes") or {}
     mangadex_id = str(manga.get("id") or "")
     title = _first_title(manga, mangadex_id)
-    thumb, cover = _cover_links(manga)
+    language = translated_language or _default_language(manga)
+    thumb, cover = _cover_links(manga, covers)
     issue_count = len(_numbered_volume_keys(mapping or {})) if mapping else 0
     if not issue_count:
         try:
@@ -233,6 +287,8 @@ def format_mangadex_volume_result(manga: dict, mapping: Union[VolumeChapterMap, 
         "comicvine_id": mangadex_surrogate_id(mangadex_id),
         "metadata_source": "mangadex",
         "metadata_id": mangadex_id,
+        "metadata_language": language,
+        "available_languages": _available_languages(manga),
         "title": title,
         "year": attrs.get("year"),
         "volume_number": 1,
@@ -261,11 +317,16 @@ def search_mangadex_volumes(title: str, limit: int = 10) -> List[VolumeMetadata]
             mangadex_id = str(manga.get("id") or "")
             if not mangadex_id:
                 continue
+            language = _default_language(manga)
             try:
-                mapping = client.get_aggregate_volume_map(mangadex_id)
+                mapping = client.get_aggregate_volume_map(mangadex_id, language)
             except RequestException:
                 mapping = {}
-            results.append(format_mangadex_volume_result(manga, mapping))
+            try:
+                covers = client.get_covers(mangadex_id)
+            except RequestException:
+                covers = []
+            results.append(format_mangadex_volume_result(manga, mapping, language, covers))
         return results
     except (KeyError, RequestException, ValueError) as e:
         LOGGER.warning("MangaDex volume search failed for %s: %s", title, e)

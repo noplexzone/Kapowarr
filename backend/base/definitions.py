@@ -630,6 +630,8 @@ class VolumeMetadata(TypedDict):
     comicvine_id: int
     metadata_source: str
     metadata_id: str
+    metadata_language: str
+    available_languages: List[str]
     title: str
     year: Union[int, None]
     volume_number: int
@@ -788,6 +790,7 @@ class VolumeData:
     last_cv_fetch: int
     metadata_source: str = 'comicvine'
     metadata_id: str = ''
+    metadata_language: str = 'en'
 
 
 @dataclass

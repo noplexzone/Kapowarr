@@ -36,6 +36,7 @@ export interface AddVolumePayload {
   comicvine_id: number;
   metadata_source?: 'comicvine' | 'mangadex';
   metadata_id?: string;
+  metadata_language?: string;
   root_folder_id: number;
   monitor_volume: boolean;
   monitor_issues: boolean;

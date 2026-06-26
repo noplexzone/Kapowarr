@@ -881,9 +881,10 @@ def api_volumes_search():
                     FROM volumes
                     WHERE metadata_source = 'mangadex'
                         AND metadata_id = ?
+                        AND metadata_language = ?
                     LIMIT 1;
                     """,
-                    (r['metadata_id'],)
+                    (r['metadata_id'], r.get('metadata_language') or 'en')
                 ).fetchone()
                 r['already_added'] = already_added[0] if already_added else None
             return results
@@ -967,6 +968,9 @@ def api_volumes():
 
         comicvine_id = data.get('comicvine_id')
         metadata_id = data.get('metadata_id')
+        metadata_language = data.get('metadata_language') or 'en'
+        if not isinstance(metadata_language, str) or not metadata_language:
+            raise InvalidKeyValue('metadata_language', metadata_language)
         if metadata_source == 'comicvine' and comicvine_id is None:
             raise KeyNotFound('comicvine_id')
         if metadata_source == 'mangadex' and not isinstance(metadata_id, str):

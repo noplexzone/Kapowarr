@@ -129,6 +129,7 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  min-height: 44px;
   padding: 0.5rem 1.25rem;
   font-size: 0.875rem;
   font-weight: 500;
@@ -145,6 +146,7 @@
 
 .collapsed .navItem {
   justify-content: center;
+  min-height: 44px;
   padding: 0.6rem 0;
   gap: 0;
 }
@@ -180,7 +182,8 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.3rem 0.75rem;
+  min-height: 44px;
+  padding: 0.45rem 0.75rem;
   font-size: 0.8rem;
   color: var(--text-dim);
   text-decoration: none;
@@ -215,8 +218,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   margin-right: 4px;
   padding: 0;
   background: none;
@@ -289,6 +292,7 @@
   align-items: center;
   justify-content: center;
   width: 100%;
+  min-height: 44px;
   padding: 0.6rem 0;
   background: transparent;
   border: 0;
@@ -317,6 +321,27 @@
   display: none;
 }
 
+.mobileClose {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mobileClose:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
 /* ── Mobile overlay ────────────────────────────── */
 @media (max-width: 768px) {
   .sidebar {
@@ -324,7 +349,7 @@
     top: 0;
     left: 0;
     height: 100vh;
-    width: var(--nav-width);
+    width: min(var(--nav-width), 86vw);
     z-index: 100;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
@@ -333,5 +358,23 @@
   .sidebar.overlayOpen {
     transform: translateX(0);
     box-shadow: 2px 0 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .sidebar.overlayOpen .mobileClose {
+    display: inline-flex;
+  }
+
+  .sidebar.overlayOpen .brand {
+    justify-content: flex-start;
+    padding: 0.75rem 1rem;
+  }
+
+  .sidebar.overlayOpen .searchBar {
+    margin: 0.5rem 0.75rem;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    justify-content: flex-start;
   }
 }

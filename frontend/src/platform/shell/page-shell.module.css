@@ -36,9 +36,9 @@
     position: fixed;
     top: 0.75rem;
     left: 0.75rem;
-    z-index: 50;
-    width: 2.25rem;
-    height: 2.25rem;
+    z-index: 80;
+    width: 2.75rem;
+    height: 2.75rem;
     background: var(--surface-raised);
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -52,7 +52,7 @@
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.55);
     z-index: 90;
   }
 

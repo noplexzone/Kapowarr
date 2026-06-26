@@ -179,13 +179,24 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
     <aside
       className={clsx(
         styles.sidebar,
-        sidebarCollapsed && styles.collapsed,
+        sidebarCollapsed && !overlayOpen && styles.collapsed,
         overlayOpen && styles.overlayOpen,
       )}
     >
       <div className={styles.brand}>
         <img className={styles.brandIcon} src="/ui/favicon.svg" alt="Kapowarr" />
-        {!sidebarCollapsed && <span className={styles.brandText}>Kapowarr</span>}
+        {(!sidebarCollapsed || overlayOpen) && <span className={styles.brandText}>Kapowarr</span>}
+        {overlayOpen && onClose && (
+          <button
+            type="button"
+            className={styles.mobileClose}
+            onClick={onClose}
+            aria-label="Close navigation menu"
+            title="Close menu"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       <div className={styles.searchBar}>
@@ -193,7 +204,7 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
           <circle cx="11" cy="11" r="8" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
-        {!sidebarCollapsed && (
+        {(!sidebarCollapsed || overlayOpen) && (
           <input type="text" className={styles.searchInput} placeholder="Search library…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleSearchKeyDown} autoComplete="off" />
         )}
       </div>
@@ -219,7 +230,7 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
 
           return (
             <div key={item.to + item.label} className={styles.navGroup}>
-              {!sidebarCollapsed ? (
+              {(!sidebarCollapsed || overlayOpen) ? (
                 <div className={styles.navParent}>
                   <Link to={item.to as any} className={clsx(styles.navItem, active && styles.active)} onClick={onClose} title={sidebarCollapsed ? item.label : undefined}>
                     <NavIcon name={item.label} className={styles.navIcon} />
@@ -239,9 +250,9 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
                 </Link>
               )}
 
-              <div className={clsx(styles.subNav, (!isExpanded || sidebarCollapsed) && styles.subNavCollapsed)} aria-hidden={!isExpanded || sidebarCollapsed || undefined} inert={isExpanded && !sidebarCollapsed ? undefined : true}>
+              <div className={clsx(styles.subNav, (!isExpanded || (sidebarCollapsed && !overlayOpen)) && styles.subNavCollapsed)} aria-hidden={!isExpanded || (sidebarCollapsed && !overlayOpen) || undefined} inert={isExpanded && (!sidebarCollapsed || overlayOpen) ? undefined : true}>
                 {item.children!.map((child) => (
-                  <Link key={child.to} to={child.to as any} className={clsx(styles.subNavItem, isSubActive(child, pathname) && styles.subActive)} onClick={onClose} tabIndex={isExpanded && !sidebarCollapsed ? 0 : -1} title={sidebarCollapsed ? child.label : undefined}>
+                  <Link key={child.to} to={child.to as any} className={clsx(styles.subNavItem, isSubActive(child, pathname) && styles.subActive)} onClick={onClose} tabIndex={isExpanded && (!sidebarCollapsed || overlayOpen) ? 0 : -1} title={sidebarCollapsed && !overlayOpen ? child.label : undefined}>
                     <NavIcon name={child.label} className={styles.subNavIcon} />
                     <span>{child.label}</span>
                   </Link>
@@ -283,7 +294,7 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
         </svg>
       </button>
 
-      {!sidebarCollapsed && (
+      {(!sidebarCollapsed || overlayOpen) && (
         <footer className={styles.footer}>
           <span className={styles.footerVersion}>
             Kapowarr {about?.version ?? '…'}

@@ -21,4 +21,5 @@ export interface SearchResult {
 export interface RootFolder {
   id: number;
   folder: string;
+  section: 'comic' | 'manga';
 }

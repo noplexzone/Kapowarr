@@ -82,6 +82,7 @@ export function AddPage({ section }: AddPageProps) {
         <AddModal
           result={modalResult}
           rootFolders={rootFolders}
+          section={section}
           onClose={() => setModalResult(null)}
           onAdded={(_id) => {
             setModalResult(null);
@@ -168,13 +169,15 @@ const SPECIAL_VERSION_OPTIONS = [
 
 interface AddModalProps {
   result: SearchResult;
-  rootFolders: { id: number; folder: string }[];
+  rootFolders: { id: number; folder: string; section: 'comic' | 'manga' }[];
+  section: 'comic' | 'manga';
   onClose: () => void;
   onAdded: (id: number) => void;
 }
 
-function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
-  const defaultFolder = rootFolders[0]?.id ?? 0;
+function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalProps) {
+  const sectionRootFolders = rootFolders.filter((rf) => rf.section === section);
+  const defaultFolder = sectionRootFolders[0]?.id ?? 0;
 
   const [rootFolderId, setRootFolderId] = useState(defaultFolder);
   const [volumeFolder, setVolumeFolder] = useState(result.title.replace(/[/\\:*?"<>|]/g, ''));
@@ -230,7 +233,7 @@ function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
                 value={rootFolderId}
                 onChange={(e) => setRootFolderId(Number(e.target.value))}
               >
-                {rootFolders.map((rf) => (
+                {sectionRootFolders.map((rf) => (
                   <option key={rf.id} value={rf.id}>{rf.folder}</option>
                 ))}
               </select>
@@ -323,7 +326,7 @@ function AddModal({ result, rootFolders, onClose, onAdded }: AddModalProps) {
           <Button
             variant="primary"
             onClick={handleSubmit}
-            disabled={mutation.isPending || rootFolders.length === 0}
+            disabled={mutation.isPending || sectionRootFolders.length === 0}
           >
             {mutation.isPending ? 'Adding…' : 'Add Volume'}
           </Button>

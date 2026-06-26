@@ -1375,6 +1375,8 @@ class Library:
             raise VolumeAlreadyAdded(mangadex_surrogate_id(mangadex_id, translated_language), potential_volume_id)
 
         root_folder = RootFolders().get_one(root_folder_id)
+        if root_folder.section != 'manga':
+            raise InvalidKeyValue('root_folder_id', root_folder_id)
         client = MangaDexClient()
         manga = client.get_manga(mangadex_id)
         if not manga:

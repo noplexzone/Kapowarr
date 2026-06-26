@@ -229,6 +229,22 @@ def _numbered_volume_keys(mapping: VolumeChapterMap) -> List[float]:
     return sorted(mapping)
 
 
+def _reported_volume_count(attrs: dict, mapping: Union[VolumeChapterMap, None]) -> int:
+    """Return MangaDex's physical volume count for search cards.
+
+    Language-filtered aggregate data only includes volumes with chapters in that
+    translation, so it can undercount long-running manga.  The manga
+    ``lastVolume`` attribute is the better card-count source when present.
+    """
+    try:
+        last_volume = int(float(str(attrs.get("lastVolume") or "0")))
+    except (TypeError, ValueError):
+        last_volume = 0
+
+    aggregate_count = len(_numbered_volume_keys(mapping or {})) if mapping else 0
+    return max(last_volume, aggregate_count)
+
+
 def format_mangadex_issue_rows(mangadex_id: str, mapping: VolumeChapterMap) -> List[dict]:
     """Convert a MangaDex aggregate volume map into Kapowarr issue rows."""
     rows: List[dict] = []
@@ -277,12 +293,7 @@ def format_mangadex_volume_result(
     title = _first_title(manga, mangadex_id)
     language = translated_language or _default_language(manga)
     thumb, cover = _cover_links(manga, covers)
-    issue_count = len(_numbered_volume_keys(mapping or {})) if mapping else 0
-    if not issue_count:
-        try:
-            issue_count = int(attrs.get("lastVolume") or 0)
-        except (TypeError, ValueError):
-            issue_count = 0
+    issue_count = _reported_volume_count(attrs, mapping)
     return {
         "comicvine_id": mangadex_surrogate_id(mangadex_id),
         "metadata_source": "mangadex",

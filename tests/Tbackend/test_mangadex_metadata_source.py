@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from backend.implementations.mangadex import (
+    _reported_volume_count,
     format_mangadex_issue_rows,
     format_mangadex_volume_result,
     mangadex_surrogate_id,
@@ -92,6 +93,11 @@ def test_format_mangadex_volume_result_prefers_first_numbered_cover():
     assert result['metadata_language'] == 'en'
     assert result['available_languages'] == ['en', 'fr']
     assert result['cover_link'].endswith('/volume-1.jpg.256.jpg')
+
+
+def test_reported_volume_count_prefers_last_volume_over_translation_aggregate():
+    assert _reported_volume_count({'lastVolume': '30'}, {1.0: [1.0], 30.0: [271.0]}) == 30
+    assert _reported_volume_count({'lastVolume': None}, {1.0: [1.0], 3.0: [10.0]}) == 2
 
 
 def test_api_manga_search_all_sources_returns_comicvine_and_mangadex(monkeypatch):

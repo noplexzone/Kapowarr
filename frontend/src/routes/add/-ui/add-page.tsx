@@ -107,9 +107,22 @@ interface ResultCardProps {
   onClick: (result: SearchResult) => void;
 }
 
+function proxiedMangaDexCover(url: string): string {
+  const base = getUrlBase().replace(/\/$/, '');
+  return `${base}/api/mangadex/cover-proxy?url=${encodeURIComponent(url)}`;
+}
+
 function getCoverSrc(result: SearchResult): string | null {
-  if (result.cover_link) return result.cover_link;
+  if (result.cover_link) {
+    if (/^https:\/\/uploads\.mangadex\.org\/covers\//i.test(result.cover_link)) {
+      return proxiedMangaDexCover(result.cover_link);
+    }
+    return result.cover_link;
+  }
   if (result.cover_url) {
+    if (/^https:\/\/uploads\.mangadex\.org\/covers\//i.test(result.cover_url)) {
+      return proxiedMangaDexCover(result.cover_url);
+    }
     if (/^https?:\/\//i.test(result.cover_url)) return result.cover_url;
     const base = getUrlBase();
     return `${base}/api/${result.cover_url.replace(/^\/+/, '')}`;

@@ -8,6 +8,7 @@ import {
   rootFoldersQueryOptions,
   addVolume,
   type AddVolumePayload,
+  type MetadataSourceFilter,
 } from '../-add.api';
 import type { SearchResult } from '../-add.types';
 import { getUrlBase } from '@/app/api-client';
@@ -22,7 +23,7 @@ export function AddPage({ section }: AddPageProps) {
   const [rawQuery, setRawQuery] = useState('');
   const query = useDeferredValue(rawQuery);
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
-  const [metadataSource, setMetadataSource] = useState<'comicvine' | 'mangadex'>('comicvine');
+  const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>(section === 'manga' ? 'all' : 'comicvine');
 
   const { data: results = [], isFetching } = useQuery({
     ...searchVolumesQueryOptions(query, section, metadataSource),
@@ -59,9 +60,10 @@ export function AddPage({ section }: AddPageProps) {
             <select
               className={styles.sourceSelect}
               value={metadataSource}
-              onChange={(e) => setMetadataSource(e.target.value as 'comicvine' | 'mangadex')}
+              onChange={(e) => setMetadataSource(e.target.value as MetadataSourceFilter)}
               title="Metadata source"
             >
+              <option value="all">All sources</option>
               <option value="comicvine">ComicVine</option>
               <option value="mangadex">MangaDex</option>
             </select>

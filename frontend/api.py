@@ -855,15 +855,27 @@ def api_volumes_search():
     if request.method == 'GET':
         query = extract_key(request, 'query')
         section = extract_key(request, 'section', False) or 'comic'
-        metadata_source = extract_key(request, 'metadata_source', False) or 'comicvine'
-        if metadata_source == 'mangadex':
+        metadata_source = (
+            extract_key(request, 'metadata_source', False)
+            or ('all' if section == 'manga' else 'comicvine')
+        )
+
+        def search_comicvine() -> List[dict]:
+            results = run(ComicVine().search_volumes(query, section=section))
+            for r in results:
+                r['metadata_source'] = 'comicvine'
+                r['metadata_id'] = str(r['comicvine_id'])
+                del r["cover"] # type: ignore
+            return results
+
+        def search_mangadex() -> List[dict]:
             if section != 'manga':
-                raise InvalidKeyValue('metadata_source', metadata_source)
+                raise InvalidKeyValue('metadata_source', 'mangadex')
             from backend.implementations.mangadex import search_mangadex_volumes
-            search_results = search_mangadex_volumes(query)
+            results = search_mangadex_volumes(query)
             db = get_db()
-            for r in search_results:
-                r['already_added'] = db.execute(
+            for r in results:
+                already_added = db.execute(
                     """
                     SELECT id
                     FROM volumes
@@ -872,17 +884,23 @@ def api_volumes_search():
                     LIMIT 1;
                     """,
                     (r['metadata_id'],)
-                ).exists()
+                ).fetchone()
+                r['already_added'] = already_added[0] if already_added else None
+            return results
+
+        if metadata_source == 'all':
+            search_results = search_comicvine()
+            if section == 'manga':
+                search_results.extend(search_mangadex())
             return return_api(search_results)
-        elif metadata_source != 'comicvine':
+
+        if metadata_source == 'mangadex':
+            return return_api(search_mangadex())
+
+        if metadata_source != 'comicvine':
             raise InvalidKeyValue('metadata_source', metadata_source)
 
-        search_results = run(ComicVine().search_volumes(query, section=section))
-        for r in search_results:
-            r['metadata_source'] = 'comicvine'
-            r['metadata_id'] = str(r['comicvine_id'])
-            del r["cover"] # type: ignore
-        return return_api(search_results)
+        return return_api(search_comicvine())
 
     elif request.method == 'POST':
         data: Dict[str, Any] = request.get_json()

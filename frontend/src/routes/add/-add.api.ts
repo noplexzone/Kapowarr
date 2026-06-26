@@ -2,7 +2,9 @@ import { queryOptions } from '@tanstack/react-query';
 import { apiClient, readJson } from '@/app/api-client';
 import type { SearchResult, RootFolder } from './-add.types';
 
-export function searchVolumesQueryOptions(query: string, section: string, metadataSource = 'comicvine') {
+export type MetadataSourceFilter = 'all' | 'comicvine' | 'mangadex';
+
+export function searchVolumesQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine') {
   return queryOptions({
     queryKey: ['volumes', 'search', query, section, metadataSource],
     queryFn: () => searchVolumes(query, section, metadataSource),
@@ -11,7 +13,7 @@ export function searchVolumesQueryOptions(query: string, section: string, metada
   });
 }
 
-async function searchVolumes(query: string, section: string, metadataSource: string): Promise<SearchResult[]> {
+async function searchVolumes(query: string, section: string, metadataSource: MetadataSourceFilter): Promise<SearchResult[]> {
   const sp = new URLSearchParams({ query, section, metadata_source: metadataSource });
   const response = await apiClient.get('volumes/search', { searchParams: sp });
   return readJson<SearchResult[]>(response);

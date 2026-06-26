@@ -141,15 +141,25 @@
   gap: 0.5rem;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 900px) and (min-width: 769px) {
   .coverGrid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 550px) {
+@media (max-width: 768px) {
   .coverGrid {
-    grid-template-columns: 1fr;
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding-bottom: 0.35rem;
+    scroll-snap-type: x proximity;
+  }
+
+  .coverCard {
+    flex: 0 0 clamp(7rem, 34vw, 9rem);
+    scroll-snap-align: start;
   }
 }
 
@@ -276,6 +286,10 @@
 
   .coverGrid {
     gap: 0.35rem;
+  }
+
+  .coverCard {
+    flex-basis: clamp(6.5rem, 38vw, 8rem);
   }
 
   .coverInfo {

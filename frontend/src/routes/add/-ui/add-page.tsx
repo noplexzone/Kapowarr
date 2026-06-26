@@ -199,7 +199,7 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
   const defaultFolder = sectionRootFolders[0]?.id ?? 0;
 
   const defaultVolumeFolder = result.metadata_source === 'mangadex' && result.year
-    ? `${result.title} ${result.year}`
+    ? `${result.title} (${result.year})`
     : result.title;
 
   const [rootFolderId, setRootFolderId] = useState(defaultFolder);

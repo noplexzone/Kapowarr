@@ -3,9 +3,15 @@
 from backend.implementations.mangadex import (
     _reported_volume_count,
     format_mangadex_issue_rows,
+    format_mangadex_volume_folder_name,
     format_mangadex_volume_result,
     mangadex_surrogate_id,
 )
+
+
+def test_format_mangadex_volume_folder_name_wraps_year_in_parentheses():
+    assert format_mangadex_volume_folder_name('Jujutsu Kaisen', 2018) == 'Jujutsu Kaisen (2018)'
+    assert format_mangadex_volume_folder_name('Jujutsu Kaisen', None) == 'Jujutsu Kaisen'
 
 
 def test_mangadex_surrogate_ids_are_negative_and_stable():

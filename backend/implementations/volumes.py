@@ -39,9 +39,13 @@ from backend.implementations.comicvine import ComicVine
 from backend.implementations.file_matching import scan_files
 from backend.implementations.file_processing import mass_process_files
 from backend.implementations.matching import match_title
-from backend.implementations.mangadex import (MangaDexClient, format_mangadex_issue_rows,
-                                             format_mangadex_volume_result,
-                                             mangadex_surrogate_id)
+from backend.implementations.mangadex import (
+    MangaDexClient,
+    format_mangadex_issue_rows,
+    format_mangadex_volume_folder_name,
+    format_mangadex_volume_result,
+    mangadex_surrogate_id,
+)
 from backend.implementations.root_folders import RootFolders
 from backend.internals.db import commit, get_db
 from backend.internals.db_models import FilesDB, GeneralFilesDB
@@ -1488,9 +1492,10 @@ class Library:
             volume.update({'special_version': special_version})
 
             if volume_folder is None:
-                title = str(vd["title"])
-                year = vd["year"]
-                volume_folder = f"{title} {year}" if year else title
+                volume_folder = format_mangadex_volume_folder_name(
+                    str(vd["title"]),
+                    vd["year"],
+                )
             folder = generate_volume_folder_path(root_folder.folder, volume.get_data(), volume_folder)
             volume.update({'folder': folder})
 

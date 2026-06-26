@@ -326,6 +326,11 @@ def format_mangadex_issue_rows(
     return rows
 
 
+def format_mangadex_volume_folder_name(title: str, year: Optional[int]) -> str:
+    """Return Kapowarr's default folder name for MangaDex-backed manga."""
+    clean_title = str(title or '').strip()
+    return f"{clean_title} ({year})" if year else clean_title
+
 def format_mangadex_volume_result(
     manga: dict,
     mapping: Union[VolumeChapterMap, None] = None,

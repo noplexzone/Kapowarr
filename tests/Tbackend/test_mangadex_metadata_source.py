@@ -143,13 +143,32 @@ def test_format_mangadex_volume_result_counts_related_volume_zero_prequel():
     assert len(rows) == 31
 
 
-def test_api_manga_search_legacy_all_routes_to_mangadex(monkeypatch):
-    from types import SimpleNamespace
 
-    from flask import Flask
+
+def _install_search_route_fakes(monkeypatch, comicvine_results=None):
+    from types import SimpleNamespace
 
     import frontend.api as api_mod
     import backend.implementations.mangadex as mangadex_mod
+
+    if comicvine_results is None:
+        comicvine_results = [{
+            'comicvine_id': 12345,
+            'title': 'Jujutsu Kaisen',
+            'year': 2018,
+            'volume_number': 1,
+            'cover': b'ignored',
+            'cover_link': 'https://comicvine.example/jjk.jpg',
+            'description': '',
+            'site_url': 'https://comicvine.example/jjk',
+            'aliases': [],
+            'publisher': 'Viz',
+            'issue_count': 30,
+            'translated': True,
+            'already_added': None,
+            'issues': None,
+            'date_added': None,
+        }]
 
     class FakeSettings:
         sv = SimpleNamespace(auth_password='')
@@ -160,8 +179,10 @@ def test_api_manga_search_legacy_all_routes_to_mangadex(monkeypatch):
             return None
 
     class FakeComicVine:
-        async def search_volumes(self, *_args, **_kwargs):
-            raise AssertionError('ComicVine must not be queried for manga searches')
+        async def search_volumes(self, query, section='comic'):
+            assert query == 'Jujutsu Kaisen'
+            assert section == 'manga'
+            return [dict(r) for r in comicvine_results]
 
     class FakeDBResult:
         def fetchone(self):
@@ -172,7 +193,7 @@ def test_api_manga_search_legacy_all_routes_to_mangadex(monkeypatch):
             return FakeDBResult()
 
     def fake_search_mangadex_volumes(query):
-        assert query == 'Jujutsu Kaisen Modulo'
+        assert query == 'Jujutsu Kaisen'
         return [{
             'comicvine_id': -2262949737,
             'metadata_source': 'mangadex',
@@ -200,14 +221,42 @@ def test_api_manga_search_legacy_all_routes_to_mangadex(monkeypatch):
     monkeypatch.setattr(api_mod, 'ComicVine', FakeComicVine)
     monkeypatch.setattr(api_mod, 'get_db', lambda: FakeDB())
     monkeypatch.setattr(mangadex_mod, 'search_mangadex_volumes', fake_search_mangadex_volumes)
+    return api_mod
 
+
+def test_api_manga_search_defaults_to_comicvine(monkeypatch):
+    from flask import Flask
+
+    api_mod = _install_search_route_fakes(monkeypatch)
     app = Flask(__name__)
     app.register_blueprint(api_mod.api, url_prefix='/api')
 
     response = app.test_client().get(
         '/api/volumes/search',
         query_string={
-            'query': 'Jujutsu Kaisen Modulo',
+            'query': 'Jujutsu Kaisen',
+            'section': 'manga',
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['error'] is None
+    assert [r['metadata_source'] for r in payload['result']] == ['comicvine']
+    assert payload['result'][0]['comicvine_id'] == 12345
+
+
+def test_api_manga_search_all_prefers_comicvine_when_available(monkeypatch):
+    from flask import Flask
+
+    api_mod = _install_search_route_fakes(monkeypatch)
+    app = Flask(__name__)
+    app.register_blueprint(api_mod.api, url_prefix='/api')
+
+    response = app.test_client().get(
+        '/api/volumes/search',
+        query_string={
+            'query': 'Jujutsu Kaisen',
             'section': 'manga',
             'metadata_source': 'all',
         },
@@ -216,6 +265,28 @@ def test_api_manga_search_legacy_all_routes_to_mangadex(monkeypatch):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload['error'] is None
-    sources = [r['metadata_source'] for r in payload['result']]
-    assert sources == ['mangadex']
+    assert [r['metadata_source'] for r in payload['result']] == ['comicvine']
+    assert payload['result'][0]['comicvine_id'] == 12345
+
+
+def test_api_manga_search_all_falls_back_to_mangadex_when_comicvine_missing(monkeypatch):
+    from flask import Flask
+
+    api_mod = _install_search_route_fakes(monkeypatch, comicvine_results=[])
+    app = Flask(__name__)
+    app.register_blueprint(api_mod.api, url_prefix='/api')
+
+    response = app.test_client().get(
+        '/api/volumes/search',
+        query_string={
+            'query': 'Jujutsu Kaisen',
+            'section': 'manga',
+            'metadata_source': 'all',
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['error'] is None
+    assert [r['metadata_source'] for r in payload['result']] == ['mangadex']
     assert payload['result'][0]['metadata_id'] == 'f3f59f12-351a-4de7-bd51-696d0764d64e'

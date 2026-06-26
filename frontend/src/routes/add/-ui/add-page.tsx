@@ -23,7 +23,7 @@ export function AddPage({ section }: AddPageProps) {
   const [rawQuery, setRawQuery] = useState('');
   const [query, setQuery] = useState('');
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
-  const metadataSource: MetadataSourceFilter = section === 'manga' ? 'mangadex' : 'comicvine';
+  const metadataSource: MetadataSourceFilter = section === 'manga' ? 'all' : 'comicvine';
 
   useEffect(() => {
     const trimmed = rawQuery.trim();
@@ -76,7 +76,7 @@ export function AddPage({ section }: AddPageProps) {
         <div className={styles.sectionToggle}>
           <Badge tone={section === 'comic' ? 'info' : 'neutral'}>{sectionLabel}</Badge>
           {section === 'manga' && (
-            <Badge tone="neutral">MangaDex</Badge>
+            <Badge tone="neutral">ComicVine, then MangaDex</Badge>
           )}
         </div>
       </div>

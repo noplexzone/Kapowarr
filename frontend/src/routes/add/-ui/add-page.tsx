@@ -1,4 +1,4 @@
-import { useState, useDeferredValue, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useSuspenseQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Button, Badge } from '@/components/primitives';
@@ -21,9 +21,25 @@ interface AddPageProps {
 export function AddPage({ section }: AddPageProps) {
   const navigate = useNavigate();
   const [rawQuery, setRawQuery] = useState('');
-  const query = useDeferredValue(rawQuery);
+  const [query, setQuery] = useState('');
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
   const metadataSource: MetadataSourceFilter = section === 'manga' ? 'mangadex' : 'comicvine';
+
+  useEffect(() => {
+    const trimmed = rawQuery.trim();
+    if (trimmed.length < 2) {
+      setQuery('');
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setQuery(trimmed), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [rawQuery]);
+
+  const triggerSearch = useCallback(() => {
+    const trimmed = rawQuery.trim();
+    setQuery(trimmed.length >= 2 ? trimmed : '');
+  }, [rawQuery]);
 
   const { data: results = [], isFetching } = useQuery({
     ...searchVolumesQueryOptions(query, section, metadataSource),
@@ -52,6 +68,9 @@ export function AddPage({ section }: AddPageProps) {
           placeholder={placeholder}
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') triggerSearch();
+          }}
           autoFocus
         />
         <div className={styles.sectionToggle}>

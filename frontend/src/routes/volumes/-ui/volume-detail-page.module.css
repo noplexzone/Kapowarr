@@ -691,9 +691,23 @@
 }
 
 .renameActions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
-  justify-content: flex-end;
+  justify-content: center;
+  align-items: center;
+  margin-top: 0.75rem;
+  padding: 0.75rem 4.5rem 0.75rem 1rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 16px rgba(0, 0, 0, 0.16);
+}
+
+.renameActions button {
+  min-height: 2.75rem;
 }
 
 /* ── Cover candidates grid ───────────────────────── */

@@ -189,19 +189,35 @@ def _cover_url(manga_id: str, file_name: str) -> tuple[str, str]:
     )
 
 
-def _cover_links(manga: dict, covers: Union[List[dict], None] = None) -> tuple[str, str]:
+def _cover_links(
+    manga: dict,
+    covers: Union[List[dict], None] = None,
+    preferred_locale: str = "en",
+) -> tuple[str, str]:
     manga_id = manga.get("id") or ""
     cover_records = covers or []
+    preferred_locale = (preferred_locale or "en").lower()
+
+    def attrs(record: dict) -> dict:
+        return record.get("attributes") or {}
 
     def file_name(record: dict) -> str:
-        return str((record.get("attributes") or {}).get("fileName") or "")
+        return str(attrs(record).get("fileName") or "")
+
+    def locale(record: dict) -> str:
+        return str(attrs(record).get("locale") or "").lower()
 
     if cover_records:
         # The manga relationship can point at a later or promotional cover.  For
-        # add/search cards, prefer the first numbered print-volume cover.
+        # add/search cards, prefer covers in the selected translation language
+        # when MangaDex has them, then use the earliest numbered print-volume
+        # cover as the fallback.
         sorted_covers = sorted(
             (c for c in cover_records if file_name(c)),
-            key=lambda c: _volume_sort_key((c.get("attributes") or {}).get("volume")),
+            key=lambda c: (
+                locale(c) != preferred_locale,
+                _volume_sort_key(attrs(c).get("volume")),
+            ),
         )
         if sorted_covers:
             return _cover_url(manga_id, file_name(sorted_covers[0]))
@@ -235,23 +251,72 @@ def _last_volume_number(attrs: dict) -> int:
         return 0
 
 
+def _normalise_volume_zero_title(title: str) -> str:
+    return " ".join(
+        str(title or "")
+        .lower()
+        .replace(":", " ")
+        .replace("-", " ")
+        .split()
+    )
+
+
+def _volume_zero_related_matches_parent(manga: dict, rel_attrs: dict) -> bool:
+    """Return whether a volume-0 relation belongs to this exact title family.
+
+    MangaDex can attach older franchise entries as ``prequel`` relations.  That
+    is useful for the original Jujutsu Kaisen title, where "Jujutsu Kaisen 0"
+    should be monitored as volume 0.  It is wrong for sequel/spinoff titles such
+    as "Jujutsu Kaisen Modulo": their prequel list can also contain JJK 0, but
+    Modulo itself only has volumes 1-3.
+    """
+    parent_titles = {
+        _normalise_volume_zero_title(t)
+        for t in _iter_titles(manga)
+        if t
+    }
+    related_titles = {
+        _normalise_volume_zero_title(t)
+        for t in _iter_titles({"attributes": rel_attrs})
+        if t
+    }
+    for parent in parent_titles:
+        if not parent:
+            continue
+        for related in related_titles:
+            if related == f"{parent} 0" or related.startswith(f"{parent} 0 "):
+                return True
+    return False
+
+
 def _has_volume_zero_related(manga: Optional[dict]) -> bool:
-    """Return whether MangaDex links a volume-0 prequel/preserialization.
+    """Return whether MangaDex links a matching volume-0 side volume.
 
     MangaDex stores Jujutsu Kaisen 0 as a related title rather than as volume 0
     in the main title aggregate, but Kapowarr monitors physical manga volumes as
-    one series.  A related MangaDex entry with lastVolume=0 is therefore treated
-    as print volume 0 for the monitored series.
+    one series.  Only absorb a related lastVolume=0 entry when its title clearly
+    matches the current title plus ``0``; do not inherit volume 0 from broad
+    franchise prequels on sequel/spinoff series.
     """
-    for rel in (manga or {}).get("relationships") or []:
+    manga = manga or {}
+    for rel in manga.get("relationships") or []:
         if rel.get("type") != "manga":
             continue
         if rel.get("related") not in {"prequel", "preserialization"}:
             continue
         attrs = rel.get("attributes") or {}
-        if _last_volume_number(attrs) == 0 and attrs.get("lastVolume") is not None:
+        if (
+            _last_volume_number(attrs) == 0
+            and attrs.get("lastVolume") is not None
+            and _volume_zero_related_matches_parent(manga, attrs)
+        ):
             return True
     return False
+
+
+def mangadex_should_include_volume_zero(manga: Optional[dict]) -> bool:
+    """Return whether Kapowarr should synthesize a MangaDex volume-0 row."""
+    return _has_volume_zero_related(manga)
 
 
 def _numbered_volume_keys(
@@ -341,7 +406,7 @@ def format_mangadex_volume_result(
     mangadex_id = str(manga.get("id") or "")
     title = _first_title(manga, mangadex_id)
     language = translated_language or _default_language(manga)
-    thumb, cover = _cover_links(manga, covers)
+    thumb, cover = _cover_links(manga, covers, language)
     include_volume_zero = _has_volume_zero_related(manga)
     issue_count = _reported_volume_count(attrs, mapping, include_volume_zero)
     return {

@@ -5,6 +5,7 @@ from backend.implementations.mangadex import (
     format_mangadex_issue_rows,
     format_mangadex_volume_folder_name,
     format_mangadex_volume_result,
+    mangadex_should_include_volume_zero,
     mangadex_surrogate_id,
 )
 
@@ -143,6 +144,77 @@ def test_format_mangadex_volume_result_counts_related_volume_zero_prequel():
     assert len(rows) == 31
 
 
+
+def test_format_mangadex_volume_result_prefers_english_cover_locale():
+    manga = {
+        'id': 'f3f59f12-351a-4de7-bd51-696d0764d64e',
+        'attributes': {
+            'title': {'ja-ro': 'Jujutsu Kaisen Modulo'},
+            'availableTranslatedLanguages': ['en'],
+            'year': 2025,
+            'lastVolume': '3',
+        },
+        'relationships': [],
+    }
+    covers = [
+        {'attributes': {'volume': '1', 'locale': 'ja', 'fileName': 'japanese-v1.jpg'}},
+        {'attributes': {'volume': '2', 'locale': 'en', 'fileName': 'english-v2.jpg'}},
+        {'attributes': {'volume': '3', 'locale': 'en', 'fileName': 'english-v3.jpg'}},
+    ]
+
+    result = format_mangadex_volume_result(
+        manga,
+        {1.0: [1.0], 2.0: [3.0], 3.0: [5.0]},
+        translated_language='en',
+        covers=covers,
+    )
+
+    assert result['cover_link'].endswith('/english-v2.jpg.256.jpg')
+
+
+def test_modulo_prequel_volume_zero_is_not_absorbed_into_issue_rows():
+    manga = {
+        'id': 'f3f59f12-351a-4de7-bd51-696d0764d64e',
+        'attributes': {
+            'title': {'ja-ro': 'Jujutsu Kaisen Modulo'},
+            'altTitles': [{'en': 'Jujutsu Kaisen Modulo'}],
+            'availableTranslatedLanguages': ['en'],
+            'year': 2025,
+            'lastVolume': '3',
+        },
+        'relationships': [
+            {
+                'type': 'manga',
+                'related': 'prequel',
+                'attributes': {
+                    'title': {'ja-ro': 'Jujutsu Kaisen 0: Toukyou Toritsu Jujutsu Koutou Senmon Gakkou'},
+                    'altTitles': [{'en': 'Jujutsu Kaisen 0'}],
+                    'lastVolume': '0',
+                },
+            },
+            {
+                'type': 'manga',
+                'related': 'prequel',
+                'attributes': {
+                    'title': {'ja-ro': 'Jujutsu Kaisen'},
+                    'altTitles': [{'en': 'Jujutsu Kaisen'}],
+                    'lastVolume': '30',
+                },
+            },
+        ],
+    }
+    mapping = {1.0: [1.0, 2.0], 3.0: [24.0]}
+
+    result = format_mangadex_volume_result(manga, mapping, translated_language='en')
+    rows = format_mangadex_issue_rows(
+        manga['id'],
+        mapping,
+        manga['attributes'],
+        include_volume_zero=mangadex_should_include_volume_zero(manga),
+    )
+
+    assert result['issue_count'] == 3
+    assert [row['issue_number'] for row in rows] == ['1', '2', '3']
 
 
 def _install_search_route_fakes(monkeypatch, comicvine_results=None):

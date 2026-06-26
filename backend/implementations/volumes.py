@@ -44,6 +44,7 @@ from backend.implementations.mangadex import (
     format_mangadex_issue_rows,
     format_mangadex_volume_folder_name,
     format_mangadex_volume_result,
+    mangadex_should_include_volume_zero,
     mangadex_surrogate_id,
 )
 from backend.implementations.root_folders import RootFolders
@@ -1396,7 +1397,7 @@ class Library:
             mangadex_id,
             mapping,
             manga.get("attributes") or {},
-            include_volume_zero=(vd["issue_count"] > len([k for k in mapping if k >= 0])),
+            include_volume_zero=mangadex_should_include_volume_zero(manga),
         )
         try:
             vd["cover"] = client.get_cover_image(vd["cover_link"]) if vd.get("cover_link") else None

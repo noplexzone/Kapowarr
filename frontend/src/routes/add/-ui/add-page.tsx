@@ -23,7 +23,7 @@ export function AddPage({ section }: AddPageProps) {
   const [rawQuery, setRawQuery] = useState('');
   const query = useDeferredValue(rawQuery);
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
-  const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>(section === 'manga' ? 'all' : 'comicvine');
+  const metadataSource: MetadataSourceFilter = section === 'manga' ? 'mangadex' : 'comicvine';
 
   const { data: results = [], isFetching } = useQuery({
     ...searchVolumesQueryOptions(query, section, metadataSource),
@@ -57,16 +57,7 @@ export function AddPage({ section }: AddPageProps) {
         <div className={styles.sectionToggle}>
           <Badge tone={section === 'comic' ? 'info' : 'neutral'}>{sectionLabel}</Badge>
           {section === 'manga' && (
-            <select
-              className={styles.sourceSelect}
-              value={metadataSource}
-              onChange={(e) => setMetadataSource(e.target.value as MetadataSourceFilter)}
-              title="Metadata source"
-            >
-              <option value="all">All sources</option>
-              <option value="comicvine">ComicVine</option>
-              <option value="mangadex">MangaDex</option>
-            </select>
+            <Badge tone="neutral">MangaDex</Badge>
           )}
         </div>
       </div>

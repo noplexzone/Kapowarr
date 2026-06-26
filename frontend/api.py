@@ -857,8 +857,13 @@ def api_volumes_search():
         section = extract_key(request, 'section', False) or 'comic'
         metadata_source = (
             extract_key(request, 'metadata_source', False)
-            or ('all' if section == 'manga' else 'comicvine')
+            or ('mangadex' if section == 'manga' else 'comicvine')
         )
+        # Manga uses MangaDex exclusively.  Older clients may still send
+        # metadata_source=all or comicvine for manga; route those to MangaDex
+        # rather than falling back to ComicVine.
+        if section == 'manga' and metadata_source in ('all', 'comicvine'):
+            metadata_source = 'mangadex'
 
         def search_comicvine() -> List[dict]:
             results = run(ComicVine().search_volumes(query, section=section))
@@ -890,10 +895,7 @@ def api_volumes_search():
             return results
 
         if metadata_source == 'all':
-            search_results = search_comicvine()
-            if section == 'manga':
-                search_results.extend(search_mangadex())
-            return return_api(search_results)
+            return return_api(search_comicvine())
 
         if metadata_source == 'mangadex':
             return return_api(search_mangadex())

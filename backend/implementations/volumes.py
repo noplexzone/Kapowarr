@@ -1582,6 +1582,146 @@ def determine_special_version(volume_id: int) -> SpecialVersion:
     return SpecialVersion.NORMAL
 
 
+def _refresh_mangadex_metadata_row(
+    row: Mapping[str, Any],
+    current_time: datetime,
+    update_websocket: bool = False,
+) -> None:
+    """Refresh one MangaDex-backed manga from MangaDex metadata."""
+    mangadex_id = row.get('metadata_id')
+    translated_language = row.get('metadata_language') or 'en'
+    volume_id = row['id']
+    if not isinstance(mangadex_id, str) or not mangadex_id:
+        LOGGER.warning(
+            'Skipping MangaDex refresh for volume %s: missing metadata_id',
+            volume_id,
+        )
+        scan_files(volume_id, update_websocket=update_websocket)
+        return
+
+    client = MangaDexClient()
+    manga = client.get_manga(mangadex_id)
+    mapping = client.get_aggregate_volume_map(mangadex_id, translated_language)
+    try:
+        covers = client.get_covers(mangadex_id)
+    except Exception:
+        covers = []
+
+    vd = format_mangadex_volume_result(
+        manga,
+        mapping,
+        translated_language,
+        covers,
+    )
+    issue_rows = format_mangadex_issue_rows(mangadex_id, mapping)
+    cursor = get_db()
+
+    cursor.execute(
+        """
+        UPDATE volumes
+        SET
+            title = :title,
+            alt_title = :alt_title,
+            year = :year,
+            publisher = :publisher,
+            volume_number = :volume_number,
+            description = :description,
+            site_url = :site_url,
+            metadata_language = :metadata_language,
+            last_cv_fetch = :last_cv_fetch
+        WHERE id = :id
+            AND metadata_source = 'mangadex';
+        """,
+        {
+            'title': vd['title'],
+            'alt_title': (vd['aliases'] or [None])[0],
+            'year': vd['year'],
+            'publisher': vd['publisher'],
+            'volume_number': vd['volume_number'],
+            'description': vd['description'],
+            'site_url': vd['site_url'],
+            'metadata_language': translated_language,
+            'last_cv_fetch': current_time.timestamp(),
+            'id': volume_id,
+        },
+    )
+    cursor.execute(
+        """
+        UPDATE volumes_covers
+        SET cover = :cover
+        WHERE volume_id = :volume_id;
+        """,
+        {'volume_id': volume_id, 'cover': vd['cover']},
+    )
+
+    monitored_volume_ids: Set[int] = set(first_of_subarrays(cursor.execute(
+        "SELECT id FROM volumes WHERE monitor_new_issues = 1;"
+    )))
+    cursor.executemany(
+        """
+        INSERT INTO issues(
+            volume_id,
+            comicvine_id,
+            issue_number,
+            calculated_issue_number,
+            title,
+            date,
+            description,
+            monitored
+        ) VALUES (
+            :volume_id, :comicvine_id, :issue_number, :calculated_issue_number,
+            :title, :date, :description, :monitored
+        )
+        ON CONFLICT(comicvine_id) DO
+        UPDATE
+        SET
+            issue_number = :issue_number,
+            calculated_issue_number = :calculated_issue_number,
+            title = :title,
+            date = :date,
+            description = :description;
+        """,
+        (
+            {
+                **issue,
+                'volume_id': volume_id,
+                'monitored': volume_id in monitored_volume_ids,
+            }
+            for issue in issue_rows
+        ),
+    )
+
+    fetched_issue_ids = {issue['comicvine_id'] for issue in issue_rows}
+    db_issue_ids = dict(cursor.execute(
+        """
+        SELECT comicvine_id, id
+        FROM issues
+        WHERE volume_id = ?;
+        """,
+        (volume_id,),
+    ).fetchall())
+    for issue_cv, issue_id in db_issue_ids.items():
+        if issue_cv not in fetched_issue_ids:
+            Issue(issue_id).delete()
+            commit()
+
+    if not row.get('special_version_locked'):
+        cursor.execute(
+            """
+            UPDATE volumes
+            SET special_version = :special_version
+            WHERE id = :id;
+            """,
+            {
+                'special_version': determine_special_version(volume_id),
+                'id': volume_id,
+            },
+        )
+
+    commit()
+    scan_files(volume_id, update_websocket=update_websocket)
+
+
 def refresh_and_scan(
     volume_id: Union[int, None] = None,
     update_websocket: bool = False,
@@ -1617,7 +1757,26 @@ def refresh_and_scan(
     thirty_days_ago = current_time - THIRTY_DAYS
 
     cursor = get_db()
+
     if volume_id:
+        volume_row = cursor.execute("""
+            SELECT
+                comicvine_id, id, last_cv_fetch, metadata_source, metadata_id,
+                metadata_language, special_version_locked
+            FROM volumes
+            WHERE id = ?
+            LIMIT 1;
+            """,
+            (volume_id,)
+        ).fetchonedict()
+        if volume_row and volume_row['metadata_source'] == 'mangadex':
+            _refresh_mangadex_metadata_row(
+                volume_row,
+                current_time,
+                update_websocket=update_websocket,
+            )
+            return
+
         cursor.execute("""
             SELECT comicvine_id, id, last_cv_fetch
             FROM volumes
@@ -1629,6 +1788,28 @@ def refresh_and_scan(
         )
 
     else:
+        mangadex_rows = cursor.execute("""
+            SELECT
+                comicvine_id, id, last_cv_fetch, metadata_source, metadata_id,
+                metadata_language, special_version_locked
+            FROM volumes
+            WHERE last_cv_fetch <= ?
+                AND metadata_source = 'mangadex'
+            ORDER BY last_cv_fetch ASC;
+            """,
+            (
+                one_day_ago.timestamp()
+                if allow_skipping else
+                current_time.timestamp(),
+            ),
+        ).fetchalldict()
+        for mangadex_row in mangadex_rows:
+            _refresh_mangadex_metadata_row(
+                mangadex_row,
+                current_time,
+                update_websocket=update_websocket,
+            )
+
         cursor.execute("""
             SELECT comicvine_id, id, last_cv_fetch
             FROM volumes

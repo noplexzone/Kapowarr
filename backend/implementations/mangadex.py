@@ -223,7 +223,7 @@ def _default_language(manga: dict) -> str:
 
 
 def _numbered_volume_keys(mapping: VolumeChapterMap) -> List[float]:
-    numbered = sorted(k for k in mapping if k > 0)
+    numbered = sorted(k for k in mapping if k >= 0)
     if numbered:
         return numbered
     return sorted(mapping)
@@ -232,17 +232,18 @@ def _numbered_volume_keys(mapping: VolumeChapterMap) -> List[float]:
 def _reported_volume_count(attrs: dict, mapping: Union[VolumeChapterMap, None]) -> int:
     """Return MangaDex's physical volume count for search cards.
 
-    Language-filtered aggregate data only includes volumes with chapters in that
-    translation, so it can undercount long-running manga.  The manga
-    ``lastVolume`` attribute is the better card-count source when present.
+    MangaDex aggregate data contains one entry per physical volume.  Count those
+    distinct entries directly so volume 0 is included (0-30 => 31 volumes)
+    instead of treating the highest volume number as the count.  Fall back to
+    ``lastVolume`` only when no aggregate mapping is available.
     """
-    try:
-        last_volume = int(float(str(attrs.get("lastVolume") or "0")))
-    except (TypeError, ValueError):
-        last_volume = 0
+    if mapping:
+        return len(_numbered_volume_keys(mapping))
 
-    aggregate_count = len(_numbered_volume_keys(mapping or {})) if mapping else 0
-    return max(last_volume, aggregate_count)
+    try:
+        return int(float(str(attrs.get("lastVolume") or "0")))
+    except (TypeError, ValueError):
+        return 0
 
 
 def format_mangadex_issue_rows(mangadex_id: str, mapping: VolumeChapterMap) -> List[dict]:

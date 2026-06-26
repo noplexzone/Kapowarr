@@ -1388,7 +1388,17 @@ class Library:
         except Exception:
             covers = []
         vd = format_mangadex_volume_result(manga, mapping, translated_language, covers)
-        issue_rows = format_mangadex_issue_rows(mangadex_id, mapping)
+        issue_rows = format_mangadex_issue_rows(
+            mangadex_id,
+            mapping,
+            manga.get("attributes") or {},
+            include_volume_zero=(vd["issue_count"] > len([k for k in mapping if k >= 0])),
+        )
+        try:
+            vd["cover"] = client.get_cover_image(vd["cover_link"]) if vd.get("cover_link") else None
+        except Exception as exc:
+            LOGGER.warning("MangaDex cover fetch failed for %s: %s", mangadex_id, exc)
+            vd["cover"] = None
 
         cursor = get_db()
         with cursor:
@@ -1449,7 +1459,7 @@ class Library:
                 INSERT INTO volumes_covers(volume_id, cover)
                 VALUES (:volume_id, :cover);
                 """,
-                {"volume_id": volume_id, "cover": None}
+                {"volume_id": volume_id, "cover": vd["cover"]}
             )
 
             cursor.executemany("""
@@ -1477,6 +1487,10 @@ class Library:
                 special_version = determine_special_version(volume.id)
             volume.update({'special_version': special_version})
 
+            if volume_folder is None:
+                title = str(vd["title"])
+                year = vd["year"]
+                volume_folder = f"{title} {year}" if year else title
             folder = generate_volume_folder_path(root_folder.folder, volume.get_data(), volume_folder)
             volume.update({'folder': folder})
 
@@ -1615,7 +1629,17 @@ def _refresh_mangadex_metadata_row(
         translated_language,
         covers,
     )
-    issue_rows = format_mangadex_issue_rows(mangadex_id, mapping)
+    issue_rows = format_mangadex_issue_rows(
+        mangadex_id,
+        mapping,
+        manga.get("attributes") or {},
+        include_volume_zero=(vd["issue_count"] > len([k for k in mapping if k >= 0])),
+    )
+    try:
+        vd["cover"] = client.get_cover_image(vd["cover_link"]) if vd.get("cover_link") else None
+    except Exception as exc:
+        LOGGER.warning("MangaDex cover fetch failed for %s: %s", mangadex_id, exc)
+        vd["cover"] = None
     cursor = get_db()
 
     cursor.execute(

@@ -105,7 +105,7 @@ class MangaDexClient:
         """Fetch one MangaDex manga by UUID."""
         resp = self._ssn.get(
             f"{self._base_url}/manga/{mangadex_id}",
-            params=[("includes[]", "cover_art")],
+            params=[("includes[]", "cover_art"), ("includes[]", "manga")],
             timeout=Constants.REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
@@ -141,6 +141,12 @@ class MangaDexClient:
         )
         resp.raise_for_status()
         return resp.json().get("data") or []
+
+    def get_cover_image(self, cover_url: str) -> bytes:
+        """Fetch a MangaDex cover image for storing as the monitored cover."""
+        resp = self._ssn.get(cover_url, timeout=Constants.REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        return resp.content
 
 
 def mangadex_surrogate_id(*parts: str) -> int:
@@ -222,34 +228,71 @@ def _default_language(manga: dict) -> str:
     return languages[0] if languages else "en"
 
 
-def _numbered_volume_keys(mapping: VolumeChapterMap) -> List[float]:
-    numbered = sorted(k for k in mapping if k >= 0)
-    if numbered:
-        return numbered
-    return sorted(mapping)
-
-
-def _reported_volume_count(attrs: dict, mapping: Union[VolumeChapterMap, None]) -> int:
-    """Return MangaDex's physical volume count for search cards.
-
-    MangaDex aggregate data contains one entry per physical volume.  Count those
-    distinct entries directly so volume 0 is included (0-30 => 31 volumes)
-    instead of treating the highest volume number as the count.  Fall back to
-    ``lastVolume`` only when no aggregate mapping is available.
-    """
-    if mapping:
-        return len(_numbered_volume_keys(mapping))
-
+def _last_volume_number(attrs: dict) -> int:
     try:
         return int(float(str(attrs.get("lastVolume") or "0")))
     except (TypeError, ValueError):
         return 0
 
 
-def format_mangadex_issue_rows(mangadex_id: str, mapping: VolumeChapterMap) -> List[dict]:
+def _has_volume_zero_related(manga: Optional[dict]) -> bool:
+    """Return whether MangaDex links a volume-0 prequel/preserialization.
+
+    MangaDex stores Jujutsu Kaisen 0 as a related title rather than as volume 0
+    in the main title aggregate, but Kapowarr monitors physical manga volumes as
+    one series.  A related MangaDex entry with lastVolume=0 is therefore treated
+    as print volume 0 for the monitored series.
+    """
+    for rel in (manga or {}).get("relationships") or []:
+        if rel.get("type") != "manga":
+            continue
+        if rel.get("related") not in {"prequel", "preserialization"}:
+            continue
+        attrs = rel.get("attributes") or {}
+        if _last_volume_number(attrs) == 0 and attrs.get("lastVolume") is not None:
+            return True
+    return False
+
+
+def _numbered_volume_keys(
+    mapping: VolumeChapterMap,
+    attrs: Optional[dict] = None,
+    include_volume_zero: bool = False,
+) -> List[float]:
+    """Return distinct MangaDex print volume numbers, including volume 0.
+
+    MangaDex translated aggregates can omit untranslated/unavailable volumes
+    even with includeUnavailable=1.  When MangaDex reports lastVolume, fill the
+    physical range so a series with volume 0 through 30 monitors 31 volumes.
+    """
+    numbered = sorted(k for k in mapping if k >= 0)
+    last_volume = _last_volume_number(attrs or {})
+    if last_volume > 0:
+        start = 0 if include_volume_zero or 0.0 in numbered else 1
+        return [float(n) for n in range(start, last_volume + 1)]
+    if numbered:
+        return numbered
+    return sorted(mapping)
+
+
+def _reported_volume_count(
+    attrs: dict,
+    mapping: Union[VolumeChapterMap, None],
+    include_volume_zero: bool = False,
+) -> int:
+    """Return MangaDex's physical volume count for search cards."""
+    return len(_numbered_volume_keys(mapping or {}, attrs, include_volume_zero))
+
+
+def format_mangadex_issue_rows(
+    mangadex_id: str,
+    mapping: VolumeChapterMap,
+    attrs: Optional[dict] = None,
+    include_volume_zero: bool = False,
+) -> List[dict]:
     """Convert a MangaDex aggregate volume map into Kapowarr issue rows."""
     rows: List[dict] = []
-    for volume_number in _numbered_volume_keys(mapping):
+    for volume_number in _numbered_volume_keys(mapping, attrs, include_volume_zero):
         chapters = sorted(mapping.get(volume_number) or [])
         if volume_number == int(volume_number):
             issue_number = str(int(volume_number))
@@ -294,7 +337,8 @@ def format_mangadex_volume_result(
     title = _first_title(manga, mangadex_id)
     language = translated_language or _default_language(manga)
     thumb, cover = _cover_links(manga, covers)
-    issue_count = _reported_volume_count(attrs, mapping)
+    include_volume_zero = _has_volume_zero_related(manga)
+    issue_count = _reported_volume_count(attrs, mapping, include_volume_zero)
     return {
         "comicvine_id": mangadex_surrogate_id(mangadex_id),
         "metadata_source": "mangadex",
@@ -329,6 +373,10 @@ def search_mangadex_volumes(title: str, limit: int = 10) -> List[VolumeMetadata]
             mangadex_id = str(manga.get("id") or "")
             if not mangadex_id:
                 continue
+            try:
+                manga = client.get_manga(mangadex_id) or manga
+            except RequestException:
+                pass
             language = _default_language(manga)
             try:
                 mapping = client.get_aggregate_volume_map(mangadex_id, language)

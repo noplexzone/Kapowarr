@@ -103,9 +103,9 @@ export function AddPage({ section }: AddPageProps) {
           rootFolders={rootFolders}
           section={section}
           onClose={() => setModalResult(null)}
-          onAdded={(_id) => {
+          onAdded={(id) => {
             setModalResult(null);
-            navigate({ to: '/comics', search: { sort: 'recently_added', filter: '', view: 'posters', offset: 0 } });
+            navigate({ to: '/volumes/$volumeId', params: { volumeId: String(id) } });
           }}
         />
       )}
@@ -198,8 +198,12 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
   const sectionRootFolders = rootFolders.filter((rf) => rf.section === section);
   const defaultFolder = sectionRootFolders[0]?.id ?? 0;
 
+  const defaultVolumeFolder = result.metadata_source === 'mangadex' && result.year
+    ? `${result.title} ${result.year}`
+    : result.title;
+
   const [rootFolderId, setRootFolderId] = useState(defaultFolder);
-  const [volumeFolder, setVolumeFolder] = useState(result.title.replace(/[/\\:*?"<>|]/g, ''));
+  const [volumeFolder, setVolumeFolder] = useState(defaultVolumeFolder.replace(/[/\\:*?"<>|]/g, ''));
   const [monitorVolume, setMonitorVolume] = useState(true);
   const [monitorIssues, setMonitorIssues] = useState(true);
   const [monitoringScheme, setMonitoringScheme] = useState('all');

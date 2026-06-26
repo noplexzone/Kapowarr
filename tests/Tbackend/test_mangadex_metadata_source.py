@@ -29,10 +29,13 @@ def test_format_mangadex_issue_rows_uses_numbered_print_volumes():
         },
     )
 
-    assert [r['issue_number'] for r in rows] == ['1', '3']
-    assert rows[0]['calculated_issue_number'] == 1.0
-    assert rows[0]['title'] == 'Volume 1'
-    assert 'chapters: 1, 2' in rows[0]['description']
+    assert [r['issue_number'] for r in rows] == ['0', '1', '3']
+    assert rows[0]['calculated_issue_number'] == 0.0
+    assert rows[0]['title'] == 'Volume 0'
+    assert 'chapters: 3, 23' in rows[0]['description']
+    assert rows[1]['calculated_issue_number'] == 1.0
+    assert rows[1]['title'] == 'Volume 1'
+    assert 'chapters: 1, 2' in rows[1]['description']
     assert all(r['comicvine_id'] < 0 for r in rows)
 
 
@@ -95,12 +98,46 @@ def test_format_mangadex_volume_result_prefers_first_numbered_cover():
     assert result['cover_link'].endswith('/volume-1.jpg.256.jpg')
 
 
-def test_reported_volume_count_prefers_last_volume_over_translation_aggregate():
+def test_reported_volume_count_counts_physical_range_including_volume_zero():
+    assert _reported_volume_count({'lastVolume': '30'}, {0.0: [0.0], 1.0: [1.0], 30.0: [271.0]}) == 31
     assert _reported_volume_count({'lastVolume': '30'}, {1.0: [1.0], 30.0: [271.0]}) == 30
     assert _reported_volume_count({'lastVolume': None}, {1.0: [1.0], 3.0: [10.0]}) == 2
 
 
-def test_api_manga_search_all_sources_returns_comicvine_and_mangadex(monkeypatch):
+def test_format_mangadex_volume_result_counts_related_volume_zero_prequel():
+    manga = {
+        'id': 'c52b2ce3-7f95-469c-96b0-479524fb7a1a',
+        'attributes': {
+            'title': {'en': 'Jujutsu Kaisen'},
+            'year': 2018,
+            'lastVolume': '30',
+        },
+        'relationships': [
+            {
+                'type': 'manga',
+                'related': 'prequel',
+                'attributes': {
+                    'title': {'ja-ro': 'Jujutsu Kaisen 0'},
+                    'lastVolume': '0',
+                },
+            }
+        ],
+    }
+
+    result = format_mangadex_volume_result(manga, {1.0: [1.0], 30.0: [271.0]})
+    rows = format_mangadex_issue_rows(
+        manga['id'],
+        {1.0: [1.0], 30.0: [271.0]},
+        manga['attributes'],
+        include_volume_zero=True,
+    )
+
+    assert result['issue_count'] == 31
+    assert [rows[0]['issue_number'], rows[-1]['issue_number']] == ['0', '30']
+    assert len(rows) == 31
+
+
+def test_api_manga_search_legacy_all_routes_to_mangadex(monkeypatch):
     from types import SimpleNamespace
 
     from flask import Flask
@@ -117,26 +154,8 @@ def test_api_manga_search_all_sources_returns_comicvine_and_mangadex(monkeypatch
             return None
 
     class FakeComicVine:
-        async def search_volumes(self, query, section='comic'):
-            assert query == 'Jujutsu Kaisen Modulo'
-            assert section == 'manga'
-            return [{
-                'comicvine_id': 169930,
-                'title': 'Jujutsu Kaisen: Modulo',
-                'year': 2026,
-                'volume_number': 1,
-                'cover_link': '',
-                'cover': None,
-                'description': '',
-                'site_url': 'https://comicvine.example/modulo',
-                'aliases': [],
-                'publisher': 'Shueisha',
-                'issue_count': 3,
-                'translated': False,
-                'already_added': None,
-                'issues': None,
-                'date_added': None,
-            }]
+        async def search_volumes(self, *_args, **_kwargs):
+            raise AssertionError('ComicVine must not be queried for manga searches')
 
     class FakeDBResult:
         def fetchone(self):
@@ -192,5 +211,5 @@ def test_api_manga_search_all_sources_returns_comicvine_and_mangadex(monkeypatch
     payload = response.get_json()
     assert payload['error'] is None
     sources = [r['metadata_source'] for r in payload['result']]
-    assert sources == ['comicvine', 'mangadex']
-    assert payload['result'][1]['metadata_id'] == 'f3f59f12-351a-4de7-bd51-696d0764d64e'
+    assert sources == ['mangadex']
+    assert payload['result'][0]['metadata_id'] == 'f3f59f12-351a-4de7-bd51-696d0764d64e'

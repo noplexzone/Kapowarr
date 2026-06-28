@@ -134,6 +134,13 @@ function formatDownloadTime(unixSeconds: number): string {
   return d.toLocaleDateString() + ' ' + d.toTimeString().slice(0, 5);
 }
 
+function formatIssueSearchTitle(volumeTitle: string, issue?: IssueDetail): string {
+  if (!issue) return volumeTitle;
+  const issueNumber = issue.issue_number ? ` #${issue.issue_number}` : '';
+  const issueTitle = issue.title ? ` — ${issue.title}` : '';
+  return `${volumeTitle}${issueNumber}${issueTitle}`;
+}
+
 // ── Constants ───────────────────────────────────────────────────
 
 const SPECIAL_VERSIONS = [
@@ -874,6 +881,13 @@ export function VolumeDetailPage() {
       ? Math.round((volume.issues_downloaded / volume.issue_count) * 100)
       : 0;
   const progressTone = progressPct >= 100 ? 'success' : 'danger';
+  const selectedManualSearchIssue = volume.issues.find(
+    (issue) => issue.id === manualSearchIssueId,
+  );
+  const manualSearchTitle = formatIssueSearchTitle(
+    volume.title,
+    selectedManualSearchIssue,
+  );
 
   return (
     <div className={styles.page}>
@@ -1033,8 +1047,8 @@ export function VolumeDetailPage() {
         <DialogHeader
           title={
             manualSearching
-              ? 'Searching…'
-              : `Manual Search — Issue #${manualSearchIssueId ?? ''}`
+              ? `Searching — ${manualSearchTitle}`
+              : `Manual Search — ${manualSearchTitle}`
           }
           onClose={closeManualSearch}
         />

@@ -56,13 +56,15 @@ def is_suwayomi_link(link: str) -> bool:
 
 
 def is_manga_publisher(publisher: Optional[str]) -> bool:
-    """Return True if publisher string matches a known manga publisher."""
+    """Return True if publisher string identifies a manga source/publisher."""
     if not publisher:
         return False
+    pub_lower = publisher.lower().strip()
+    if pub_lower == 'mangadex':
+        return True
     from backend.implementations.comicvine import (
         _ENGLISH_MANGA_PUBLISHERS, _MANGA_PUBLISHERS
     )
-    pub_lower = publisher.lower().strip()
     return pub_lower in _MANGA_PUBLISHERS or pub_lower in _ENGLISH_MANGA_PUBLISHERS
 
 

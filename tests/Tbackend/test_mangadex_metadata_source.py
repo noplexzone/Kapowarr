@@ -217,6 +217,68 @@ def test_modulo_prequel_volume_zero_is_not_absorbed_into_issue_rows():
     assert [row['issue_number'] for row in rows] == ['1', '2', '3']
 
 
+def test_refresh_uses_should_include_volume_zero_not_count_heuristic():
+    """Regression: refresh path must not synthesize vol 0 for spinoffs like Modulo.
+
+    When a translated aggregate has sparse buckets (e.g. volumes 1 and 3
+    present, volume 2 absent), issue_count=3 but len(mapping keys >= 0)=2,
+    so the old heuristic 'issue_count > sparse_count' evaluates True and
+    wrongly produces a Volume 0 row.  The correct predicate is
+    mangadex_should_include_volume_zero(manga) which inspects the prequel
+    relationship title family.
+    """
+    manga = {
+        'id': 'f3f59f12-351a-4de7-bd51-696d0764d64e',
+        'attributes': {
+            'title': {'ja-ro': 'Jujutsu Kaisen Modulo'},
+            'altTitles': [{'en': 'Jujutsu Kaisen Modulo'}],
+            'availableTranslatedLanguages': ['en'],
+            'year': 2025,
+            'lastVolume': '3',
+        },
+        'relationships': [
+            {
+                'type': 'manga',
+                'related': 'prequel',
+                'attributes': {
+                    'title': {'ja-ro': 'Jujutsu Kaisen 0: Toukyou Toritsu Jujutsu Koutou Senmon Gakkou'},
+                    'altTitles': [{'en': 'Jujutsu Kaisen 0'}],
+                    'lastVolume': '0',
+                },
+            },
+        ],
+    }
+    # Sparse aggregate: vol 2 not yet translated
+    sparse_mapping = {1.0: [1.0, 2.0], 3.0: [24.0]}
+
+    # Confirm the old refresh heuristic fires incorrectly (issue_count=3, sparse keys=2)
+    from backend.implementations.mangadex import format_mangadex_volume_result
+    vd = format_mangadex_volume_result(manga, sparse_mapping, 'en')
+    old_heuristic = vd["issue_count"] > len([k for k in sparse_mapping if k >= 0])
+    assert old_heuristic is True, "old heuristic should fire True for sparse mapping"
+
+    rows_old = format_mangadex_issue_rows(
+        manga['id'],
+        sparse_mapping,
+        manga.get('attributes') or {},
+        include_volume_zero=old_heuristic,
+    )
+    assert '0' in [r['issue_number'] for r in rows_old], \
+        "old heuristic incorrectly produces a Volume 0 row"
+
+    # The correct predicate must return False for Modulo
+    assert mangadex_should_include_volume_zero(manga) is False
+
+    rows_fixed = format_mangadex_issue_rows(
+        manga['id'],
+        sparse_mapping,
+        manga.get('attributes') or {},
+        include_volume_zero=mangadex_should_include_volume_zero(manga),
+    )
+    assert [r['issue_number'] for r in rows_fixed] == ['1', '2', '3'], \
+        "fixed path must produce exactly volumes 1-3 for Modulo"
+
+
 def _install_search_route_fakes(monkeypatch, comicvine_results=None):
     from types import SimpleNamespace
 

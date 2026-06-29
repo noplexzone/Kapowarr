@@ -1639,7 +1639,7 @@ def _refresh_mangadex_metadata_row(
         mangadex_id,
         mapping,
         manga.get("attributes") or {},
-        include_volume_zero=(vd["issue_count"] > len([k for k in mapping if k >= 0])),
+        include_volume_zero=mangadex_should_include_volume_zero(manga),
     )
     try:
         vd["cover"] = client.get_cover_image(vd["cover_link"]) if vd.get("cover_link") else None

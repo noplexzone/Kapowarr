@@ -138,6 +138,20 @@ export async function manualSearchIssue(
   return readJson<ManualSearchResult[]>(response);
 }
 
+export async function manualSuwayomiBundleSearch(
+  issueId: number,
+  chapters: string,
+): Promise<ManualSearchResult[]> {
+  const response = await apiClient.post(
+    `issues/${issueId}/suwayomi/manual-bundle/search`,
+    {
+      json: { chapters },
+      timeout: 60000,
+    },
+  );
+  return readJson<ManualSearchResult[]>(response);
+}
+
 export async function deleteIssue(issueId: number): Promise<void> {
   await apiClient.delete(`issues/${issueId}`);
 }

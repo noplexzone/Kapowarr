@@ -23,7 +23,7 @@ from backend.implementations.suwayomi import (SUWAYOMI_SCHEME,
                                               make_suwayomi_link,
                                               make_suwayomi_volume_link,
                                               parse_suwayomi_link)
-from backend.implementations.volumes import Volume
+from backend.implementations.volumes import Library, Volume
 from backend.internals.settings import Settings
 
 
@@ -423,6 +423,50 @@ def _parse_chapter_range_from_description(description: str) -> List[float]:
     if hits:
         return sorted(set(float(x) for x in hits))
     return []
+
+
+_MANUAL_RANGE_RE = _re_compile(
+    r'^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)$'
+)
+
+
+def parse_manual_chapter_expression(expr: str) -> List[float]:
+    """Parse a user-supplied chapter expression into a sorted list of chapter numbers.
+
+    Accepts:
+    - Range:  '1-7', '264-271', '1 – 7'  (en-dash also accepted)
+    - List:   '1,2,3', '1, 2, 3', '262.2'
+    - Single: '5'
+
+    Raises ValueError on empty input, reversed ranges, or non-numeric tokens.
+    """
+    expr = expr.strip()
+    if not expr:
+        raise ValueError('Chapter expression is empty')
+
+    m = _MANUAL_RANGE_RE.match(expr)
+    if m:
+        start = float(m.group(1))
+        end = float(m.group(2))
+        if start > end:
+            raise ValueError(
+                f'Range start ({start:.4g}) is greater than end ({end:.4g})'
+            )
+        nums: List[float] = []
+        n = start
+        while n <= end + 0.001:
+            nums.append(round(n, 4))
+            n += 1.0
+        return nums
+
+    parts = [p.strip() for p in expr.split(',')]
+    try:
+        nums = sorted(set(float(p) for p in parts if p))
+    except ValueError:
+        raise ValueError(f'Invalid chapter expression: {expr!r}')
+    if not nums:
+        raise ValueError('Chapter expression contains no valid chapter numbers')
+    return nums
 
 
 _MAX_MANGADEX_CHAPTERS_PER_VOLUME = 40
@@ -869,6 +913,83 @@ def manual_search(
         return results
 
     return []
+
+
+def manual_suwayomi_bundle_search(
+    issue_id: int,
+    chapter_expression: str,
+) -> List[MatchedSearchResultData]:
+    """Return Suwayomi bundle candidates for a manually-specified chapter range.
+
+    Searches Suwayomi using all available title variants for the issue's volume,
+    then calls _build_suwayomi_bundle_for_issue with the parsed chapters.
+
+    Args:
+        issue_id: DB id of the issue to bundle chapters for.
+        chapter_expression: User-supplied chapter range ('1-7' or '1,2,3').
+
+    Returns:
+        List of matched search result dicts (match=True) for each Suwayomi
+        manga/source that covers all requested chapters.  Empty when no source
+        has the full set.
+
+    Raises:
+        ValueError: If chapter_expression is empty, reversed, or non-numeric.
+    """
+    chapter_numbers = parse_manual_chapter_expression(chapter_expression)
+
+    issue = Library.get_issue(issue_id)
+    issue_data = issue.get_data()
+    volume_id = issue_data.volume_id
+    volume = Volume(volume_id)
+    volume_data = volume.get_data()
+    calculated_issue_number = issue_data.calculated_issue_number or float(
+        volume_data.volume_number
+    )
+
+    raw: List[SearchResultData] = []
+    seen_links: set = set()
+    for title in (volume_data.title, volume_data.alt_title):
+        if not title:
+            continue
+        search_obj = SearchSuwayomi(
+            normalise_query_string(title).replace(':', '')
+        )
+        try:
+            title_results = search_obj._search_sync()
+        except Exception as e:
+            LOGGER.warning(
+                'Suwayomi manual bundle search failed for %r: %s', title, e
+            )
+            title_results = []
+        for r in title_results:
+            link = r.get('link', '')
+            if link not in seen_links:
+                raw.append(r)
+                seen_links.add(link)
+
+    display_vol = int(calculated_issue_number)
+    bundles = _build_suwayomi_bundle_for_issue(
+        raw,
+        chapter_numbers,
+        volume_data,
+        calculated_issue_number,
+        display_volume_number=display_vol,
+    )
+    if not bundles:
+        return []
+
+    results: List[MatchedSearchResultData] = []
+    for bundle in bundles:
+        dt = bundle.get('display_title', '')
+        dt = dt.replace('(Ch. ', '(Manual Ch. ', 1)
+        results.append({
+            **bundle,
+            'display_title': dt,
+            'match': True,
+            'match_issue': None,
+        })
+    return results
 
 
 def _try_bundle_suwayomi_chapters(

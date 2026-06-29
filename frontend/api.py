@@ -28,7 +28,7 @@ from backend.base.files import delete_file_folder, folder_is_inside_folder
 from backend.features.library_import import (generate_bulk_scan,
                                              prepare_bulk_scan)
 from backend.features.mass_edit import run_mass_editor_action
-from backend.features.search import manual_search
+from backend.features.search import manual_search, manual_suwayomi_bundle_search
 from backend.features.tasks import (BulkLibraryImport, ImportFilesVolume,
                                     RefreshAndScanVolume,
                                     Task, TaskHandler,
@@ -1616,6 +1616,19 @@ def api_issue_download(id: int):
         },
         code=201
     )
+
+
+@api.route('/issues/<int:id>/suwayomi/manual-bundle/search', methods=['POST'])
+@error_handler
+@auth
+def api_issue_suwayomi_manual_bundle_search(id: int):
+    Library.get_issue(id)
+    chapters_expr = extract_key(request, 'chapters')
+    try:
+        result = manual_suwayomi_bundle_search(id, chapters_expr)
+    except ValueError as e:
+        return return_api({}, str(e), 400)
+    return return_api(result)
 
 
 @api.route('/activity/queue', methods=['GET', 'DELETE'])

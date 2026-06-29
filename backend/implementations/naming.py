@@ -41,6 +41,24 @@ remove_year_in_image_regex = compile(r'(?:19|20)\d{2}')
 extra_spaces_regex = compile(r'(?<=\s)(\s+)')
 
 
+def _emit_task_event(event) -> None:
+    """Emit a websocket task event without blocking the rename loop.
+
+    Importing backend.features.tasks._emit_task_event would create a circular
+    import (tasks.py imports mass_rename from here), so this module keeps its
+    own non-blocking emit helper with the same thread-daemon pattern.
+    """
+    from threading import Thread
+
+    def _emit() -> None:
+        try:
+            WebSocket().emit(event)
+        except Exception:
+            LOGGER.exception('Failed to emit websocket task event')
+
+    Thread(target=_emit, name='TaskEventEmit', daemon=True).start()
+
+
 # region Cleaning names
 def clean_filestring(filestring: str) -> str:
     """Clean a part of a filename (so no path separators) by removing illegal
@@ -876,12 +894,11 @@ def mass_rename(
         volume.update({'folder': new_volume_folder})
 
     if update_websocket:
-        ws = WebSocket()
         total_renames = len(renames)
         for idx, (before, after) in enumerate(renames.items()):
             if stop_fn and stop_fn():
                 break
-            ws.emit(TaskStatusEvent(
+            _emit_task_event(TaskStatusEvent(
                 f'Renaming file {idx+1}/{total_renames}'
             ))
             rename_file(before, after)

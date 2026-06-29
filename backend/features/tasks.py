@@ -191,7 +191,7 @@ class MassRenameIssue(Task):
         volume_title = volume.vd.title
         issue_number = volume.get_issue(self._issue_id).get_data().issue_number
         self.message = f'Renaming files for {volume_title} #{issue_number}'
-        WebSocket().emit(TaskStatusEvent(self.message))
+        _emit_task_event(TaskStatusEvent(self.message))
 
         mass_rename(
             self._volume_id,
@@ -246,7 +246,7 @@ class MassConvertIssue(Task):
         volume_title = volume.vd.title
         issue_number = volume.get_issue(self._issue_id).get_data().issue_number
         self.message = f'Converting files for {volume_title} #{issue_number}'
-        WebSocket().emit(TaskStatusEvent(self.message))
+        _emit_task_event(TaskStatusEvent(self.message))
 
         mass_convert(
             self._volume_id,
@@ -393,7 +393,7 @@ class RefreshAndScanVolume(Task):
     def run(self) -> None:
         volume_title = self._new_title or Volume(self._volume_id).vd.title
         self.message = f'Updating info on {volume_title}'
-        WebSocket().emit(TaskStatusEvent(self.message))
+        _emit_task_event(TaskStatusEvent(self.message))
 
         try:
             refresh_and_scan(self._volume_id, update_websocket=True)
@@ -440,7 +440,7 @@ class MassRenameVolume(Task):
     def run(self) -> None:
         volume_title = Volume(self._volume_id).vd.title
         self.message = f'Renaming files for {volume_title}'
-        WebSocket().emit(TaskStatusEvent(self.message))
+        _emit_task_event(TaskStatusEvent(self.message))
 
         mass_rename(
             self._volume_id,
@@ -489,7 +489,7 @@ class MassConvertVolume(Task):
     def run(self) -> None:
         volume_title = Volume(self._volume_id).vd.title
         self.message = f'Converting files for {volume_title}'
-        WebSocket().emit(TaskStatusEvent(self.message))
+        _emit_task_event(TaskStatusEvent(self.message))
 
         mass_convert(
             self._volume_id,
@@ -526,7 +526,7 @@ class ImportFilesVolume(Task):
     def run(self) -> None:
         volume_title = Volume(self._volume_id).vd.title
         self.message = f'Importing files for {volume_title}'
-        WebSocket().emit(TaskStatusEvent(self.message))
+        _emit_task_event(TaskStatusEvent(self.message))
 
         # Apply user-specified issue matches before scanning
         if self.match_map:
@@ -543,7 +543,7 @@ class ImportFilesVolume(Task):
                         (file_id, issue_id)
                     )
                 self.message = f'Force-matched {basename(filepath)} to {len(issue_ids)} issue(s)'
-                WebSocket().emit(TaskStatusEvent(self.message))
+                _emit_task_event(TaskStatusEvent(self.message))
             commit()
 
         # Register uploaded files in DB, match to issues
@@ -615,7 +615,7 @@ class UpdateAll(Task):
         self.total_count = None
         self.phase = None
         self.message = 'Updating info on all volumes'
-        WebSocket().emit(TaskStatusEvent(self.message))
+        _emit_task_event(TaskStatusEvent(self.message))
 
         def _on_progress(processed: int, total: int, phase: str) -> None:
             self.processed_count = processed
@@ -692,7 +692,6 @@ class SearchAll(Task):
         self.processed_count = 0
 
         downloads: List[Tuple[str, int, Union[int, None]]] = []
-        ws = WebSocket()
         per_volume: List[dict] = []
         for volume_id, volume_title in rows:
             if self.stop:
@@ -701,7 +700,7 @@ class SearchAll(Task):
                 f'Searching for {volume_title} '
                 f'({self.processed_count + 1}/{self.total_count})'
             )
-            ws.emit(TaskStatusEvent(self.message))
+            _emit_task_event(TaskStatusEvent(self.message))
             stats: dict = {'total_found': 0, 'per_issue': []}
             try:
                 # Get search results and download them. Keep going when one
@@ -785,7 +784,6 @@ class BulkLibraryImport(Task):
         from backend.features.library_import import import_library_entry
         from backend.implementations.comicvine import ComicVine
 
-        ws = WebSocket()
         total = len(self._entries)
 
         # Batch-resolve issue IDs → volume IDs before processing any entries.
@@ -800,7 +798,7 @@ class BulkLibraryImport(Task):
         if issue_indices:
             n = len(issue_indices)
             self.message = f'Resolving {n} issue ID{"s" if n != 1 else ""} to volume IDs…'
-            ws.emit(TaskStatusEvent(self.message))
+            _emit_task_event(TaskStatusEvent(self.message))
             try:
                 issue_ids = [issue_id for _, issue_id in issue_indices]
                 mapping = async_run(
@@ -831,7 +829,7 @@ class BulkLibraryImport(Task):
                 continue
 
             self.message = f'Importing {idx + 1}/{total}: {entry["file_title"]}'
-            ws.emit(TaskStatusEvent(self.message))
+            _emit_task_event(TaskStatusEvent(self.message))
 
             retries = 0
             while retries < 3:
@@ -848,7 +846,7 @@ class BulkLibraryImport(Task):
                         f'— waiting 65 min (retry {retries}/3)…'
                     )
                     self.message = wait_msg
-                    ws.emit(TaskStatusEvent(self.message))
+                    _emit_task_event(TaskStatusEvent(self.message))
                     sleep(3900)
                 except Exception:
                     LOGGER.exception(
@@ -857,7 +855,7 @@ class BulkLibraryImport(Task):
                     break
 
         self.message = f'Bulk import finished: {total} volumes processed'
-        ws.emit(TaskStatusEvent(self.message))
+        _emit_task_event(TaskStatusEvent(self.message))
         return None
 
 

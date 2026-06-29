@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react';
 import { useSuspenseQuery, useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/primitives';
 import { systemAboutQueryOptions, downloadLogs, fetchLogTail } from '../-system.api';
@@ -11,6 +12,13 @@ export function SystemStatusPage() {
     refetchInterval: 5_000,
     staleTime: 0,
   });
+
+  const logRef = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [logTail]);
 
   return (
     <div className={styles.page}>
@@ -36,7 +44,7 @@ export function SystemStatusPage() {
 
       <div className={styles.logSection}>
         <h2 className={styles.logTitle}>Live Logs</h2>
-        <pre className={styles.logOutput}>{logTail ?? 'Loading logs…'}</pre>
+        <pre ref={logRef} className={styles.logOutput}>{logTail ?? 'Loading logs…'}</pre>
       </div>
     </div>
   );

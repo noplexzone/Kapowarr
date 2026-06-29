@@ -400,6 +400,12 @@
 }
 
 
+.bundleSection {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
 .bundleHelpText {
   color: var(--text-dim);
   font-size: 0.875rem;

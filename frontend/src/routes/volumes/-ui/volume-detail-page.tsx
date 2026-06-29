@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useSocketEvent } from '@/platform/socketio/socket';
 import type { QueueEntry } from '@/routes/activity/queue/-queue.types';
 import { useParams, useNavigate, Link } from '@tanstack/react-router';
@@ -109,15 +109,6 @@ function CoverPageIcon() {
       <rect x="4" y="3" width="16" height="18" rx="2" />
       <circle cx="9" cy="8" r="1.5" />
       <path d="m4 17 4.5-4.5 3.5 3.5 2-2 6 6" />
-    </svg>
-  );
-}
-
-function ChainIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
     </svg>
   );
 }
@@ -245,12 +236,12 @@ export function VolumeDetailPage() {
   const [coverApplyingUrl, setCoverApplyingUrl] = useState<string | null>(null);
   const [coverApplyResult, setCoverApplyResult] = useState<AddCoverResult | null>(null);
 
-  // Suwayomi manual bundle dialog
-  const [swBundleIssueId, setSwBundleIssueId] = useState<number | null>(null);
+  // Suwayomi manual bundle state (shown inside the manual search dialog)
   const [swBundleInput, setSwBundleInput] = useState('');
   const [swBundleResults, setSwBundleResults] = useState<ManualSearchResult[]>([]);
   const [swBundleSearching, setSwBundleSearching] = useState(false);
   const [swBundleError, setSwBundleError] = useState('');
+  const swBundleRequestSeq = useRef(0);
 
   const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
 
@@ -414,6 +405,11 @@ export function VolumeDetailPage() {
     setManualSearchIssueId(issueId);
     setManualSearching(true);
     setManualResults([]);
+    swBundleRequestSeq.current += 1;
+    setSwBundleInput('');
+    setSwBundleResults([]);
+    setSwBundleSearching(false);
+    setSwBundleError('');
     try {
       const results = await manualSearchIssue(issueId);
       setManualResults(results);
@@ -431,8 +427,13 @@ export function VolumeDetailPage() {
   }, [manualSearchVolMutation]);
 
   const closeManualSearch = useCallback(() => {
+    swBundleRequestSeq.current += 1;
     setManualSearchIssueId(null);
     setManualResults([]);
+    setSwBundleInput('');
+    setSwBundleResults([]);
+    setSwBundleSearching(false);
+    setSwBundleError('');
   }, []);
 
   const closeVolumeManualSearch = useCallback(() => {
@@ -440,31 +441,20 @@ export function VolumeDetailPage() {
     setVolManualSearching(false);
   }, []);
 
-  const handleSuwayomiBundle = useCallback((issueId: number) => {
-    setSwBundleIssueId(issueId);
-    setSwBundleInput('');
-    setSwBundleResults([]);
-    setSwBundleSearching(false);
-    setSwBundleError('');
-  }, []);
-
-  const closeSuwayomiBundle = useCallback(() => {
-    setSwBundleIssueId(null);
-    setSwBundleInput('');
-    setSwBundleResults([]);
-    setSwBundleError('');
-  }, []);
-
   const doSuwayomiBundleSearch = useCallback(async () => {
-    if (swBundleIssueId === null || !swBundleInput.trim()) return;
+    if (manualSearchIssueId === null || !swBundleInput.trim()) return;
+    const requestSeq = swBundleRequestSeq.current + 1;
+    swBundleRequestSeq.current = requestSeq;
+    const issueId = manualSearchIssueId;
     setSwBundleSearching(true);
     setSwBundleResults([]);
     setSwBundleError('');
     try {
       const results = await manualSuwayomiBundleSearch(
-        swBundleIssueId,
+        issueId,
         swBundleInput.trim(),
       );
+      if (swBundleRequestSeq.current !== requestSeq) return;
       setSwBundleResults(results);
       if (results.length === 0) {
         setSwBundleError(
@@ -472,11 +462,14 @@ export function VolumeDetailPage() {
         );
       }
     } catch (err) {
+      if (swBundleRequestSeq.current !== requestSeq) return;
       setSwBundleError('Search failed: ' + (err as Error).message);
     } finally {
-      setSwBundleSearching(false);
+      if (swBundleRequestSeq.current === requestSeq) {
+        setSwBundleSearching(false);
+      }
     }
-  }, [swBundleIssueId, swBundleInput]);
+  }, [manualSearchIssueId, swBundleInput]);
 
   const handleShowHistory = useCallback(async (issueId: number) => {
     setHistoryIssueId(issueId);
@@ -946,10 +939,6 @@ export function VolumeDetailPage() {
     volume.title,
     selectedManualSearchIssue,
   );
-  const selectedSwBundleIssue = volume.issues.find(
-    (issue) => issue.id === swBundleIssueId,
-  );
-
   return (
     <div className={styles.page}>
       <nav className={styles.breadcrumb}>
@@ -1087,7 +1076,6 @@ export function VolumeDetailPage() {
                   onAddCover={(fileId, filename) =>
                     openCoverDialog(fileId, issue.id, filename)
                   }
-                  onSuwayomiBundle={() => handleSuwayomiBundle(issue.id)}
                   isAutoSearching={
                     autoSearchIssueMutation.isPending &&
                     autoSearchIssueMutation.variables?.issueId === issue.id
@@ -1189,89 +1177,79 @@ export function VolumeDetailPage() {
               </tbody>
             </table>
           )}
-        </DialogBody>
-      </DialogFrame>
 
-      {/* ── Suwayomi Manual Bundle Dialog ──────────────────── */}
-      <DialogFrame
-        open={swBundleIssueId !== null}
-        onOpenChange={(open) => {
-          if (!open) closeSuwayomiBundle();
-        }}
-      >
-        <DialogHeader
-          title={`Manual Suwayomi Bundle — ${formatIssueSearchTitle(volume.title, selectedSwBundleIssue)}`}
-          onClose={closeSuwayomiBundle}
-        />
-        <DialogBody>
-          <p className={styles.bundleHelpText}>
-            Enter chapters to bundle (e.g. <code>1-7</code> or <code>1,2,3,4,5,6,7</code>).
-          </p>
-          <div className={styles.fixSearchBar}>
-            <input
-              type="text"
-              className={styles.fixSearchInput}
-              placeholder="1-7 or 1,2,3,4,5,6,7"
-              value={swBundleInput}
-              onChange={(e) => setSwBundleInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') doSuwayomiBundleSearch();
-              }}
-              disabled={swBundleSearching}
-            />
-            <Button
-              variant="primary"
-              onClick={doSuwayomiBundleSearch}
-              disabled={swBundleSearching || !swBundleInput.trim()}
-            >
-              {swBundleSearching ? 'Searching…' : 'Search'}
-            </Button>
-          </div>
-          {swBundleSearching && (
-            <p className={styles.dialogStatus}>Searching Suwayomi…</p>
-          )}
-          {!swBundleSearching && swBundleError && (
-            <p className={styles.dialogStatus}>{swBundleError}</p>
-          )}
-          {!swBundleSearching && swBundleResults.length > 0 && (
-            <table className={styles.searchResultTable}>
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th className={styles.thSource}>Source</th>
-                  <th className={styles.thAction}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {swBundleResults.map((result, i) => (
-                  <tr key={i}>
-                    <td>{result.display_title}</td>
-                    <td className={styles.sourceCell}>{result.source}</td>
-                    <td className={styles.actionCell}>
-                      <Button
-                        variant="primary"
-                        disabled={
-                          downloadIssueMutation.isPending &&
-                          downloadIssueMutation.variables?.link === result.link
-                        }
-                        onClick={() => {
-                          downloadIssueMutation.mutate({
-                            issueId: swBundleIssueId!,
-                            link: result.link,
-                            forceMatch: true,
-                            displayTitle: result.display_title,
-                          });
-                          closeSuwayomiBundle();
-                        }}
-                      >
-                        Download
-                      </Button>
-                    </td>
+          {/* ── Suwayomi Bundle section ─────────────────── */}
+          <div className={styles.bundleSection}>
+            <h4 className={styles.dialogSubhead}>Suwayomi Chapter Bundle</h4>
+            <p className={styles.bundleHelpText}>
+              Enter chapters to bundle (e.g. <code>1-7</code> or <code>1,2,3,4,5,6,7</code>).
+            </p>
+            <div className={styles.fixSearchBar}>
+              <input
+                type="text"
+                className={styles.fixSearchInput}
+                placeholder="1-7 or 1,2,3,4,5,6,7"
+                value={swBundleInput}
+                onChange={(e) => setSwBundleInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') doSuwayomiBundleSearch();
+                }}
+                disabled={swBundleSearching}
+              />
+              <Button
+                variant="primary"
+                onClick={doSuwayomiBundleSearch}
+                disabled={swBundleSearching || !swBundleInput.trim()}
+              >
+                {swBundleSearching ? 'Searching…' : 'Search'}
+              </Button>
+            </div>
+            {swBundleSearching && (
+              <p className={styles.dialogStatus}>Searching Suwayomi…</p>
+            )}
+            {!swBundleSearching && swBundleError && (
+              <p className={styles.dialogStatus}>{swBundleError}</p>
+            )}
+            {!swBundleSearching && swBundleResults.length > 0 && (
+              <table className={styles.searchResultTable}>
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th className={styles.thSource}>Source</th>
+                    <th className={styles.thAction}>Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {swBundleResults.map((result, i) => (
+                    <tr key={i}>
+                      <td>{result.display_title}</td>
+                      <td className={styles.sourceCell}>{result.source}</td>
+                      <td className={styles.actionCell}>
+                        <Button
+                          variant="primary"
+                          disabled={
+                            downloadIssueMutation.isPending &&
+                            downloadIssueMutation.variables?.link === result.link
+                          }
+                          onClick={() => {
+                            downloadIssueMutation.mutate({
+                              issueId: manualSearchIssueId!,
+                              link: result.link,
+                              forceMatch: true,
+                              displayTitle: result.display_title,
+                            });
+                            closeManualSearch();
+                          }}
+                        >
+                          Download
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </DialogBody>
       </DialogFrame>
 
@@ -2137,7 +2115,6 @@ interface IssueRowProps {
   onManualSearch: () => void;
   onHistory: () => void;
   onAddCover: (fileId: number, filename: string) => void;
-  onSuwayomiBundle: () => void;
   isAutoSearching: boolean;
 }
 
@@ -2148,7 +2125,6 @@ function IssueRow({
   onManualSearch,
   onHistory,
   onAddCover,
-  onSuwayomiBundle,
   isAutoSearching,
 }: IssueRowProps) {
   const pdfFile = issue.filenames
@@ -2230,15 +2206,6 @@ function IssueRow({
             onClick={onManualSearch}
           >
             <PersonIcon />
-          </button>
-          <button
-            type="button"
-            className={styles.issueActionBtn}
-            title="Manual Suwayomi chapter bundle"
-            aria-label="Manual Suwayomi chapter bundle"
-            onClick={onSuwayomiBundle}
-          >
-            <ChainIcon />
           </button>
           <button
             type="button"

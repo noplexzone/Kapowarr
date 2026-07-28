@@ -26,7 +26,8 @@ from backend.implementations.file_matching import scan_files
 from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume, refresh_and_scan
 from os.path import basename
-from sqlite3 import OperationalError
+from random import uniform
+from sqlite3 import OperationalError, SQLITE_BUSY
 
 from backend.internals.db import close_db, commit, get_db
 from backend.internals.db_models import FilesDB
@@ -1542,11 +1543,15 @@ def record_and_track_download(
             task_history_id = cursor.lastrowid
             break
         except OperationalError as exc:
-            if 'locked' not in str(exc).lower() or attempt + 1 >= max_attempts:
+            is_busy = (
+                getattr(exc, 'sqlite_errorcode', None) == SQLITE_BUSY
+                or 'locked' in str(exc).lower()
+            )
+            if not is_busy or attempt + 1 >= max_attempts:
                 raise
             if getattr(db, 'in_transaction', False):
                 db.rollback()
-            delay = 0.1 * (2 ** attempt)
+            delay = 0.1 * (2 ** attempt) + uniform(0.0, 0.05)
             LOGGER.warning(
                 'Manual download history admission blocked by SQLite; '
                 'retrying attempt %d/%d in %.1fs',
@@ -1557,14 +1562,25 @@ def record_and_track_download(
     if task_history_id is None:
         raise RuntimeError('Failed to create manual download history entry')
 
-    added, fail_reason = async_run(
-        DownloadHandler().add(
-            link, volume_id, issue_id,
-            force_match=force_match,
-            display_title=display_title,
-            task_history_id=task_history_id,
+    try:
+        added, fail_reason = async_run(
+            DownloadHandler().add(
+                link, volume_id, issue_id,
+                force_match=force_match,
+                display_title=display_title,
+                task_history_id=task_history_id,
+            )
         )
-    )
+    except Exception as exc:
+        DownloadBatch.register(
+            task_history_id, 1, volume_id, volume_title,
+            update_existing=True,
+        )
+        DownloadBatch.record(
+            task_history_id, link, False,
+            f'Admission failed: {type(exc).__name__}',
+        )
+        raise
 
     if added:
         DownloadBatch.register(

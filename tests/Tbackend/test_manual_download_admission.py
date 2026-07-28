@@ -32,9 +32,12 @@ class _Connection:
 
 
 class _ContendedDB:
-    def __init__(self, failures, error_message='database is locked'):
+    def __init__(
+        self, failures, error_message='database is locked', error_code=None
+    ):
         self.failures = failures
         self.error_message = error_message
+        self.error_code = error_code
         self.insert_attempts = 0
         self.connection = _Connection()
 
@@ -44,7 +47,10 @@ class _ContendedDB:
         if 'INSERT INTO task_history' in sql:
             self.insert_attempts += 1
             if self.insert_attempts <= self.failures:
-                raise OperationalError(self.error_message)
+                error = OperationalError(self.error_message)
+                if self.error_code is not None:
+                    error.sqlite_errorcode = self.error_code
+                raise error
             return _Cursor(lastrowid=42, connection=self.connection)
         if 'last_insert_rowid' in sql:
             return _Cursor((999,))
@@ -61,7 +67,8 @@ class ManualDownloadAdmissionTest(unittest.TestCase):
 
         handler.add = add
         batch = MagicMock()
-        with patch.object(tasks, 'get_db', return_value=db),                 patch.object(tasks, 'DownloadHandler', return_value=handler),                 patch.object(tasks, 'DownloadBatch', batch),                 patch.object(tasks, 'sleep') as sleep_mock:
+        with patch.object(tasks, 'get_db', return_value=db),                 patch.object(tasks, 'DownloadHandler', return_value=handler),                 patch.object(tasks, 'DownloadBatch', batch),                 patch.object(tasks, 'sleep') as sleep_mock, \
+                patch.object(tasks, 'uniform', return_value=0.025):
             result = tasks.record_and_track_download(
                 'https://example.invalid/download', 1, 2, False, 'Title',
             )
@@ -73,7 +80,8 @@ class ManualDownloadAdmissionTest(unittest.TestCase):
 
         self.assertEqual(db.insert_attempts, 3)
         self.assertEqual(db.connection.commits, 1)
-        self.assertEqual(sleep_mock.call_count, 2)
+        self.assertEqual(sleep_mock.call_args_list[0].args[0], 0.125)
+        self.assertEqual(sleep_mock.call_args_list[1].args[0], 0.225)
         self.assertEqual(handler.call[1]['task_history_id'], 42)
         batch.register.assert_called_once_with(
             42, 1, 1, 'Series', update_existing=True,
@@ -88,6 +96,36 @@ class ManualDownloadAdmissionTest(unittest.TestCase):
         self.assertEqual(db.insert_attempts, 4)
         self.assertEqual(sleep_mock.call_count, 3)
         handler.assert_not_called()
+
+    def test_sqlite_busy_error_code_retries_without_message_match(self):
+        db = _ContendedDB(
+            failures=1, error_message='resource unavailable', error_code=5,
+        )
+        result, _, _, sleep_mock = self._run(db)
+        self.assertEqual(db.insert_attempts, 2)
+        self.assertEqual(sleep_mock.call_count, 1)
+        self.assertEqual(len(result[0]), 1)
+
+    def test_queue_exception_records_meaningful_admission_failure(self):
+        db = _ContendedDB(failures=0)
+        handler = SimpleNamespace()
+
+        async def add(*args, **kwargs):
+            raise RuntimeError('upstream secret detail')
+
+        handler.add = add
+        batch = MagicMock()
+        with patch.object(tasks, 'get_db', return_value=db), \
+                patch.object(tasks, 'DownloadHandler', return_value=handler), \
+                patch.object(tasks, 'DownloadBatch', batch):
+            with self.assertRaises(RuntimeError):
+                tasks.record_and_track_download('x', 1, 2, False)
+        batch.register.assert_called_once_with(
+            42, 1, 1, 'Series', update_existing=True,
+        )
+        batch.record.assert_called_once_with(
+            42, 'x', False, 'Admission failed: RuntimeError',
+        )
 
     def test_non_lock_operational_error_is_not_retried(self):
         db = _ContendedDB(failures=99, error_message='disk I/O error')

@@ -41,7 +41,7 @@ from backend.base.definitions import (RAR_EXECUTABLES, BrokenClientReason,
 from backend.base.logging import LOGGER, get_log_filepath
 
 if TYPE_CHECKING:
-    from multiprocessing import SimpleQueue
+    from multiprocessing import Queue
     from multiprocessing.pool import IMapIterator
     from subprocess import CompletedProcess
 
@@ -1382,7 +1382,7 @@ def _create_context(
     log_folder: str,
     log_file: str,
     db_folder: str,
-    ws_queue: SimpleQueue[Dict[str, Any]]
+    ws_queue: Queue
 ):
     """
     Should run inside a new subprocess to setup logging, the database and

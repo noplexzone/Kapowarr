@@ -709,6 +709,8 @@ class SearchAll(Task):
                 # volume fails so a single bad source/query cannot abort the
                 # whole scheduled backfill.
                 results = auto_search(volume_id, _stats=stats)
+                if self.stop:
+                    break
             except Exception as exc:
                 LOGGER.exception(
                     'Search All failed for volume %s (%s)',
@@ -1425,6 +1427,7 @@ class TaskHandler(metaclass=Singleton):
                 if not getattr(task, 'cancellable', False):
                     raise TaskNotDeletable(task_id)
                 task.stop = True
+                entry['status'] = 'cancelling'
                 running_thread = entry['thread']
                 LOGGER.info(
                     'Requested cancellation: %s (%d)',

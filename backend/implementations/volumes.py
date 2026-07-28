@@ -1786,6 +1786,12 @@ def refresh_and_scan(
             'fetching_metadata' or 'scanning_files'.
             Defaults to None.
     """
+    def cancelled() -> bool:
+        return bool(stop_fn and stop_fn())
+
+    if cancelled():
+        return
+
     current_time = datetime.now()
     one_day_ago = current_time - ONE_DAY
     thirty_days_ago = current_time - THIRTY_DAYS
@@ -1804,6 +1810,8 @@ def refresh_and_scan(
             (volume_id,)
         ).fetchonedict()
         if volume_row and volume_row['metadata_source'] == 'mangadex':
+            if cancelled():
+                return
             _refresh_mangadex_metadata_row(
                 volume_row,
                 current_time,
@@ -1838,12 +1846,16 @@ def refresh_and_scan(
             ),
         ).fetchalldict()
         for mangadex_row in mangadex_rows:
+            if cancelled():
+                return
             _refresh_mangadex_metadata_row(
                 mangadex_row,
                 current_time,
                 update_websocket=update_websocket,
             )
 
+        if cancelled():
+            return
         cursor.execute("""
             SELECT comicvine_id, id, last_cv_fetch
             FROM volumes
@@ -1871,10 +1883,14 @@ def refresh_and_scan(
         on_progress(0, len(cv_to_id_fetch), 'fetching_metadata')
 
     # Update volumes
+    if cancelled():
+        return
     cv = ComicVine()
     volume_datas = filtered_volume_datas = run(
         cv.fetch_volumes(tuple(cv_to_id_fetch.keys()))
     )
+    if cancelled():
+        return
 
     if not volume_id and allow_skipping:
         cv_id_to_issue_count: Dict[int, int] = dict(cursor.execute("""
@@ -1941,11 +1957,15 @@ def refresh_and_scan(
         ))
 
     commit()
+    if cancelled():
+        return
 
     # Update issues
     issue_datas = run(cv.fetch_issues(
         tuple(vd["comicvine_id"] for vd in filtered_volume_datas)
     ))
+    if cancelled():
+        return
     monitor_issues_volume_ids: Set[int] = set(first_of_subarrays(cursor.execute(
         "SELECT id FROM volumes WHERE monitor_new_issues = 1;"
     )))
@@ -1996,6 +2016,8 @@ def refresh_and_scan(
             .add(isd["comicvine_id"]))
 
     for vd in filtered_volume_datas:
+        if cancelled():
+            return
         if len(volume_issues_fetched.get(
             vd["comicvine_id"]
         ) or tuple()) != vd["issue_count"]:
@@ -2039,6 +2061,8 @@ def refresh_and_scan(
     commit()
 
     # Scan for files
+    if cancelled():
+        return
     if volume_id:
         scan_files(volume_id, update_websocket=update_websocket)
 

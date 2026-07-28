@@ -895,6 +895,7 @@ class DownloadBatch:
     """
 
     _registry: Dict[int, 'DownloadBatch'] = {}
+    _pending_results: Dict[int, List[dict]] = {}
     _registry_lock: Lock = Lock()
 
     def __init__(
@@ -924,10 +925,17 @@ class DownloadBatch:
     ) -> None:
         if expected <= 0:
             return
+        batch = cls(
+            task_history_id, expected, volume_id, display_title, update_existing
+        )
         with cls._registry_lock:
-            cls._registry[task_history_id] = cls(
-                task_history_id, expected, volume_id, display_title, update_existing
-            )
+            pending = cls._pending_results.pop(task_history_id, [])
+            batch.results.extend(pending)
+            finalize = len(batch.results) >= batch.expected
+            if not finalize:
+                cls._registry[task_history_id] = batch
+        if finalize:
+            batch._finalize()
 
     @classmethod
     def record(
@@ -938,18 +946,23 @@ class DownloadBatch:
         failure_reason: str = '',
         covered_issues: 'Union[float, Tuple[float, float], None]' = None,
     ) -> None:
+        result = {
+            'title': web_title,
+            'success': success,
+            'failure_reason': failure_reason,
+            '_covered_issues': covered_issues,  # internal; stripped from JSON
+        }
         with cls._registry_lock:
             batch = cls._registry.get(task_history_id)
-        if not batch:
-            return
+            if not batch:
+                # A very fast direct download can finish between queue admission
+                # and registration of its expected batch size. Preserve the
+                # outcome so registration can finalize it instead of dropping it.
+                cls._pending_results.setdefault(task_history_id, []).append(result)
+                return
         finalize = False
         with batch._lock:
-            batch.results.append({
-                'title': web_title,
-                'success': success,
-                'failure_reason': failure_reason,
-                '_covered_issues': covered_issues,  # internal; stripped from JSON
-            })
+            batch.results.append(result)
             if len(batch.results) >= batch.expected:
                 finalize = True
         if finalize:
@@ -991,13 +1004,17 @@ class DownloadBatch:
         try:
             db = get_db()
             handler = TaskHandler()
+            queued_issue_ids = set()
             for r in self.results:
                 if r['success']:
                     continue
                 covered = r.get('_covered_issues')
-                if not isinstance(covered, tuple):
+                if isinstance(covered, float):
+                    n_start = n_end = covered
+                elif isinstance(covered, tuple):
+                    n_start, n_end = covered
+                else:
                     continue
-                n_start, n_end = covered
                 rows = db.execute(
                     """SELECT i.id
                        FROM issues i
@@ -1009,12 +1026,18 @@ class DownloadBatch:
                          AND i.calculated_issue_number <= ?""",
                     (self.volume_id, n_start, n_end),
                 ).fetchall()
+                added = 0
                 for row in rows:
-                    handler.add(AutoSearchIssue(self.volume_id, row['id']))
+                    issue_id = row['id']
+                    if issue_id in queued_issue_ids:
+                        continue
+                    queued_issue_ids.add(issue_id)
+                    handler.add(AutoSearchIssue(self.volume_id, issue_id))
+                    added += 1
                 LOGGER.info(
                     'Queued %d fallback AutoSearchIssue task(s) for volume %d '
-                    'after pack failure covering issues %.1f–%.1f',
-                    len(rows), self.volume_id, n_start, n_end,
+                    'after download failure covering issues %.1f–%.1f',
+                    added, self.volume_id, n_start, n_end,
                 )
         except Exception:
             LOGGER.exception(

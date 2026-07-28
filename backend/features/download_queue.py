@@ -28,7 +28,8 @@ from backend.base.logging import LOGGER
 from backend.features.post_processing import (PostProcessor,
                                               PostProcessorNZB,
                                               PostProcessorTorrentsComplete,
-                                              PostProcessorTorrentsCopy)
+                                              PostProcessorTorrentsCopy,
+                                              add_dl_to_blocklist)
 from backend.implementations.blocklist import add_to_blocklist
 from backend.implementations.download_clients import (BaseDirectDownload,
                                                       MegaDownload,
@@ -61,18 +62,11 @@ download_type_to_class: Dict[str, Type[Download]] = {
 
 
 def _emit_queue_event(event) -> None:
-    """Emit queue websocket events without blocking queue mutation.
-
-    A stalled websocket client must not prevent a download from being added to
-    the in-memory queue, removed from the DB, or started.
-    """
-    def _emit() -> None:
-        try:
-            WebSocket().emit(event)
-        except Exception:
-            LOGGER.exception('Failed to emit websocket queue event')
-
-    Thread(target=_emit, name='QueueEventEmit', daemon=True).start()
+    """Best-effort queue event delivery through the bounded websocket manager."""
+    try:
+        WebSocket().emit(event)
+    except Exception:
+        LOGGER.exception('Failed to emit websocket queue event')
 
 
 class DownloadHandler(metaclass=Singleton):
@@ -116,6 +110,11 @@ class DownloadHandler(metaclass=Singleton):
             PostProcessor.canceled(download)
 
         elif download.state == DownloadState.FAILED_STATE:
+            if isinstance(download, (SuwayomiDownload, SuwayomiVolumeDownload)):
+                # Block before recording the batch failure. DownloadBatch may
+                # queue fallback searches immediately when this is the final
+                # result, and those searches must not choose the same link.
+                add_dl_to_blocklist(download)
             PostProcessor.failed(download)
 
         elif download.state == DownloadState.DOWNLOADING_STATE:

@@ -727,7 +727,19 @@ async def search_multiple_queries(
                 probe.query = ''
                 if not probe.supports_volume(volume_data):
                     continue
-            for query in queries:
+            source_queries = queries
+            if Source is SearchSuwayomi:
+                # Formatted issue/volume queries for the same title all require
+                # the same Suwayomi library/source pass. Collapse them before
+                # invoking the comparatively expensive local integration.
+                unique_suwayomi_queries = {}
+                for query in queries:
+                    series_title = _extract_series_title(query)
+                    unique_suwayomi_queries.setdefault(
+                        series_title.casefold(), query
+                    )
+                source_queries = tuple(unique_suwayomi_queries.values())
+            for query in source_queries:
                 searches.append(Source(query).search(session))
         responses = await gather(*searches)
 
@@ -746,7 +758,8 @@ async def search_multiple_queries(
 
 def manual_search(
     volume_id: int,
-    issue_id: Union[int, None] = None
+    issue_id: Union[int, None] = None,
+    _retain_suwayomi_chapters: bool = False,
 ) -> List[MatchedSearchResultData]:
     """Do a manual search for a volume or issue.
 
@@ -784,6 +797,8 @@ def manual_search(
         f'#{issue_number}' if issue_number else ''
     )
 
+    unmatched_results: List[MatchedSearchResultData] = []
+    unmatched_links = set()
     for title in (volume_data.title, volume_data.alt_title):
         if not title:
             continue
@@ -833,6 +848,7 @@ def manual_search(
                 SpecialVersion.TPB,
             )
             and is_manga_publisher(volume_data.publisher)
+            and not _retain_suwayomi_chapters
         ):
             search_results = _remove_individual_suwayomi_results(search_results)
 
@@ -910,9 +926,21 @@ def manual_search(
             {**r, 'link': redact_url_for_log(r.get('link', ''))}
             for r in results
         ])
-        return results
+        if any(result['match'] for result in results):
+            return results + [
+                result for result in unmatched_results
+                if result['link'] not in {r['link'] for r in results}
+            ]
 
-    return []
+        # Raw but irrelevant primary-title results must not suppress an
+        # alternate-title search. Keep them for diagnostics and internal
+        # Suwayomi bundling, while de-duplicating links across title variants.
+        for result in results:
+            if result['link'] not in unmatched_links:
+                unmatched_results.append(result)
+                unmatched_links.add(result['link'])
+
+    return unmatched_results
 
 
 def manual_suwayomi_bundle_search(
@@ -1119,7 +1147,11 @@ def auto_search(
         LOGGER.debug('Auto search results: []')
         return []
 
-    all_results = manual_search(volume_id, issue_id)
+    all_results = manual_search(
+        volume_id,
+        issue_id,
+        _retain_suwayomi_chapters=True,
+    )
     search_results = [r for r in all_results if r['match']]
     if _stats is not None:
         _stats['total_found'] = _stats.get('total_found', 0) + len(all_results)

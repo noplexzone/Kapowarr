@@ -79,7 +79,7 @@ class BroadResultSkipTests(unittest.TestCase):
 
         calls = []  # (volume_id, issue_id) per manual_search call
 
-        def fake_manual_search(volume_id, issue_id=None):
+        def fake_manual_search(volume_id, issue_id=None, **kwargs):
             calls.append((volume_id, issue_id))
             return _make_unmatched_results(n_results)
 
@@ -142,7 +142,7 @@ class BroadResultSkipTests(unittest.TestCase):
 
         calls = []
 
-        def fake_manual_search(volume_id, issue_id=None):
+        def fake_manual_search(volume_id, issue_id=None, **kwargs):
             calls.append((volume_id, issue_id))
             results = _make_unmatched_results(60)
             # Add one matching result that covers issue #99 (not the open issue #1)

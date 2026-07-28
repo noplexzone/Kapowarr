@@ -118,7 +118,7 @@ def _run_auto_search(
     orig_manual = search_module.manual_search
     orig_volume = search_module.Volume
     try:
-        search_module.manual_search = lambda vid, iid=None: list(all_results)
+        search_module.manual_search = lambda vid, iid=None, **kwargs: list(all_results)
         search_module.Volume = lambda vid: vol
         with patch('backend.internals.settings.Settings') as MockSettings:
             MockSettings.return_value.sv = mock_sv

@@ -26,6 +26,7 @@ from backend.implementations.file_matching import scan_files
 from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume, refresh_and_scan
 from os.path import basename
+from sqlite3 import OperationalError
 
 from backend.internals.db import close_db, commit, get_db
 from backend.internals.db_models import FilesDB
@@ -1524,15 +1525,37 @@ def record_and_track_download(
     ).fetchone()
     volume_title = volume_row['title'] if volume_row else ''
 
-    db.execute(
-        """INSERT INTO task_history
-           (task_name, display_title, run_at, volume_id, issue_id)
-           VALUES (?,?,?,?,?)""",
-        ('manual_download', 'Manual Download', round(time()), volume_id, issue_id),
-    ).connection.commit()
-    task_history_id: int = db.execute(
-        "SELECT last_insert_rowid()"
-    ).fetchone()[0]
+    task_history_id: Optional[int] = None
+    max_attempts = 4
+    for attempt in range(max_attempts):
+        try:
+            cursor = db.execute(
+                """INSERT INTO task_history
+                   (task_name, display_title, run_at, volume_id, issue_id)
+                   VALUES (?,?,?,?,?)""",
+                (
+                    'manual_download', 'Manual Download', round(time()),
+                    volume_id, issue_id,
+                ),
+            )
+            cursor.connection.commit()
+            task_history_id = cursor.lastrowid
+            break
+        except OperationalError as exc:
+            if 'locked' not in str(exc).lower() or attempt + 1 >= max_attempts:
+                raise
+            if getattr(db, 'in_transaction', False):
+                db.rollback()
+            delay = 0.1 * (2 ** attempt)
+            LOGGER.warning(
+                'Manual download history admission blocked by SQLite; '
+                'retrying attempt %d/%d in %.1fs',
+                attempt + 2, max_attempts, delay,
+            )
+            sleep(delay)
+
+    if task_history_id is None:
+        raise RuntimeError('Failed to create manual download history entry')
 
     added, fail_reason = async_run(
         DownloadHandler().add(

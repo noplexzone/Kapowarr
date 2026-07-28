@@ -74,6 +74,13 @@ class ParseChapterRangeFromDescriptionTest(unittest.TestCase):
 # manual_search injects bundled result for manga issue searches
 # ---------------------------------------------------------------------------
 
+def _closed_run_result(result):
+    def fake_run(coroutine):
+        coroutine.close()
+        return result
+    return fake_run
+
+
 def _make_volume_data(special_version_marker='volume-as-issue', publisher='VIZ Media'):
     from backend.base.definitions import SpecialVersion, VolumeData
     special_version = (
@@ -150,7 +157,7 @@ def _run_manual_search(
         return {'match': True, 'match_issue': None}
 
     with patch('backend.features.search.Volume', return_value=mock_volume), \
-         patch('backend.features.search.run', return_value=raw_results), \
+         patch('backend.features.search.run', side_effect=_closed_run_result(raw_results)), \
          patch('backend.features.search.get_mangadex_volume_chapter_map',
                return_value=None), \
          patch('backend.features.search.check_search_result_match',

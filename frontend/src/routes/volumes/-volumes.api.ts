@@ -188,6 +188,7 @@ export async function downloadIssue(
 ): Promise<{ result: number | null; fail_reason: string | null }> {
   const response = await apiClient.post(`issues/${issueId}/download`, {
     json: { link, force_match: forceMatch, display_title: displayTitle },
+    timeout: 60000,
   });
   return readJson<{ result: number | null; fail_reason: string | null }>(
     response,
@@ -201,6 +202,7 @@ export async function downloadVolume(
 ): Promise<{ result: number | null; fail_reason: string | null }> {
   const response = await apiClient.post(`volumes/${volumeId}/download`, {
     json: { link, force_match: false, display_title: displayTitle },
+    timeout: 60000,
   });
   return readJson<{ result: number | null; fail_reason: string | null }>(
     response,

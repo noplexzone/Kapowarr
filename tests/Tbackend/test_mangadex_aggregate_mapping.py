@@ -10,6 +10,13 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 
+def _closed_run_result(result):
+    def fake_run(coroutine):
+        coroutine.close()
+        return result
+    return fake_run
+
+
 def _issues(*numbers):
     return [
         SimpleNamespace(
@@ -183,7 +190,7 @@ class ManualSearchMangaDexGuardTest(unittest.TestCase):
         }
 
         with patch('backend.features.search.Volume', return_value=mock_volume), \
-             patch('backend.features.search.run', return_value=self._suwayomi_chapters(1, 3)), \
+             patch('backend.features.search.run', side_effect=_closed_run_result(self._suwayomi_chapters(1, 3))), \
              patch('backend.features.search.get_mangadex_volume_chapter_map',
                    return_value=solo_mangadex_map), \
              patch('backend.features.search.check_search_result_match',
@@ -234,7 +241,7 @@ class ManualSearchMangaDexGuardTest(unittest.TestCase):
         }
 
         with patch('backend.features.search.Volume', return_value=mock_volume), \
-             patch('backend.features.search.run', return_value=raw_results), \
+             patch('backend.features.search.run', side_effect=_closed_run_result(raw_results)), \
              patch('backend.features.search.get_mangadex_volume_chapter_map',
                    return_value=md_map), \
              patch('backend.features.search.check_search_result_match',
@@ -257,7 +264,7 @@ class ManualSearchMangaDexGuardTest(unittest.TestCase):
             return {'match': True, 'match_issue': None}
 
         with patch('backend.features.search.Volume', return_value=mock_volume), \
-             patch('backend.features.search.run', return_value=self._suwayomi_chapters(1, 3)), \
+             patch('backend.features.search.run', side_effect=_closed_run_result(self._suwayomi_chapters(1, 3))), \
              patch('backend.features.search.get_mangadex_volume_chapter_map',
                    return_value=None), \
              patch('backend.features.search.check_search_result_match',

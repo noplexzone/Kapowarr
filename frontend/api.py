@@ -1566,7 +1566,8 @@ def api_convert_issue(id: int):
 @auth
 def api_volume_manual_search(id: int):
     Library.get_volume(id)
-    result = manual_search(id)
+    query = extract_key(request, 'query', check_existence=False)
+    result = manual_search(id, custom_query=query)
     return return_api(result)
 
 
@@ -1593,9 +1594,11 @@ def api_volume_download(id: int):
 @auth
 def api_issue_manual_search(id: int):
     volume_id = Library.get_issue(id).get_data().volume_id
+    query = extract_key(request, 'query', check_existence=False)
     result = manual_search(
         volume_id,
-        id
+        id,
+        custom_query=query,
     )
     return return_api(result)
 

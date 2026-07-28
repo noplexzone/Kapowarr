@@ -399,6 +399,24 @@
   margin: 0;
 }
 
+.dialogError {
+  margin: 0.75rem 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.manualQuerySection {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.manualQueryHelp {
+  margin: 0 0 0.65rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
 
 .bundleSection {
   margin-top: 1.25rem;

@@ -219,6 +219,17 @@ class SearchNZBIndexers(SearchSource):
 
 
 class SearchSuwayomi(SearchSource):
+    def __init__(self, query: str, exact_query: bool = False) -> None:
+        super().__init__(query)
+        self.exact_query = exact_query
+
+    def _series_title(self) -> str:
+        return (
+            self.query.strip()
+            if getattr(self, 'exact_query', False)
+            else _extract_series_title(self.query)
+        )
+
     def supports_volume(self, volume_data: Optional[VolumeData]) -> bool:
         if volume_data is None or not volume_data.publisher:
             return True
@@ -234,7 +245,7 @@ class SearchSuwayomi(SearchSource):
         if not client.is_configured():
             return []
 
-        series_title = _extract_series_title(self.query)
+        series_title = self._series_title()
         if not series_title:
             return []
 
@@ -713,6 +724,7 @@ def _build_suwayomi_bundle_for_issue(
 async def search_multiple_queries(
     *queries: str,
     volume_data: Optional[VolumeData] = None,
+    exact_query: bool = False,
 ) -> List[SearchResultData]:
     """Do a manual search for multiple queries asynchronously.
 
@@ -729,7 +741,7 @@ async def search_multiple_queries(
                 if not probe.supports_volume(volume_data):
                     continue
             source_queries = queries
-            if Source is SearchSuwayomi:
+            if Source is SearchSuwayomi and not exact_query:
                 # Formatted issue/volume queries for the same title all require
                 # the same Suwayomi library/source pass. Collapse them before
                 # invoking the comparatively expensive local integration.
@@ -741,7 +753,12 @@ async def search_multiple_queries(
                     )
                 source_queries = tuple(unique_suwayomi_queries.values())
             for query in source_queries:
-                searches.append(Source(query).search(session))
+                search = (
+                    Source(query, exact_query=True)
+                    if Source is SearchSuwayomi and exact_query
+                    else Source(query)
+                )
+                searches.append(search.search(session))
         responses = await gather(*searches)
 
     search_results: List[SearchResultData] = []
@@ -760,6 +777,7 @@ async def search_multiple_queries(
 def manual_search(
     volume_id: int,
     issue_id: Union[int, None] = None,
+    custom_query: Union[str, None] = None,
     _retain_suwayomi_chapters: bool = False,
 ) -> List[MatchedSearchResultData]:
     """Do a manual search for a volume or issue.
@@ -769,6 +787,9 @@ def manual_search(
         issue_id (Union[int, None], optional): The id of the issue to search for,
         in the case that you want to search for an issue instead of a volume.
             Defaults to None.
+        custom_query (Union[str, None], optional): Exact user-supplied source
+        query. When set, metadata-derived query formats and alternate-title
+        retries are skipped. Defaults to None.
 
     Returns:
         List[MatchedSearchResultData]: List with search results.
@@ -798,40 +819,54 @@ def manual_search(
         f'#{issue_number}' if issue_number else ''
     )
 
+    custom_query = (custom_query or '').strip() or None
     unmatched_results: List[MatchedSearchResultData] = []
     unmatched_links = set()
-    for title in (volume_data.title, volume_data.alt_title):
+    titles = (
+        (volume_data.title,)
+        if custom_query
+        else (volume_data.title, volume_data.alt_title)
+    )
+    for title in titles:
         if not title:
             continue
 
-        if volume_data.special_version == SpecialVersion.TPB:
-            formats = QUERY_FORMATS["TPB"]
-
-        elif volume_data.special_version == SpecialVersion.VOLUME_AS_ISSUE:
-            formats = QUERY_FORMATS["VAI"]
-
-        elif issue_number is None:
-            formats = QUERY_FORMATS["Volume"]
-
-        else:
-            formats = QUERY_FORMATS["Issue"]
-
-        if volume_data.year is None:
-            formats = tuple(
-                f.replace('({year})', '').strip()
-                for f in formats
-            )
-
         search_title = normalise_query_string(title).replace(':', '')
-        search_results = run(search_multiple_queries(
-            *(
+        if custom_query:
+            queries = (custom_query,)
+        else:
+            if volume_data.special_version == SpecialVersion.TPB:
+                formats = QUERY_FORMATS["TPB"]
+
+            elif volume_data.special_version == SpecialVersion.VOLUME_AS_ISSUE:
+                formats = QUERY_FORMATS["VAI"]
+
+            elif issue_number is None:
+                formats = QUERY_FORMATS["Volume"]
+
+            else:
+                formats = QUERY_FORMATS["Issue"]
+
+            if volume_data.year is None:
+                formats = tuple(
+                    f.replace('({year})', '').strip()
+                    for f in formats
+                )
+
+            queries = tuple(
                 format.format(
-                    title=search_title, volume_number=volume_data.volume_number,
-                    year=volume_data.year, issue_number=issue_number
+                    title=search_title,
+                    volume_number=volume_data.volume_number,
+                    year=volume_data.year,
+                    issue_number=issue_number,
                 )
                 for format in formats
-            ),
+            )
+
+        search_results = run(search_multiple_queries(
+            *queries,
             volume_data=volume_data,
+            exact_query=custom_query is not None,
         ))
         if not search_results:
             continue

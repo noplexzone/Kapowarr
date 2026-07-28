@@ -173,10 +173,18 @@ export function VolumeDetailPage() {
   const [manualSearchIssueId, setManualSearchIssueId] = useState<number | null>(null);
   const [manualResults, setManualResults] = useState<ManualSearchResult[]>([]);
   const [manualSearching, setManualSearching] = useState(false);
+  const [manualQuery, setManualQuery] = useState('');
+  const [manualSearchError, setManualSearchError] = useState('');
 
   // Volume-level manual search dialog
+  const [volManualOpen, setVolManualOpen] = useState(false);
   const [volManualResults, setVolManualResults] = useState<ManualSearchResult[]>([]);
   const [volManualSearching, setVolManualSearching] = useState(false);
+  const [volManualQuery, setVolManualQuery] = useState('');
+  const [volManualSearchError, setVolManualSearchError] = useState('');
+  const [manualDownloadError, setManualDownloadError] = useState('');
+  const manualSearchRequestSeq = useRef(0);
+  const volManualSearchRequestSeq = useRef(0);
 
   // Issue history dialog
   const [historyIssueId, setHistoryIssueId] = useState<number | null>(null);
@@ -302,20 +310,29 @@ export function VolumeDetailPage() {
     onSuccess: () => setActionMsg('Auto search started.'),
   });
 
-  const manualSearchVolMutation = useMutation({
-    mutationFn: () => manualSearchVolume(id),
-    onSuccess: (data) => {
+  const runVolumeManualSearch = useCallback(async (query?: string) => {
+    const requestSeq = volManualSearchRequestSeq.current + 1;
+    volManualSearchRequestSeq.current = requestSeq;
+    setVolManualSearching(true);
+    setVolManualResults([]);
+    setVolManualSearchError('');
+    setManualDownloadError('');
+    try {
+      const data = await manualSearchVolume(id, query);
+      if (volManualSearchRequestSeq.current !== requestSeq) return;
       setVolManualResults(data);
-      setVolManualSearching(false);
       if (data.length === 0) {
         setActionMsg('Manual search returned no results.');
       }
-    },
-    onError: (err) => {
-      setVolManualSearching(false);
-      setActionMsg('Manual search failed: ' + (err as Error).message);
-    },
-  });
+    } catch (err) {
+      if (volManualSearchRequestSeq.current !== requestSeq) return;
+      setVolManualSearchError('Manual search failed: ' + (err as Error).message);
+    } finally {
+      if (volManualSearchRequestSeq.current === requestSeq) {
+        setVolManualSearching(false);
+      }
+    }
+  }, [id]);
 
   const autoSearchIssueMutation = useMutation({
     mutationFn: ({ volumeId, issueId }: { volumeId: number; issueId: number }) =>
@@ -336,23 +353,49 @@ export function VolumeDetailPage() {
       forceMatch: boolean;
       displayTitle: string;
     }) => downloadIssue(issueId, link, forceMatch, displayTitle),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.fail_reason) {
+        const message = 'Download failed: ' + data.fail_reason;
+        setActionMsg(message);
+        setManualDownloadError(message);
+        return;
+      }
+      setManualDownloadError('');
       setActionMsg('Download queued.');
       queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
     },
-    onError: (err) => setActionMsg('Download failed: ' + (err as Error).message),
+    onError: (err) => {
+      const message = 'Download failed: ' + (err as Error).message;
+      setActionMsg(message);
+      setManualDownloadError(message);
+    },
   });
 
   const downloadVolumeMutation = useMutation({
     mutationFn: ({
       link,
       displayTitle,
+      forceMatch,
     }: {
       link: string;
       displayTitle: string;
-    }) => downloadVolume(id, link, displayTitle),
-    onSuccess: () => setActionMsg('Download queued.'),
-    onError: (err) => setActionMsg('Download failed: ' + (err as Error).message),
+      forceMatch: boolean;
+    }) => downloadVolume(id, link, displayTitle, forceMatch),
+    onSuccess: (data) => {
+      if (data.fail_reason) {
+        const message = 'Download failed: ' + data.fail_reason;
+        setActionMsg(message);
+        setManualDownloadError(message);
+        return;
+      }
+      setManualDownloadError('');
+      setActionMsg('Download queued.');
+    },
+    onError: (err) => {
+      const message = 'Download failed: ' + (err as Error).message;
+      setActionMsg(message);
+      setManualDownloadError(message);
+    },
   });
 
   const blocklistMutation = useMutation({
@@ -401,35 +444,68 @@ export function VolumeDetailPage() {
     },
   });
 
-  const handleManualSearch = useCallback(async (issueId: number) => {
-    setManualSearchIssueId(issueId);
+  const runIssueManualSearch = useCallback(async (
+    issueId: number,
+    query?: string,
+  ) => {
+    const requestSeq = manualSearchRequestSeq.current + 1;
+    manualSearchRequestSeq.current = requestSeq;
     setManualSearching(true);
     setManualResults([]);
+    setManualSearchError('');
+    setManualDownloadError('');
+    try {
+      const results = await manualSearchIssue(issueId, query);
+      if (manualSearchRequestSeq.current === requestSeq) {
+        setManualResults(results);
+      }
+    } catch (err) {
+      if (manualSearchRequestSeq.current === requestSeq) {
+        setManualResults([]);
+        setManualSearchError('Manual search failed: ' + (err as Error).message);
+      }
+    } finally {
+      if (manualSearchRequestSeq.current === requestSeq) {
+        setManualSearching(false);
+      }
+    }
+  }, []);
+
+  const handleManualSearch = useCallback((issueId: number) => {
+    setManualSearchIssueId(issueId);
+    setManualQuery('');
     swBundleRequestSeq.current += 1;
     setSwBundleInput('');
     setSwBundleResults([]);
     setSwBundleSearching(false);
     setSwBundleError('');
-    try {
-      const results = await manualSearchIssue(issueId);
-      setManualResults(results);
-    } catch {
-      setManualResults([]);
-    } finally {
-      setManualSearching(false);
-    }
-  }, []);
+    void runIssueManualSearch(issueId);
+  }, [runIssueManualSearch]);
+
+  const rerunIssueManualSearch = useCallback(() => {
+    if (manualSearchIssueId === null) return;
+    void runIssueManualSearch(manualSearchIssueId, manualQuery);
+  }, [manualQuery, manualSearchIssueId, runIssueManualSearch]);
 
   const handleVolumeManualSearch = useCallback(() => {
-    setVolManualSearching(true);
-    setVolManualResults([]);
-    manualSearchVolMutation.mutate();
-  }, [manualSearchVolMutation]);
+    setVolManualOpen(true);
+    setVolManualQuery('');
+    void runVolumeManualSearch();
+  }, [runVolumeManualSearch]);
+
+  const rerunVolumeManualSearch = useCallback(() => {
+    void runVolumeManualSearch(volManualQuery);
+  }, [runVolumeManualSearch, volManualQuery]);
 
   const closeManualSearch = useCallback(() => {
+    manualSearchRequestSeq.current += 1;
     swBundleRequestSeq.current += 1;
     setManualSearchIssueId(null);
     setManualResults([]);
+    setManualSearching(false);
+    setManualQuery('');
+    setManualSearchError('');
+    setManualDownloadError('');
     setSwBundleInput('');
     setSwBundleResults([]);
     setSwBundleSearching(false);
@@ -437,8 +513,13 @@ export function VolumeDetailPage() {
   }, []);
 
   const closeVolumeManualSearch = useCallback(() => {
+    volManualSearchRequestSeq.current += 1;
+    setVolManualOpen(false);
     setVolManualResults([]);
     setVolManualSearching(false);
+    setVolManualQuery('');
+    setVolManualSearchError('');
+    setManualDownloadError('');
   }, []);
 
   const doSuwayomiBundleSearch = useCallback(async () => {
@@ -1103,10 +1184,44 @@ export function VolumeDetailPage() {
           onClose={closeManualSearch}
         />
         <DialogBody>
+          <div className={styles.manualQuerySection}>
+            <p className={styles.manualQueryHelp}>
+              Override the metadata-generated source query when the title, year,
+              or volume metadata does not match the release listing.
+            </p>
+            <div className={styles.fixSearchBar}>
+              <input
+                type="text"
+                className={styles.fixSearchInput}
+                placeholder="e.g. Teen Titans 2003"
+                value={manualQuery}
+                onChange={(e) => setManualQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !manualSearching) {
+                    rerunIssueManualSearch();
+                  }
+                }}
+                disabled={manualSearching}
+              />
+              <Button
+                variant="primary"
+                onClick={rerunIssueManualSearch}
+                disabled={manualSearching}
+              >
+                {manualSearching ? 'Searching…' : 'Search'}
+              </Button>
+            </div>
+          </div>
           {manualSearching && (
             <p className={styles.dialogStatus}>Searching for downloads…</p>
           )}
-          {!manualSearching && manualResults.length === 0 && (
+          {!manualSearching && manualSearchError && (
+            <p className={styles.dialogError}>{manualSearchError}</p>
+          )}
+          {manualDownloadError && (
+            <p className={styles.dialogError}>{manualDownloadError}</p>
+          )}
+          {!manualSearching && !manualSearchError && manualResults.length === 0 && (
             <p className={styles.dialogStatus}>No results found.</p>
           )}
           {!manualSearching && manualResults.length > 0 && (
@@ -1155,6 +1270,24 @@ export function VolumeDetailPage() {
                         }
                       >
                         Download
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        title="Force download despite metadata mismatch"
+                        disabled={
+                          downloadIssueMutation.isPending &&
+                          downloadIssueMutation.variables?.link === result.link
+                        }
+                        onClick={() =>
+                          downloadIssueMutation.mutate({
+                            issueId: manualSearchIssueId!,
+                            link: result.link,
+                            forceMatch: true,
+                            displayTitle: result.display_title,
+                          })
+                        }
+                      >
+                        Force
                       </Button>
                       {result.match_issue !== null &&
                         !result.match_issue.includes('blocklist') && (
@@ -1345,7 +1478,7 @@ export function VolumeDetailPage() {
 
       {/* ── Volume-Level Manual Search Dialog ───────────────── */}
       <DialogFrame
-        open={volManualResults.length > 0 || volManualSearching}
+        open={volManualOpen}
         onOpenChange={(open) => {
           if (!open) closeVolumeManualSearch();
         }}
@@ -1359,10 +1492,44 @@ export function VolumeDetailPage() {
           onClose={closeVolumeManualSearch}
         />
         <DialogBody>
+          <div className={styles.manualQuerySection}>
+            <p className={styles.manualQueryHelp}>
+              Override the metadata-generated source query when the title, year,
+              or volume metadata does not match the release listing.
+            </p>
+            <div className={styles.fixSearchBar}>
+              <input
+                type="text"
+                className={styles.fixSearchInput}
+                placeholder="e.g. Teen Titans 2003"
+                value={volManualQuery}
+                onChange={(e) => setVolManualQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !volManualSearching) {
+                    rerunVolumeManualSearch();
+                  }
+                }}
+                disabled={volManualSearching}
+              />
+              <Button
+                variant="primary"
+                onClick={rerunVolumeManualSearch}
+                disabled={volManualSearching}
+              >
+                {volManualSearching ? 'Searching…' : 'Search'}
+              </Button>
+            </div>
+          </div>
           {volManualSearching && (
             <p className={styles.dialogStatus}>Searching for downloads…</p>
           )}
-          {!volManualSearching && volManualResults.length === 0 && (
+          {!volManualSearching && volManualSearchError && (
+            <p className={styles.dialogError}>{volManualSearchError}</p>
+          )}
+          {manualDownloadError && (
+            <p className={styles.dialogError}>{manualDownloadError}</p>
+          )}
+          {!volManualSearching && !volManualSearchError && volManualResults.length === 0 && (
             <p className={styles.dialogStatus}>No results found.</p>
           )}
           {!volManualSearching && volManualResults.length > 0 && (
@@ -1405,10 +1572,28 @@ export function VolumeDetailPage() {
                           downloadVolumeMutation.mutate({
                             link: result.link,
                             displayTitle: result.display_title,
+                            forceMatch: false,
                           })
                         }
                       >
                         Download
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        title="Force download despite metadata mismatch"
+                        disabled={
+                          downloadVolumeMutation.isPending &&
+                          downloadVolumeMutation.variables?.link === result.link
+                        }
+                        onClick={() =>
+                          downloadVolumeMutation.mutate({
+                            link: result.link,
+                            displayTitle: result.display_title,
+                            forceMatch: true,
+                          })
+                        }
+                      >
+                        Force
                       </Button>
                       {result.match_issue !== null &&
                         !result.match_issue.includes('blocklist') && (

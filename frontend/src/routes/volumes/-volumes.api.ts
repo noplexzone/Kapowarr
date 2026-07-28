@@ -105,8 +105,11 @@ export async function autoSearchVolume(
 
 export async function manualSearchVolume(
   id: number,
+  query?: string,
 ): Promise<ManualSearchResult[]> {
+  const customQuery = query?.trim();
   const response = await apiClient.get(`volumes/${id}/manualsearch`, {
+    searchParams: customQuery ? { query: customQuery } : undefined,
     timeout: 60000,
   });
   return readJson<ManualSearchResult[]>(response);
@@ -131,8 +134,11 @@ export async function autoSearchIssue(
 
 export async function manualSearchIssue(
   issueId: number,
+  query?: string,
 ): Promise<ManualSearchResult[]> {
+  const customQuery = query?.trim();
   const response = await apiClient.get(`issues/${issueId}/manualsearch`, {
+    searchParams: customQuery ? { query: customQuery } : undefined,
     timeout: 60000,
   });
   return readJson<ManualSearchResult[]>(response);
@@ -199,9 +205,10 @@ export async function downloadVolume(
   volumeId: number,
   link: string,
   displayTitle: string,
+  forceMatch = false,
 ): Promise<{ result: number | null; fail_reason: string | null }> {
   const response = await apiClient.post(`volumes/${volumeId}/download`, {
-    json: { link, force_match: false, display_title: displayTitle },
+    json: { link, force_match: forceMatch, display_title: displayTitle },
     timeout: 60000,
   });
   return readJson<{ result: number | null; fail_reason: string | null }>(

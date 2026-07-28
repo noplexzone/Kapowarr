@@ -616,7 +616,7 @@ class DownloadHandler(metaclass=Singleton):
 
         if self.link_in_queue(link):
             LOGGER.info('Download already in queue')
-            return [], None
+            return [], EnqueuingDownloadFailureReason.ALREADY_QUEUED
 
         link_type = self.__determine_link_type(link)
         downloads: List[Download] = []

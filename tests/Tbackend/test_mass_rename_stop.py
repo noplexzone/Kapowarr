@@ -1,8 +1,31 @@
 """Test that mass_rename respects stop_fn for early cancellation."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from contextlib import contextmanager, ExitStack
+from unittest.mock import patch
 from backend.implementations.naming import mass_rename
+
+
+@contextmanager
+def _rename_mocks():
+    with ExitStack() as stack:
+        mock_preview = stack.enter_context(patch(
+            'backend.implementations.naming.preview_mass_rename',
+        ))
+        mock_rename = stack.enter_context(patch(
+            'backend.implementations.naming.rename_file',
+        ))
+        for target in (
+            'FilesDB',
+            'Volume',
+            'RootFolders',
+            'delete_empty_child_folders',
+            'delete_empty_parent_folders',
+            'mass_process_files',
+        ):
+            stack.enter_context(patch(
+                f'backend.implementations.naming.{target}',
+            ))
+        yield mock_preview, mock_rename
 
 
 def test_mass_rename_stops_when_stop_fn_returns_true():
@@ -13,16 +36,7 @@ def test_mass_rename_stops_when_stop_fn_returns_true():
         stop_called.append(True)
         return True  # stop immediately
 
-    with (
-        patch('backend.implementations.naming.preview_mass_rename') as mock_preview,
-        patch('backend.implementations.naming.rename_file') as mock_rename,
-        patch('backend.implementations.naming.FilesDB') as mock_filesdb,
-        patch('backend.implementations.naming.Volume'),
-        patch('backend.implementations.naming.RootFolders'),
-        patch('backend.implementations.naming.delete_empty_child_folders'),
-        patch('backend.implementations.naming.delete_empty_parent_folders'),
-        patch('backend.implementations.naming.mass_process_files'),
-    ):
+    with _rename_mocks() as (mock_preview, mock_rename):
         # Setup: 5 files to rename, all different
         mock_preview.return_value = (
             {
@@ -55,16 +69,7 @@ def test_mass_rename_continues_when_stop_fn_returns_false():
         calls.append(True)
         return False
 
-    with (
-        patch('backend.implementations.naming.preview_mass_rename') as mock_preview,
-        patch('backend.implementations.naming.rename_file') as mock_rename,
-        patch('backend.implementations.naming.FilesDB') as mock_filesdb,
-        patch('backend.implementations.naming.Volume'),
-        patch('backend.implementations.naming.RootFolders'),
-        patch('backend.implementations.naming.delete_empty_child_folders'),
-        patch('backend.implementations.naming.delete_empty_parent_folders'),
-        patch('backend.implementations.naming.mass_process_files'),
-    ):
+    with _rename_mocks() as (mock_preview, mock_rename):
         mock_preview.return_value = (
             {
                 '/old/file1.cbz': '/new/file1.cbz',
@@ -83,16 +88,7 @@ def test_mass_rename_continues_when_stop_fn_returns_false():
 
 def test_mass_rename_no_stop_fn_renames_all():
     """Without stop_fn, all files should be renamed (backward compat)."""
-    with (
-        patch('backend.implementations.naming.preview_mass_rename') as mock_preview,
-        patch('backend.implementations.naming.rename_file') as mock_rename,
-        patch('backend.implementations.naming.FilesDB') as mock_filesdb,
-        patch('backend.implementations.naming.Volume'),
-        patch('backend.implementations.naming.RootFolders'),
-        patch('backend.implementations.naming.delete_empty_child_folders'),
-        patch('backend.implementations.naming.delete_empty_parent_folders'),
-        patch('backend.implementations.naming.mass_process_files'),
-    ):
+    with _rename_mocks() as (mock_preview, mock_rename):
         mock_preview.return_value = (
             {
                 '/old/file1.cbz': '/new/file1.cbz',

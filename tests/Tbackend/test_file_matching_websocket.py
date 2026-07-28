@@ -1,4 +1,4 @@
-"""Regression tests for non-blocking file-scan websocket notifications."""
+"""Regression tests for best-effort file-scan websocket notifications."""
 
 
 def test_downloaded_status_emit_errors_do_not_escape(monkeypatch):
@@ -11,17 +11,7 @@ def test_downloaded_status_emit_errors_do_not_escape(monkeypatch):
             calls.append(event)
             raise RuntimeError('simulated websocket failure')
 
-    class ImmediateThread:
-        def __init__(self, target, name=None, daemon=None):
-            self.target = target
-            self.name = name
-            self.daemon = daemon
-
-        def start(self):
-            self.target()
-
     monkeypatch.setattr(file_matching, 'WebSocket', FailingWebSocket)
-    monkeypatch.setattr(file_matching, 'Thread', ImmediateThread)
 
     event = file_matching.DownloadedStatusEvent(
         1214, downloaded_issues=[33218]

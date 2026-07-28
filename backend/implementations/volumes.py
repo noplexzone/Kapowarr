@@ -10,6 +10,7 @@ from asyncio import run
 from datetime import datetime, timedelta
 from functools import lru_cache
 from io import BytesIO
+from multiprocessing import TimeoutError as PoolTimeoutError
 from os.path import dirname, exists, isdir, relpath
 from re import IGNORECASE, compile
 from time import time
@@ -1759,6 +1760,7 @@ def refresh_and_scan(
     update_websocket: bool = False,
     allow_skipping: bool = True,
     on_progress: Optional[Callable[[int, int, str], None]] = None,
+    stop_fn: Optional[Callable[[], bool]] = None,
 ) -> None:
     """Refresh and scan one or more volumes, which means to pull metadata from
     the online database and to scan for files.
@@ -2050,25 +2052,43 @@ def refresh_and_scan(
         if not total_count:
             return
 
+        completed_count = 0
+        cancelled = False
         with PortablePool(max_processes=min(
             Constants.DB_MAX_CONCURRENT_CONNECTIONS,
             total_count
         )) as pool:
-            if update_websocket or on_progress:
-                ws = WebSocket() if update_websocket else None
-                for idx, _ in enumerate(
-                    pool.istarmap_unordered(scan_files, v_ids)
-                ):
-                    if ws:
-                        ws.emit(TaskStatusEvent(
-                            f'Scanned files for volume {idx+1}/{total_count}'
-                        ))
-                    if on_progress:
-                        on_progress(idx + 1, total_count, 'scanning_files')
+            iterator = pool.istarmap_unordered(scan_files, v_ids)
+            ws = WebSocket() if update_websocket else None
+            while completed_count < total_count:
+                if stop_fn and stop_fn():
+                    cancelled = True
+                    pool.terminate()
+                    break
+                try:
+                    iterator.next(timeout=0.5)
+                except PoolTimeoutError:
+                    continue
+                except StopIteration:
+                    break
 
-            else:
-                pool.starmap(scan_files, v_ids)
+                completed_count += 1
+                # Progress is authoritative application state; notification is
+                # advisory and must happen afterward.
+                if on_progress:
+                    on_progress(
+                        completed_count,
+                        total_count,
+                        'scanning_files',
+                    )
+                if ws:
+                    ws.emit(TaskStatusEvent(
+                        f'Scanned files for volume '
+                        f'{completed_count}/{total_count}'
+                    ))
 
+        if cancelled:
+            return
         FilesDB.delete_unmatched_files()
 
     return

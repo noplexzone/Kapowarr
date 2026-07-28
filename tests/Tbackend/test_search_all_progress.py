@@ -200,8 +200,8 @@ class SearchAllFormatProgressTests(unittest.TestCase):
         self.assertEqual(prog['processed_count'], 7)
         self.assertEqual(prog['total_count'], 20)
 
-    def test_format_entry_no_progress_for_non_search_all(self):
-        """Non-SearchAll tasks should NOT have a 'progress' key."""
+    def test_format_entry_exposes_update_all_progress(self):
+        """UpdateAll exposes phase, counts, and heartbeat fields."""
         original_get_db = tasks.get_db
 
         class _FakeCursor:
@@ -225,7 +225,11 @@ class SearchAllFormatProgressTests(unittest.TestCase):
         finally:
             tasks.get_db = original_get_db
 
-        self.assertNotIn('progress', formatted)
+        self.assertIn('progress', formatted)
+        self.assertEqual(formatted['progress']['processed_count'], 0)
+        self.assertIsNone(formatted['progress']['phase'])
+        self.assertIn('last_progress_at', formatted['progress'])
+        self.assertIn('seconds_since_progress', formatted['progress'])
 
 
 if __name__ == '__main__':

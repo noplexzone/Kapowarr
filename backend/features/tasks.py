@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from json import dumps as json_dumps, loads as json_loads
-from threading import Lock, Thread, Timer
+from threading import Lock, RLock, Thread, Timer
 from time import sleep, time
 from typing import Dict, List, Optional, Tuple, Type, Union
 
@@ -33,18 +33,11 @@ from backend.internals.server import (TaskAddedEvent, TaskEndedEvent,
 
 
 def _emit_task_event(event) -> None:
-    """Emit a websocket task event without blocking task execution.
-
-    Socket clients can stall; task workers must not depend on websocket
-    delivery to make progress.
-    """
-    def _emit() -> None:
-        try:
-            WebSocket().emit(event)
-        except Exception:
-            LOGGER.exception('Failed to emit websocket task event')
-
-    Thread(target=_emit, name='TaskEventEmit', daemon=True).start()
+    """Best-effort websocket delivery that never blocks task execution."""
+    try:
+        WebSocket().emit(event)
+    except Exception:
+        LOGGER.exception('Failed to emit websocket task event')
 
 
 class Task(ABC):
@@ -53,6 +46,7 @@ class Task(ABC):
     action: str
     display_title: str
     category: str
+    cancellable: bool = False
 
     @property
     @abstractmethod
@@ -586,11 +580,13 @@ class UpdateAll(Task):
     action = 'update_all'
     display_title = 'Update All'
     category = ''
+    cancellable = True
 
     # In-progress observability (readable while task is running)
     processed_count: int = 0
     total_count: Union[int, None] = None
     phase: Union[str, None] = None
+    last_progress_at: Union[float, None] = None
 
     @property
     def volume_id(self) -> None:
@@ -614,6 +610,7 @@ class UpdateAll(Task):
         self.processed_count = 0
         self.total_count = None
         self.phase = None
+        self.last_progress_at = time()
         self.message = 'Updating info on all volumes'
         _emit_task_event(TaskStatusEvent(self.message))
 
@@ -621,6 +618,7 @@ class UpdateAll(Task):
             self.processed_count = processed
             self.total_count = total
             self.phase = phase
+            self.last_progress_at = time()
             if phase == 'fetching_metadata':
                 self.message = (
                     f'Fetching metadata for {total} volume{"s" if total != 1 else ""}'
@@ -633,6 +631,7 @@ class UpdateAll(Task):
                 update_websocket=True,
                 allow_skipping=self.allow_skipping,
                 on_progress=_on_progress,
+                stop_fn=lambda: self.stop,
             )
         except InvalidComicVineApiKey:
             pass
@@ -648,10 +647,12 @@ class SearchAll(Task):
     action = 'search_all'
     display_title = 'Search All'
     category = 'download'
+    cancellable = True
 
     # In-progress observability (readable while task is running)
     processed_count: int = 0
     total_count: Union[int, None] = None
+    last_progress_at: Union[float, None] = None
 
     @property
     def volume_id(self) -> None:
@@ -690,6 +691,7 @@ class SearchAll(Task):
 
         self.total_count = len(rows)
         self.processed_count = 0
+        self.last_progress_at = time()
 
         downloads: List[Tuple[str, int, Union[int, None]]] = []
         per_volume: List[dict] = []
@@ -722,6 +724,7 @@ class SearchAll(Task):
                     'per_issue': stats.get('per_issue', []),
                 })
                 self.processed_count += 1
+                self.last_progress_at = time()
                 continue
 
             per_volume.append({
@@ -739,6 +742,7 @@ class SearchAll(Task):
                     for result in results
                 ]
             self.processed_count += 1
+            self.last_progress_at = time()
 
         self.details = {
             'per_issue': [
@@ -1022,6 +1026,8 @@ class TaskHandler(metaclass=Singleton):
 
     queue: List[dict] = []
     task_interval_waiter: Union[Timer, None] = None
+    queue_lock = RLock()
+    singleton_actions = frozenset(('update_all', 'search_all'))
 
     def __init__(self) -> None:
         """Setup the handler"""
@@ -1148,65 +1154,65 @@ class TaskHandler(metaclass=Singleton):
                 sleep(1.5)
 
             finally:
-                if not task.stop:
-                    # Task queue progress must not depend on websocket delivery.
-                    # Remove the finished task and start the next queued task before
-                    # emitting TaskEndedEvent; otherwise a stalled socket client can
-                    # leave a completed task visible forever as "running".
+                # Completion and cancellation must both release the queue head.
+                # Event delivery is best effort and runs only after the next task
+                # has been allowed to start.
+                with self.queue_lock:
                     if self.queue and self.queue[0].get('task') is task:
                         self.queue.pop(0)
                     else:
-                        self.queue = [
+                        self.queue[:] = [
                             entry for entry in self.queue
                             if entry.get('task') is not task
                         ]
                     self._process_queue()
-                    _emit_task_event(TaskEndedEvent(task))
+                _emit_task_event(TaskEndedEvent(task))
 
         return
 
     def _process_queue(self) -> None:
-        """
-        Handle the queue. In the case that there is something in the queue and
-        it isn't already running, start the task. This can safely be called
-        multiple times while a task is going or while there is nothing in the queue.
-        """
-        if not self.queue:
-            return
+        """Start the queue head exactly once."""
+        with self.queue_lock:
+            if not self.queue:
+                return
 
-        first_entry = self.queue[0]
-        if first_entry['status'] != 'running':
-            first_entry['status'] = 'running'
-            first_entry['started_at'] = round(time())
-            first_entry['thread'].start()
+            first_entry = self.queue[0]
+            if first_entry['status'] != 'running':
+                first_entry['status'] = 'running'
+                first_entry['started_at'] = round(time())
+                first_entry['thread'].start()
         return
 
     def add(self, task: Task) -> int:
-        """Add a task to the queue
-
-        Args:
-            task (Task): The task to add to the queue
-
-        Returns:
-            int: The id of the entry in the queue
-        """
+        """Add a task, returning an existing singleton task when present."""
         LOGGER.debug(f'Adding task to queue: {task.display_title}')
-        id = self.queue[-1]['id'] + 1 if self.queue else 1
-        task_data = {
-            'task': task,
-            'id': id,
-            'status': 'queued',
-            'queued_at': round(time()),
-            'started_at': None,
-            'thread': Thread(
-                target=self.__run_task,
-                args=(task,),
-                name=f"TaskThread-{id}"
-            )
-        }
-        self.queue.append(task_data)
-        LOGGER.info(f'Added task: {task.display_title} ({id})')
-        self._process_queue()
+        with self.queue_lock:
+            if task.action in self.singleton_actions:
+                for entry in self.queue:
+                    if entry['task'].action == task.action:
+                        LOGGER.info(
+                            'Skipped duplicate singleton task %s; existing id=%d',
+                            task.action,
+                            entry['id'],
+                        )
+                        return entry['id']
+
+            id = max((entry['id'] for entry in self.queue), default=0) + 1
+            task_data = {
+                'task': task,
+                'id': id,
+                'status': 'queued',
+                'queued_at': round(time()),
+                'started_at': None,
+                'thread': Thread(
+                    target=self.__run_task,
+                    args=(task,),
+                    name=f"TaskThread-{id}"
+                )
+            }
+            self.queue.append(task_data)
+            LOGGER.info(f'Added task: {task.display_title} ({id})')
+            self._process_queue()
 
         _emit_task_event(TaskAddedEvent(task))
         return id
@@ -1273,16 +1279,23 @@ class TaskHandler(metaclass=Singleton):
         return
 
     def stop_handle(self) -> None:
-        "Stop the task handler"
+        "Stop the task handler without an unbounded shutdown wait."
         LOGGER.debug('Stopping task thread')
 
         if self.task_interval_waiter:
             self.task_interval_waiter.cancel()
 
-        if self.queue:
+        running_thread = None
+        with self.queue_lock:
             for entry in self.queue:
                 entry['task'].stop = True
-            self.queue[0]['thread'].join()
+            if self.queue and self.queue[0]['thread'].is_alive():
+                running_thread = self.queue[0]['thread']
+
+        if running_thread:
+            running_thread.join(timeout=5)
+            if running_thread.is_alive():
+                LOGGER.warning('Task thread did not stop within 5 seconds')
 
         return
 
@@ -1324,9 +1337,15 @@ class TaskHandler(metaclass=Singleton):
             'started_at': task.get('started_at'),
         }
         if isinstance(t, SearchAll):
+            last_progress_at = getattr(t, 'last_progress_at', None)
             result['progress'] = {
                 'processed_count': getattr(t, 'processed_count', 0),
                 'total_count': getattr(t, 'total_count', None),
+                'last_progress_at': last_progress_at,
+                'seconds_since_progress': (
+                    round(time() - last_progress_at)
+                    if last_progress_at is not None else None
+                ),
             }
         elif isinstance(t, UpdateAll):
             processed = getattr(t, 'processed_count', 0)
@@ -1338,12 +1357,18 @@ class TaskHandler(metaclass=Singleton):
                 elapsed_seconds = round(time() - started_at)
                 if processed > 0 and total and total > processed:
                     eta_seconds = round(elapsed_seconds / processed * (total - processed))
+            last_progress_at = getattr(t, 'last_progress_at', None)
             result['progress'] = {
                 'processed_count': processed,
                 'total_count': total,
                 'phase': getattr(t, 'phase', None),
                 'eta_seconds': eta_seconds,
                 'elapsed_seconds': elapsed_seconds,
+                'last_progress_at': last_progress_at,
+                'seconds_since_progress': (
+                    round(time() - last_progress_at)
+                    if last_progress_at is not None else None
+                ),
             }
         return result
 
@@ -1389,28 +1414,38 @@ class TaskHandler(metaclass=Singleton):
         raise TaskNotFound(task_id)
 
     def remove(self, task_id: int) -> None:
-        """Remove a task from the queue
+        """Remove a queued task or request cancellation of a running task."""
+        queued_task = None
+        running_thread = None
+        with self.queue_lock:
+            entry = self.__get_raw_entry(task_id)
+            task = entry['task']
 
-        Args:
-            task_id (int): The id of the task to delete from the queue
+            if entry['status'] == 'running':
+                if not getattr(task, 'cancellable', False):
+                    raise TaskNotDeletable(task_id)
+                task.stop = True
+                running_thread = entry['thread']
+                LOGGER.info(
+                    'Requested cancellation: %s (%d)',
+                    task.display_title,
+                    task_id,
+                )
+            else:
+                task.stop = True
+                self.queue.remove(entry)
+                queued_task = task
+                LOGGER.info(f'Removed task: {task.display_title} ({task_id})')
 
-        Raises:
-            TaskNotDeletable: The task is not allowed to be deleted from the queue
-            TaskNotFound: The id doesn't map to any task in the queue
-        """
-        # Get task and check if id exists
-        # Raises TaskNotFound if the id isn't found
-        task = self.__get_raw_entry(task_id)
-
-        # Check if task is allowed to be deleted
-        if self.queue[0] == task:
-            raise TaskNotDeletable(task_id)
-
-        task['task'].stop = True
-        task['thread'].join()
-        self.queue.remove(task)
-        LOGGER.info(f'Removed task: {task["task"].display_title} ({task_id})')
-        _emit_task_event(TaskEndedEvent(task['task']))
+        if running_thread:
+            running_thread.join(timeout=5)
+            if running_thread.is_alive():
+                LOGGER.warning(
+                    'Task %d is still stopping after cancellation request',
+                    task_id,
+                )
+        elif queued_task:
+            _emit_task_event(TaskEndedEvent(queued_task))
         return
 
 

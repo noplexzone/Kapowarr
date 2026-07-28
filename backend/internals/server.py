@@ -7,8 +7,9 @@ Also handling startup types and the websocket.
 
 from __future__ import annotations
 
-from multiprocessing import SimpleQueue
+from multiprocessing import Queue
 from os import urandom
+from queue import Full
 from threading import Thread, Timer
 from typing import (TYPE_CHECKING, Any, Callable, Dict,
                     Iterable, List, Mapping, Union)
@@ -105,7 +106,7 @@ class Server(metaclass=Singleton):
             path=f'{Constants.API_PREFIX}/socket.io',
             cors_allowed_origins='*',
             async_mode='threading',
-            client_manager=MPWebSocketQueue(SimpleQueue(), write_only=False)
+            client_manager=MPWebSocketQueue(Queue(maxsize=1000), write_only=False)
         )
 
         @ws.on('connect')
@@ -330,13 +331,14 @@ class MPWebSocketQueue(PubSubManager):
 
     def __init__(
         self,
-        queue: SimpleQueue[Dict[str, Any]],
+        queue: Queue,
         write_only: bool = False,
         channel='flask-socketio',
         logger=None
     ) -> None:
         super().__init__(channel, write_only, logger)
         self.queue = queue
+        self._dropped_events = 0
         return
 
     def initialize(self):
@@ -345,8 +347,23 @@ class MPWebSocketQueue(PubSubManager):
             self.thread.name = "WebSocketQueueThread"
 
     def _publish(self, data: Dict[str, Any]):
-        self.queue.put(data)
-        return
+        """Publish without ever blocking application work.
+
+        Socket.IO notifications are advisory. If the listener has died or is
+        slower than producers, dropping an event is preferable to wedging a
+        task or download thread behind a full multiprocessing pipe.
+        """
+        try:
+            self.queue.put_nowait(data)
+            return True
+        except (Full, OSError, ValueError):
+            self._dropped_events += 1
+            if self._dropped_events == 1 or self._dropped_events % 100 == 0:
+                LOGGER.warning(
+                    'WebSocket event queue full; dropped %d event(s)',
+                    self._dropped_events,
+                )
+            return False
 
     def _listen(self):
         while True:
@@ -724,7 +741,7 @@ def setup_process(
     log_folder: Union[str, None],
     log_file: Union[str, None],
     db_folder: Union[str, None],
-    ws_queue: SimpleQueue
+    ws_queue: Queue
 ) -> Callable[[], AppContext]:
     setup_logging(log_folder, log_file, log_level, do_rollover=False)
     set_db_location(db_folder)

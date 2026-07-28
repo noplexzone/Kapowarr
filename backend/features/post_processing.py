@@ -6,6 +6,7 @@ The post-download processing (a.k.a. post-processing or PP) of downloads.
 
 from __future__ import annotations
 
+from json import dumps as json_dumps
 from os.path import basename, exists, isdir, isfile, join, splitext
 from time import time
 from typing import TYPE_CHECKING, Dict
@@ -51,7 +52,17 @@ def remove_from_queue(download: Download) -> None:
 def add_to_history(download: Download) -> None:
     "Add the download to history in the database"
     success = download.state != DownloadState.FAILED_STATE
-    failure_reason = None if success else 'Download failed'
+    failure_detail = getattr(download, '_failure_reason', None)
+    if success:
+        failure_reason = None
+    elif isinstance(failure_detail, dict):
+        failure_reason = json_dumps(
+            failure_detail, sort_keys=True, separators=(',', ':'),
+        )
+    elif failure_detail:
+        failure_reason = str(failure_detail)
+    else:
+        failure_reason = 'Download failed'
     task_history_id = getattr(download, 'task_history_id', 0) or 0
 
     get_db().execute(

@@ -12,8 +12,13 @@ from __future__ import annotations
 
 import os
 import tempfile
+import zipfile
+from dataclasses import dataclass
+from enum import Enum
+from multiprocessing import get_context
+from queue import Empty
 from threading import Event
-from time import sleep
+from time import monotonic
 from typing import Dict, List, Optional, Tuple
 
 from requests import Session
@@ -25,8 +30,106 @@ from backend.base.logging import LOGGER
 SUWAYOMI_SCHEME = "suwayomi:"
 SUWAYOMI_SOURCE_NAME = "Suwayomi"
 
-# Seconds between polling Suwayomi for chapter download status.
-POLL_INTERVAL = 5
+# Bounded execution budgets. Tests patch these constants to exercise deadlines.
+POLL_INTERVAL = 5.0
+CHAPTER_DOWNLOAD_TIMEOUT = 300.0
+STATUS_MAX_ERRORS = 3
+PAGE_MAX_ATTEMPTS = 3
+PAGE_RETRY_BACKOFF = (1.0, 2.0)
+PDF_TOTAL_TIMEOUT = 600.0
+PDF_ASSEMBLY_TIMEOUT = 120.0
+
+
+class SuwayomiWaitStatus(Enum):
+    COMPLETED = 'completed'
+    CANCELED = 'canceled'
+    TIMED_OUT = 'timed_out'
+    FAILED = 'failed'
+
+
+@dataclass(frozen=True)
+class SuwayomiWaitResult:
+    status: SuwayomiWaitStatus
+    chapter: Optional[Dict] = None
+    failure: Optional[Dict] = None
+
+
+class SuwayomiDownloadError(RuntimeError):
+    """Sanitized, structured failure safe to persist in download history."""
+
+    def __init__(
+        self,
+        stage: str,
+        failure_type: str,
+        *,
+        manga_id: Optional[int] = None,
+        chapter_id: Optional[int] = None,
+        page_index: Optional[int] = None,
+        status: Optional[int] = None,
+        attempts: int = 1,
+    ) -> None:
+        self.details = {
+            'stage': stage,
+            'type': failure_type,
+            'manga_id': manga_id,
+            'chapter_id': chapter_id,
+            'page_index': page_index,
+            'status': status,
+            'attempts': attempts,
+        }
+        # Exclude absent values and never persist exception text, URLs, or credentials.
+        self.details = {k: v for k, v in self.details.items() if v is not None}
+        super().__init__(f"Suwayomi {stage} failed ({failure_type})")
+
+
+def _terminate_process(process) -> None:
+    """Boundedly terminate, then kill, a stuck multiprocessing worker."""
+    if process is None or not process.is_alive():
+        return
+    process.terminate()
+    process.join(timeout=1)
+    if process.is_alive():
+        process.kill()
+        process.join(timeout=1)
+
+
+def _pdf_assembly_worker(page_paths: List[str], output_path: str, result_queue) -> None:
+    """Spawn-safe worker for killable image conversion and PDF merge."""
+    try:
+        import img2pdf
+        from pypdf import PdfReader, PdfWriter
+
+        batch_paths: List[str] = []
+        try:
+            for batch_start in range(0, len(page_paths), 5):
+                batch = page_paths[batch_start:batch_start + 5]
+                data = img2pdf.convert(batch)
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tf:
+                    tf.write(data)
+                    batch_paths.append(tf.name)
+
+            writer = PdfWriter()
+            for batch_path in batch_paths:
+                reader = PdfReader(batch_path)
+                for page in reader.pages:
+                    writer.add_page(page)
+            with open(output_path, 'wb') as handle:
+                writer.write(handle)
+            result_queue.put_nowait({'ok': True})
+        finally:
+            for batch_path in batch_paths:
+                try:
+                    os.unlink(batch_path)
+                except OSError:
+                    pass
+    except BaseException as exc:
+        try:
+            result_queue.put_nowait({
+                'ok': False,
+                'type': type(exc).__name__,
+            })
+        except Exception:
+            pass
 
 def make_suwayomi_link(manga_id: int, chapter_id: int) -> str:
     """Encode manga/chapter IDs as a Kapowarr download_link."""
@@ -167,33 +270,103 @@ class SuwayomiClient:
             {"id": chapter_id},
         )
 
+    def get_download_entry(self, chapter_id: int) -> Optional[Dict]:
+        """Return the active downloader entry for a chapter, if present."""
+        data = self._gql("""
+            query DownloadStatus {
+                downloadStatus {
+                    queue {
+                        state tries
+                        chapter { id }
+                    }
+                }
+            }
+        """)
+        for entry in data['downloadStatus']['queue']:
+            if entry.get('chapter', {}).get('id') == chapter_id:
+                return entry
+        return None
+
     def wait_for_download(
         self,
         manga_id: int,
         chapter_id: int,
         stop_event: Event,
-    ) -> Optional[Dict]:
-        """Block until the chapter is downloaded or stop_event is set.
+        timeout: float = CHAPTER_DOWNLOAD_TIMEOUT,
+    ) -> SuwayomiWaitResult:
+        """Wait for a chapter using a monotonic deadline and typed outcome."""
+        deadline = monotonic() + max(timeout, 0.0)
+        seen_in_queue = False
+        consecutive_errors = 0
 
-        Returns the chapter dict when downloaded, or None if stopped/failed.
-        """
         while not stop_event.is_set():
-            ch = self.get_chapter_info(manga_id, chapter_id)
-            if ch is None:
-                LOGGER.warning(
-                    "Suwayomi: chapter %d not found for manga %d",
-                    chapter_id, manga_id,
+            if monotonic() >= deadline:
+                return SuwayomiWaitResult(
+                    SuwayomiWaitStatus.TIMED_OUT,
+                    failure=SuwayomiDownloadError(
+                        'wait_for_download', 'timeout',
+                        manga_id=manga_id, chapter_id=chapter_id,
+                    ).details,
                 )
-                return None
-            if ch["isDownloaded"]:
-                return ch
-            LOGGER.debug(
-                "Suwayomi: waiting for chapter %d (manga %d) to download…",
-                chapter_id, manga_id,
-            )
-            sleep(POLL_INTERVAL)
+            try:
+                chapter = self.get_chapter_info(manga_id, chapter_id)
+                if chapter is None:
+                    return SuwayomiWaitResult(
+                        SuwayomiWaitStatus.FAILED,
+                        failure=SuwayomiDownloadError(
+                            'wait_for_download', 'chapter_not_found',
+                            manga_id=manga_id, chapter_id=chapter_id,
+                        ).details,
+                    )
+                if chapter['isDownloaded']:
+                    return SuwayomiWaitResult(
+                        SuwayomiWaitStatus.COMPLETED, chapter=chapter,
+                    )
 
-        return None
+                entry = self.get_download_entry(chapter_id)
+                if entry is not None:
+                    seen_in_queue = True
+                    state = str(entry.get('state', '')).upper()
+                    if state == 'ERROR':
+                        return SuwayomiWaitResult(
+                            SuwayomiWaitStatus.FAILED,
+                            failure=SuwayomiDownloadError(
+                                'wait_for_download', 'upstream_error',
+                                manga_id=manga_id, chapter_id=chapter_id,
+                                attempts=int(entry.get('tries') or 1),
+                            ).details,
+                        )
+                elif seen_in_queue:
+                    return SuwayomiWaitResult(
+                        SuwayomiWaitStatus.FAILED,
+                        failure=SuwayomiDownloadError(
+                            'wait_for_download', 'dequeued_without_file',
+                            manga_id=manga_id, chapter_id=chapter_id,
+                        ).details,
+                    )
+                consecutive_errors = 0
+            except (RequestException, RuntimeError, KeyError, TypeError, ValueError) as exc:
+                consecutive_errors += 1
+                if consecutive_errors >= STATUS_MAX_ERRORS:
+                    return SuwayomiWaitResult(
+                        SuwayomiWaitStatus.FAILED,
+                        failure=SuwayomiDownloadError(
+                            'wait_for_download', type(exc).__name__,
+                            manga_id=manga_id, chapter_id=chapter_id,
+                            attempts=consecutive_errors,
+                        ).details,
+                    )
+                LOGGER.warning(
+                    'Suwayomi status poll failed for manga %d chapter %d '
+                    '(attempt %d/%d)',
+                    manga_id, chapter_id, consecutive_errors, STATUS_MAX_ERRORS,
+                )
+
+            remaining = max(0.0, deadline - monotonic())
+            if stop_event.wait(min(POLL_INTERVAL, remaining)):
+                break
+
+        return SuwayomiWaitResult(SuwayomiWaitStatus.CANCELED)
 
     # ------------------------------------------------------------------
     # Page images
@@ -223,6 +396,71 @@ class SuwayomiClient:
         resp.raise_for_status()
         return resp.content
 
+    def _get_page_with_retry(
+        self,
+        manga_id: int,
+        chapter_source_order: int,
+        page_index: int,
+        stop_event: Event,
+        *,
+        deadline: Optional[float] = None,
+    ) -> bytes:
+        """Fetch one page with bounded, cancellation-aware retry/backoff."""
+        for attempt in range(1, PAGE_MAX_ATTEMPTS + 1):
+            if stop_event.is_set():
+                raise SuwayomiDownloadError(
+                    'page_fetch', 'canceled', manga_id=manga_id,
+                    chapter_id=chapter_source_order, page_index=page_index,
+                    attempts=attempt,
+                )
+            if deadline is not None and monotonic() >= deadline:
+                raise SuwayomiDownloadError(
+                    'page_fetch', 'timeout', manga_id=manga_id,
+                    chapter_id=chapter_source_order, page_index=page_index,
+                    attempts=attempt,
+                )
+            try:
+                return self.get_page_image(
+                    manga_id, chapter_source_order, page_index,
+                )
+            except RequestException as exc:
+                response = getattr(exc, 'response', None)
+                status = response.status_code if response is not None else None
+                retryable = status is None or status == 429 or status >= 500
+                if not retryable or attempt >= PAGE_MAX_ATTEMPTS:
+                    raise SuwayomiDownloadError(
+                        'page_fetch', 'http_error' if status else type(exc).__name__,
+                        manga_id=manga_id,
+                        chapter_id=chapter_source_order,
+                        page_index=page_index,
+                        status=status,
+                        attempts=attempt,
+                    ) from exc
+                delay = PAGE_RETRY_BACKOFF[min(
+                    attempt - 1, len(PAGE_RETRY_BACKOFF) - 1
+                )]
+                LOGGER.warning(
+                    'Retrying Suwayomi page %d after status %s '
+                    '(attempt %d/%d)',
+                    page_index + 1, status or 'network error',
+                    attempt + 1, PAGE_MAX_ATTEMPTS,
+                )
+                if stop_event.wait(delay):
+                    raise SuwayomiDownloadError(
+                        'page_fetch', 'canceled', manga_id=manga_id,
+                        chapter_id=chapter_source_order,
+                        page_index=page_index, attempts=attempt,
+                    ) from exc
+            except SuwayomiDownloadError:
+                raise
+            except Exception as exc:
+                raise SuwayomiDownloadError(
+                    'page_fetch', type(exc).__name__, manga_id=manga_id,
+                    chapter_id=chapter_source_order, page_index=page_index,
+                    attempts=attempt,
+                ) from exc
+        raise AssertionError('unreachable')
+
     def create_cbz(
         self,
         manga_id: int,
@@ -232,21 +470,29 @@ class SuwayomiClient:
         stop_event: Event,
         progress_cb=None,
     ) -> bool:
-        """Download all pages and create a CBZ file at dest_path.
-
-        Returns True on success, False if stop_event fired mid-way.
-        progress_cb(pages_done, total_pages) is called after each page if provided.
-        """
-        with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_STORED) as zf:
-            for i in range(page_count):
-                if stop_event.is_set():
-                    return False
-                data = self.get_page_image(manga_id, chapter_source_order, i)
-                ext = _detect_image_ext(data)
-                zf.writestr(f"{i + 1:04d}.{ext}", data)
-                if progress_cb is not None:
-                    progress_cb(i + 1, page_count, len(data))
-        return True
+        """Create a CBZ atomically using bounded shared page retries."""
+        partial_path = f'{dest_path}.part'
+        try:
+            with zipfile.ZipFile(partial_path, 'w', zipfile.ZIP_STORED) as zf:
+                for index in range(page_count):
+                    if stop_event.is_set():
+                        return False
+                    data = self._get_page_with_retry(
+                        manga_id, chapter_source_order, index, stop_event,
+                    )
+                    ext = _detect_image_ext(data)
+                    zf.writestr(f'{index + 1:04d}.{ext}', data)
+                    if progress_cb is not None:
+                        progress_cb(index + 1, page_count, len(data))
+            if stop_event.is_set():
+                return False
+            os.replace(partial_path, dest_path)
+            return True
+        finally:
+            try:
+                os.unlink(partial_path)
+            except OSError:
+                pass
 
     def create_pdf_from_chapters(
         self,
@@ -256,149 +502,102 @@ class SuwayomiClient:
         stop_event: Event,
         progress_cb=None,
     ) -> bool:
-        """Download pages from multiple chapters and merge into one PDF.
-
-        Args:
-            manga_id: Suwayomi manga ID.
-            chapters: List of (source_order, page_count) tuples, in order.
-            dest_path: Output PDF file path.
-            stop_event: Event to signal cancellation.
-            progress_cb: Optional callable(pages_done, total_pages, bytes_delta)
-                for per-page progress during download.
-
-        Returns True on success, False if stopped or no pages collected.
-        """
-        # Global safety timeout: set stop_event after 10 minutes to prevent
-        # any path from hanging the download thread indefinitely.
-        _safety_timer = None
-        try:
-            import threading as _thr
-            _safety_timer = _thr.Timer(600.0, stop_event.set)
-            _safety_timer.daemon = True
-            _safety_timer.start()
-        except Exception:
-            pass
-
-        total_pages = sum(pc for _, pc in chapters)
+        """Fetch pages within a hard deadline and assemble in a killable worker."""
+        deadline = monotonic() + PDF_TOTAL_TIMEOUT
+        total_pages = sum(page_count for _, page_count in chapters)
         fetched = 0
-        temp_paths: List[str] = []
+        page_paths: List[str] = []
+        worker_output: Optional[str] = None
+        process = None
+        result_queue = None
         try:
-            _max_page_retries = 3
             for source_order, page_count in chapters:
-                for i in range(page_count):
+                for page_index in range(page_count):
                     if stop_event.is_set():
                         return False
-                    for _attempt in range(_max_page_retries):
-                        try:
-                            data = self.get_page_image(
-                                manga_id, source_order, i,
-                            )
-                            break
-                        except RequestException as e:
-                            resp = getattr(e, 'response', None)
-                            status = (
-                                resp.status_code
-                                if resp is not None else None
-                            )
-                            if status is not None and status < 500:
-                                raise
-                            if _attempt == _max_page_retries - 1:
-                                LOGGER.error(
-                                    'Page %d/%d failed after %d retries: %s',
-                                    i + 1, page_count,
-                                    _max_page_retries, e,
-                                )
-                                raise
-                            if stop_event.is_set():
-                                return False
-                            LOGGER.info(
-                                'Retrying page %d/%d (attempt %d/%d) after %s',
-                                i + 1, page_count,
-                                _attempt + 2, _max_page_retries, e,
-                            )
-                            sleep(2)
-                            if stop_event.is_set():
-                                return False
+                    data = self._get_page_with_retry(
+                        manga_id, source_order, page_index, stop_event,
+                        deadline=deadline,
+                    )
                     ext = _detect_image_ext(data)
                     with tempfile.NamedTemporaryFile(
                         delete=False, suffix=f'.{ext}'
-                    ) as tf:
-                        tf.write(data)
-                        temp_paths.append(tf.name)
+                    ) as handle:
+                        handle.write(data)
+                        page_paths.append(handle.name)
                     fetched += 1
                     if progress_cb is not None and total_pages > 0:
                         progress_cb(fetched, total_pages, len(data))
 
-            if not temp_paths:
-                if _safety_timer is not None:
-                    _safety_timer.cancel()
+            if not page_paths or stop_event.is_set():
                 return False
 
-            if stop_event.is_set():
-                if _safety_timer is not None:
-                    _safety_timer.cancel()
-                return False
+            output_dir = os.path.dirname(dest_path) or None
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix='.pdf.part', dir=output_dir
+            ) as handle:
+                worker_output = handle.name
+            os.unlink(worker_output)
 
-            import img2pdf
-            from pypdf import PdfWriter, PdfReader
-
-            # Convert pages in small batches with logging to pinpoint
-            # which page image causes img2pdf to hang.
-            _BATCH_SIZE = 5
-            batch_pdfs: List[str] = []
-            try:
-                for _batch_start in range(0, len(temp_paths), _BATCH_SIZE):
-                    _batch_end = min(_batch_start + _BATCH_SIZE, len(temp_paths))
-                    _batch = temp_paths[_batch_start:_batch_end]
-                    _first = _batch_start + 1
-                    _last = _batch_end
-                    _sizes = []
-                    for _p in _batch:
-                        try:
-                            _sizes.append(str(os.path.getsize(_p)))
-                        except OSError:
-                            _sizes.append('?')
-                    LOGGER.info(
-                        'PDF assembly: pages %d–%d of %d (%s bytes)',
-                        _first, _last, len(temp_paths),
-                        ', '.join(_sizes),
+            context = get_context('spawn')
+            result_queue = context.Queue(maxsize=1)
+            process = context.Process(
+                target=_pdf_assembly_worker,
+                args=(page_paths, worker_output, result_queue),
+                name='SuwayomiPDFAssembly',
+            )
+            process.start()
+            assembly_deadline = min(
+                deadline, monotonic() + PDF_ASSEMBLY_TIMEOUT,
+            )
+            while process.is_alive():
+                process.join(timeout=0.2)
+                if stop_event.is_set():
+                    _terminate_process(process)
+                    return False
+                if monotonic() >= assembly_deadline:
+                    _terminate_process(process)
+                    raise SuwayomiDownloadError(
+                        'pdf_assembly', 'timeout', manga_id=manga_id,
                     )
-                    _pdf_data = img2pdf.convert(_batch)
-                    with tempfile.NamedTemporaryFile(
-                        delete=False, suffix='.pdf'
-                    ) as _btf:
-                        _btf.write(_pdf_data)
-                        batch_pdfs.append(_btf.name)
 
-                LOGGER.info(
-                    'PDF assembly: merging %d batch PDFs into final output',
-                    len(batch_pdfs),
+            if process.exitcode != 0:
+                raise SuwayomiDownloadError(
+                    'pdf_assembly', 'worker_exit', manga_id=manga_id,
+                    status=process.exitcode,
                 )
-                merger = PdfWriter()
-                for _bp in batch_pdfs:
-                    reader = PdfReader(_bp)
-                    for page in reader.pages:
-                        merger.add_page(page)
-
-                with open(dest_path, 'wb') as f:
-                    merger.write(f)
-            finally:
-                for _bp in batch_pdfs:
-                    try:
-                        os.unlink(_bp)
-                    except OSError:
-                        pass
-
-            if _safety_timer is not None:
-                _safety_timer.cancel()
+            try:
+                result = result_queue.get(timeout=1)
+            except Empty as exc:
+                raise SuwayomiDownloadError(
+                    'pdf_assembly', 'missing_result', manga_id=manga_id,
+                ) from exc
+            if not result.get('ok'):
+                raise SuwayomiDownloadError(
+                    'pdf_assembly', result.get('type', 'conversion_error'),
+                    manga_id=manga_id,
+                )
+            if not worker_output or not os.path.isfile(worker_output):
+                raise SuwayomiDownloadError(
+                    'pdf_assembly', 'missing_output', manga_id=manga_id,
+                )
+            os.replace(worker_output, dest_path)
+            worker_output = None
             return True
-
         finally:
-            if _safety_timer is not None:
-                _safety_timer.cancel()
-            for path in temp_paths:
+            if process is not None and process.is_alive():
+                _terminate_process(process)
+            if result_queue is not None:
+                result_queue.close()
+                result_queue.join_thread()
+            for path in page_paths:
                 try:
                     os.unlink(path)
+                except OSError:
+                    pass
+            if worker_output:
+                try:
+                    os.unlink(worker_output)
                 except OSError:
                     pass
 

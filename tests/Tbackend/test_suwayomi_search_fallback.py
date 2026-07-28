@@ -283,9 +283,18 @@ class SuwayomiFallbackReliabilityTests(unittest.TestCase):
         download._size = 0
 
         client = MagicMock()
+        from backend.implementations.suwayomi import (
+            SuwayomiWaitResult, SuwayomiWaitStatus,
+        )
         client.wait_for_download.side_effect = [
-            {'sourceOrder': 1, 'pageCount': 1},
-            {'sourceOrder': 2, 'pageCount': 1},
+            SuwayomiWaitResult(
+                SuwayomiWaitStatus.COMPLETED,
+                {'sourceOrder': 1, 'pageCount': 1},
+            ),
+            SuwayomiWaitResult(
+                SuwayomiWaitStatus.COMPLETED,
+                {'sourceOrder': 2, 'pageCount': 1},
+            ),
         ]
         client.create_pdf_from_chapters.return_value = False
 

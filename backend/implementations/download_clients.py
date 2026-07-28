@@ -27,6 +27,8 @@ from backend.base.definitions import (BrokenClientReason, Constants,
                                       DownloadType, ExternalDownload,
                                       ExternalDownloadClient)
 from backend.implementations.suwayomi import (SuwayomiClient,
+                                              SuwayomiDownloadError,
+                                              SuwayomiWaitStatus,
                                               SUWAYOMI_SOURCE_NAME,
                                               parse_suwayomi_link,
                                               parse_suwayomi_volume_link)
@@ -57,6 +59,21 @@ MEDIAFIRE_FOLDER_LINK = "https://www.mediafire.com/api/1.5/file/zip.php"
 WETRANSFER_API_LINK = "https://wetransfer.com/api/v4/transfers/{transfer_id}/download"
 # autopep8: on
 
+
+
+def _set_suwayomi_failure(download: Download, failure) -> None:
+    """Attach a sanitized structured cause and mark the download failed."""
+    if isinstance(failure, SuwayomiDownloadError):
+        details = failure.details
+    elif isinstance(failure, dict):
+        details = failure
+    else:
+        details = {
+            'stage': 'download',
+            'type': type(failure).__name__ if failure is not None else 'failed',
+        }
+    download._failure_reason = dict(details)
+    download._state = DownloadState.FAILED_STATE
 
 
 def _emit_download_status(download: Download) -> None:
@@ -1253,11 +1270,8 @@ class SuwayomiDownload(BaseDirectDownload):
         self._files = [join(self._download_folder, cbz_name)]
 
     def run(self) -> None:
-        from backend.internals.server import QueueStatusEvent, WebSocket
-
         manga_id, chapter_id = parse_suwayomi_link(self._download_link)
         client = SuwayomiClient()
-        ws = WebSocket()
 
         self._state = DownloadState.DOWNLOADING_STATE
         self._task_label = 'Enqueuing'
@@ -1272,17 +1286,29 @@ class SuwayomiDownload(BaseDirectDownload):
             client.enqueue_download(chapter_id)
         except Exception as e:
             LOGGER.error('Suwayomi: failed to enqueue download: %s', e)
-            self._state = DownloadState.FAILED_STATE
+            _set_suwayomi_failure(self, SuwayomiDownloadError(
+                'enqueue', type(e).__name__, manga_id=manga_id,
+                chapter_id=chapter_id,
+            ))
             return
 
         self._task_label = 'Downloading'
         _emit_download_status(self)
 
-        chapter = client.wait_for_download(manga_id, chapter_id, self._stop_event)
-        if chapter is None:
-            if not self._stop_event.is_set():
-                self._state = DownloadState.FAILED_STATE
+        wait_result = client.wait_for_download(
+            manga_id, chapter_id, self._stop_event,
+        )
+        if wait_result.status is SuwayomiWaitStatus.CANCELED:
             return
+        if wait_result.status is not SuwayomiWaitStatus.COMPLETED:
+            _set_suwayomi_failure(self, wait_result.failure or {
+                'stage': 'wait_for_download',
+                'type': wait_result.status.value,
+                'manga_id': manga_id,
+                'chapter_id': chapter_id,
+            })
+            return
+        chapter = wait_result.chapter or {}
 
         page_count = chapter.get('pageCount', 0)
         source_order = chapter.get('sourceOrder', 0)
@@ -1291,7 +1317,10 @@ class SuwayomiDownload(BaseDirectDownload):
                 'Suwayomi: chapter %d has pageCount=%d; cannot create CBZ',
                 chapter_id, page_count,
             )
-            self._state = DownloadState.FAILED_STATE
+            _set_suwayomi_failure(self, SuwayomiDownloadError(
+                'chapter_metadata', 'empty_page_count', manga_id=manga_id,
+                chapter_id=chapter_id,
+            ))
             return
 
         LOGGER.info(
@@ -1326,7 +1355,11 @@ class SuwayomiDownload(BaseDirectDownload):
             )
         except Exception as e:
             LOGGER.error('Suwayomi: failed to create CBZ: %s', e)
-            self._state = DownloadState.FAILED_STATE
+            if self._state not in (
+                DownloadState.CANCELED_STATE,
+                DownloadState.SHUTDOWN_STATE,
+            ):
+                _set_suwayomi_failure(self, e)
             return
 
         if not ok:
@@ -1334,7 +1367,10 @@ class SuwayomiDownload(BaseDirectDownload):
                 DownloadState.CANCELED_STATE,
                 DownloadState.SHUTDOWN_STATE,
             ):
-                self._state = DownloadState.FAILED_STATE
+                _set_suwayomi_failure(self, SuwayomiDownloadError(
+                    'cbz_assembly', 'incomplete', manga_id=manga_id,
+                    chapter_id=chapter_id,
+                ))
             return
 
         LOGGER.info('Suwayomi: CBZ created at %s', self._files[0])
@@ -1432,11 +1468,8 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
         self._files = [join(self._download_folder, pdf_name)]
 
     def run(self) -> None:
-        from backend.internals.server import QueueStatusEvent, WebSocket
-
         manga_id, chapter_ids = parse_suwayomi_volume_link(self._download_link)
         client = SuwayomiClient()
-        ws = WebSocket()
         total_chapters = len(chapter_ids)
 
         self._state = DownloadState.DOWNLOADING_STATE
@@ -1462,16 +1495,26 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
                     'SuwayomiVolume: enqueue failed for ch %d: %s',
                     ch_id, e,
                 )
-                self._state = DownloadState.FAILED_STATE
+                _set_suwayomi_failure(self, SuwayomiDownloadError(
+                    'enqueue', type(e).__name__, manga_id=manga_id,
+                    chapter_id=ch_id,
+                ))
                 return
 
-            chapter = client.wait_for_download(
+            wait_result = client.wait_for_download(
                 manga_id, ch_id, self._stop_event,
             )
-            if chapter is None:
-                if not self._stop_event.is_set():
-                    self._state = DownloadState.FAILED_STATE
+            if wait_result.status is SuwayomiWaitStatus.CANCELED:
                 return
+            if wait_result.status is not SuwayomiWaitStatus.COMPLETED:
+                _set_suwayomi_failure(self, wait_result.failure or {
+                    'stage': 'wait_for_download',
+                    'type': wait_result.status.value,
+                    'manga_id': manga_id,
+                    'chapter_id': ch_id,
+                })
+                return
+            chapter = wait_result.chapter or {}
 
             source_order = chapter.get('sourceOrder', 0)
             page_count = chapter.get('pageCount', 0)
@@ -1480,7 +1523,10 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
                     'SuwayomiVolume: ch %d has pageCount=%d; aborting',
                     ch_id, page_count,
                 )
-                self._state = DownloadState.FAILED_STATE
+                _set_suwayomi_failure(self, SuwayomiDownloadError(
+                    'chapter_metadata', 'empty_page_count', manga_id=manga_id,
+                    chapter_id=ch_id,
+                ))
                 return
 
             chapter_info.append((source_order, page_count))
@@ -1519,7 +1565,11 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
             )
         except Exception as e:
             LOGGER.error('SuwayomiVolume: failed to create PDF: %s', e)
-            self._state = DownloadState.FAILED_STATE
+            if self._state not in (
+                DownloadState.CANCELED_STATE,
+                DownloadState.SHUTDOWN_STATE,
+            ):
+                _set_suwayomi_failure(self, e)
             return
 
         if not ok:
@@ -1527,7 +1577,9 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
                 DownloadState.CANCELED_STATE,
                 DownloadState.SHUTDOWN_STATE,
             ):
-                self._state = DownloadState.FAILED_STATE
+                _set_suwayomi_failure(self, SuwayomiDownloadError(
+                    'pdf_assembly', 'incomplete', manga_id=manga_id,
+                ))
             return
 
         LOGGER.info('SuwayomiVolume: PDF created at %s', self._files[0])

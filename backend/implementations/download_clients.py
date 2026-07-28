@@ -7,11 +7,12 @@ All download implementations.
 from __future__ import annotations
 
 from base64 import b64decode, b64encode
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from os.path import basename, join, sep, splitext
 from re import IGNORECASE, compile
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Type, Union, final
+from typing import TYPE_CHECKING, Any, Dict, List, Set, Tuple, Type, Union, final
 from urllib.parse import parse_qs, unquote_plus, urlparse
 
 from bs4 import BeautifulSoup, Tag
@@ -55,8 +56,12 @@ extract_mediafire_regex = compile(r'window.location.href\s?=\s?\'https://downloa
 extract_ufile_regex = compile(r'href=["\']+(https://[^"\']*ufile\.io/[^"\']+)["\']', IGNORECASE)
 suwayomi_source_detail_regex = compile(r'\[([^\[\]]+)\]\s*$')
 DOWNLOAD_CHUNK_SIZE = 4194304 # 4MB Chunks
+SEGMENTED_DOWNLOAD_MIN_SIZE = 268435456 # 256MB
+SEGMENTED_DOWNLOAD_PARTS = 4
 MEDIAFIRE_FOLDER_LINK = "https://www.mediafire.com/api/1.5/file/zip.php"
 WETRANSFER_API_LINK = "https://wetransfer.com/api/v4/transfers/{transfer_id}/download"
+content_range_regex = compile(r'^bytes (\d+)-(\d+)/(\d+)$', IGNORECASE)
+strong_etag_regex = compile(r'^"[^"\x00-\x20\x7f]+"$')
 # autopep8: on
 
 
@@ -89,6 +94,27 @@ def _emit_download_status(download: Download) -> None:
             LOGGER.exception('Failed to emit websocket download status event')
 
     Thread(target=_emit, name='DownloadStatusEmit', daemon=True).start()
+
+
+class _SegmentedDownloadFallback(Exception):
+    """The server did not safely complete a validated ranged transfer."""
+
+
+def _build_byte_ranges(size: int, parts: int) -> List[Tuple[int, int]]:
+    """Split a known-size file into contiguous inclusive byte ranges."""
+    if size <= 0 or parts <= 0:
+        return []
+
+    parts = min(parts, size)
+    base_size, remainder = divmod(size, parts)
+    result: List[Tuple[int, int]] = []
+    start = 0
+    for index in range(parts):
+        part_size = base_size + (1 if index < remainder else 0)
+        end = start + part_size - 1
+        result.append((start, end))
+        start = end + 1
+    return result
 
 
 # region Base Direct Download
@@ -482,6 +508,376 @@ class DirectDownload(BaseDirectDownload):
     "For downloading a file directly from a link"
 
     identifier: str = 'direct'
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.__active_responses: Set[Response] = set()
+        self.__active_responses_lock = Lock()
+        self._range_validator: Union[str, None] = None
+        self._supports_segmented_download = (
+            self.size >= SEGMENTED_DOWNLOAD_MIN_SIZE
+            and self._probe_range_support()
+        )
+        if self._supports_segmented_download:
+            # Also make ordinary in-process retries resumable on these hosts.
+            self._supports_range_header = True
+
+    def _open_range_response(self, start_byte: int, end_byte: int) -> Response:
+        """Open a bounded byte range using an independent worker session."""
+        session = Session()
+        try:
+            headers = {
+                "Accept-Encoding": "identity",
+                "Range": f"bytes={start_byte}-{end_byte}",
+            }
+            range_validator = getattr(self, '_range_validator', None)
+            if range_validator is not None:
+                headers["If-Range"] = range_validator
+            response = session.get(
+                self.pure_link,
+                headers=headers,
+                stream=True,
+                timeout=Constants.REQUEST_TIMEOUT
+            )
+        except Exception:
+            session.close()
+            raise
+
+        setattr(response, '_kapowarr_session', session)
+        return response
+
+    @staticmethod
+    def _close_range_response(response: Response) -> None:
+        try:
+            response.close()
+        finally:
+            session = getattr(response, '_kapowarr_session', None)
+            if session is not None:
+                session.close()
+
+    def _response_matches_range(
+        self,
+        response: Response,
+        start_byte: int,
+        end_byte: int
+    ) -> bool:
+        if response.status_code != 206:
+            return False
+        if response.headers.get('Content-Encoding') not in (None, 'identity'):
+            return False
+
+        match = content_range_regex.fullmatch(
+            response.headers.get('Content-Range', '').strip()
+        )
+        if not match:
+            return False
+
+        actual_start, actual_end, total_size = map(int, match.groups())
+        if (
+            actual_start != start_byte
+            or actual_end != end_byte
+            or total_size != self.size
+        ):
+            return False
+
+        range_validator = getattr(self, '_range_validator', None)
+        if range_validator is not None:
+            response_validator = response.headers.get('ETag')
+            if response_validator != range_validator:
+                return False
+
+        content_length = response.headers.get('Content-Length')
+        if content_length is None:
+            return True
+        try:
+            return int(content_length) == end_byte - start_byte + 1
+        except ValueError:
+            return False
+
+    def _probe_range_support(self) -> bool:
+        """Verify a one-byte 206 response instead of trusting Accept-Ranges."""
+        response = None
+        try:
+            response = self._open_range_response(0, 0)
+            if not self._response_matches_range(response, 0, 0):
+                return False
+            received = 0
+            for chunk in response.iter_content(chunk_size=1):
+                received += len(chunk)
+                if received > 1:
+                    return False
+            if received != 1:
+                return False
+
+            etag = response.headers.get('ETag')
+            if etag is None or strong_etag_regex.fullmatch(etag) is None:
+                return False
+            self._range_validator = etag
+            return True
+        except (RequestException, OSError, TypeError, ValueError):
+            return False
+        finally:
+            if response is not None:
+                self._close_range_response(response)
+
+    def _register_active_response(self, response: Response) -> bool:
+        with self.__active_responses_lock:
+            if self.state in (
+                DownloadState.CANCELED_STATE,
+                DownloadState.SHUTDOWN_STATE
+            ):
+                return False
+            self.__active_responses.add(response)
+            return True
+
+    def _unregister_active_response(self, response: Response) -> None:
+        with self.__active_responses_lock:
+            self.__active_responses.discard(response)
+
+    def _queue_segment_status_emit(
+        self,
+        ws: WebSocket,
+        status_event: QueueStatusEvent
+    ) -> None:
+        """Publish progress off-worker with at most one emitter thread."""
+        with self.__status_emit_lock:
+            self.__status_emit_dirty = True
+            if self.__status_emit_pending:
+                return
+            self.__status_emit_pending = True
+
+        def emit_latest() -> None:
+            while True:
+                with self.__status_emit_lock:
+                    self.__status_emit_dirty = False
+                try:
+                    ws.emit(status_event)
+                except Exception:
+                    LOGGER.exception(
+                        'Failed to emit segmented download status event'
+                    )
+
+                with self.__status_emit_lock:
+                    if self.__status_emit_dirty:
+                        continue
+                    self.__status_emit_pending = False
+                    return
+
+        Thread(
+            target=emit_latest,
+            name='SegmentedDownloadStatusEmit',
+            daemon=True
+        ).start()
+
+    def _download_segment(
+        self,
+        start_byte: int,
+        end_byte: int,
+        progress: Dict[str, Union[int, float]],
+        progress_lock: Lock,
+        abort: Event,
+        ws: WebSocket,
+        status_event: QueueStatusEvent
+    ) -> None:
+        position = start_byte
+        tries_left = Constants.TOTAL_RETRIES
+
+        while position <= end_byte and tries_left > 0 and not abort.is_set():
+            if self.state in (
+                DownloadState.CANCELED_STATE,
+                DownloadState.SHUTDOWN_STATE
+            ):
+                abort.set()
+                return
+
+            tries_left -= 1
+            response = None
+            registered = False
+            try:
+                response = self._open_range_response(position, end_byte)
+                if not self._response_matches_range(
+                    response, position, end_byte
+                ):
+                    raise _SegmentedDownloadFallback()
+
+                registered = self._register_active_response(response)
+                if not registered:
+                    abort.set()
+                    return
+                with open(self.files[0], 'r+b') as target:
+                    target.seek(position)
+                    for chunk in response.iter_content(
+                        chunk_size=DOWNLOAD_CHUNK_SIZE
+                    ):
+                        if abort.is_set() or self.state in (
+                            DownloadState.CANCELED_STATE,
+                            DownloadState.SHUTDOWN_STATE
+                        ):
+                            abort.set()
+                            return
+                        if not chunk:
+                            continue
+
+                        remaining = end_byte - position + 1
+                        if len(chunk) > remaining:
+                            raise _SegmentedDownloadFallback()
+
+                        target.write(chunk)
+                        position += len(chunk)
+                        with progress_lock:
+                            progress['downloaded'] += len(chunk)
+                            elapsed = max(
+                                perf_counter() - progress['started'],
+                                0.001
+                            )
+                            self._speed = round(
+                                progress['downloaded'] / elapsed,
+                                2
+                            )
+                            self._progress = round(
+                                progress['downloaded'] / self.size * 100,
+                                2
+                            )
+                        self._queue_segment_status_emit(ws, status_event)
+
+                if position > end_byte:
+                    return
+
+            except _SegmentedDownloadFallback:
+                abort.set()
+                raise
+            except RequestException:
+                if self.state in (
+                    DownloadState.CANCELED_STATE,
+                    DownloadState.SHUTDOWN_STATE
+                ):
+                    abort.set()
+                    return
+                # Resume only the unfinished bytes in this segment.
+                continue
+            finally:
+                if response is not None:
+                    if registered:
+                        self._unregister_active_response(response)
+                    self._close_range_response(response)
+
+        if position <= end_byte and not abort.is_set():
+            abort.set()
+            raise _SegmentedDownloadFallback()
+
+    def _run_segmented_download(
+        self,
+        ws: WebSocket,
+        status_event: QueueStatusEvent
+    ) -> bool:
+        ranges = _build_byte_ranges(self.size, SEGMENTED_DOWNLOAD_PARTS)
+        if len(ranges) < 2:
+            return False
+
+        with open(self.files[0], 'wb') as target:
+            target.truncate(self.size)
+
+        progress: Dict[str, Union[int, float]] = {
+            'downloaded': 0,
+            'started': perf_counter(),
+        }
+        progress_lock = Lock()
+        abort = Event()
+
+        with ThreadPoolExecutor(
+            max_workers=len(ranges),
+            thread_name_prefix='DirectDownloadSegment'
+        ) as executor:
+            futures = [
+                executor.submit(
+                    self._download_segment,
+                    start_byte,
+                    end_byte,
+                    progress,
+                    progress_lock,
+                    abort,
+                    ws,
+                    status_event
+                )
+                for start_byte, end_byte in ranges
+            ]
+            try:
+                for future in as_completed(futures):
+                    future.result()
+            except Exception as error:
+                abort.set()
+                for future in futures:
+                    future.cancel()
+                if self.state in (
+                    DownloadState.CANCELED_STATE,
+                    DownloadState.SHUTDOWN_STATE
+                ):
+                    return True
+                if isinstance(error, (
+                    _SegmentedDownloadFallback,
+                    RequestException,
+                    OSError
+                )):
+                    return False
+                raise
+
+        if self.state in (
+            DownloadState.CANCELED_STATE,
+            DownloadState.SHUTDOWN_STATE
+        ):
+            return True
+
+        return progress['downloaded'] == self.size
+
+    def run(self) -> None:
+        if not self._supports_segmented_download:
+            super().run()
+            return
+
+        self._state = DownloadState.DOWNLOADING_STATE
+        self._task_label = (
+            f'Downloading ({SEGMENTED_DOWNLOAD_PARTS} connections)'
+        )
+        self.__status_emit_lock = Lock()
+        self.__status_emit_pending = False
+        self.__status_emit_dirty = False
+        ws = WebSocket()
+        status_event = QueueStatusEvent(self)
+        self._queue_segment_status_emit(ws, status_event)
+
+        if self._run_segmented_download(ws, status_event):
+            return
+        if self.state in (
+            DownloadState.CANCELED_STATE,
+            DownloadState.SHUTDOWN_STATE
+        ):
+            return
+
+        LOGGER.warning(
+            'Validated segmented download failed; falling back to one stream'
+        )
+        self._progress = 0.0
+        self._speed = 0.0
+        self._task_label = ''
+        # A segmented failure means range semantics are no longer trustworthy.
+        # Single-stream retries must restart cleanly rather than append a 200.
+        self._supports_range_header = False
+        super().run()
+
+    def stop(self,
+        state: DownloadState = DownloadState.CANCELED_STATE
+    ) -> None:
+        self._state = state
+        with self.__active_responses_lock:
+            active_responses = tuple(self.__active_responses)
+        for response in active_responses:
+            try:
+                response.close()
+            except Exception:
+                LOGGER.exception(
+                    'Failed to close an active segmented response'
+                )
+        super().stop(state)
 
 
 # region MediaFire

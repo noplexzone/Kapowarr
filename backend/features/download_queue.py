@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from asyncio import run
-from threading import Thread
+from threading import RLock, Thread
 from os import listdir
 from os.path import basename, join
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Tuple, Type, Union
@@ -92,6 +92,8 @@ def _emit_queue_event(event) -> None:
 
 class DownloadHandler(metaclass=Singleton):
     queue: List[Download] = []
+    _admission_lock: RLock = RLock()
+    _admitting_links: set = set()
 
     def __init__(self) -> None:
         """Setup the download handler"""
@@ -135,7 +137,23 @@ class DownloadHandler(metaclass=Singleton):
                 # Block before recording the batch failure. DownloadBatch may
                 # queue fallback searches immediately when this is the final
                 # result, and those searches must not choose the same link.
-                add_dl_to_blocklist(download)
+                try:
+                    add_dl_to_blocklist(download)
+                except Exception:
+                    LOGGER.exception(
+                        'Unable to blocklist failed Suwayomi download %s; '
+                        'fallback is suppressed',
+                        download.id,
+                    )
+                    download._allow_batch_fallback = False
+                    try:
+                        connection = get_db().connection
+                        if connection.in_transaction:
+                            connection.rollback()
+                    except Exception:
+                        LOGGER.exception(
+                            'Unable to roll back failed Suwayomi blocklist write'
+                        )
             PostProcessor.failed(download)
 
         elif download.state == DownloadState.DOWNLOADING_STATE:
@@ -524,7 +542,42 @@ class DownloadHandler(metaclass=Singleton):
             for d in self.queue
         )
 
+    def reserve_link(self, link: str) -> bool:
+        """Reserve a source link across asynchronous admission work."""
+        with self._admission_lock:
+            if link in self._admitting_links or self.link_in_queue(link):
+                return False
+            self._admitting_links.add(link)
+            return True
+
+    def release_link(self, link: str) -> None:
+        """Release a source-link admission reservation."""
+        with self._admission_lock:
+            self._admitting_links.discard(link)
+
     async def add(
+        self,
+        link: str,
+        volume_id: int,
+        issue_id: Union[int, None] = None,
+        force_match: bool = False,
+        display_title: str = '',
+        task_history_id: int = 0,
+        covered_issues_override: Union[float, Tuple[float, float], None] = None,
+    ) -> Tuple[List[dict], Union[EnqueuingDownloadFailureReason, None]]:
+        """Reserve ``link`` and admit it exactly once."""
+        if not self.reserve_link(link):
+            LOGGER.info('Download already queued or being admitted')
+            return [], EnqueuingDownloadFailureReason.ALREADY_QUEUED
+        try:
+            return await self._add_reserved(
+                link, volume_id, issue_id, force_match, display_title,
+                task_history_id, covered_issues_override,
+            )
+        finally:
+            self.release_link(link)
+
+    async def _add_reserved(
         self,
         link: str,
         volume_id: int,
@@ -687,11 +740,15 @@ class DownloadHandler(metaclass=Singleton):
         for d in downloads:
             d.task_history_id = task_history_id
 
-        result = self.__prepare_downloads_for_queue(
-            downloads,
-            forced_match=force_match
-        )
-        self.queue += result
+        with self._admission_lock:
+            # A reservation protects the submitted link while remote metadata is
+            # fetched; this lock keeps the final DB insert and queue mutation one
+            # indivisible admission step.
+            result = self.__prepare_downloads_for_queue(
+                downloads,
+                forced_match=force_match
+            )
+            self.queue += result
 
         self._process_queue()
         for download in result:

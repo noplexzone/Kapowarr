@@ -7,6 +7,7 @@ Background tasks and their handling
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from json import dumps as json_dumps, loads as json_loads
 from threading import Lock, RLock, Thread, Timer
 from time import sleep, time
@@ -16,7 +17,7 @@ from flask import Flask
 
 from backend.base.custom_exceptions import (InvalidComicVineApiKey,
                                             TaskNotDeletable, TaskNotFound)
-from backend.base.definitions import DownloadSource
+from backend.base.definitions import DownloadSource, EnqueuingDownloadFailureReason
 from backend.base.helpers import Singleton, get_subclasses
 from backend.base.logging import LOGGER
 from backend.features.download_queue import DownloadHandler
@@ -27,7 +28,7 @@ from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume, refresh_and_scan
 from os.path import basename
 from random import uniform
-from sqlite3 import OperationalError, SQLITE_BUSY
+from sqlite3 import OperationalError, SQLITE_BUSY, SQLITE_LOCKED
 
 from backend.internals.db import close_db, commit, get_db
 from backend.internals.db_models import FilesDB
@@ -901,7 +902,16 @@ class DownloadBatch:
 
     _registry: Dict[int, 'DownloadBatch'] = {}
     _pending_results: Dict[int, List[dict]] = {}
+    _completed_ids = OrderedDict()
+    _completed_limit = 2048
     _registry_lock: Lock = Lock()
+
+    @classmethod
+    def _mark_completed_locked(cls, task_history_id: int) -> None:
+        cls._completed_ids[task_history_id] = None
+        cls._completed_ids.move_to_end(task_history_id)
+        while len(cls._completed_ids) > cls._completed_limit:
+            cls._completed_ids.popitem(last=False)
 
     def __init__(
         self,
@@ -921,6 +931,14 @@ class DownloadBatch:
         self._finalized = False
 
     @classmethod
+    def begin(cls, task_history_id: int) -> None:
+        """Start a new lifecycle, including after task-history rowid reuse."""
+        with cls._registry_lock:
+            cls._registry.pop(task_history_id, None)
+            cls._pending_results.pop(task_history_id, None)
+            cls._completed_ids.pop(task_history_id, None)
+
+    @classmethod
     def register(
         cls,
         task_history_id: int,
@@ -935,11 +953,15 @@ class DownloadBatch:
             task_history_id, expected, volume_id, display_title, update_existing
         )
         with cls._registry_lock:
+            if task_history_id in cls._completed_ids:
+                return
             pending = cls._pending_results.pop(task_history_id, [])
             batch.results.extend(pending)
             finalize = len(batch.results) >= batch.expected
             batch._finalized = finalize
-            if not finalize:
+            if finalize:
+                cls._mark_completed_locked(task_history_id)
+            else:
                 cls._registry[task_history_id] = batch
         if finalize:
             batch._finalize()
@@ -964,6 +986,8 @@ class DownloadBatch:
             '_download_link': download_link,
         }
         with cls._registry_lock:
+            if task_history_id in cls._completed_ids:
+                return
             batch = cls._registry.get(task_history_id)
             if not batch:
                 # A very fast direct download can finish between queue admission
@@ -983,6 +1007,7 @@ class DownloadBatch:
             with cls._registry_lock:
                 if cls._registry.get(task_history_id) is batch:
                     cls._registry.pop(task_history_id, None)
+                cls._mark_completed_locked(task_history_id)
             batch._finalize()
 
     def _finalize(self) -> None:
@@ -1112,6 +1137,7 @@ class TaskHandler(metaclass=Singleton):
                 task_history_id: int = cursor.execute(
                     "SELECT last_insert_rowid()"
                 ).fetchone()[0]
+                DownloadBatch.begin(task_history_id)
 
                 if not task.stop:
                     if task.category == 'download' and result:
@@ -1510,6 +1536,26 @@ def record_and_track_download(
     force_match: bool,
     display_title: str = '',
 ) -> tuple:
+    """Reserve a manual link before creating its task-history row."""
+    handler = DownloadHandler()
+    if not handler.reserve_link(link):
+        return [], EnqueuingDownloadFailureReason.ALREADY_QUEUED
+    try:
+        return _record_and_track_download_reserved(
+            handler, link, volume_id, issue_id, force_match, display_title,
+        )
+    finally:
+        handler.release_link(link)
+
+
+def _record_and_track_download_reserved(
+    handler: DownloadHandler,
+    link: str,
+    volume_id: int,
+    issue_id: Union[int, None],
+    force_match: bool,
+    display_title: str = '',
+) -> tuple:
     """Queue a manual download and track its outcome in task history.
 
     Creates a ``manual_download`` task_history row immediately, then queues
@@ -1541,16 +1587,19 @@ def record_and_track_download(
             )
             cursor.connection.commit()
             task_history_id = cursor.lastrowid
+            DownloadBatch.begin(task_history_id)
             break
         except OperationalError as exc:
+            sqlite_errorcode = getattr(exc, 'sqlite_errorcode', None)
             is_busy = (
-                getattr(exc, 'sqlite_errorcode', None) == SQLITE_BUSY
-                or 'locked' in str(exc).lower()
-            )
+                isinstance(sqlite_errorcode, int)
+                and sqlite_errorcode & 0xFF in (SQLITE_BUSY, SQLITE_LOCKED)
+            ) or 'locked' in str(exc).lower()
+            connection = db.connection
+            if connection.in_transaction:
+                connection.rollback()
             if not is_busy or attempt + 1 >= max_attempts:
                 raise
-            if getattr(db, 'in_transaction', False):
-                db.rollback()
             delay = 0.1 * (2 ** attempt) + uniform(0.0, 0.05)
             LOGGER.warning(
                 'Manual download history admission blocked by SQLite; '
@@ -1564,7 +1613,7 @@ def record_and_track_download(
 
     try:
         added, fail_reason = async_run(
-            DownloadHandler().add(
+            handler._add_reserved(
                 link, volume_id, issue_id,
                 force_match=force_match,
                 display_title=display_title,

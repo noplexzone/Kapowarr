@@ -238,6 +238,38 @@ class SuwayomiFallbackReliabilityTests(unittest.TestCase):
         self.assertEqual(finalized[0][0]['_covered_issues'], 1.0)
         self.assertNotIn(task_history_id, tasks.DownloadBatch._pending_results)
 
+    def test_late_duplicate_result_is_discarded_after_finalization(self):
+        task_history_id = 99125
+        tasks.DownloadBatch._registry.pop(task_history_id, None)
+        tasks.DownloadBatch._pending_results.pop(task_history_id, None)
+        tasks.DownloadBatch._completed_ids.pop(task_history_id, None)
+
+        with patch.object(tasks.DownloadBatch, '_finalize', lambda batch: None):
+            tasks.DownloadBatch.register(task_history_id, 1, 44, 'Auto Search')
+            tasks.DownloadBatch.record(task_history_id, 'first', True)
+            tasks.DownloadBatch.record(task_history_id, 'late duplicate', True)
+
+        self.assertNotIn(task_history_id, tasks.DownloadBatch._registry)
+        self.assertNotIn(task_history_id, tasks.DownloadBatch._pending_results)
+        self.assertIn(task_history_id, tasks.DownloadBatch._completed_ids)
+        tasks.DownloadBatch._completed_ids.pop(task_history_id, None)
+
+    def test_completed_batch_marker_is_bounded(self):
+        completed = tasks.DownloadBatch._completed_ids
+        old_limit = tasks.DownloadBatch._completed_limit
+        saved = completed.copy()
+        try:
+            completed.clear()
+            tasks.DownloadBatch._completed_limit = 3
+            with tasks.DownloadBatch._registry_lock:
+                for task_history_id in range(10, 14):
+                    tasks.DownloadBatch._mark_completed_locked(task_history_id)
+            self.assertEqual(list(completed), [11, 12, 13])
+        finally:
+            completed.clear()
+            completed.update(saved)
+            tasks.DownloadBatch._completed_limit = old_limit
+
     def test_failed_issue_and_pack_queue_unique_issue_fallbacks(self):
         class FakeResult:
             def fetchall(self):
@@ -323,6 +355,44 @@ class SuwayomiFallbackReliabilityTests(unittest.TestCase):
             handler._DownloadHandler__run_download(download)
 
         self.assertEqual(order, ['blocklist', 'record'])
+
+    def test_blocklist_failure_still_finalizes_and_advances_queue(self):
+        download = SuwayomiDownload.__new__(SuwayomiDownload)
+        download._id = 8
+        download._state = DownloadState.FAILED_STATE
+        queued = object()
+        handler = download_queue.DownloadHandler.__new__(download_queue.DownloadHandler)
+        handler.queue = [download, queued]
+        recorded = []
+        advanced = []
+
+        connection = SimpleNamespace(
+            in_transaction=True,
+            rollback=lambda: recorded.append('rollback'),
+        )
+        db = SimpleNamespace(connection=connection)
+
+        def blocklist_failure(item):
+            raise RuntimeError('database is locked')
+
+        def record_failure(item):
+            recorded.append('history')
+            self.assertFalse(item._allow_batch_fallback)
+
+        with patch.object(SuwayomiDownload, 'run', lambda self: None), \
+                patch.object(download_queue, 'QueueStatusEvent', lambda item: object()), \
+                patch.object(download_queue, 'RemovedFromQueueEvent', lambda item: object()), \
+                patch.object(download_queue, '_emit_queue_event', lambda event: None), \
+                patch.object(download_queue, 'add_dl_to_blocklist', blocklist_failure), \
+                patch.object(download_queue, 'get_db', return_value=db), \
+                patch.object(download_queue.PostProcessor, 'failed', record_failure), \
+                patch.object(handler, '_process_queue', lambda: advanced.append(True)):
+            handler._DownloadHandler__run_download(download)
+
+        self.assertEqual(recorded, ['rollback', 'history'])
+        self.assertEqual(handler.queue, [queued])
+        self.assertEqual(advanced, [True])
+
 
 
 if __name__ == '__main__':

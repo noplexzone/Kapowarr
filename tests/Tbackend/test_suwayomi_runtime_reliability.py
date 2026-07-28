@@ -262,6 +262,30 @@ class StructuredHistoryFailureTests(unittest.TestCase):
         self.assertNotEqual(reasons[0], reasons[1])
         self.assertNotIn('password', params[0]['failure_reason'].lower())
 
+    def test_failed_blocklist_write_suppresses_batch_fallback_source(self):
+        class FakeCursor:
+            def execute(self, query, values=None):
+                return self
+
+        download = SimpleNamespace(
+            state=DownloadState.FAILED_STATE,
+            _failure_reason={'stage': 'download', 'type': 'failed'},
+            _allow_batch_fallback=False,
+            task_history_id=55,
+            web_link=None, web_title=None, web_sub_title='Series',
+            title='Series', volume_id=1, issue_id=None,
+            source_type=DownloadSource.SUWAYOMI, source_name='Suwayomi',
+            covered_issues=(1.0, 2.0), download_link='suwayomi:1:2,3',
+        )
+
+        with patch.object(post_processing, 'get_db', return_value=FakeCursor()), \
+                patch('backend.features.tasks.DownloadBatch.record') as record:
+            post_processing.add_to_history(download)
+
+        self.assertIsNone(record.call_args.kwargs['source_type'])
+        self.assertEqual(record.call_args.kwargs['download_link'], download.download_link)
+
+
 
 if __name__ == '__main__':
     unittest.main()

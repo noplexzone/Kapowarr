@@ -454,6 +454,7 @@ class EnqueuingDownloadFailureReason(BaseEnum):
     ONLY_RATE_LIMITED_LINKS = "All working download links on the webpage are from rate limited services"
 
     LINK_BROKEN = "Download link broken"
+    ALREADY_QUEUED = "Download already queued"
 
 
 class DownloadType(BaseEnum):

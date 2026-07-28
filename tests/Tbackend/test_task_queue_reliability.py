@@ -16,6 +16,7 @@ class TaskQueueReliabilityTests(unittest.TestCase):
         self.old_instance_queue = self.handler.__dict__.get('queue')
         self.handler.__dict__.pop('queue', None)
         tasks.TaskHandler.queue = []
+        self.original_process_queue = tasks.TaskHandler._process_queue
         self.emit_patch = patch.object(tasks, '_emit_task_event', lambda event: None)
         self.process_patch = patch.object(
             tasks.TaskHandler, '_process_queue', lambda handler: None
@@ -83,10 +84,33 @@ class TaskQueueReliabilityTests(unittest.TestCase):
         self.handler.queue.append(entry)
 
         self.handler.remove(7)
+        self.handler.remove(7)
 
         self.assertTrue(task.stop)
         self.assertEqual(entry['status'], 'cancelling')
-        self.assertEqual(joins, [5])
+        self.assertIn(entry, self.handler.queue)
+        self.assertEqual(joins, [5, 5])
+
+    def test_cancelling_head_is_not_started_again(self):
+        starts = []
+
+        class FakeThread:
+            def start(self):
+                starts.append(True)
+
+        self.handler.queue.append({
+            'task': tasks.UpdateAll(),
+            'id': 8,
+            'status': 'cancelling',
+            'queued_at': 1,
+            'started_at': 2,
+            'thread': FakeThread(),
+        })
+
+        self.original_process_queue(self.handler)
+
+        self.assertEqual(starts, [])
+        self.assertEqual(self.handler.queue[0]['status'], 'cancelling')
 
     def test_update_all_passes_cancellation_and_updates_heartbeat(self):
         captured = {}

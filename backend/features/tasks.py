@@ -1179,10 +1179,11 @@ class TaskHandler(metaclass=Singleton):
                 return
 
             first_entry = self.queue[0]
-            if first_entry['status'] != 'running':
-                first_entry['status'] = 'running'
-                first_entry['started_at'] = round(time())
-                first_entry['thread'].start()
+            if first_entry['status'] != 'queued':
+                return
+            first_entry['status'] = 'running'
+            first_entry['started_at'] = round(time())
+            first_entry['thread'].start()
         return
 
     def add(self, task: Task) -> int:
@@ -1423,17 +1424,18 @@ class TaskHandler(metaclass=Singleton):
             entry = self.__get_raw_entry(task_id)
             task = entry['task']
 
-            if entry['status'] == 'running':
+            if entry['status'] in ('running', 'cancelling'):
                 if not getattr(task, 'cancellable', False):
                     raise TaskNotDeletable(task_id)
                 task.stop = True
-                entry['status'] = 'cancelling'
                 running_thread = entry['thread']
-                LOGGER.info(
-                    'Requested cancellation: %s (%d)',
-                    task.display_title,
-                    task_id,
-                )
+                if entry['status'] != 'cancelling':
+                    entry['status'] = 'cancelling'
+                    LOGGER.info(
+                        'Requested cancellation: %s (%d)',
+                        task.display_title,
+                        task_id,
+                    )
             else:
                 task.stop = True
                 self.queue.remove(entry)

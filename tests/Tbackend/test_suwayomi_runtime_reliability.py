@@ -23,7 +23,9 @@ from backend.implementations.suwayomi import (
 )
 
 
-def _hanging_pdf_worker(page_paths, output_path, result_queue):
+def _hanging_pdf_worker(page_paths, output_path, result_queue, artifact_dir):
+    with open(os.path.join(artifact_dir, 'orphan-batch.pdf'), 'wb') as handle:
+        handle.write(b'partial')
     time.sleep(30)
 
 
@@ -107,10 +109,14 @@ class PageRetryReliabilityTests(unittest.TestCase):
     def test_404_fails_immediately_with_status_and_attempt(self):
         self.client.get_page_image = MagicMock(side_effect=_request_error(404))
         with self.assertRaises(SuwayomiDownloadError) as raised:
-            self.client._get_page_with_retry(1, 3, 7, Event())
+            self.client._get_page_with_retry(
+                1, 3, 7, Event(), chapter_id=99,
+            )
         self.assertEqual(self.client.get_page_image.call_count, 1)
         self.assertEqual(raised.exception.details['status'], 404)
         self.assertEqual(raised.exception.details['attempts'], 1)
+        self.assertEqual(raised.exception.details['chapter_id'], 99)
+        self.assertEqual(raised.exception.details['source_order'], 3)
         self.assertEqual(raised.exception.details['page_index'], 7)
 
     def test_failed_cbz_removes_partial_output(self):
@@ -123,6 +129,27 @@ class PageRetryReliabilityTests(unittest.TestCase):
                 self.client.create_cbz(1, 3, 2, destination, Event())
             self.assertFalse(os.path.exists(destination))
             self.assertFalse(os.path.exists(destination + '.part'))
+
+
+class PdfDeadlineReliabilityTests(unittest.TestCase):
+    def test_successful_page_fetch_after_total_deadline_is_rejected(self):
+        client = SuwayomiClient.__new__(SuwayomiClient)
+
+        def slow_page(*args, **kwargs):
+            time.sleep(0.03)
+            return b'not-an-image'
+
+        client.get_page_image = slow_page
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(suwayomi, 'PDF_TOTAL_TIMEOUT', 0.01):
+            destination = os.path.join(folder, 'volume.pdf')
+            with self.assertRaises(SuwayomiDownloadError) as raised:
+                client.create_pdf_from_chapters(
+                    1, [(99, 3, 1)], destination, Event(),
+                )
+            self.assertEqual(raised.exception.details['type'], 'timeout')
+            self.assertFalse(os.path.exists(destination))
+            self.assertEqual(os.listdir(folder), [])
 
 
 class PdfWorkerReliabilityTests(unittest.TestCase):
@@ -220,7 +247,8 @@ class StructuredHistoryFailureTests(unittest.TestCase):
         )
         not_found = SuwayomiDownloadError(
             'page_fetch', 'http_error', manga_id=1,
-            chapter_id=2, page_index=3, status=404, attempts=1,
+            chapter_id=2, source_order=7, page_index=3,
+            status=404, attempts=1,
         )
         with patch.object(post_processing, 'get_db', return_value=FakeCursor()):
             post_processing.add_to_history(make_download(timeout))
@@ -229,6 +257,8 @@ class StructuredHistoryFailureTests(unittest.TestCase):
         reasons = [json.loads(item['failure_reason']) for item in params]
         self.assertEqual(reasons[0]['type'], 'timeout')
         self.assertEqual(reasons[1]['status'], 404)
+        self.assertEqual(reasons[1]['chapter_id'], 2)
+        self.assertEqual(reasons[1]['source_order'], 7)
         self.assertNotEqual(reasons[0], reasons[1])
         self.assertNotIn('password', params[0]['failure_reason'].lower())
 

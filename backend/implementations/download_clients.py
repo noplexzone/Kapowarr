@@ -1352,6 +1352,7 @@ class SuwayomiDownload(BaseDirectDownload):
                 manga_id, source_order, page_count,
                 self._files[0], self._stop_event,
                 progress_cb=_on_page,
+                chapter_id=chapter_id,
             )
         except Exception as e:
             LOGGER.error('Suwayomi: failed to create CBZ: %s', e)
@@ -1478,7 +1479,7 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
 
         # Collect chapter info in order. This phase occupies the first half of
         # the visible progress range; PDF assembly occupies the second half.
-        chapter_info: List[Tuple[int, int]] = []
+        chapter_info: List[Tuple[int, int, int]] = []
         for idx, ch_id in enumerate(chapter_ids):
             self._task_label = f'Downloading {idx + 1}/{total_chapters} ({round(idx / total_chapters * 50)}%)'
             self._progress = round(idx / total_chapters * 50, 2) if total_chapters else 0.0
@@ -1529,7 +1530,7 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
                 ))
                 return
 
-            chapter_info.append((source_order, page_count))
+            chapter_info.append((ch_id, source_order, page_count))
             self._progress = round((idx + 1) / total_chapters * 50, 2) if total_chapters else 0.0
             _emit_download_status(self)
 

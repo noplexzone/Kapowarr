@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import tempfile
 import zipfile
+from shutil import rmtree
 from dataclasses import dataclass
 from enum import Enum
 from multiprocessing import get_context
@@ -64,6 +65,7 @@ class SuwayomiDownloadError(RuntimeError):
         *,
         manga_id: Optional[int] = None,
         chapter_id: Optional[int] = None,
+        source_order: Optional[int] = None,
         page_index: Optional[int] = None,
         status: Optional[int] = None,
         attempts: int = 1,
@@ -73,6 +75,7 @@ class SuwayomiDownloadError(RuntimeError):
             'type': failure_type,
             'manga_id': manga_id,
             'chapter_id': chapter_id,
+            'source_order': source_order,
             'page_index': page_index,
             'status': status,
             'attempts': attempts,
@@ -93,7 +96,9 @@ def _terminate_process(process) -> None:
         process.join(timeout=1)
 
 
-def _pdf_assembly_worker(page_paths: List[str], output_path: str, result_queue) -> None:
+def _pdf_assembly_worker(
+    page_paths: List[str], output_path: str, result_queue, artifact_dir: str
+) -> None:
     """Spawn-safe worker for killable image conversion and PDF merge."""
     try:
         import img2pdf
@@ -104,7 +109,9 @@ def _pdf_assembly_worker(page_paths: List[str], output_path: str, result_queue) 
             for batch_start in range(0, len(page_paths), 5):
                 batch = page_paths[batch_start:batch_start + 5]
                 data = img2pdf.convert(batch)
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tf:
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix='.pdf', dir=artifact_dir,
+                ) as tf:
                     tf.write(data)
                     batch_paths.append(tf.name)
 
@@ -377,6 +384,7 @@ class SuwayomiClient:
         manga_id: int,
         chapter_source_order: int,
         page_index: int,
+        timeout: Optional[Tuple[float, float]] = None,
     ) -> bytes:
         """Fetch a single page image via the Suwayomi REST API.
 
@@ -391,7 +399,7 @@ class SuwayomiClient:
         resp = _requests.get(
             url,
             auth=self._ssn.auth if self._ssn.auth else None,
-            timeout=(10, 45),
+            timeout=timeout or (10, 45),
         )
         resp.raise_for_status()
         return resp.content
@@ -403,6 +411,7 @@ class SuwayomiClient:
         page_index: int,
         stop_event: Event,
         *,
+        chapter_id: Optional[int] = None,
         deadline: Optional[float] = None,
     ) -> bytes:
         """Fetch one page with bounded, cancellation-aware retry/backoff."""
@@ -410,19 +419,46 @@ class SuwayomiClient:
             if stop_event.is_set():
                 raise SuwayomiDownloadError(
                     'page_fetch', 'canceled', manga_id=manga_id,
-                    chapter_id=chapter_source_order, page_index=page_index,
+                    chapter_id=chapter_id, source_order=chapter_source_order, page_index=page_index,
                     attempts=attempt,
                 )
             if deadline is not None and monotonic() >= deadline:
                 raise SuwayomiDownloadError(
                     'page_fetch', 'timeout', manga_id=manga_id,
-                    chapter_id=chapter_source_order, page_index=page_index,
+                    chapter_id=chapter_id, source_order=chapter_source_order, page_index=page_index,
                     attempts=attempt,
                 )
             try:
-                return self.get_page_image(
-                    manga_id, chapter_source_order, page_index,
+                remaining = None if deadline is None else max(
+                    0.0, deadline - monotonic()
                 )
+                if remaining is not None:
+                    connect_timeout = min(10.0, max(0.1, remaining * 0.25))
+                    read_timeout = min(
+                        45.0, max(0.1, remaining - connect_timeout),
+                    )
+                    request_timeout = (connect_timeout, read_timeout)
+                else:
+                    request_timeout = None
+                data = self.get_page_image(
+                    manga_id, chapter_source_order, page_index,
+                    timeout=request_timeout,
+                )
+                if stop_event.is_set():
+                    raise SuwayomiDownloadError(
+                        'page_fetch', 'canceled', manga_id=manga_id,
+                        chapter_id=chapter_id,
+                        source_order=chapter_source_order,
+                        page_index=page_index, attempts=attempt,
+                    )
+                if deadline is not None and monotonic() >= deadline:
+                    raise SuwayomiDownloadError(
+                        'page_fetch', 'timeout', manga_id=manga_id,
+                        chapter_id=chapter_id,
+                        source_order=chapter_source_order,
+                        page_index=page_index, attempts=attempt,
+                    )
+                return data
             except RequestException as exc:
                 response = getattr(exc, 'response', None)
                 status = response.status_code if response is not None else None
@@ -431,7 +467,7 @@ class SuwayomiClient:
                     raise SuwayomiDownloadError(
                         'page_fetch', 'http_error' if status else type(exc).__name__,
                         manga_id=manga_id,
-                        chapter_id=chapter_source_order,
+                        chapter_id=chapter_id, source_order=chapter_source_order,
                         page_index=page_index,
                         status=status,
                         attempts=attempt,
@@ -448,7 +484,7 @@ class SuwayomiClient:
                 if stop_event.wait(delay):
                     raise SuwayomiDownloadError(
                         'page_fetch', 'canceled', manga_id=manga_id,
-                        chapter_id=chapter_source_order,
+                        chapter_id=chapter_id, source_order=chapter_source_order,
                         page_index=page_index, attempts=attempt,
                     ) from exc
             except SuwayomiDownloadError:
@@ -456,7 +492,7 @@ class SuwayomiClient:
             except Exception as exc:
                 raise SuwayomiDownloadError(
                     'page_fetch', type(exc).__name__, manga_id=manga_id,
-                    chapter_id=chapter_source_order, page_index=page_index,
+                    chapter_id=chapter_id, source_order=chapter_source_order, page_index=page_index,
                     attempts=attempt,
                 ) from exc
         raise AssertionError('unreachable')
@@ -469,6 +505,7 @@ class SuwayomiClient:
         dest_path: str,
         stop_event: Event,
         progress_cb=None,
+        chapter_id: Optional[int] = None,
     ) -> bool:
         """Create a CBZ atomically using bounded shared page retries."""
         partial_path = f'{dest_path}.part'
@@ -479,6 +516,7 @@ class SuwayomiClient:
                         return False
                     data = self._get_page_with_retry(
                         manga_id, chapter_source_order, index, stop_event,
+                        chapter_id=chapter_id,
                     )
                     ext = _detect_image_ext(data)
                     zf.writestr(f'{index + 1:04d}.{ext}', data)
@@ -497,28 +535,49 @@ class SuwayomiClient:
     def create_pdf_from_chapters(
         self,
         manga_id: int,
-        chapters: List[Tuple[int, int]],
+        chapters: List[tuple],
         dest_path: str,
         stop_event: Event,
         progress_cb=None,
     ) -> bool:
         """Fetch pages within a hard deadline and assemble in a killable worker."""
         deadline = monotonic() + PDF_TOTAL_TIMEOUT
-        total_pages = sum(page_count for _, page_count in chapters)
+        normalized_chapters = []
+        for chapter in chapters:
+            if len(chapter) == 3:
+                chapter_id, source_order, page_count = chapter
+            else:
+                source_order, page_count = chapter
+                chapter_id = None
+            normalized_chapters.append((chapter_id, source_order, page_count))
+        total_pages = sum(item[2] for item in normalized_chapters)
         fetched = 0
         page_paths: List[str] = []
         worker_output: Optional[str] = None
+        artifact_dir: Optional[str] = None
         process = None
         result_queue = None
+
+        def _check_budget(stage: str) -> bool:
+            if stop_event.is_set():
+                return False
+            if monotonic() >= deadline:
+                raise SuwayomiDownloadError(
+                    stage, 'timeout', manga_id=manga_id,
+                )
+            return True
+
         try:
-            for source_order, page_count in chapters:
+            for chapter_id, source_order, page_count in normalized_chapters:
                 for page_index in range(page_count):
-                    if stop_event.is_set():
+                    if not _check_budget('page_fetch'):
                         return False
                     data = self._get_page_with_retry(
                         manga_id, source_order, page_index, stop_event,
-                        deadline=deadline,
+                        chapter_id=chapter_id, deadline=deadline,
                     )
+                    if not _check_budget('page_fetch'):
+                        return False
                     ext = _detect_image_ext(data)
                     with tempfile.NamedTemporaryFile(
                         delete=False, suffix=f'.{ext}'
@@ -529,29 +588,41 @@ class SuwayomiClient:
                     if progress_cb is not None and total_pages > 0:
                         progress_cb(fetched, total_pages, len(data))
 
-            if not page_paths or stop_event.is_set():
+            if not page_paths or not _check_budget('pdf_assembly'):
                 return False
 
-            output_dir = os.path.dirname(dest_path) or None
-            with tempfile.NamedTemporaryFile(
-                delete=False, suffix='.pdf.part', dir=output_dir
-            ) as handle:
-                worker_output = handle.name
-            os.unlink(worker_output)
+            output_dir = os.path.dirname(dest_path) or '.'
+            artifact_dir = tempfile.mkdtemp(
+                prefix='.kapowarr-suwayomi-pdf-', dir=output_dir,
+            )
+            worker_output = os.path.join(artifact_dir, 'result.pdf')
 
             context = get_context('spawn')
             result_queue = context.Queue(maxsize=1)
             process = context.Process(
                 target=_pdf_assembly_worker,
-                args=(page_paths, worker_output, result_queue),
+                args=(
+                    page_paths, worker_output, result_queue, artifact_dir,
+                ),
                 name='SuwayomiPDFAssembly',
             )
-            process.start()
             assembly_deadline = min(
                 deadline, monotonic() + PDF_ASSEMBLY_TIMEOUT,
             )
+            process.start()
+            if stop_event.is_set():
+                _terminate_process(process)
+                return False
+            if monotonic() >= assembly_deadline:
+                _terminate_process(process)
+                raise SuwayomiDownloadError(
+                    'pdf_assembly', 'timeout', manga_id=manga_id,
+                )
+
             while process.is_alive():
-                process.join(timeout=0.2)
+                process.join(timeout=min(
+                    0.2, max(0.0, assembly_deadline - monotonic()),
+                ))
                 if stop_event.is_set():
                     _terminate_process(process)
                     return False
@@ -561,17 +632,31 @@ class SuwayomiClient:
                         'pdf_assembly', 'timeout', manga_id=manga_id,
                     )
 
+            if stop_event.is_set():
+                return False
+            if monotonic() >= assembly_deadline:
+                raise SuwayomiDownloadError(
+                    'pdf_assembly', 'timeout', manga_id=manga_id,
+                )
             if process.exitcode != 0:
                 raise SuwayomiDownloadError(
                     'pdf_assembly', 'worker_exit', manga_id=manga_id,
                     status=process.exitcode,
                 )
             try:
-                result = result_queue.get(timeout=1)
+                result = result_queue.get(timeout=min(
+                    1.0, max(0.01, assembly_deadline - monotonic()),
+                ))
             except Empty as exc:
                 raise SuwayomiDownloadError(
                     'pdf_assembly', 'missing_result', manga_id=manga_id,
                 ) from exc
+            if stop_event.is_set():
+                return False
+            if monotonic() >= assembly_deadline:
+                raise SuwayomiDownloadError(
+                    'pdf_assembly', 'timeout', manga_id=manga_id,
+                )
             if not result.get('ok'):
                 raise SuwayomiDownloadError(
                     'pdf_assembly', result.get('type', 'conversion_error'),
@@ -581,6 +666,8 @@ class SuwayomiClient:
                 raise SuwayomiDownloadError(
                     'pdf_assembly', 'missing_output', manga_id=manga_id,
                 )
+            if not _check_budget('pdf_assembly'):
+                return False
             os.replace(worker_output, dest_path)
             worker_output = None
             return True
@@ -595,11 +682,8 @@ class SuwayomiClient:
                     os.unlink(path)
                 except OSError:
                     pass
-            if worker_output:
-                try:
-                    os.unlink(worker_output)
-                except OSError:
-                    pass
+            if artifact_dir:
+                rmtree(artifact_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------
     # Source search / library sync

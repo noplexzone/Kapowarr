@@ -14,6 +14,7 @@ delivered as a plain .zip or .rar.
 
 import sys
 import unittest
+from contextlib import ExitStack
 from os.path import join
 from unittest.mock import MagicMock, patch
 
@@ -106,22 +107,37 @@ class ExtractFilesFromFolderFallbackTests(unittest.TestCase):
 
         renamed_to = []
 
-        with (
-            patch('backend.implementations.converters.list_files',
-                  return_value=folder_files),
-            patch('backend.implementations.converters.Volume',
-                  return_value=_make_volume_mock()),
-            patch('backend.implementations.converters.extract_filename_data',
-                  return_value={}),
-            patch('backend.implementations.converters.folder_extraction_filter',
-                  side_effect=filter_side_effect),
-            patch('backend.implementations.converters.set_detected_extension',
-                  side_effect=lambda f: f),
-            patch('backend.implementations.converters.rename_file',
-                  side_effect=lambda src, dst: renamed_to.append(dst)),
-            patch('backend.implementations.converters.delete_file_folder'),
-            patch('backend.implementations.converters.LOGGER'),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(patch(
+                'backend.implementations.converters.list_files',
+                return_value=folder_files,
+            ))
+            stack.enter_context(patch(
+                'backend.implementations.converters.Volume',
+                return_value=_make_volume_mock(),
+            ))
+            stack.enter_context(patch(
+                'backend.implementations.converters.extract_filename_data',
+                return_value={},
+            ))
+            stack.enter_context(patch(
+                'backend.implementations.converters.folder_extraction_filter',
+                side_effect=filter_side_effect,
+            ))
+            stack.enter_context(patch(
+                'backend.implementations.converters.set_detected_extension',
+                side_effect=lambda f: f,
+            ))
+            stack.enter_context(patch(
+                'backend.implementations.converters.rename_file',
+                side_effect=lambda src, dst: renamed_to.append(dst),
+            ))
+            stack.enter_context(patch(
+                'backend.implementations.converters.delete_file_folder',
+            ))
+            stack.enter_context(patch(
+                'backend.implementations.converters.LOGGER',
+            ))
             result = extract_files_from_folder(_SOURCE, _VOLUME_ID)
 
         return result, renamed_to

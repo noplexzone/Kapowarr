@@ -67,7 +67,8 @@ class _CommitContendedDB:
         self.insert_attempts = 0
         self.pending = []
         self.committed = []
-        self.connection = _CommitConnection(self)
+        self.connection = _Connection()
+        self.commit_connection = _CommitConnection(self)
 
     def execute(self, sql, params=()):
         if 'SELECT title FROM volumes' in sql:
@@ -76,8 +77,8 @@ class _CommitContendedDB:
             self.insert_attempts += 1
             row_id = 40 + self.insert_attempts
             self.pending.append(row_id)
-            self.connection.in_transaction = True
-            return _Cursor(lastrowid=row_id, connection=self.connection)
+            self.commit_connection.in_transaction = True
+            return _Cursor(lastrowid=row_id, connection=self.commit_connection)
         raise AssertionError(sql)
 
 
@@ -184,7 +185,8 @@ class ManualDownloadAdmissionTest(unittest.TestCase):
         result, handler, _, sleep_mock = self._run(db)
 
         self.assertEqual(db.insert_attempts, 2)
-        self.assertEqual(db.connection.rollbacks, 1)
+        self.assertEqual(db.commit_connection.rollbacks, 1)
+        self.assertEqual(db.connection.rollbacks, 0)
         self.assertEqual(db.committed, [42])
         self.assertEqual(handler.call[1]['task_history_id'], 42)
         self.assertEqual(sleep_mock.call_count, 1)

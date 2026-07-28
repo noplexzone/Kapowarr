@@ -1578,6 +1578,7 @@ def _record_and_track_download_reserved(
     task_history_id: Optional[int] = None
     max_attempts = 4
     for attempt in range(max_attempts):
+        cursor = None
         try:
             cursor = db.execute(
                 """INSERT INTO task_history
@@ -1598,7 +1599,7 @@ def _record_and_track_download_reserved(
                 isinstance(sqlite_errorcode, int)
                 and sqlite_errorcode & 0xFF in (SQLITE_BUSY_CODE, SQLITE_LOCKED_CODE)
             ) or 'locked' in str(exc).lower()
-            connection = db.connection
+            connection = cursor.connection if cursor is not None else db.connection
             if connection.in_transaction:
                 connection.rollback()
             if not is_busy or attempt + 1 >= max_attempts:

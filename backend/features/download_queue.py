@@ -30,7 +30,7 @@ from backend.features.post_processing import (PostProcessor,
                                               PostProcessorTorrentsComplete,
                                               PostProcessorTorrentsCopy,
                                               add_dl_to_blocklist)
-from backend.implementations.blocklist import add_to_blocklist
+from backend.implementations.blocklist import add_to_blocklist, blocklist_contains
 from backend.implementations.download_clients import (BaseDirectDownload,
                                                       MegaDownload,
                                                       NZBDownload,
@@ -59,6 +59,27 @@ download_type_to_class: Dict[str, Type[Download]] = {
     for c in get_subclasses(BaseDirectDownload)
 }
 
+
+
+
+
+def _blocklist_failed_suwayomi_link(
+    link: str, volume_id: int, issue_id: Union[int, None], display_title: str
+) -> bool:
+    """Exclude an unusable Suwayomi candidate before fallback admission."""
+    try:
+        add_to_blocklist(
+            None, None, display_title or None, link,
+            DownloadSource.SUWAYOMI, volume_id, issue_id,
+            BlocklistReason.LINK_BROKEN,
+        )
+        return True
+    except Exception:
+        LOGGER.exception(
+            'Unable to blocklist failed Suwayomi link before fallback: %s',
+            link,
+        )
+        return False
 
 
 def _emit_queue_event(event) -> None:
@@ -511,6 +532,7 @@ class DownloadHandler(metaclass=Singleton):
         force_match: bool = False,
         display_title: str = '',
         task_history_id: int = 0,
+        covered_issues_override: Union[float, Tuple[float, float], None] = None,
     ) -> Tuple[List[dict], Union[EnqueuingDownloadFailureReason, None]]:
         """Add a download to the queue.
 
@@ -569,8 +591,8 @@ class DownloadHandler(metaclass=Singleton):
                 return [], e.reason
 
         elif link_type == 'nzb':
-            covered_issues: Union[float, Tuple[float, float], None] = None
-            if issue_id is not None:
+            covered_issues = covered_issues_override
+            if covered_issues is None and issue_id is not None:
                 covered_issues = Volume(volume_id).get_issue(issue_id).get_data().calculated_issue_number
 
             source_name = ''
@@ -607,10 +629,13 @@ class DownloadHandler(metaclass=Singleton):
                     'Rejected Suwayomi link for non-manga volume %d (%s)',
                     volume_id, _vol_data.title,
                 )
+                _blocklist_failed_suwayomi_link(
+                    link, volume_id, issue_id, display_title,
+                )
                 return [], EnqueuingDownloadFailureReason.NO_MATCHES
 
-            covered_issues = None
-            if issue_id is not None:
+            covered_issues = covered_issues_override
+            if covered_issues is None and issue_id is not None:
                 covered_issues = (
                     Volume(volume_id)
                     .get_issue(issue_id)
@@ -654,6 +679,9 @@ class DownloadHandler(metaclass=Singleton):
 
             except IssueNotFound as e:
                 LOGGER.warning('Unable to create Suwayomi download: %s', e)
+                _blocklist_failed_suwayomi_link(
+                    link, volume_id, issue_id, display_title,
+                )
                 return [], EnqueuingDownloadFailureReason.NO_WORKING_LINKS
 
         for d in downloads:
@@ -672,7 +700,7 @@ class DownloadHandler(metaclass=Singleton):
 
     def add_multiple(
         self,
-        add_args: Iterable[Tuple[str, int, Union[int, None], bool, str]],
+        add_args: Iterable[tuple],
         task_history_id: int = 0,
     ) -> Tuple[int, List[dict]]:
         """Queue multiple downloads. Returns (total_queued, immediate_failures).
@@ -685,16 +713,29 @@ class DownloadHandler(metaclass=Singleton):
 
         async def add_wrapper() -> None:
             nonlocal queued_total
-            for link, volume_id, issue_id, force_match, display_title in add_args:
+            for add_arg in add_args:
+                link, volume_id, issue_id, force_match, *metadata = add_arg
+                display_title = metadata[0] if metadata else ''
+                covered_issues = metadata[1] if len(metadata) > 1 else None
                 added, reason = await self.add(
                     link, volume_id, issue_id, force_match, display_title,
                     task_history_id=task_history_id,
+                    covered_issues_override=covered_issues,
                 )
                 queued_total += len(added)
                 if not added and reason is not None:
                     failures.append({
                         'display_title': display_title or link,
                         'reason': reason.value,
+                        'download_link': link,
+                        'covered_issues': covered_issues,
+                        'source_type': (
+                            DownloadSource.SUWAYOMI.value
+                            if (
+                                is_suwayomi_link(link)
+                                and blocklist_contains(link)
+                            ) else None
+                        ),
                     })
 
         run(add_wrapper())

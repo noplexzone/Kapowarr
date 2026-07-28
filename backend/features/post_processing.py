@@ -97,6 +97,8 @@ def add_to_history(download: Download) -> None:
         DownloadBatch.record(
             task_history_id, display_title, success, failure_reason or '',
             covered_issues=download.covered_issues,
+            source_type=download.source_type.value,
+            download_link=download.download_link,
         )
 
     return

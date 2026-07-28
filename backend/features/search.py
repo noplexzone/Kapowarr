@@ -378,6 +378,7 @@ def _extract_series_title(query: str) -> str:
     title = sub(r'\s*\(\d{4}\)', '', query)
     title = sub(r'\s+#[\d.]+.*$', '', title, flags=IGNORECASE)
     title = sub(r'\s+Vol(?:ume)?\.?\s*\d+.*$', '', title, flags=IGNORECASE)
+    title = sub(r'\s+TPB\s*$', '', title, flags=IGNORECASE)
     return title.strip()
 
 
@@ -1046,6 +1047,7 @@ def _try_bundle_suwayomi_chapters(
         return None
 
     searchable_numbers = {calc_num for _, calc_num in searchable_issues}
+    bundles: List[MatchedSearchResultData] = []
 
     for manga_id, results in manga_groups.items():
         chapter_numbers = {
@@ -1076,7 +1078,7 @@ def _try_bundle_suwayomi_chapters(
         manga_title = results[0]['series']
         sw_src = results[0].get('_sw_source', '')  # type: ignore[call-overload]
         src_tag = f" [{sw_src}]" if sw_src else ""
-        return {
+        bundles.append({
             'link': make_suwayomi_volume_link(manga_id, chapter_ids),
             'display_title': f"{manga_title} - Vol. {volume_data.volume_number}{src_tag}",
             'source': SUWAYOMI_SOURCE_NAME,
@@ -1088,9 +1090,9 @@ def _try_bundle_suwayomi_chapters(
             'annual': False,
             'match': True,
             'match_issue': None,
-        }
+        })
 
-    return None
+    return bundles or None
 
 
 def auto_search(

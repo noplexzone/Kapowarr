@@ -125,7 +125,7 @@ class AutoSearchIssue(Task):
             ))
             return [
                 (result['link'], self._volume_id, self._issue_id,
-                 result.get('display_title', ''))
+                 result.get('display_title', ''), result.get('issue_number'))
                 for result in results
             ]
         found = stats.get('total_found', 0)
@@ -336,8 +336,10 @@ class AutoSearchVolume(Task):
                         issue_id = vol.get_issue_from_number(issue_num).id
                     except Exception:
                         pass
-                downloads.append((result['link'], self._volume_id, issue_id,
-                                   result.get('display_title', '')))
+                downloads.append((
+                    result['link'], self._volume_id, issue_id,
+                    result.get('display_title', ''), issue_num,
+                ))
             return downloads
         found = stats.get('total_found', 0)
         if found > 0:
@@ -913,6 +915,7 @@ class DownloadBatch:
         self.update_existing = update_existing
         self.results: List[dict] = []
         self._lock: Lock = Lock()
+        self._finalized = False
 
     @classmethod
     def register(
@@ -932,6 +935,7 @@ class DownloadBatch:
             pending = cls._pending_results.pop(task_history_id, [])
             batch.results.extend(pending)
             finalize = len(batch.results) >= batch.expected
+            batch._finalized = finalize
             if not finalize:
                 cls._registry[task_history_id] = batch
         if finalize:
@@ -945,12 +949,16 @@ class DownloadBatch:
         success: bool,
         failure_reason: str = '',
         covered_issues: 'Union[float, Tuple[float, float], None]' = None,
+        source_type: Union[str, None] = None,
+        download_link: str = '',
     ) -> None:
         result = {
             'title': web_title,
             'success': success,
             'failure_reason': failure_reason,
             '_covered_issues': covered_issues,  # internal; stripped from JSON
+            '_source_type': source_type,
+            '_download_link': download_link,
         }
         with cls._registry_lock:
             batch = cls._registry.get(task_history_id)
@@ -962,12 +970,16 @@ class DownloadBatch:
                 return
         finalize = False
         with batch._lock:
+            if batch._finalized:
+                return
             batch.results.append(result)
             if len(batch.results) >= batch.expected:
+                batch._finalized = True
                 finalize = True
         if finalize:
             with cls._registry_lock:
-                cls._registry.pop(task_history_id, None)
+                if cls._registry.get(task_history_id) is batch:
+                    cls._registry.pop(task_history_id, None)
             batch._finalize()
 
     def _finalize(self) -> None:
@@ -1007,6 +1019,8 @@ class DownloadBatch:
             queued_issue_ids = set()
             for r in self.results:
                 if r['success']:
+                    continue
+                if r.get('_source_type') != 'suwayomi':
                     continue
                 covered = r.get('_covered_issues')
                 if isinstance(covered, float):
@@ -1100,8 +1114,14 @@ class TaskHandler(metaclass=Singleton):
                     if task.category == 'download' and result:
                         queued_count, imm_failures = DownloadHandler().add_multiple(
                             (
-                                (link, volume_id, issue_id, False, display_title)
-                                for link, volume_id, issue_id, display_title in result
+                                (
+                                    link, volume_id, issue_id, False,
+                                    display_title, covered_issues,
+                                )
+                                for (
+                                    link, volume_id, issue_id,
+                                    display_title, covered_issues,
+                                ) in result
                             ),
                             task_history_id=task_history_id,
                         )
@@ -1138,6 +1158,9 @@ class TaskHandler(metaclass=Singleton):
                                 f['display_title'],
                                 False,
                                 f['reason'],
+                                covered_issues=f.get('covered_issues'),
+                                source_type=f.get('source_type'),
+                                download_link=f.get('download_link', ''),
                             )
 
                     LOGGER.info(f'Finished task {task.display_title}')

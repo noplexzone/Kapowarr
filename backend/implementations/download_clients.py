@@ -1330,6 +1330,11 @@ class SuwayomiDownload(BaseDirectDownload):
             return
 
         if not ok:
+            if self._state not in (
+                DownloadState.CANCELED_STATE,
+                DownloadState.SHUTDOWN_STATE,
+            ):
+                self._state = DownloadState.FAILED_STATE
             return
 
         LOGGER.info('Suwayomi: CBZ created at %s', self._files[0])
@@ -1518,6 +1523,11 @@ class SuwayomiVolumeDownload(BaseDirectDownload):
             return
 
         if not ok:
+            if self._state not in (
+                DownloadState.CANCELED_STATE,
+                DownloadState.SHUTDOWN_STATE,
+            ):
+                self._state = DownloadState.FAILED_STATE
             return
 
         LOGGER.info('SuwayomiVolume: PDF created at %s', self._files[0])

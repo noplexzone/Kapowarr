@@ -28,12 +28,15 @@ from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume, refresh_and_scan
 from os.path import basename
 from random import uniform
-from sqlite3 import OperationalError, SQLITE_BUSY, SQLITE_LOCKED
+from sqlite3 import OperationalError
 
 from backend.internals.db import close_db, commit, get_db
 from backend.internals.db_models import FilesDB
 from backend.internals.server import (TaskAddedEvent, TaskEndedEvent,
                                       TaskStatusEvent, WebSocket)
+
+SQLITE_BUSY_CODE = 5
+SQLITE_LOCKED_CODE = 6
 
 
 def _emit_task_event(event) -> None:
@@ -1593,7 +1596,7 @@ def _record_and_track_download_reserved(
             sqlite_errorcode = getattr(exc, 'sqlite_errorcode', None)
             is_busy = (
                 isinstance(sqlite_errorcode, int)
-                and sqlite_errorcode & 0xFF in (SQLITE_BUSY, SQLITE_LOCKED)
+                and sqlite_errorcode & 0xFF in (SQLITE_BUSY_CODE, SQLITE_LOCKED_CODE)
             ) or 'locked' in str(exc).lower()
             connection = db.connection
             if connection.in_transaction:

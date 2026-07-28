@@ -2,7 +2,7 @@
 
 import asyncio
 import unittest
-from sqlite3 import OperationalError, SQLITE_BUSY
+from sqlite3 import OperationalError
 from threading import Event, RLock, Thread
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -90,7 +90,7 @@ class _CommitConnection(_Connection):
         self.commits += 1
         if self.commits == 1:
             error = OperationalError('resource unavailable')
-            error.sqlite_errorcode = SQLITE_BUSY
+            error.sqlite_errorcode = 5
             raise error
         self.db.committed.extend(self.db.pending)
         self.db.pending.clear()

@@ -16,6 +16,7 @@ from flask import Flask
 
 from backend.base.custom_exceptions import (InvalidComicVineApiKey,
                                             TaskNotDeletable, TaskNotFound)
+from backend.base.definitions import DownloadSource
 from backend.base.helpers import Singleton, get_subclasses
 from backend.base.logging import LOGGER
 from backend.features.download_queue import DownloadHandler
@@ -1020,7 +1021,7 @@ class DownloadBatch:
             for r in self.results:
                 if r['success']:
                     continue
-                if r.get('_source_type') != 'suwayomi':
+                if r.get('_source_type') != DownloadSource.SUWAYOMI.value:
                     continue
                 covered = r.get('_covered_issues')
                 if isinstance(covered, float):

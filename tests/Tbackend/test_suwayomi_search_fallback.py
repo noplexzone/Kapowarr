@@ -6,7 +6,7 @@ from threading import Barrier, Event, Thread
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.base.definitions import DownloadState, SpecialVersion
+from backend.base.definitions import DownloadSource, DownloadState, SpecialVersion
 from backend.features import download_queue, search, tasks
 from backend.implementations.download_clients import SuwayomiDownload
 
@@ -191,7 +191,7 @@ class SuwayomiFallbackReliabilityTests(unittest.TestCase):
             start.wait()
             tasks.DownloadBatch.record(
                 task_history_id, title, False, 'failed',
-                covered_issues=1.0, source_type='suwayomi',
+                covered_issues=1.0, source_type=DownloadSource.SUWAYOMI.value,
             )
 
         workers = [Thread(target=record, args=(str(i),)) for i in range(2)]
@@ -253,11 +253,11 @@ class SuwayomiFallbackReliabilityTests(unittest.TestCase):
         batch.results = [
             {
                 'success': False, '_covered_issues': 1.0,
-                '_source_type': 'suwayomi',
+                '_source_type': DownloadSource.SUWAYOMI.value,
             },
             {
                 'success': False, '_covered_issues': (1.0, 2.0),
-                '_source_type': 'suwayomi',
+                '_source_type': DownloadSource.SUWAYOMI.value,
             },
         ]
 

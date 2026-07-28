@@ -967,7 +967,15 @@ class DownloadBatch:
             else:
                 cls._registry[task_history_id] = batch
         if finalize:
-            batch._finalize()
+            try:
+                batch._finalize()
+            except Exception:
+                with cls._registry_lock:
+                    cls._completed_ids.pop(task_history_id, None)
+                    cls._registry[task_history_id] = batch
+                with batch._lock:
+                    batch._finalized = False
+                raise
 
     @classmethod
     def record(
@@ -979,6 +987,7 @@ class DownloadBatch:
         covered_issues: 'Union[float, Tuple[float, float], None]' = None,
         source_type: Union[str, None] = None,
         download_link: str = '',
+        result_key: Union[int, None] = None,
     ) -> None:
         result = {
             'title': web_title,
@@ -987,6 +996,7 @@ class DownloadBatch:
             '_covered_issues': covered_issues,  # internal; stripped from JSON
             '_source_type': source_type,
             '_download_link': download_link,
+            '_result_key': result_key,
         }
         with cls._registry_lock:
             if task_history_id in cls._completed_ids:
@@ -994,15 +1004,32 @@ class DownloadBatch:
             batch = cls._registry.get(task_history_id)
             if not batch:
                 # A very fast direct download can finish between queue admission
-                # and registration of its expected batch size. Preserve the
-                # outcome so registration can finalize it instead of dropping it.
-                cls._pending_results.setdefault(task_history_id, []).append(result)
+                # and registration of its expected batch size. Preserve one
+                # idempotent outcome per download until registration.
+                pending = cls._pending_results.setdefault(task_history_id, [])
+                duplicate = (
+                    result_key is not None
+                    and any(
+                        existing.get('_result_key') == result_key
+                        for existing in pending
+                    )
+                )
+                if not duplicate:
+                    pending.append(result)
                 return
         finalize = False
         with batch._lock:
             if batch._finalized:
                 return
-            batch.results.append(result)
+            duplicate = (
+                result_key is not None
+                and any(
+                    existing.get('_result_key') == result_key
+                    for existing in batch.results
+                )
+            )
+            if not duplicate:
+                batch.results.append(result)
             if len(batch.results) >= batch.expected:
                 batch._finalized = True
                 finalize = True
@@ -1011,7 +1038,15 @@ class DownloadBatch:
                 if cls._registry.get(task_history_id) is batch:
                     cls._registry.pop(task_history_id, None)
                 cls._mark_completed_locked(task_history_id)
-            batch._finalize()
+            try:
+                batch._finalize()
+            except Exception:
+                with cls._registry_lock:
+                    cls._completed_ids.pop(task_history_id, None)
+                    cls._registry[task_history_id] = batch
+                with batch._lock:
+                    batch._finalized = False
+                raise
 
     def _finalize(self) -> None:
         results_for_json = [
@@ -1019,6 +1054,7 @@ class DownloadBatch:
             for r in self.results
         ]
         details = json_dumps({'results': results_for_json})
+        db = None
         try:
             db = get_db()
             if self.update_existing:
@@ -1034,13 +1070,36 @@ class DownloadBatch:
                     ('download_result', self.display_title,
                      round(time()), self.volume_id, details),
                 ).connection.commit()
-            _emit_task_event(TaskEndedEvent(_DownloadResultTask(self.volume_id)))
         except Exception:
+            try:
+                if db is not None:
+                    db.connection.rollback()
+            except Exception:
+                LOGGER.exception(
+                    'Failed to roll back download_result transaction for '
+                    'task_history_id=%d',
+                    self.task_history_id,
+                )
             LOGGER.exception(
                 'Failed to write download_result for task_history_id=%d',
                 self.task_history_id,
             )
-        self._queue_fallback_searches()
+            raise
+
+        try:
+            _emit_task_event(TaskEndedEvent(_DownloadResultTask(self.volume_id)))
+        except Exception:
+            LOGGER.exception(
+                'Failed to emit download_result completion for task_history_id=%d',
+                self.task_history_id,
+            )
+        try:
+            self._queue_fallback_searches()
+        except Exception:
+            LOGGER.exception(
+                'Failed to queue fallback searches for task_history_id=%d',
+                self.task_history_id,
+            )
 
     def _queue_fallback_searches(self) -> None:
         """Queue AutoSearchIssue tasks for open issues whose pack download failed."""

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from json import dumps as json_dumps
 from os.path import basename, exists, isdir, isfile, join, splitext
-from time import time
+from threading import RLock, Timer
+from time import sleep, time
 from typing import TYPE_CHECKING, Dict
+from uuid import uuid4
 
 from backend.base.definitions import (BlocklistReason,
                                       DownloadState, FileConstants)
@@ -32,6 +34,94 @@ if TYPE_CHECKING:
     from backend.base.definitions import Download
 
 
+_PENDING_BATCH_PUBLICATIONS = {}
+_PENDING_BATCH_THREADS = set()
+_PENDING_BATCH_LOCK = RLock()
+
+
+def _start_pending_batch_worker(publication_token: str) -> None:
+    from backend.internals.server import Server
+
+    with _PENDING_BATCH_LOCK:
+        if publication_token not in _PENDING_BATCH_PUBLICATIONS:
+            return
+        if publication_token in _PENDING_BATCH_THREADS:
+            return
+        _PENDING_BATCH_THREADS.add(publication_token)
+
+    try:
+        thread = Server().get_db_thread(
+            target=_retry_pending_batch,
+            args=(publication_token,),
+            name='PendingDownloadBatch-{}'.format(publication_token),
+        )
+        thread.daemon = True
+        thread.start()
+    except Exception:
+        with _PENDING_BATCH_LOCK:
+            _PENDING_BATCH_THREADS.discard(publication_token)
+        LOGGER.exception(
+            'Failed to start deferred batch publisher %s; retrying',
+            publication_token,
+        )
+        timer = Timer(
+            1.0, _start_pending_batch_worker, args=(publication_token,)
+        )
+        timer.daemon = True
+        timer.start()
+    return
+
+
+def _retry_pending_batch(publication_token: str) -> None:
+    from backend.features.tasks import DownloadBatch
+
+    delay = 0.5
+    try:
+        while True:
+            with _PENDING_BATCH_LOCK:
+                publication = _PENDING_BATCH_PUBLICATIONS.get(
+                    publication_token
+                )
+            if publication is None:
+                return
+            pending_batch, pending_kwargs = publication
+            try:
+                DownloadBatch.record(*pending_batch, **pending_kwargs)
+            except Exception:
+                LOGGER.exception(
+                    'Deferred batch publication failed for token %s; retrying',
+                    publication_token,
+                )
+                sleep(delay)
+                delay = min(delay * 2, 30.0)
+                continue
+            with _PENDING_BATCH_LOCK:
+                _PENDING_BATCH_PUBLICATIONS.pop(publication_token, None)
+            return
+    finally:
+        with _PENDING_BATCH_LOCK:
+            _PENDING_BATCH_THREADS.discard(publication_token)
+            retry_needed = (
+                publication_token in _PENDING_BATCH_PUBLICATIONS
+            )
+        if retry_needed:
+            _start_pending_batch_worker(publication_token)
+
+
+def _schedule_pending_batch(
+    pending_batch: tuple, pending_kwargs: dict
+) -> None:
+    # Tokens are immutable per publication: queue-row IDs can be reused after
+    # deletion and must never replace an older pending outcome.
+    publication_token = uuid4().hex
+    with _PENDING_BATCH_LOCK:
+        _PENDING_BATCH_PUBLICATIONS[publication_token] = (
+            pending_batch, pending_kwargs
+        )
+    _start_pending_batch_worker(publication_token)
+    return
+
+
 # region General
 def reset_file_link(download: TorrentDownload) -> None:
     "Set download.files back to original folder from the copied folder"
@@ -40,16 +130,78 @@ def reset_file_link(download: TorrentDownload) -> None:
 
 
 # region Database
-def remove_from_queue(download: Download) -> None:
-    "Delete the download from the queue in the database"
-    get_db().execute(
-        "DELETE FROM download_queue WHERE id = ?",
-        (download.id,)
-    ).connection.commit()
+def _publish_pending_history(download: Download) -> None:
+    pending_batch = getattr(download, '_pending_history_batch', None)
+    pending_kwargs = getattr(download, '_pending_history_batch_kwargs', {})
+    if not pending_batch:
+        return
+
+    from backend.features.tasks import DownloadBatch
+    for attempt in range(3):
+        try:
+            DownloadBatch.record(*pending_batch, **pending_kwargs)
+            download._pending_history_batch = None
+            download._pending_history_batch_kwargs = {}
+            return
+        except Exception:
+            LOGGER.exception(
+                'Failed to finalize batch history for download %s '
+                '(attempt %d/3)',
+                download.id, attempt + 1,
+            )
+            if attempt < 2:
+                sleep(0.1 * (attempt + 1))
+
+    try:
+        _schedule_pending_batch(pending_batch, pending_kwargs)
+    except Exception:
+        # The durable import outcome is already committed. Publication startup
+        # must never turn it into a contradictory failed download outcome.
+        LOGGER.exception(
+            'Failed to schedule retained batch publication for download %s',
+            getattr(download, 'id', 'unknown'),
+        )
+    download._pending_history_batch = None
+    download._pending_history_batch_kwargs = {}
     return
 
 
-def add_to_history(download: Download) -> None:
+def commit_history(download: Download) -> None:
+    """Commit pending history before publishing batch details."""
+    connection = get_db().connection
+    try:
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        download._pending_history_batch = None
+        download._pending_history_batch_kwargs = {}
+        raise
+    download._copy_import_committed = True
+    discard_staged_destinations(download)
+    _publish_pending_history(download)
+    return
+
+
+def remove_from_queue(download: Download) -> None:
+    """Atomically commit pending history and remove the queue row."""
+    connection = get_db().connection
+    try:
+        connection.execute(
+            "DELETE FROM download_queue WHERE id = ?",
+            (download.id,)
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        download._pending_history_batch = None
+        download._pending_history_batch_kwargs = {}
+        raise
+    discard_staged_destinations(download)
+    _publish_pending_history(download)
+    return
+
+
+def add_to_history(download: Download, defer_batch: bool = False) -> None:
     "Add the download to history in the database"
     success = download.state != DownloadState.FAILED_STATE
     failure_detail = getattr(download, '_failure_reason', None)
@@ -104,18 +256,37 @@ def add_to_history(download: Download) -> None:
             or download.web_link
             or ''
         )
-        from backend.features.tasks import DownloadBatch  # lazy to avoid circular import
-        DownloadBatch.record(
-            task_history_id, display_title, success, failure_reason or '',
-            covered_issues=download.covered_issues,
-            source_type=(
+        batch_args = (
+            task_history_id,
+            display_title,
+            success,
+            failure_reason or '',
+        )
+        batch_kwargs = {
+            'covered_issues': download.covered_issues,
+            'source_type': (
                 download.source_type.value
                 if getattr(download, '_allow_batch_fallback', True)
                 else None
             ),
-            download_link=download.download_link,
-        )
+            'download_link': download.download_link,
+            'result_key': getattr(download, 'id', None),
+        }
+        if defer_batch:
+            # remove_from_queue commits the history INSERT and queue DELETE in
+            # one transaction, then publishes batch details after that commit.
+            download._pending_history_batch = batch_args
+            download._pending_history_batch_kwargs = batch_kwargs
+        else:
+            from backend.features.tasks import DownloadBatch
+            DownloadBatch.record(*batch_args, **batch_kwargs)
 
+    return
+
+
+def add_to_history_transactional(download: Download) -> None:
+    """Defer batch publication until queue/history commit succeeds."""
+    add_to_history(download, defer_batch=True)
     return
 
 
@@ -152,6 +323,52 @@ def add_dl_to_blocklist(download: Download) -> None:
 
 
 # region Moving
+def _stage_existing_destination(download: Download, destination: str) -> None:
+    if not exists(destination):
+        return
+    backup = destination + '.kapowarr-import-backup-' + uuid4().hex
+    LOGGER.warning(
+        'Staging existing import destination before replacement: %s',
+        destination,
+    )
+    rename_file(destination, backup)
+    backups = getattr(download, '_destination_backups', None)
+    if backups is None:
+        backups = []
+        download._destination_backups = backups
+    backups.append((destination, backup))
+    return
+
+
+def restore_staged_destinations(download: Download) -> None:
+    backups = getattr(download, '_destination_backups', [])
+    for destination, backup in reversed(backups):
+        if not exists(backup):
+            continue
+        if exists(destination):
+            delete_file_folder(destination)
+        rename_file(backup, destination)
+    download._destination_backups = []
+    return
+
+
+def discard_staged_destinations(download: Download) -> None:
+    backups = getattr(download, '_destination_backups', [])
+    remaining = []
+    for destination, backup in backups:
+        if not exists(backup):
+            continue
+        try:
+            delete_file_folder(backup)
+        except Exception:
+            LOGGER.exception(
+                'Failed to remove staged import destination %s', backup
+            )
+            remaining.append((destination, backup))
+    download._destination_backups = remaining
+    return
+
+
 def move_to_dest(download: Download) -> None:
     "Move file/fold from download folder to final destination"
     if not exists(download.files[0]):
@@ -174,24 +391,16 @@ def move_to_dest(download: Download) -> None:
     # the DB is left locked for a long period leading to timeouts.
     commit()
 
-    if exists(file_dest):
-        LOGGER.warning(
-            f'The file/folder {file_dest} already exists; replacing with downloaded file'
-        )
-        delete_file_folder(file_dest)
-
+    if download.files[0] == file_dest:
+        return
+    _stage_existing_destination(download, file_dest)
     rename_file(download.files[0], file_dest)
     download.files = [file_dest]
     return
 
 
 def replace_existing_issue_files(download: Download) -> None:
-    """Remove old files already linked to the downloaded issue.
-
-    Manual issue downloads are replacement operations. If the new file has a
-    different filename from the currently-monitored file, a normal scan would
-    otherwise link both files to the same issue and leave them side-by-side.
-    """
+    """Replace prior issue files without deleting them before DB commit."""
     issue_id = download.issue_id
     if issue_id is None or not isinstance(download.covered_issues, float):
         return
@@ -199,35 +408,67 @@ def replace_existing_issue_files(download: Download) -> None:
     new_paths = set(download.files)
     try:
         existing_files = FilesDB.fetch(issue_id=issue_id)
-    except Exception as e:
+    except Exception as error:
         LOGGER.debug(
-            'Could not fetch existing issue files for replacement: issue=%s error=%s',
-            issue_id, e,
+            'Could not fetch existing issue files for replacement: '
+            'issue=%s error=%s',
+            issue_id, error,
         )
         return
 
+    staged_files = []
     replaced_any = False
-    for file_data in existing_files:
-        filepath = file_data.get('filepath')
-        file_id = file_data.get('id')
-        if not filepath or filepath in new_paths:
+    connection = get_db().connection
+    try:
+        for file_data in existing_files:
+            filepath = file_data.get('filepath')
+            file_id = file_data.get('id')
+            if not filepath or filepath in new_paths:
+                continue
+
+            LOGGER.info(
+                'Replacing existing file for issue %s: %s',
+                issue_id, filepath,
+            )
+            staged_path = None
+            if exists(filepath):
+                staged_path = (
+                    filepath + '.kapowarr-replaced-' + uuid4().hex
+                )
+                rename_file(filepath, staged_path)
+                staged_files.append((filepath, staged_path))
+
+            if file_id is not None:
+                FilesDB.delete_file(file_id)
+            else:
+                FilesDB.delete_filepath(filepath)
+            replaced_any = True
+
+        if replaced_any:
+            connection.commit()
+    except Exception:
+        connection.rollback()
+        for filepath, staged_path in reversed(staged_files):
+            if exists(staged_path):
+                try:
+                    rename_file(staged_path, filepath)
+                except Exception:
+                    LOGGER.exception(
+                        'Failed to restore replaced issue file %s', filepath
+                    )
+        raise
+
+    # The old DB rows are committed. Failure to remove a hidden staged file is
+    # cleanup debt, not grounds to invalidate an otherwise complete import.
+    for filepath, staged_path in staged_files:
+        if not exists(staged_path):
             continue
-
-        LOGGER.info(
-            'Replacing existing file for issue %s: %s',
-            issue_id, filepath,
-        )
-        if exists(filepath):
-            delete_file_folder(filepath)
-        if file_id is not None:
-            FilesDB.delete_file(file_id)
-        else:
-            FilesDB.delete_filepath(filepath)
-        replaced_any = True
-
-    if replaced_any:
-        commit()
-
+        try:
+            delete_file_folder(staged_path)
+        except Exception:
+            LOGGER.exception(
+                'Failed to remove staged replaced issue file %s', staged_path
+            )
     return
 
 
@@ -285,12 +526,9 @@ def copy_file_torrent(download: TorrentDownload) -> None:
     # the DB is left locked for a long period leading to timeouts.
     commit()
 
-    if exists(file_dest):
-        LOGGER.warning(
-            f'The file/folder {file_dest} already exists; replacing with downloaded file'
-        )
-        delete_file_folder(file_dest)
-
+    if download.files[0] == file_dest:
+        return
+    _stage_existing_destination(download, file_dest)
     copy_directory(download.files[0], file_dest)
 
     download.files = extract_files_from_folder(
@@ -323,6 +561,17 @@ def delete_file(download: Download) -> None:
     "Delete file from download folder"
     for f in download.files:
         delete_file_folder(f)
+    return
+
+
+
+
+def reconcile_failed_import(download: Download) -> None:
+    """Restore prior destinations and fully rescan a failed import volume."""
+    connection = get_db().connection
+    restore_staged_destinations(download)
+    scan_files(download.volume_id, update_websocket=True)
+    connection.commit()
     return
 
 
@@ -419,8 +668,7 @@ def rename_nzb_files(download: Download) -> None:
                     ext = splitext(file)[1].lower()
                     dest = join(volume_data.folder, expected_body + ext)
                     if file != dest:
-                        if exists(dest):
-                            delete_file_folder(dest)
+                        _stage_existing_destination(download, dest)
                         rename_file(file, dest)
                         FilesDB.update_filepaths({file: dest})
                         commit()
@@ -461,14 +709,14 @@ def rename_nzb_files(download: Download) -> None:
 # region Post-Processors
 class PostProcessor:
     actions_success = [
-        remove_from_queue,
-        add_to_history,
         move_to_dest,
         rename_with_proper_extension,
-        replace_existing_issue_files,
         add_file_to_database,
         convert_file,
-        set_file_properties
+        set_file_properties,
+        replace_existing_issue_files,
+        add_to_history_transactional,
+        remove_from_queue
     ]
 
     actions_seeding = []
@@ -483,16 +731,22 @@ class PostProcessor:
     ]
 
     actions_failed = [
-        remove_from_queue,
-        add_to_history,
-        delete_file
+        delete_file,
+        add_to_history_transactional,
+        remove_from_queue
+    ]
+
+    actions_postprocess_failed = [
+        reconcile_failed_import,
+        add_to_history_transactional,
+        remove_from_queue
     ]
 
     actions_perm_failed = [
-        remove_from_queue,
-        add_to_history,
         add_dl_to_blocklist,
-        delete_file
+        delete_file,
+        add_to_history_transactional,
+        remove_from_queue
     ]
 
     @staticmethod
@@ -532,6 +786,29 @@ class PostProcessor:
         return
 
     @classmethod
+    def postprocess_failed(cls, download) -> None:
+        LOGGER.info(
+            f'Postprocessing failure cleanup for download: {download.id}'
+        )
+        cls._run_actions(cls.actions_postprocess_failed, download)
+        return
+
+    @classmethod
+    def monitoring_failed(cls, download) -> None:
+        """Remove a completed COPY item without a contradictory outcome."""
+        remove_from_queue(download)
+        return
+
+    @classmethod
+    def terminal_failed(cls, download) -> None:
+        """Persist a sanitized failure when reconciliation itself failed."""
+        cls._run_actions([
+            add_to_history_transactional,
+            remove_from_queue,
+        ], download)
+        return
+
+    @classmethod
     def perm_failed(cls, download) -> None:
         LOGGER.info(
             f'Postprocessing of permanently failed download: {download.id}'
@@ -542,45 +819,46 @@ class PostProcessor:
 
 class PostProcessorTorrentsComplete(PostProcessor):
     actions_success = [
-        remove_from_queue,
-        add_to_history,
         move_torrent_to_dest,
         convert_file,
-        set_file_properties
+        set_file_properties,
+        add_to_history_transactional,
+        remove_from_queue
     ]
 
 
 class PostProcessorTorrentsCopy(PostProcessor):
     actions_success = [
-        remove_from_queue,
-        delete_file
+        delete_file,
+        remove_from_queue
     ]
 
     actions_seeding = [
-        add_to_history,
         copy_file_torrent,
         convert_file,
         set_file_properties,
-        reset_file_link
+        reset_file_link,
+        add_to_history_transactional,
+        commit_history
     ]
 
 
 class PostProcessorNZB(PostProcessor):
     actions_success = [
-        remove_from_queue,
-        add_to_history,
         move_nzb_to_dest,
         rename_with_proper_extension,
-        replace_existing_issue_files,
         add_file_to_database,
         rename_nzb_files,
         convert_file,
-        set_file_properties
+        set_file_properties,
+        replace_existing_issue_files,
+        add_to_history_transactional,
+        remove_from_queue
     ]
 
     actions_failed = [
-        remove_from_queue,
-        add_to_history,
         delete_file,
         add_dl_to_blocklist,
+        add_to_history_transactional,
+        remove_from_queue,
     ]

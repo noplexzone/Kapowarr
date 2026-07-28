@@ -6,6 +6,7 @@ Interacting with the database
 
 from os import stat
 from typing import Dict, Iterable, List, Optional, Union
+from uuid import uuid4
 
 from backend.base.custom_exceptions import FileNotFound
 from backend.base.definitions import FileData, GeneralFileData
@@ -148,10 +149,36 @@ class FilesDB:
 
     @staticmethod
     def update_filepaths(old_to_new_mapping: Dict[str, str]) -> None:
-        get_db().executemany(
-            "UPDATE files SET filepath = ? WHERE filepath = ?;",
-            ((new, old) for old, new in old_to_new_mapping.items())
-        )
+        mapping = {
+            old: new for old, new in old_to_new_mapping.items()
+            if old != new
+        }
+        if not mapping:
+            return
+        if len(mapping.values()) != len(set(mapping.values())):
+            raise ValueError('Filepath updates require unique destinations')
+
+        cursor = get_db()
+        savepoint = 'files_filepath_update_' + uuid4().hex
+        temporary_paths = {
+            old: old + '.kapowarr-db-rename-' + uuid4().hex
+            for old in mapping
+        }
+        cursor.execute('SAVEPOINT {}'.format(savepoint))
+        try:
+            cursor.executemany(
+                "UPDATE files SET filepath = ? WHERE filepath = ?;",
+                ((temporary_paths[old], old) for old in mapping)
+            )
+            cursor.executemany(
+                "UPDATE files SET filepath = ? WHERE filepath = ?;",
+                ((mapping[old], temporary_paths[old]) for old in mapping)
+            )
+        except Exception:
+            cursor.execute('ROLLBACK TO {}'.format(savepoint))
+            cursor.execute('RELEASE {}'.format(savepoint))
+            raise
+        cursor.execute('RELEASE {}'.format(savepoint))
         return
 
     @staticmethod

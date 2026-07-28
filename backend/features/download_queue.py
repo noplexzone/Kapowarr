@@ -101,8 +101,88 @@ class DownloadHandler(metaclass=Singleton):
         create_folder(self.settings.sv.download_folder)
         return
 
+    @staticmethod
+    def __handle_shutdown_error(download: Download, error: Exception) -> None:
+        LOGGER.error(
+            'Cleanup or monitoring failed while preserving shutdown download %s: %s',
+            download.id, error, exc_info=True,
+        )
+        try:
+            connection = get_db().connection
+            if connection.in_transaction:
+                connection.rollback()
+        except Exception:
+            LOGGER.exception(
+                'Failed to roll back shutdown cleanup for download %s',
+                download.id,
+            )
+        return
+
     # region Running Download
+    def __handle_postprocessing_failure(
+        self, download: Download, post_processor, error: Exception
+    ) -> None:
+        """Record one sanitized failure without deleting imported artifacts."""
+        LOGGER.exception(
+            'Post-processing failed for download %s', download.id
+        )
+        connection = get_db().connection
+        connection.rollback()
+        download.stop(DownloadState.FAILED_STATE)
+        download._failure_reason = {
+            'stage': 'post_processing',
+            'type': type(error).__name__,
+        }
+        try:
+            post_processor.postprocess_failed(download)
+        except Exception:
+            LOGGER.exception(
+                'Failed to finalize post-processing failure for download %s',
+                download.id,
+            )
+            connection.rollback()
+            try:
+                post_processor.terminal_failed(download)
+            except Exception:
+                connection.rollback()
+                LOGGER.exception(
+                    'Failed to persist terminal failure for download %s',
+                    download.id,
+                )
+                try:
+                    connection.execute(
+                        'DELETE FROM download_queue WHERE id = ?',
+                        (download.id,),
+                    )
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    LOGGER.exception(
+                        'Failed to remove broken queue row for download %s',
+                        download.id,
+                    )
+        return
+
     def __run_download(self, download: Download) -> None:
+        """Run a direct-download lifecycle with guaranteed terminal cleanup."""
+        try:
+            self.__run_download_inner(download)
+        except Exception as error:
+            if download.state == DownloadState.SHUTDOWN_STATE:
+                self.__handle_shutdown_error(download, error)
+            else:
+                self.__handle_postprocessing_failure(
+                    download, PostProcessor, error
+                )
+        finally:
+            if download.state != DownloadState.SHUTDOWN_STATE:
+                if download in self.queue:
+                    self.queue.remove(download)
+                _emit_queue_event(RemovedFromQueueEvent(download))
+                self._process_queue()
+        return
+
+    def __run_download_inner(self, download: Download) -> None:
         """Start a download. Intended to be run in a thread.
 
         Args:
@@ -165,14 +245,28 @@ class DownloadHandler(metaclass=Singleton):
 
             PostProcessor.success(download)
 
-        if download in self.queue:
-            self.queue.remove(download)
-        _emit_queue_event(RemovedFromQueueEvent(download))
-
-        self._process_queue()
         return
 
     def __run_nzb_download(self, download: NZBDownload) -> None:
+        """Run an NZB lifecycle with guaranteed terminal cleanup."""
+        try:
+            self.__run_nzb_download_inner(download)
+        except Exception as error:
+            if download.state == DownloadState.SHUTDOWN_STATE:
+                self.__handle_shutdown_error(download, error)
+            else:
+                self.__handle_postprocessing_failure(
+                    download, PostProcessorNZB, error
+                )
+        finally:
+            if download.state != DownloadState.SHUTDOWN_STATE:
+                if download in self.queue:
+                    self.queue.remove(download)
+                _emit_queue_event(RemovedFromQueueEvent(download))
+                self._process_queue()
+        return
+
+    def __run_nzb_download_inner(self, download: NZBDownload) -> None:
         """Start a usenet NZB download. Intended to be run in a thread.
 
         Args:
@@ -226,10 +320,46 @@ class DownloadHandler(metaclass=Singleton):
                     timeout=Constants.TORRENT_UPDATE_INTERVAL
                 )
 
-        ws.emit(RemovedFromQueueEvent(download))
         return
 
     def __run_torrent_download(self, download: TorrentDownload) -> None:
+        """Run a torrent lifecycle with guaranteed terminal cleanup."""
+        if self.settings.sv.seeding_handling == SeedingHandling.COMPLETE:
+            post_processor = PostProcessorTorrentsComplete
+        else:
+            post_processor = PostProcessorTorrentsCopy
+        try:
+            self.__run_torrent_download_inner(download)
+        except Exception as error:
+            if download.state == DownloadState.SHUTDOWN_STATE:
+                self.__handle_shutdown_error(download, error)
+            elif (
+                post_processor is PostProcessorTorrentsCopy
+                and getattr(download, '_copy_import_committed', False)
+            ):
+                LOGGER.exception(
+                    'Torrent monitoring failed after COPY import committed: %s',
+                    download.id,
+                )
+                try:
+                    post_processor.monitoring_failed(download)
+                except Exception:
+                    LOGGER.exception(
+                        'Failed to remove completed COPY download %s', download.id
+                    )
+            else:
+                self.__handle_postprocessing_failure(
+                    download, post_processor, error
+                )
+        finally:
+            if download.state != DownloadState.SHUTDOWN_STATE:
+                if download in self.queue:
+                    self.queue.remove(download)
+                _emit_queue_event(RemovedFromQueueEvent(download))
+                self._process_queue()
+        return
+
+    def __run_torrent_download_inner(self, download: TorrentDownload) -> None:
         """Start a torrent download. Intended to be run in a thread.
 
         Args:
@@ -301,7 +431,6 @@ class DownloadHandler(metaclass=Singleton):
                     timeout=Constants.TORRENT_UPDATE_INTERVAL
                 )
 
-        ws.emit(RemovedFromQueueEvent(download))
         return
 
     # region Queue Management

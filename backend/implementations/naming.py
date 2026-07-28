@@ -6,10 +6,11 @@ The (re)naming of folders and media files
 
 from __future__ import annotations
 
-from os.path import abspath, basename, isdir, isfile, join, splitext
+from os.path import abspath, basename, exists, isdir, isfile, join, splitext
 from re import compile
 from string import Formatter
 from typing import Callable, Dict, List, Optional, Tuple, Type, Union
+from uuid import uuid4
 
 from backend.base.custom_exceptions import InvalidKeyValue, IssueNotFound
 from backend.base.definitions import (SV_TO_FULL_TERM, SV_TO_SHORT_TERM,
@@ -695,11 +696,9 @@ def same_name_indexing(
     Returns:
         Dict[str, str]: The planned renames, now updated with numbers if needed.
     """
-    if not isdir(volume_folder):
-        return planned_renames
-
-    final_names = set(list_files(volume_folder))
-    for before, after in planned_renames.items():
+    final_names = set(list_files(volume_folder)) if isdir(volume_folder) else set()
+    result: Dict[str, str] = {}
+    for before, after in sorted(planned_renames.items()):
         new_after = after
         index = 1
         while before != new_after and new_after in final_names:
@@ -708,9 +707,9 @@ def same_name_indexing(
             index += 1
 
         final_names.add(new_after)
-        planned_renames[before] = new_after
+        result[before] = new_after
 
-    return planned_renames
+    return result
 
 
 def preview_mass_rename(
@@ -745,25 +744,34 @@ def preview_mass_rename(
 
     if not issue_id:
         # Rename for volume
-        files = volume.get_all_files()
-
-        if not volume_data.custom_folder:
-            root_folder = RootFolders()[volume_data.root_folder]
-            volume_folder = generate_volume_folder_path(
-                root_folder, volume_data
-            )
-
+        file_entries = volume.get_all_files()
     else:
         # Rename for issue
-        files = volume.get_issue(issue_id).get_files()
+        file_entries = volume.get_issue(issue_id).get_files()
+
+    all_files = sorted(f["filepath"] for f in file_entries)
+    if filepath_filter is None:
+        files = all_files
+        complete_volume_rename = not issue_id
+    else:
+        filepath_filter_set = set(filepath_filter)
+        files = [file for file in all_files if file in filepath_filter_set]
+        complete_volume_rename = (
+            not issue_id
+            and bool(all_files)
+            and set(all_files).issubset(filepath_filter_set)
+        )
+
+    # A restricted rename must not move the volume pointer while unselected
+    # files remain in the old folder.
+    if complete_volume_rename and not volume_data.custom_folder:
+        root_folder = RootFolders()[volume_data.root_folder]
+        volume_folder = generate_volume_folder_path(
+            root_folder, volume_data
+        )
 
     if not files and volume_folder == volume_data.folder:
         return {}, None
-
-    files = sorted(filtered_iter(
-        (f["filepath"] for f in files),
-        set(filepath_filter or [])
-    ))
     renames = {}
     for file in files:
         if not isfile(file):
@@ -888,39 +896,101 @@ def mass_rename(
     volume_data = volume.get_data()
     root_folder = RootFolders()[volume_data.root_folder]
 
-    if new_volume_folder:
-        # No need to run the volume.change_volume_folder method as we do the
-        # moving to the new folder below.
-        volume.update({'folder': new_volume_folder})
+    completed_renames: Dict[str, str] = {}
+    staged_paths: Dict[str, str] = {}
+    current_paths: Dict[str, str] = {}
 
-    if update_websocket:
+    def rollback_filesystem() -> None:
+        rollback_paths: Dict[str, str] = {}
+        for before, current in reversed(list(current_paths.items())):
+            if current == before or not exists(current):
+                continue
+            temporary = before + '.kapowarr-rollback-' + uuid4().hex
+            try:
+                rename_file(current, temporary)
+                rollback_paths[before] = temporary
+            except Exception:
+                LOGGER.exception('Failed to stage rename rollback for %s', before)
+
+        for before, temporary in reversed(list(rollback_paths.items())):
+            try:
+                rename_file(temporary, before)
+            except Exception:
+                LOGGER.exception('Failed to restore renamed file %s', before)
+
+    source_paths = set(renames)
+    destination_paths = list(renames.values())
+    if len(destination_paths) != len(set(destination_paths)):
+        raise ValueError('Mass rename produced duplicate destination paths')
+    for destination in destination_paths:
+        if exists(destination) and destination not in source_paths:
+            raise FileExistsError(
+                'Refusing to overwrite an unrelated rename destination: {}'.format(
+                    destination
+                )
+            )
+
+    database_updated = False
+    cancelled = False
+    try:
         total_renames = len(renames)
         for idx, (before, after) in enumerate(renames.items()):
             if stop_fn and stop_fn():
+                cancelled = True
                 break
-            _emit_task_event(TaskStatusEvent(
-                f'Renaming file {idx+1}/{total_renames}'
-            ))
-            rename_file(before, after)
+            if update_websocket:
+                _emit_task_event(TaskStatusEvent(
+                    f'Renaming file {idx+1}/{total_renames}'
+                ))
+            temporary = before + '.kapowarr-rename-' + uuid4().hex
+            rename_file(before, temporary)
+            staged_paths[before] = temporary
+            current_paths[before] = temporary
+            completed_renames[before] = after
 
-    else:
-        for before, after in renames.items():
-            if stop_fn and stop_fn():
-                break
-            rename_file(before, after)
+        if cancelled:
+            rollback_filesystem()
+            return list(all_namings)
 
-    FilesDB.update_filepaths(renames)
+        for before, after in completed_renames.items():
+            if after in source_paths and after not in completed_renames:
+                raise RuntimeError(
+                    'A partial mass rename would overwrite an unprocessed source'
+                )
+            rename_file(staged_paths[before], after)
+            current_paths[before] = after
 
-    if renames:
-        delete_empty_child_folders(volume_data.folder, skip_hidden_folders=True)
-        delete_empty_parent_folders(volume_data.folder, root_folder)
+        FilesDB.update_filepaths(completed_renames)
+        database_updated = True
+        if new_volume_folder:
+            # The filesystem and file rows are now valid; only then expose the
+            # new folder on the volume row.
+            volume.update({'folder': new_volume_folder})
 
-        if process_individual_files:
-            mass_process_files(
-                volume_id,
-                issue_id,
-                filepath_filter=list(renames.values())
+        if completed_renames:
+            delete_empty_child_folders(
+                volume_data.folder, skip_hidden_folders=True
             )
+            delete_empty_parent_folders(volume_data.folder, root_folder)
+
+            if process_individual_files:
+                mass_process_files(
+                    volume_id,
+                    issue_id,
+                    filepath_filter=list(completed_renames.values())
+                )
+    except Exception:
+        if database_updated:
+            try:
+                FilesDB.update_filepaths({
+                    after: before for before, after in completed_renames.items()
+                })
+                if new_volume_folder:
+                    volume.update({'folder': volume_data.folder})
+            except Exception:
+                LOGGER.exception('Failed to roll back mass rename database paths')
+        rollback_filesystem()
+        raise
 
     LOGGER.info(
         "Renamed volume %d %s",

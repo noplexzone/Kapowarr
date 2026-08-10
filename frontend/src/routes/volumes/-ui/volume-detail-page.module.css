@@ -367,8 +367,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: var(--touch-target, 44px);
+  height: var(--touch-target, 44px);
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -866,4 +866,85 @@
   font-size: 0.7rem;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .cover {
+    justify-self: center;
+  }
+
+  .actionBtns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .actionBtns > * {
+    width: 100%;
+  }
+
+  .tableWrap {
+    overflow: visible;
+    background: transparent;
+  }
+
+  .table,
+  .table tbody,
+  .issueRow {
+    display: block;
+    width: 100%;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tbody {
+    display: grid;
+    gap: var(--space-3, 0.75rem);
+  }
+
+  .issueRow {
+    padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 0.625rem);
+    background: var(--surface);
+  }
+
+  .issueRow td {
+    display: grid;
+    grid-template-columns: minmax(5rem, 34%) 1fr;
+    gap: var(--space-2, 0.5rem);
+    align-items: start;
+    width: auto;
+    max-width: none;
+    padding: var(--space-2, 0.5rem) 0;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+    text-align: left;
+  }
+
+  .issueRow td:last-child {
+    border-bottom: 0;
+  }
+
+  .issueRow td::before {
+    content: attr(data-label);
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .issueFilename,
+  .filenameLine {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .issueActions {
+    flex-wrap: wrap;
+  }
 }

@@ -5,6 +5,7 @@ import { useParams, useNavigate, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getApiKey, getUrlBase } from '@/app/api-client';
 import { Badge, Button, Progress } from '@/components/primitives';
+import { StatusBanner } from '@/components/patterns';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
 import { getCoverUrl } from '@/routes/comics/-comics.helpers';
 import {
@@ -1033,9 +1034,7 @@ export function VolumeDetailPage() {
         <span className={styles.breadcrumbCurrent}>{volume.title}</span>
       </nav>
 
-      {actionMsg && (
-        <div className={styles.actionMsg}>{actionMsg}</div>
-      )}
+      {actionMsg && <StatusBanner>{actionMsg}</StatusBanner>}
 
       <div className={styles.header}>
         <img
@@ -1083,15 +1082,15 @@ export function VolumeDetailPage() {
                 disabled={refreshMutation.isPending}
                 title={refreshMutation.isPending ? 'Scanning…' : 'Refresh & Scan'}
               >
-                <RefreshIcon />
+                <RefreshIcon /> {refreshMutation.isPending ? 'Scanning…' : 'Refresh & Scan'}
               </Button>
               <Button
-                variant="secondary"
+                variant={progressPct < 100 ? 'primary' : 'secondary'}
                 onClick={() => autoSearchMutation.mutate()}
                 disabled={autoSearchMutation.isPending}
                 title={autoSearchMutation.isPending ? 'Searching…' : 'Auto Search'}
               >
-                <SearchIcon />
+                <SearchIcon /> {autoSearchMutation.isPending ? 'Searching…' : 'Auto Search'}
               </Button>
               <Button
                 variant="secondary"
@@ -1099,10 +1098,10 @@ export function VolumeDetailPage() {
                 disabled={volManualSearching}
                 title={volManualSearching ? 'Searching…' : 'Manual Search'}
               >
-                <PersonIcon />
+                <PersonIcon /> Manual Search
               </Button>
               <Button variant="secondary" onClick={openEdit} title="Edit">
-                <PencilIcon />
+                <PencilIcon /> Edit
               </Button>
               <Button variant="secondary" onClick={openFixMatch}>
                 Fix Match
@@ -2320,9 +2319,9 @@ function IssueRow({
 
   return (
     <tr className={styles.issueRow}>
-      <td className={styles.issueNum}>#{issue.issue_number}</td>
-      <td className={styles.issueTitle}>{issue.title || '—'}</td>
-      <td className={styles.issueFilename}>
+      <td data-label="Issue" className={styles.issueNum}>#{issue.issue_number}</td>
+      <td data-label="Title" className={styles.issueTitle}>{issue.title || '—'}</td>
+      <td data-label="Filename" className={styles.issueFilename}>
         {issue.filenames.length > 0
           ? issue.filenames.map((f, i) => (
               <span key={i} className={styles.filenameLine}>
@@ -2331,8 +2330,8 @@ function IssueRow({
             ))
           : '—'}
       </td>
-      <td className={styles.issueDate}>{issue.release_date || '—'}</td>
-      <td>
+      <td data-label="Released" className={styles.issueDate}>{issue.release_date || '—'}</td>
+      <td data-label="Status">
         {queueEntry ? (
           <div className={styles.downloadProgress}>
             <Progress
@@ -2368,10 +2367,10 @@ function IssueRow({
           </Badge>
         )}
       </td>
-      <td className={styles.issueSize}>
+      <td data-label="Size" className={styles.issueSize}>
         {issue.size > 0 ? formatFileSize(issue.size) : '—'}
       </td>
-      <td className={styles.actionsCell}>
+      <td data-label="Actions" className={styles.actionsCell}>
         <div className={styles.issueActions}>
           <button
             type="button"

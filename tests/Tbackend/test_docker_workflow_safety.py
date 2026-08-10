@@ -8,3 +8,10 @@ class TestDockerWorkflowSafety(TestCase):
         self.assertIn("      - develop", workflow)
         self.assertNotIn("      - '**'", workflow)
         self.assertIn("if: github.ref == 'refs/heads/develop'", workflow)
+
+    def test_ci_runs_frontend_tests_and_build_budget(self) -> None:
+        workflow = Path('.github/workflows/tests.yml').read_text()
+        self.assertIn('frontend:', workflow)
+        self.assertIn('npm ci', workflow)
+        self.assertIn('npm test -- --run', workflow)
+        self.assertIn('npm run build:check', workflow)

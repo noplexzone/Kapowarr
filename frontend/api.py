@@ -5,7 +5,9 @@ from datetime import datetime
 from hashlib import sha256
 from hmac import compare_digest, new as hmac_new
 from io import BytesIO
+import os
 from os import makedirs, remove
+from secrets import token_hex
 from os.path import basename, commonpath, dirname, exists, getsize, join, splitext
 from pathlib import Path
 from stat import S_ISREG
@@ -24,12 +26,12 @@ from backend.base.definitions import (BlocklistReason, BlocklistReasonID,
                                       LibrarySorting, MonitorScheme,
                                       SpecialVersion, StartType, VolumeData)
 from backend.base.helpers import force_suffix, hash_credential
-from backend.base.logging import LOGGER, get_log_file_contents
+from backend.base.logging import LOGGER, get_log_file_contents, get_log_filepath
 from backend.features.download_queue import (DownloadHandler,
                                              delete_download_history,
                                              get_download_history,
                                              get_download_history_count)
-from backend.base.files import delete_file_folder, folder_is_inside_folder
+from backend.base.files import delete_file_folder, folder_is_inside_folder, folder_path
 from backend.features.library_import import (generate_bulk_scan,
                                              prepare_bulk_scan)
 from backend.features.mass_edit import run_mass_editor_action
@@ -61,7 +63,7 @@ from backend.implementations.remote_mapping import RemoteMappings
 from backend.implementations.root_folders import RootFolders
 from backend.implementations.volumes import (Library, delete_issue_file,
                                              rematch_volume)
-from backend.internals.db import get_db
+from backend.internals.db import DBConnection, get_db
 from backend.internals.db_models import FilesDB
 from backend.internals.server import Server, StartTypeHandlers
 from backend.internals.settings import Settings, get_about_data
@@ -82,6 +84,49 @@ _PROTECTED_DELETE_NAMES = {
     'kapowarr.db', 'settings.ini', 'settings.json',
 }
 _PROTECTED_DELETE_SUFFIXES = {'.db', '.sqlite', '.sqlite3'}
+_PROTECTED_SYSTEM_TREES = (
+    '/bin', '/boot', '/dev', '/etc', '/lib', '/lib64', '/proc', '/sbin',
+    '/sys', '/usr',
+)
+
+
+def _path_is_within(path: Path, root: Path) -> bool:
+    try:
+        return commonpath((str(path), str(root))) == str(root)
+    except ValueError:
+        return False
+
+
+def _protected_delete_paths() -> Tuple[List[Path], List[Path]]:
+    trees = [Path(folder_path()).resolve(strict=False)]
+    trees.extend(Path(item) for item in _PROTECTED_SYSTEM_TREES)
+    files = [
+        Path(DBConnection.file).resolve(strict=False),
+        Path(get_log_filepath()).resolve(strict=False),
+    ]
+    return trees, files
+
+
+def _is_protected_delete_target(candidate: Path, candidate_stat=None) -> bool:
+    trees, files = _protected_delete_paths()
+    if any(candidate == tree or _path_is_within(candidate, tree) for tree in trees):
+        return True
+
+    for protected in files:
+        if candidate == protected:
+            return True
+        if candidate_stat is None:
+            continue
+        try:
+            protected_stat = protected.stat()
+        except OSError:
+            continue
+        if (
+            candidate_stat.st_dev == protected_stat.st_dev
+            and candidate_stat.st_ino == protected_stat.st_ino
+        ):
+            return True
+    return False
 
 
 def _unmatched_file_id(volume_id: int, filepath: str, api_key: str) -> str:
@@ -111,19 +156,119 @@ def _validate_unmatched_deletion_target(volume_id: int, filepath: str) -> str:
             raise ValueError
         if commonpath((volume_text, candidate_text)) != volume_text:
             raise ValueError
-        if not S_ISREG(candidate.stat().st_mode):
+        candidate_stat = candidate.stat()
+        if not S_ISREG(candidate_stat.st_mode):
             raise ValueError
 
         lower_name = candidate.name.lower()
         if (
             lower_name in _PROTECTED_DELETE_NAMES
             or candidate.suffix.lower() in _PROTECTED_DELETE_SUFFIXES
+            or _is_protected_delete_target(candidate, candidate_stat)
         ):
             raise ValueError
     except (OSError, ValueError):
         raise InvalidKeyValue('unmatched_file_id', 'invalid')
 
     return candidate_text
+
+
+def _open_directory_no_symlinks(path: Path) -> int:
+    """Open an absolute directory by descriptor without following components."""
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    if hasattr(os, 'O_CLOEXEC'):
+        flags |= os.O_CLOEXEC
+    nofollow_flags = flags | os.O_NOFOLLOW
+    current_fd = os.open(os.sep, flags)
+    try:
+        for component in path.parts[1:]:
+            next_fd = os.open(component, nofollow_flags, dir_fd=current_fd)
+            os.close(current_fd)
+            current_fd = next_fd
+        return current_fd
+    except Exception:
+        os.close(current_fd)
+        raise
+
+
+def _secure_delete_unmatched_target(volume_id: int, filepath: str) -> None:
+    """Validate then unlink through no-follow directory descriptors.
+
+    Renaming to an unpredictable same-directory quarantine name atomically
+    captures the directory entry before final type/inode validation. No later
+    operation resolves the user-visible pathname, closing parent-symlink races.
+    """
+    quarantined = None
+    original_name = None
+    parent_fd = None
+    volume_fd = None
+    try:
+        safe_path = Path(_validate_unmatched_deletion_target(volume_id, filepath))
+        volume_data = Library.get_volume(volume_id).get_data()
+        root = Path(RootFolders()[volume_data.root_folder]).resolve(strict=True)
+        volume_folder = Path(volume_data.folder).resolve(strict=True)
+        if not _path_is_within(volume_folder, root):
+            raise ValueError
+        relative = safe_path.relative_to(volume_folder)
+        if not relative.parts or relative.name in ('.', '..'):
+            raise ValueError
+        original_name = relative.name
+
+        volume_fd = _open_directory_no_symlinks(volume_folder)
+        parent_fd = volume_fd
+        directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        if hasattr(os, 'O_CLOEXEC'):
+            directory_flags |= os.O_CLOEXEC
+        for component in relative.parts[:-1]:
+            next_fd = os.open(component, directory_flags, dir_fd=parent_fd)
+            if parent_fd != volume_fd:
+                os.close(parent_fd)
+            parent_fd = next_fd
+
+        quarantine_name = f'.kapowarr-delete-{token_hex(16)}'
+        os.rename(
+            original_name,
+            quarantine_name,
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
+        quarantined = quarantine_name
+        moved_stat = os.stat(
+            quarantine_name, dir_fd=parent_fd, follow_symlinks=False
+        )
+        if (
+            not S_ISREG(moved_stat.st_mode)
+            or _is_protected_delete_target(safe_path, moved_stat)
+        ):
+            raise ValueError
+
+        os.unlink(quarantine_name, dir_fd=parent_fd)
+        quarantined = None
+    except (OSError, ValueError):
+        if (
+            quarantined is not None
+            and original_name is not None
+            and parent_fd is not None
+        ):
+            try:
+                os.stat(original_name, dir_fd=parent_fd, follow_symlinks=False)
+            except (FileNotFoundError, ValueError):
+                try:
+                    os.rename(
+                        quarantined,
+                        original_name,
+                        src_dir_fd=parent_fd,
+                        dst_dir_fd=parent_fd,
+                    )
+                    quarantined = None
+                except OSError:
+                    LOGGER.exception('Failed to restore rejected unmatched file')
+        raise InvalidKeyValue('unmatched_file_id', 'invalid')
+    finally:
+        if parent_fd is not None and parent_fd != volume_fd:
+            os.close(parent_fd)
+        if volume_fd is not None:
+            os.close(volume_fd)
 
 
 def error_handler(method) -> Any:
@@ -2284,8 +2429,7 @@ def api_files_raw():
     if filepath is None:
         raise InvalidKeyValue('unmatched_file_id', unmatched_file_id)
 
-    safe_path = _validate_unmatched_deletion_target(volume_id, filepath)
-    remove(safe_path)
+    _secure_delete_unmatched_target(volume_id, filepath)
     return return_api({})
 
 

@@ -76,6 +76,23 @@ class RawFileDeletionSecurityTests(unittest.TestCase):
         directory.mkdir()
         self._assert_rejected(directory)
 
+    def test_rejects_special_file(self):
+        fifo = self.volume / 'named-pipe.cbz'
+        os.mkfifo(str(fifo))
+        self._assert_rejected(fifo)
+
+    def test_rejects_hardlink_to_actual_database_path(self):
+        database = self.base / 'database-location' / 'application-state'
+        database.parent.mkdir()
+        database.write_bytes(b'database')
+        alias = self.volume / 'innocent-looking.cbz'
+        os.link(str(database), str(alias))
+        volume_patch, roots_patch, settings_patch = self._patches()
+        with volume_patch, roots_patch, settings_patch, patch.object(
+            api_mod.DBConnection, 'file', str(database)
+        ), self.assertRaises(InvalidKeyValue):
+            api_mod._validate_unmatched_deletion_target(1, str(alias))
+
     def test_rejects_database_and_configuration_files(self):
         for name in ('Kapowarr.db', 'config.ini', '.env'):
             with self.subTest(name=name):
@@ -105,6 +122,26 @@ class RawFileDeletionSecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertTrue(target.exists())
 
+    def test_delete_rejects_wrong_api_key(self):
+        target = self.volume / 'Saga 001.cbz'
+        target.write_bytes(b'comic')
+        file_id = api_mod._unmatched_file_id(1, str(target), 'test-api-key')
+        matches = [{'filepath': str(target), 'issue_ids': [], 'general_file': False, 'forced_match': False, 'unmatched_file_id': file_id}]
+        response = self._delete(1, file_id, matches, 'wrong-key')
+        self.assertEqual(response.status_code, 401)
+        self.assertTrue(target.exists())
+
+    def test_delete_rejects_stale_identifier(self):
+        target = self.volume / 'Saga 001.cbz'
+        target.write_bytes(b'comic')
+        stale_id = api_mod._unmatched_file_id(1, str(target), 'test-api-key')
+        renamed = self.volume / 'Saga 001 renamed.cbz'
+        target.rename(renamed)
+        matches = [{'filepath': str(renamed), 'issue_ids': [], 'general_file': False, 'forced_match': False, 'unmatched_file_id': api_mod._unmatched_file_id(1, str(renamed), 'test-api-key')}]
+        response = self._delete(1, stale_id, matches, 'test-api-key')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(renamed.exists())
+
     def test_delete_rejects_identifier_owned_by_another_volume(self):
         target = self.volume / 'Saga 001.cbz'
         target.write_bytes(b'comic')
@@ -113,6 +150,29 @@ class RawFileDeletionSecurityTests(unittest.TestCase):
         response = self._delete(2, file_id, matches, 'test-api-key')
         self.assertEqual(response.status_code, 400)
         self.assertTrue(target.exists())
+
+    def test_parent_symlink_swap_cannot_escape_validated_directory(self):
+        target = self.volume / 'Saga 001.cbz'
+        target.write_bytes(b'inside')
+        outside_dir = self.base / 'outside'
+        outside_dir.mkdir()
+        outside_target = outside_dir / target.name
+        outside_target.write_bytes(b'outside')
+        file_id = api_mod._unmatched_file_id(1, str(target), 'test-api-key')
+        matches = [{'filepath': str(target), 'issue_ids': [], 'general_file': False, 'forced_match': False, 'unmatched_file_id': file_id}]
+        original_volume = self.base / 'original-volume'
+
+        def swap_parent(*_args):
+            self.volume.rename(original_volume)
+            os.symlink(str(outside_dir), str(self.volume))
+            return str(target)
+
+        with patch.object(api_mod, '_validate_unmatched_deletion_target', side_effect=swap_parent):
+            response = self._delete(1, file_id, matches, 'test-api-key')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(outside_target.exists())
+        self.assertTrue((original_volume / target.name).exists())
 
     def test_delete_succeeds_with_current_identifier_and_api_key(self):
         target = self.volume / 'Saga 001.cbz'

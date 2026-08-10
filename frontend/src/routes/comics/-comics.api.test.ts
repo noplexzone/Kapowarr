@@ -1,13 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/app/api-client', () => ({
-  apiClient: { get: vi.fn() },
+  apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
   getUrlBase: vi.fn(() => ''),
   readJson: vi.fn(),
 }));
 
 import { apiClient, readJson } from '@/app/api-client';
-import { volumeListQueryOptions } from './-comics.api';
+import {
+  deleteLibraryVolume,
+  runLibraryTask,
+  runVolumeTask,
+  setVolumeMonitored,
+  volumeListQueryOptions,
+} from './-comics.api';
 
 const get = vi.mocked(apiClient.get);
 const parse = vi.mocked(readJson);
@@ -47,5 +53,43 @@ describe('volume list pagination', () => {
       sort: 'title', filter: '', view: 'posters', offset: 0,
     }, 'manga');
     await expect(options.queryFn!({} as never)).rejects.toThrow(/paginated volume response/i);
+  });
+});
+
+describe('library actions', () => {
+  it('sends exact task commands', async () => {
+    const post = vi.mocked(apiClient.post);
+    post.mockResolvedValue({} as never);
+    parse.mockResolvedValue({ id: 9 });
+
+    await runLibraryTask('update_all');
+    await runLibraryTask('search_all');
+    await runVolumeTask(42, 'refresh_and_scan');
+    await runVolumeTask(42, 'auto_search');
+
+    expect(post).toHaveBeenNthCalledWith(1, 'system/tasks', { json: { cmd: 'update_all' } });
+    expect(post).toHaveBeenNthCalledWith(2, 'system/tasks', { json: { cmd: 'search_all' } });
+    expect(post).toHaveBeenNthCalledWith(3, 'system/tasks', {
+      json: { cmd: 'refresh_and_scan', volume_id: 42 }, timeout: 60_000,
+    });
+    expect(post).toHaveBeenNthCalledWith(4, 'system/tasks', {
+      json: { cmd: 'auto_search', volume_id: 42 }, timeout: 60_000,
+    });
+  });
+
+  it('updates monitoring and deletes without deleting media folders', async () => {
+    const put = vi.mocked(apiClient.put);
+    const del = vi.mocked(apiClient.delete);
+    put.mockResolvedValue({} as never);
+    del.mockResolvedValue({} as never);
+    parse.mockResolvedValue(undefined);
+
+    await setVolumeMonitored(7, false);
+    await deleteLibraryVolume(7);
+
+    expect(put).toHaveBeenCalledWith('volumes/7', { json: { monitored: false } });
+    expect(del).toHaveBeenCalledWith('volumes/7', {
+      searchParams: { delete_folder: 'false' },
+    });
   });
 });

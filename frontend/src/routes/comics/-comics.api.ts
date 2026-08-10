@@ -102,3 +102,31 @@ async function fetchVolumeDetail(id: number): Promise<VolumeDetail> {
   const raw = await readJson<Record<string, any>>(response);
   return toVolumeDetail(raw);
 }
+
+export type LibraryTaskCommand = 'update_all' | 'search_all';
+export type VolumeTaskCommand = 'auto_search' | 'refresh_and_scan';
+
+export async function runLibraryTask(cmd: LibraryTaskCommand): Promise<{ id: number }> {
+  const response = await apiClient.post('system/tasks', { json: { cmd } });
+  return readJson<{ id: number }>(response);
+}
+
+export async function runVolumeTask(id: number, cmd: VolumeTaskCommand): Promise<{ id: number }> {
+  const response = await apiClient.post('system/tasks', {
+    json: { cmd, volume_id: id },
+    timeout: 60_000,
+  });
+  return readJson<{ id: number }>(response);
+}
+
+export async function setVolumeMonitored(id: number, monitored: boolean): Promise<void> {
+  const response = await apiClient.put(`volumes/${id}`, { json: { monitored } });
+  await readJson<null>(response);
+}
+
+export async function deleteLibraryVolume(id: number): Promise<void> {
+  const response = await apiClient.delete(`volumes/${id}`, {
+    searchParams: { delete_folder: 'false' },
+  });
+  await readJson<Record<string, never>>(response);
+}

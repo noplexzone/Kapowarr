@@ -1,9 +1,16 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
 import { Pagination } from '@/components/pagination/pagination';
-import { volumeListQueryOptions } from '../-comics.api';
+import {
+  deleteLibraryVolume,
+  runLibraryTask,
+  runVolumeTask,
+  setVolumeMonitored,
+  volumeListQueryOptions,
+  VOLUMES_KEY,
+} from '../-comics.api';
 import { type ViewOption, type SectionType, type VolumesSearch } from '../-comics.types';
 import {
   SORT_OPTIONS,
@@ -34,12 +41,15 @@ function setStorageVal(key: string, val: unknown) {
 
 export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const search = useSearch({ strict: false }) as VolumesSearch;
   const { data } = useSuspenseQuery(volumeListQueryOptions(1, search, section));
 
   const [view, setView] = useState<ViewOption>(search.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState('');
 
   // Local search text for instant typing; debounced sync to URL/query
   const [searchText, setSearchText] = useState(search.search ?? '');
@@ -104,6 +114,41 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
     });
   }, []);
 
+  const performAction = useCallback(async (
+    name: string,
+    action: () => Promise<unknown>,
+    success: string,
+  ) => {
+    if (pendingAction) return;
+    setPendingAction(name);
+    setActionMessage('');
+    try {
+      await action();
+      await queryClient.invalidateQueries({ queryKey: VOLUMES_KEY });
+      setActionMessage(success);
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : 'The action failed.');
+    } finally {
+      setPendingAction(null);
+    }
+  }, [pendingAction, queryClient]);
+
+  const runSelected = useCallback(async (
+    name: string,
+    action: (id: number) => Promise<unknown>,
+    successVerb: string,
+  ) => {
+    const ids = [...selectedIds];
+    await performAction(name, async () => {
+      const results = await Promise.allSettled(ids.map(action));
+      const failures = results.filter((result) => result.status === 'rejected');
+      if (failures.length) {
+        throw new Error(`${failures.length} of ${ids.length} selected volumes failed.`);
+      }
+      setSelectedIds(new Set());
+    }, `${successVerb} ${ids.length} selected volume${ids.length === 1 ? '' : 's'}.`);
+  }, [performAction, selectedIds]);
+
   const volumes = data?.volumes ?? [];
   const total = data?.total ?? 0;
 
@@ -152,19 +197,87 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
         </div>
 
         <div className={styles.toolbarRight}>
-          <Button variant="secondary">Update All</Button>
-          <Button variant="secondary">Search All</Button>
+          <Button
+            variant="secondary"
+            disabled={pendingAction !== null}
+            onClick={() => performAction(
+              'update-all',
+              () => runLibraryTask('update_all'),
+              'Library update queued.',
+            )}
+          >
+            {pendingAction === 'update-all' ? 'Queuing…' : 'Update All'}
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={pendingAction !== null}
+            onClick={() => performAction(
+              'search-all',
+              () => runLibraryTask('search_all'),
+              'Library search queued.',
+            )}
+          >
+            {pendingAction === 'search-all' ? 'Queuing…' : 'Search All'}
+          </Button>
         </div>
       </div>
+
+      {actionMessage && <p role="status" className={styles.actionMessage}>{actionMessage}</p>}
 
       {selectedIds.size > 0 && (
         <div className={styles.massBar}>
           <span>{selectedIds.size} selected</span>
-          <Button variant="ghost">Delete</Button>
-          <Button variant="ghost">Monitor</Button>
-          <Button variant="ghost">Unmonitor</Button>
-          <Button variant="ghost">Refresh &amp; Scan</Button>
-          <Button variant="ghost">Auto Search</Button>
+          <Button
+            variant="ghost"
+            disabled={pendingAction !== null}
+            onClick={() => {
+              const selectedNames = volumes
+                .filter((volume) => selectedIds.has(volume.id))
+                .map((volume) => volume.title)
+                .join(', ');
+              if (window.confirm(
+                `Remove ${selectedIds.size} volume${selectedIds.size === 1 ? '' : 's'} from Kapowarr?\n\n${selectedNames}\n\nMedia folders will be preserved.`,
+              )) {
+                void runSelected('delete-selected', deleteLibraryVolume, 'Removed');
+              }
+            }}
+          >Delete</Button>
+          <Button
+            variant="ghost"
+            disabled={pendingAction !== null}
+            onClick={() => runSelected(
+              'monitor-selected',
+              (id) => setVolumeMonitored(id, true),
+              'Monitored',
+            )}
+          >Monitor</Button>
+          <Button
+            variant="ghost"
+            disabled={pendingAction !== null}
+            onClick={() => runSelected(
+              'unmonitor-selected',
+              (id) => setVolumeMonitored(id, false),
+              'Unmonitored',
+            )}
+          >Unmonitor</Button>
+          <Button
+            variant="ghost"
+            disabled={pendingAction !== null}
+            onClick={() => runSelected(
+              'scan-selected',
+              (id) => runVolumeTask(id, 'refresh_and_scan'),
+              'Queued refresh and scan for',
+            )}
+          >Refresh &amp; Scan</Button>
+          <Button
+            variant="ghost"
+            disabled={pendingAction !== null}
+            onClick={() => runSelected(
+              'search-selected',
+              (id) => runVolumeTask(id, 'auto_search'),
+              'Queued search for',
+            )}
+          >Auto Search</Button>
         </div>
       )}
 
@@ -178,7 +291,11 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
             <ComicCard
               key={v.id}
               volume={v}
-              onSearch={(_id) => {/* TODO */}}
+              onSearch={(id) => performAction(
+                `search-${id}`,
+                () => runVolumeTask(id, 'auto_search'),
+                `Search queued for ${v.title}.`,
+              )}
             />
           ))}
         </div>

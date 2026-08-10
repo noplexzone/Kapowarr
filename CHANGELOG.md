@@ -13,4 +13,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Fix unmatched library-import deletion to send the backend-compatible folder list and keep confirmed paths visible when deletion fails.
 - Preserve every file during colliding mass renames, keep filesystem and database paths consistent on failures, and record post-processing failures instead of false download successes.

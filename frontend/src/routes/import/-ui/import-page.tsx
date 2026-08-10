@@ -19,6 +19,8 @@ export function ImportPage({ section }: ImportPageProps) {
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [success, setSuccess] = useState('');
 
   const startScan = useCallback(async () => {
@@ -73,19 +75,42 @@ export function ImportPage({ section }: ImportPageProps) {
     }
   };
 
-  const handleDelete = async () => {
+  const unmatchedFolders = items.filter(i => !i.matched).map(i => i.folder);
+
+  const openDeleteDialog = () => {
+    setDeleteError('');
+    setConfirmDelete(true);
+  };
+
+  const closeDeleteDialog = () => {
+    if (deleting) return;
+    setDeleteError('');
     setConfirmDelete(false);
-    const folders = items.filter(i => !i.matched).map(i => i.folder);
+  };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+
+    const foldersToDelete = [...unmatchedFolders];
+    const deletedFolders = new Set(foldersToDelete);
+
+    setDeleting(true);
+    setDeleteError('');
+    setError('');
+    setSuccess('');
     try {
-      await deleteUnmatched(folders);
-      setItems(prev => prev.filter(i => i.matched));
-      setSuccess(`Deleted ${folders.length} unmatched folder${folders.length !== 1 ? 's' : ''}.`);
+      await deleteUnmatched(foldersToDelete);
+      setItems(prev => prev.filter(item => item.matched || !deletedFolders.has(item.folder)));
+      setSuccess(`Deleted ${foldersToDelete.length} unmatched folder${foldersToDelete.length !== 1 ? 's' : ''}.`);
+      setConfirmDelete(false);
     } catch (err) {
-      setError(String(err));
+      setDeleteError(String(err));
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const unmatchedCount = items.filter(i => !i.matched).length;
+  const unmatchedCount = unmatchedFolders.length;
   const matchedCount = items.filter(i => i.matched).length;
 
   return (
@@ -154,7 +179,7 @@ export function ImportPage({ section }: ImportPageProps) {
                 {importing ? 'Importing…' : `Import Selected (${selected.size})`}
               </Button>
               {unmatchedCount > 0 && (
-                <Button variant="secondary" onClick={() => setConfirmDelete(true)}>
+                <Button variant="secondary" onClick={openDeleteDialog} disabled={scanning || deleting}>
                   Delete Unmatched ({unmatchedCount})
                 </Button>
               )}
@@ -201,18 +226,31 @@ export function ImportPage({ section }: ImportPageProps) {
       )}
 
       {confirmDelete && (
-        <DialogFrame open onOpenChange={open => !open && setConfirmDelete(false)}>
-          <DialogHeader title="Delete Unmatched Folders" onClose={() => setConfirmDelete(false)} />
+        <DialogFrame open onOpenChange={open => !open && closeDeleteDialog()}>
+          <DialogHeader
+            title="Delete Unmatched Folders"
+            onClose={deleting ? undefined : closeDeleteDialog}
+          />
           <DialogBody>
             <p>
               Delete {unmatchedCount} unmatched folder{unmatchedCount !== 1 ? 's' : ''}?
               This cannot be undone.
             </p>
+            <ul className={styles.deletePathList} aria-label="Folders to delete">
+              {unmatchedFolders.map(folder => (
+                <li key={folder}><code>{folder}</code></li>
+              ))}
+            </ul>
+            {deleteError && <Notice tone="danger">{deleteError}</Notice>}
           </DialogBody>
           <DialogFooter>
             <div className={styles.dialogActions}>
-              <Button variant="ghost" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-              <Button variant="primary" onClick={handleDelete}>Delete</Button>
+              <Button variant="ghost" onClick={closeDeleteDialog} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleDelete} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete'}
+              </Button>
             </div>
           </DialogFooter>
         </DialogFrame>

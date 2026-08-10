@@ -1,4 +1,4 @@
-import { apiClient, getUrlBase } from '@/app/api-client';
+import { apiClient, getUrlBase, readJson } from '@/app/api-client';
 import type { BulkScanItem, ImportSelection } from './-import.types';
 
 export async function* scanBulk(
@@ -50,5 +50,6 @@ export async function importSelected(items: ImportSelection[]): Promise<void> {
 }
 
 export async function deleteUnmatched(folders: string[]): Promise<void> {
-  await apiClient.post('libraryimport/delete', { json: { folders } });
+  const response = await apiClient.post('libraryimport/delete', { json: folders });
+  await readJson<unknown>(response);
 }

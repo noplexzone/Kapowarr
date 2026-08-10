@@ -145,3 +145,23 @@
   justify-content: flex-end;
   width: 100%;
 }
+
+.deletePathList {
+  max-height: 12rem;
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.5rem 0.5rem 2rem;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.deletePathList li {
+  padding: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+.deletePathList code {
+  color: var(--text);
+  font-size: 0.8rem;
+}

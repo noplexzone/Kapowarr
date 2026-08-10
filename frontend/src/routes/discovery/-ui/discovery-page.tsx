@@ -114,7 +114,7 @@ function VolumeGridView({ type, section }: { type: 'upcoming' | 'new'; section: 
       navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
       return;
     }
-    navigate({ to: '/add', search: getDiscoveryAddSearch(vol, section) });
+    navigate({ to: '/add/review', search: getDiscoveryAddSearch(vol, section) });
   };
 
   if (isFetching && volumes.length === 0) {
@@ -248,7 +248,7 @@ function ArcDetailModal({ id, section, onClose }: { id: number; section: Discove
                   if (vol.already_added != null) {
                     navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
                   } else {
-                    navigate({ to: '/add', search: getDiscoveryAddSearch(vol, section) });
+                    navigate({ to: '/add/review', search: getDiscoveryAddSearch(vol, section) });
                   }
                 }}
               />

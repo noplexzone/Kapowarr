@@ -12,7 +12,7 @@ import { AuthGuard } from '@/platform/auth/auth-guard';
 import { LoginPage } from '@/routes/login/-ui/login-page';
 import { DashboardPage } from '@/routes/dashboard/-ui/dashboard-page';
 import { ComicsPage } from '@/routes/comics/-ui/comics-page';
-import { AddPage } from '@/routes/add/-ui/add-page';
+import { AddPage, ExactAddReview } from '@/routes/add/-ui/add-page';
 import { SystemStatusPage } from '@/routes/system/-ui/system-status-page';
 import { SystemTasksPage } from '@/routes/system/-ui/system-tasks-page';
 import { ReaderPage } from '@/routes/reader/-ui/reader-page';
@@ -201,10 +201,14 @@ const mangaAddRedirectRoute = createRoute({
 // Add volume
 export const addSearchSchema = z.object({
   section: z.enum(['comic', 'manga']).default('comic').catch('comic'),
-  metadata_source: z.enum(['comicvine', 'mangadex']).optional().catch(undefined),
-  metadata_id: z.string().min(1).optional().catch(undefined),
   title: z.string().min(1).optional().catch(undefined),
-  metadata_language: z.string().min(2).max(16).optional().catch(undefined),
+});
+export const addReviewSearchSchema = z.object({
+  section: z.enum(['comic', 'manga']),
+  source: z.enum(['comicvine', 'mangadex']),
+  id: z.string().min(1),
+  title: z.string().min(1).optional().catch(undefined),
+  language: z.string().min(2).max(16).optional().catch(undefined),
 });
 
 const addRoute = createRoute({
@@ -216,8 +220,18 @@ const addRoute = createRoute({
   },
   component: function AddRouteComponent() {
     const search = addRoute.useSearch();
-    const selection = search.metadata_source && search.metadata_id && search.title ? { metadata_source: search.metadata_source, metadata_id: search.metadata_id, title: search.title, metadata_language: search.metadata_language } : undefined;
-    return <AddPage section={search.section} selection={selection} />;
+    return <AddPage section={search.section} initialQuery={search.title} />;
+  },
+});
+
+const addReviewRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'add/review',
+  validateSearch: addReviewSearchSchema,
+  loader: async ({ context }: any) => { await context.queryClient.ensureQueryData(rootFoldersQueryOptions()); },
+  component: function AddReviewRouteComponent() {
+    const search = addReviewRoute.useSearch();
+    return <ExactAddReview section={search.section} selection={{ metadata_source: search.source, metadata_id: search.id, title: search.title, metadata_language: search.language }} />;
   },
 });
 
@@ -419,6 +433,7 @@ export const routeTree = rootRoute.addChildren([
     mangaRoute,
     mangaAddRedirectRoute,
     addRoute,
+    addReviewRoute,
     queueRoute,
     historyRoute,
     blocklistRoute,

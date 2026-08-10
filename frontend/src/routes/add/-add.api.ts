@@ -11,7 +11,7 @@ export type MetadataSourceFilter = 'all' | 'comicvine' | 'mangadex';
 export interface MetadataSelection {
   metadata_source: 'comicvine' | 'mangadex';
   metadata_id: string;
-  title: string;
+  title?: string;
   metadata_language?: string;
 }
 

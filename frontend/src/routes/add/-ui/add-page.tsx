@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useQuery, useSuspenseQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Button, Badge } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody, DialogFooter } from '@/components/dialog';
@@ -15,19 +15,17 @@ import type { SearchResult } from '../-add.types';
 import { getUrlBase } from '@/app/api-client';
 import styles from './add-page.module.css';
 
-interface AddSelection { metadata_source: 'comicvine' | 'mangadex'; metadata_id: string; title: string; metadata_language?: string }
-interface AddPageProps { section: 'comic' | 'manga'; selection?: AddSelection }
+interface AddSelection { metadata_source: 'comicvine' | 'mangadex'; metadata_id: string; title?: string; metadata_language?: string }
+interface AddPageProps { section: 'comic' | 'manga'; initialQuery?: string }
 
-export function AddPage({ section, selection }: AddPageProps) {
+export function AddPage({ section, initialQuery = '' }: AddPageProps) {
   const navigate = useNavigate();
-  const [rawQuery, setRawQuery] = useState(selection?.title ?? '');
-  const [query, setQuery] = useState(selection?.title ?? '');
+  const [rawQuery, setRawQuery] = useState(initialQuery);
+  const [query, setQuery] = useState(initialQuery.length >= 2 ? initialQuery : '');
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
-  const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>(selection?.metadata_source ?? 'comicvine');
+  const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>('comicvine');
 
-  useEffect(() => {
-    setMetadataSource(selection?.metadata_source ?? 'comicvine');
-  }, [section, selection?.metadata_source]);
+  useEffect(() => { setMetadataSource('comicvine'); }, [section]);
 
   useEffect(() => {
     const trimmed = rawQuery.trim();
@@ -49,19 +47,7 @@ export function AddPage({ section, selection }: AddPageProps) {
     ...searchVolumesQueryOptions(query, section, metadataSource),
     enabled: query.length >= 2,
   });
-  const { data: exactSelection } = useQuery(
-    exactVolumeQueryOptions(selection, section),
-  );
-
   const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
-
-  useEffect(() => {
-    if (!exactSelection || modalResult) return;
-    setModalResult({
-      ...exactSelection,
-      metadata_language: selection?.metadata_language ?? exactSelection.metadata_language,
-    });
-  }, [selection?.metadata_language, exactSelection, modalResult]);
 
   const sectionLabel = section === 'manga' ? 'Manga' : 'Comics';
   const placeholder = `Search ${sectionLabel}…`;
@@ -202,6 +188,31 @@ function ResultCard({ result, onClick }: ResultCardProps) {
       </div>
     </div>
   );
+}
+
+export function ExactAddReview({ section, selection }: { section: 'comic' | 'manga'; selection: AddSelection }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
+  const exact = useQuery(exactVolumeQueryOptions(selection, section));
+
+  if (exact.isPending) return <div className={styles.empty} role="status">Loading {selection.title ?? selection.metadata_id} from {selection.metadata_source}…</div>;
+  if (exact.isError) return <div className={styles.empty} role="alert">
+    <h1>Could not load {selection.title ?? 'selected item'}</h1>
+    <p>{selection.metadata_source}: {exact.error.message}</p>
+    <Button onClick={() => void exact.refetch()}>Retry</Button>
+    {selection.title && <Button variant="secondary" onClick={() => navigate({ to: '/add', search: { section, title: selection.title } })}>Search by title instead</Button>}
+  </div>;
+  const result = exact.data;
+  const existingId = result.id ?? result.already_added;
+  if (existingId != null) return <div className={styles.empty}><Badge tone="success">In Library</Badge><Button onClick={() => navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } })}>Open Volume</Button></div>;
+  return <div className={styles.page} data-testid="exact-add-review">
+    <AddModal result={{ ...result, metadata_language: selection.metadata_language ?? result.metadata_language }} rootFolders={rootFolders} section={section} onClose={() => history.back()} onAdded={(id) => {
+      void queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
+      void queryClient.invalidateQueries({ queryKey: ['discovery', section] });
+      navigate({ to: '/volumes/$volumeId', params: { volumeId: String(id) } });
+    }} />
+  </div>;
 }
 
 const MONITORING_SCHEMES = [

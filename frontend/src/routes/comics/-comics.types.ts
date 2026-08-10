@@ -10,7 +10,7 @@ export const SORT_OPTIONS = [
   'wanted',
 ] as const;
 
-export const FILTER_OPTIONS = ['', 'wanted', 'monitored'] as const;
+export const FILTER_OPTIONS = ['', 'wanted', 'upcoming', 'unmonitored', 'monitored'] as const;
 
 export const VIEW_OPTIONS = ['posters', 'table'] as const;
 
@@ -31,7 +31,9 @@ export const VIEW_LABELS: Record<string, string> = {
 
 export const FILTER_LABELS: Record<string, string> = {
   '': 'All',
-  wanted: 'Wanted',
+  wanted: 'Missing',
+  upcoming: 'Upcoming',
+  unmonitored: 'Unmonitored Issues',
   monitored: 'Monitored',
 };
 

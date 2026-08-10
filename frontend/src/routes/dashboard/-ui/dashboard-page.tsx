@@ -34,10 +34,6 @@ export function DashboardPage() {
   const queueItems = Array.isArray(queueData) ? queueData : [];
   const historyEntries = (historyData?.entries ?? []).slice(0, 6);
 
-  const comicWanted =
-    comicStats != null ? Math.max(0, comicStats.issues - comicStats.downloaded_issues) : null;
-  const mangaWanted =
-    mangaStats != null ? Math.max(0, mangaStats.issues - mangaStats.downloaded_issues) : null;
 
   return (
     <div className={styles.page}>
@@ -60,21 +56,16 @@ export function DashboardPage() {
         </StatusBanner>
       )}
 
-      {/* ── Section stats row (Comics + Manga) ── */}
-      <div className={styles.statsRow}>
-        <SectionStatCard
-          label="Comics"
-          volumes={comicStats?.volumes ?? null}
-          downloaded={comicStats?.downloaded_issues ?? null}
-          wanted={comicWanted}
-          accent
-        />
-        <SectionStatCard
-          label="Manga"
-          volumes={mangaStats?.volumes ?? null}
-          downloaded={mangaStats?.downloaded_issues ?? null}
-          wanted={mangaWanted}
-        />
+      <div className={styles.metricsGrid}>
+        <MetricCard label="Comics missing" value={comicStats?.missing_monitored ?? null} to="/comics" search={{ sort: 'wanted', filter: 'wanted', view: 'posters', offset: 0 }} />
+        <MetricCard label="Manga missing" value={mangaStats?.missing_monitored ?? null} to="/manga" search={{ sort: 'wanted', filter: 'wanted', view: 'posters', offset: 0 }} />
+        <MetricCard label="Comics upcoming" value={comicStats?.upcoming_monitored ?? null} to="/comics" search={{ sort: 'recently_released', filter: 'upcoming', view: 'posters', offset: 0 }} />
+        <MetricCard label="Manga upcoming" value={mangaStats?.upcoming_monitored ?? null} to="/manga" search={{ sort: 'recently_released', filter: 'upcoming', view: 'posters', offset: 0 }} />
+        <MetricCard label="Comics unmonitored" value={comicStats?.unmonitored_issues ?? null} to="/comics" search={{ sort: 'title', filter: 'unmonitored', view: 'posters', offset: 0 }} />
+        <MetricCard label="Manga unmonitored" value={mangaStats?.unmonitored_issues ?? null} to="/manga" search={{ sort: 'title', filter: 'unmonitored', view: 'posters', offset: 0 }} />
+        <MetricCard label="Failed downloads" value={comicStats?.failed_downloads ?? null} to="/activity/history" search={{ offset: 0, state: 'failed' }} />
+        <MetricCard label="Active downloads" value={comicStats?.active_downloads ?? null} to="/activity/queue" />
+        <MetricCard label="Import problems" value={comicStats?.import_problems ?? null} to="/mismatch" />
       </div>
 
       {/* ── Recent activity + Queue ── */}
@@ -249,38 +240,14 @@ export function DashboardPage() {
   );
 }
 
-/* ── Per-section stat card ── */
 
-function SectionStatCard({
-  label,
-  volumes,
-  downloaded,
-  wanted,
-  accent,
-}: {
-  label: string;
-  volumes: number | null;
-  downloaded: number | null;
-  wanted: number | null;
-  accent?: boolean;
-}) {
+function MetricCard({ label, value, to, search }: { label: string; value: number | null; to: string; search?: Record<string, unknown> }) {
   return (
-    <Card className={`${styles.statCard} ${accent ? styles.statCardAccent : ''}`}>
-      <div className={styles.statSectionLabel}>{label}</div>
-      <div className={styles.statSectionRow}>
-        <div className={styles.statSectionItem}>
-          <div className={styles.statSectionValue}>{volumes ?? '—'}</div>
-          <div className={styles.statSectionDetail}>Volumes</div>
-        </div>
-        <div className={styles.statSectionItem}>
-          <div className={styles.statSectionValue}>{downloaded ?? '—'}</div>
-          <div className={styles.statSectionDetail}>Downloaded</div>
-        </div>
-        <div className={styles.statSectionItem}>
-          <div className={styles.statSectionValue}>{wanted ?? '—'}</div>
-          <div className={styles.statSectionDetail}>Wanted</div>
-        </div>
-      </div>
-    </Card>
+    <Link to={to} search={search as never} className={styles.metricLink}>
+      <Card className={styles.metricCard}>
+        <span className={styles.metricValue}>{value ?? '—'}</span>
+        <span className={styles.metricLabel}>{label}</span>
+      </Card>
+    </Link>
   );
 }

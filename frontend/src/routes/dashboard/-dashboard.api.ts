@@ -1,15 +1,18 @@
 import { queryOptions } from '@tanstack/react-query';
+import { z } from 'zod';
 import { apiClient, readJson } from '@/app/api-client';
-import type { NavBadges, VolumeStats, VolumeCard } from './-dashboard.types';
+import type { NavBadges, VolumeCard } from './-dashboard.types';
 
-interface RawVolumeEntry {
-  id: number;
-  title: string;
-  year: number | null;
-  publisher: string | null;
-  issue_count: number;
-  issues_downloaded: number;
-}
+const volumeStatsSchema = z.object({
+  volumes: z.number().int().nonnegative(), monitored: z.number().int().nonnegative(), unmonitored: z.number().int().nonnegative(),
+  issues: z.number().int().nonnegative(), downloaded_issues: z.number().int().nonnegative(),
+  missing_monitored: z.number().int().nonnegative(), upcoming_monitored: z.number().int().nonnegative(),
+  unmonitored_issues: z.number().int().nonnegative(), failed_downloads: z.number().int().nonnegative(),
+  active_downloads: z.number().int().nonnegative(), import_problems: z.number().int().nonnegative(),
+  files: z.number().int().nonnegative().optional(), total_file_size: z.number().nonnegative().optional(),
+});
+const rawVolumeEntrySchema = z.object({ id: z.number().int(), title: z.string(), year: z.number().nullable(), publisher: z.string().nullable(), issue_count: z.number().int(), issues_downloaded: z.number().int() });
+const queueEntrySchema = z.object({ id: z.number().int() }).passthrough();
 
 interface RawHistoryEntry {
   web_title: string | null;
@@ -43,7 +46,7 @@ export function comicStatsQueryOptions() {
     queryFn: () =>
       apiClient
         .get('volumes/stats', { searchParams: { section: 'comic' } })
-        .then((r) => readJson<VolumeStats>(r)),
+        .then((r) => readJson(r, volumeStatsSchema)),
     staleTime: 30_000,
   });
 }
@@ -54,7 +57,7 @@ export function mangaStatsQueryOptions() {
     queryFn: () =>
       apiClient
         .get('volumes/stats', { searchParams: { section: 'manga' } })
-        .then((r) => readJson<VolumeStats>(r)),
+        .then((r) => readJson(r, volumeStatsSchema)),
     staleTime: 30_000,
   });
 }
@@ -66,7 +69,7 @@ export function recentlyAddedQueryOptions(section: 'comic' | 'manga') {
       const params: Record<string, string> = { sort: 'recently_added' };
       if (section === 'manga') params.section = 'manga';
       const r = await apiClient.get('volumes', { searchParams: params });
-      const data = await readJson<RawVolumeEntry[]>(r);
+      const data = await readJson(r, z.array(rawVolumeEntrySchema));
       return (Array.isArray(data) ? data : [])
         .slice(0, 6)
         .map(
@@ -80,7 +83,7 @@ export function recentlyAddedQueryOptions(section: 'comic' | 'manga') {
 export function dashboardQueueQueryOptions() {
   return queryOptions({
     queryKey: ['activity', 'queue', 'dashboard'],
-    queryFn: () => apiClient.get('activity/queue').then((r) => readJson<unknown[]>(r)),
+    queryFn: () => apiClient.get('activity/queue').then((r) => readJson(r, z.array(queueEntrySchema))),
     staleTime: 5_000,
   });
 }

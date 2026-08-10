@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { setApiKey, clearApiKey, getUrlBase } from '@/app/api-client';
+import { setApiKey, clearApiKey, getUrlBase, readJson } from '@/app/api-client';
+import { z } from 'zod';
+
+const loginResultSchema = z.object({ api_key: z.string().min(1) });
+const publicSettingsSchema = z.object({ authentication_method: z.number().int() }).passthrough();
+const emptyObjectSchema = z.object({}).strict();
 
 const API_KEY_STORAGE_KEY = 'kapowarr_api_key';
 
@@ -32,10 +37,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const msg = response.status === 401 ? 'Invalid credentials' : `Login failed (${response.status})`;
       throw new Error(msg);
     }
-    const data = await response.json() as { error: string | null; result: { api_key: string } };
-    if (data.error) throw new Error(data.error);
-    setApiKey(data.result.api_key);
-    set({ apiKey: data.result.api_key, isAuthenticated: true });
+    const data = await readJson(response, loginResultSchema);
+    setApiKey(data.api_key);
+    set({ apiKey: data.api_key, isAuthenticated: true });
   },
 
   logout: () => {
@@ -50,12 +54,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const base = getUrlBase();
       const pubRes = await fetch(`${base}/api/public`);
       if (pubRes.ok) {
-        const pubData = await pubRes.json() as {
-          error: string | null;
-          result: { authentication_method: number };
-        };
-        if (pubData.result?.authentication_method === 0) {
-          set({ isAuthenticated: true, authRequired: false, isChecking: false, initialized: true });
+        const pubData = await readJson(pubRes, publicSettingsSchema);
+        if (pubData.authentication_method === 0) {
+          const keyResponse = await fetch(`${base}/api/auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          });
+          if (!keyResponse.ok) throw new Error('Failed to provision API key');
+          const keyData = await readJson(keyResponse, loginResultSchema);
+          setApiKey(keyData.api_key);
+          set({
+            apiKey: keyData.api_key,
+            isAuthenticated: true,
+            authRequired: false,
+            isChecking: false,
+            initialized: true,
+          });
           return;
         }
       }
@@ -72,6 +87,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       if (checkRes.ok) {
+        await readJson(checkRes, emptyObjectSchema);
         setApiKey(storedKey);
         set({ apiKey: storedKey, isAuthenticated: true, isChecking: false, initialized: true });
       } else {

@@ -65,6 +65,21 @@ class PaginationApiDefaultsTests(unittest.TestCase):
         self.assertEqual(get_history.call_count, 2)
         get_count.assert_called_once_with(None, None)
 
+    def test_history_failed_filter_is_applied_to_list_and_count(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        with request_patch, settings_patch, timer_patch, patch.object(
+            api_mod, 'get_download_history', return_value=[]
+        ) as get_history, patch.object(
+            api_mod, 'get_download_history_count', return_value=0
+        ) as get_count:
+            response = self._client().get(
+                '/api/activity/history?paginated=true&state=failed'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        get_history.assert_called_once_with(None, None, 0, 'failed')
+        get_count.assert_called_once_with(None, None, 'failed')
+
     def test_blocklist_legacy_and_paginated_shapes(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         entry = MagicMock()

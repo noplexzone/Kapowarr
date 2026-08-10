@@ -1,6 +1,24 @@
 import type { SectionType, VolumesSearch, VolumeSummary } from './-comics.types';
 import { getUrlBase } from '@/app/api-client';
 
+export interface BoundedResult<T> { id: number; status: 'fulfilled' | 'rejected'; value?: T; reason?: unknown }
+
+export async function runBounded<T>(ids: number[], concurrency: number, action: (id: number) => Promise<T>): Promise<BoundedResult<T>[]> {
+  const results: BoundedResult<T>[] = new Array(ids.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, concurrency), ids.length) }, async () => {
+    while (true) {
+      const index = next++;
+      if (index >= ids.length) return;
+      const id = ids[index];
+      try { results[index] = { id, status: 'fulfilled', value: await action(id) }; }
+      catch (reason) { results[index] = { id, status: 'rejected', reason }; }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export function formatVolumeTitle(volume: VolumeSummary): string {
   return volume.title;
 }

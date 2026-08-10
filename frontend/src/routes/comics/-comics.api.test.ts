@@ -44,7 +44,7 @@ describe('volume list pagination', () => {
     expect(result).toMatchObject({ total: 1167, offset: 2, page_size: 60 });
     expect(result.volumes).toHaveLength(1);
     expect(result.volumes[0]?.progress).toEqual({ have: 2, total: 5 });
-    expect(parse).toHaveBeenCalledWith(response);
+    expect(parse).toHaveBeenCalledWith(response, expect.anything());
   });
 
   it('fails closed when the response shape is not paginated', async () => {

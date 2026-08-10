@@ -1,4 +1,5 @@
 import ky from 'ky';
+import type { ZodType } from 'zod';
 import { runtimeConfig } from './runtime-config';
 
 const API_KEY_STORAGE_KEY = 'kapowarr_api_key';
@@ -42,12 +43,12 @@ interface ApiEnvelope<T> {
   result: T;
 }
 
-export async function readJson<T>(response: Response): Promise<T> {
-  const data = (await response.json()) as ApiEnvelope<T>;
+export async function readJson<T>(response: Response, schema?: ZodType<T>): Promise<T> {
+  const data = (await response.json()) as ApiEnvelope<unknown>;
 
   if (data.error) {
     throw new Error(data.error);
   }
 
-  return data.result;
+  return schema ? schema.parse(data.result) : data.result as T;
 }

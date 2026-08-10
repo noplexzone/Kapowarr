@@ -198,8 +198,12 @@ const mangaAddRedirectRoute = createRoute({
 });
 
 // Add volume
-const addSearchSchema = z.object({
+export const addSearchSchema = z.object({
   section: z.enum(['comic', 'manga']).default('comic').catch('comic'),
+  metadata_source: z.enum(['comicvine', 'mangadex']).optional().catch(undefined),
+  metadata_id: z.string().min(1).optional().catch(undefined),
+  title: z.string().min(1).optional().catch(undefined),
+  metadata_language: z.string().min(2).max(16).optional().catch(undefined),
 });
 
 const addRoute = createRoute({
@@ -211,7 +215,8 @@ const addRoute = createRoute({
   },
   component: function AddRouteComponent() {
     const search = addRoute.useSearch();
-    return <AddPage section={search.section} />;
+    const selection = search.metadata_source && search.metadata_id && search.title ? { metadata_source: search.metadata_source, metadata_id: search.metadata_id, title: search.title, metadata_language: search.metadata_language } : undefined;
+    return <AddPage section={search.section} selection={selection} />;
   },
 });
 
@@ -228,19 +233,20 @@ const queueRoute = createRoute({
 // Activity — History
 const historySearchSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0).catch(0),
+  state: z.enum(['all', 'downloaded', 'failed', 'cancelled']).default('all').catch('all'),
 });
 
 const historyRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'activity/history',
   validateSearch: historySearchSchema,
-  loaderDeps: ({ search }: any) => ({ offset: search.offset }),
+  loaderDeps: ({ search }: any) => ({ offset: search.offset, state: search.state }),
   loader: async ({ context, deps }: any) => {
-    await context.queryClient.ensureQueryData(historyQueryOptions(deps.offset));
+    await context.queryClient.ensureQueryData(historyQueryOptions(deps.offset, deps.state));
   },
   component: function HistoryRouteComponent() {
     const search = historyRoute.useSearch();
-    return <HistoryPage offset={search.offset} />;
+    return <HistoryPage offset={search.offset} state={search.state} />;
   },
 });
 

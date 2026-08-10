@@ -1096,8 +1096,28 @@ class Library:
                         WHERE rf.section = '{section}'
                     )
                 ) AS downloaded_issues,
-                (SELECT COUNT(*) FROM files) AS files,
-                (SELECT IFNULL(SUM(size), 0) FROM files) AS total_file_size
+                (SELECT COUNT(*) FROM issues i
+                    WHERE i.monitored = 1 AND (i.date IS NULL OR i.date <= date('now'))
+                    AND NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.issue_id = i.id)
+                    AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}')
+                ) AS missing_monitored,
+                (SELECT COUNT(*) FROM issues i
+                    WHERE i.monitored = 1 AND i.date > date('now')
+                    AND NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.issue_id = i.id)
+                    AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}')
+                ) AS upcoming_monitored,
+                (SELECT COUNT(*) FROM issues i
+                    WHERE i.monitored = 0
+                    AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}')
+                ) AS unmonitored_issues,
+                (SELECT COUNT(*) FROM download_history WHERE success = 0) AS failed_downloads,
+                (SELECT COUNT(*) FROM download_queue) AS active_downloads,
+                (SELECT COUNT(*) FROM files f
+                    WHERE NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.file_id = f.id)
+                    AND NOT EXISTS (SELECT 1 FROM volume_files vf WHERE vf.file_id = f.id)
+                ) AS import_problems,
+                (SELECT COUNT(DISTINCT f.id) FROM files f INNER JOIN issues_files if ON if.file_id = f.id INNER JOIN issues i ON i.id = if.issue_id INNER JOIN volumes vol ON vol.id = i.volume_id INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}') AS files,
+                (SELECT IFNULL(SUM(size), 0) FROM (SELECT DISTINCT f.id, f.size FROM files f INNER JOIN issues_files if ON if.file_id = f.id INNER JOIN issues i ON i.id = if.issue_id INNER JOIN volumes vol ON vol.id = i.volume_id INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}')) AS total_file_size
             FROM v;
         """).fetchonedict() or {}
         return result

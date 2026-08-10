@@ -14,20 +14,19 @@ import type { SearchResult } from '../-add.types';
 import { getUrlBase } from '@/app/api-client';
 import styles from './add-page.module.css';
 
-interface AddPageProps {
-  section: 'comic' | 'manga';
-}
+interface AddSelection { metadata_source: 'comicvine' | 'mangadex'; metadata_id: string; title: string; metadata_language?: string }
+interface AddPageProps { section: 'comic' | 'manga'; selection?: AddSelection }
 
-export function AddPage({ section }: AddPageProps) {
+export function AddPage({ section, selection }: AddPageProps) {
   const navigate = useNavigate();
-  const [rawQuery, setRawQuery] = useState('');
-  const [query, setQuery] = useState('');
+  const [rawQuery, setRawQuery] = useState(selection?.title ?? '');
+  const [query, setQuery] = useState(selection?.title ?? '');
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
-  const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>('comicvine');
+  const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>(selection?.metadata_source ?? 'comicvine');
 
   useEffect(() => {
-    setMetadataSource('comicvine');
-  }, [section]);
+    setMetadataSource(selection?.metadata_source ?? 'comicvine');
+  }, [section, selection?.metadata_source]);
 
   useEffect(() => {
     const trimmed = rawQuery.trim();
@@ -52,14 +51,23 @@ export function AddPage({ section }: AddPageProps) {
 
   const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
 
+  useEffect(() => {
+    if (!selection || modalResult || results.length === 0) return;
+    const selected = results.find((result) =>
+      (result.metadata_source ?? 'comicvine') === selection.metadata_source
+      && String(result.metadata_id ?? result.comicvine_id) === selection.metadata_id
+    );
+    if (selected) setModalResult({ ...selected, metadata_language: selection.metadata_language ?? selected.metadata_language });
+  }, [selection, results, modalResult]);
+
   const sectionLabel = section === 'manga' ? 'Manga' : 'Comics';
   const placeholder = `Search ${sectionLabel}…`;
 
   const openModal = useCallback((result: SearchResult) => {
     if ((result.id ?? result.already_added) != null) {
       navigate({
-        to: section === 'manga' ? '/manga' : '/comics',
-        search: { sort: 'title', filter: '', view: 'posters', offset: 0 },
+        to: '/volumes/$volumeId',
+        params: { volumeId: String(result.id ?? result.already_added) },
       });
       return;
     }

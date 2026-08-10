@@ -13,6 +13,12 @@ export interface VolumeStats {
   unmonitored: number;
   issues: number;
   downloaded_issues: number;
+  missing_monitored: number;
+  upcoming_monitored: number;
+  unmonitored_issues: number;
+  failed_downloads: number;
+  active_downloads: number;
+  import_problems: number;
   files?: number;
   total_file_size?: number;
 }

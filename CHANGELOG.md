@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Preserve Discovery and story-arc metadata identity through Add review, with exact volume redirects for existing and newly added titles.
+- Report truthful monitored issue health and operational dashboard metrics with actionable filtered destinations.
+- Bound selected library mutations to four concurrent requests with partial-failure feedback and validate focused API responses at runtime with Zod.
 - Add truthful server-side library pagination with URL-backed page controls that cap rendered records at 60 per page.
 - Add poster-first library controls, responsive volume-detail issue cards, operational dashboard refresh/error states, and safer settings workflows.
 - Add shared loading, error, empty, form, status, pagination, focus, motion, and touch-target foundations.

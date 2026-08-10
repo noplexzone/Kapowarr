@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import { z } from 'zod';
 import { apiClient, readJson } from '@/app/api-client';
 import type { HistoryEntry, HistoryResponse } from './-history.types';
 
@@ -27,25 +28,24 @@ function toHistoryEntry(raw: RawHistoryEntry, idx: number): HistoryEntry {
   };
 }
 
-export function historyQueryOptions(offset: number) {
+export type HistoryState = 'all' | 'downloaded' | 'failed' | 'cancelled';
+
+export function historyQueryOptions(offset: number, state: HistoryState = 'all') {
   return queryOptions({
-    queryKey: [...HISTORY_KEY, offset],
-    queryFn: () => getHistory(offset),
+    queryKey: [...HISTORY_KEY, offset, state],
+    queryFn: () => getHistory(offset, state),
     staleTime: 30_000,
   });
 }
 
-interface RawHistoryResponse {
-  entries: RawHistoryEntry[];
-  total: number;
-  offset: number;
-  page_size: number;
-}
+const rawHistoryEntrySchema = z.object({ web_link: z.string(), web_title: z.string().nullable(), web_sub_title: z.string().nullable(), file_title: z.string().nullable(), volume_id: z.number().int().nullable(), issue_id: z.number().int().nullable(), source: z.string().nullable(), source_name: z.string().nullable(), downloaded_at: z.number(), success: z.boolean().nullable() });
+const rawHistoryResponseSchema = z.object({ entries: z.array(rawHistoryEntrySchema), total: z.number().int().nonnegative(), offset: z.number().int().nonnegative(), page_size: z.number().int().positive() });
+const emptyObjectSchema = z.object({}).strict();
 
-async function getHistory(offset: number): Promise<HistoryResponse> {
-  const sp = new URLSearchParams({ offset: String(offset), paginated: 'true' });
+async function getHistory(offset: number, state: HistoryState): Promise<HistoryResponse> {
+  const sp = new URLSearchParams({ offset: String(offset), paginated: 'true', state });
   const response = await apiClient.get('activity/history', { searchParams: sp });
-  const data = await readJson<RawHistoryResponse>(response);
+  const data = await readJson(response, rawHistoryResponseSchema);
   if (!data || !Array.isArray(data.entries) || !Number.isInteger(data.total)) {
     throw new Error('Invalid paginated history response');
   }
@@ -58,5 +58,5 @@ async function getHistory(offset: number): Promise<HistoryResponse> {
 
 export async function clearHistory(): Promise<void> {
   const response = await apiClient.delete('activity/history');
-  await readJson<unknown>(response);
+  await readJson(response, emptyObjectSchema);
 }

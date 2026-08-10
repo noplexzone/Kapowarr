@@ -1933,13 +1933,24 @@ def api_download_history():
         volume_id: int = extract_key(request, 'volume_id', False)
         issue_id: int = extract_key(request, 'issue_id', False)
         offset: int = extract_key(request, 'offset', False)
-        result = get_download_history(
-            volume_id, issue_id,
-            offset
-        )
+        state = extract_key(request, 'state', False) or 'all'
+        if state not in ('all', 'downloaded', 'failed', 'cancelled'):
+            raise InvalidKeyValue('state', state)
+        history_state = None if state == 'all' else state
+        if history_state is None:
+            result = get_download_history(volume_id, issue_id, offset)
+        else:
+            result = get_download_history(
+                volume_id, issue_id, offset, history_state
+            )
         if request.values.get('paginated') != 'true':
             return return_api(result)
-        total = get_download_history_count(volume_id, issue_id)
+        if history_state is None:
+            total = get_download_history_count(volume_id, issue_id)
+        else:
+            total = get_download_history_count(
+                volume_id, issue_id, history_state
+            )
         return return_api({
             'entries': result,
             'total': total,

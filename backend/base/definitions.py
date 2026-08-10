@@ -397,7 +397,9 @@ class LibraryFilter(BaseEnum):
     `WHERE ...` SQL statement
     """
 
-    WANTED = "WHERE issues_downloaded_monitored < issue_count_monitored"
+    WANTED = "WHERE EXISTS (SELECT 1 FROM vol_issues i WHERE i.monitored = 1 AND (i.date IS NULL OR i.date <= date('now')) AND NOT EXISTS (SELECT 1 FROM issues_to_files f WHERE f.issue_id = i.id))"
+    UPCOMING = "WHERE EXISTS (SELECT 1 FROM vol_issues i WHERE i.monitored = 1 AND i.date > date('now') AND NOT EXISTS (SELECT 1 FROM issues_to_files f WHERE f.issue_id = i.id))"
+    UNMONITORED = "WHERE EXISTS (SELECT 1 FROM vol_issues i WHERE i.monitored = 0)"
     MONITORED = "WHERE monitored = 1"
 
 

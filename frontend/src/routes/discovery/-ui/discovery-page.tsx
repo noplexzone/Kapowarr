@@ -8,6 +8,7 @@ import {
   storyArcsQueryOptions,
   storyArcDetailQueryOptions,
 } from '../-discovery.api';
+import { getDiscoveryAddSearch } from '../-discovery.types';
 import type { DiscoveryVolume, StoryArc, DiscoveryType, DiscoverySection } from '../-discovery.types';
 import styles from './discovery-page.module.css';
 
@@ -108,8 +109,12 @@ function VolumeGridView({ type, section }: { type: 'upcoming' | 'new'; section: 
   const navigate = useNavigate();
   const { data: volumes = [], isFetching } = useQuery(discoveryVolumeQueryOptions(type, section));
 
-  const handleClick = (_vol: DiscoveryVolume) => {
-    navigate({ to: '/add', search: { section } });
+  const handleClick = (vol: DiscoveryVolume) => {
+    if (vol.already_added != null) {
+      navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
+      return;
+    }
+    navigate({ to: '/add', search: getDiscoveryAddSearch(vol, section) });
   };
 
   if (isFetching && volumes.length === 0) {
@@ -142,11 +147,9 @@ function VolumeCard({ volume, onClick }: { volume: DiscoveryVolume; onClick: (v:
           <div className={styles.coverPlaceholder}>📚</div>
         )}
         <div className={styles.overlayActions}>
-          {isAdded ? (
-            <span className={styles.overlayInLibrary}>✓ In Library</span>
-          ) : (
-            <button className={styles.overlayAddBtn} onClick={() => onClick(volume)}>+ Add</button>
-          )}
+          <button className={isAdded ? styles.overlayInLibrary : styles.overlayAddBtn} onClick={() => onClick(volume)}>
+            {isAdded ? '✓ Open in Library' : '+ Add'}
+          </button>
         </div>
       </div>
       <div className={styles.cardBody}>
@@ -242,7 +245,11 @@ function ArcDetailModal({ id, section, onClose }: { id: number; section: Discove
                 volume={vol}
                 onClick={() => {
                   onClose();
-                  navigate({ to: '/add', search: { section } });
+                  if (vol.already_added != null) {
+                    navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
+                  } else {
+                    navigate({ to: '/add', search: getDiscoveryAddSearch(vol, section) });
+                  }
                 }}
               />
             ))}

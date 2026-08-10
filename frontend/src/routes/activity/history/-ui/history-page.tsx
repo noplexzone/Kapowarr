@@ -5,16 +5,18 @@ import { Badge, Button } from '@/components/primitives';
 import { Pagination } from '@/components/pagination/pagination';
 import { DialogFrame, DialogHeader, DialogBody, DialogFooter } from '@/components/dialog';
 import { historyQueryOptions, HISTORY_KEY, clearHistory } from '../-history.api';
+import type { HistoryState } from '../-history.api';
 import styles from './history-page.module.css';
 
 interface HistoryPageProps {
   offset: number;
+  state: HistoryState;
 }
 
-export function HistoryPage({ offset }: HistoryPageProps) {
+export function HistoryPage({ offset, state }: HistoryPageProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { data } = useSuspenseQuery(historyQueryOptions(offset));
+  const { data } = useSuspenseQuery(historyQueryOptions(offset, state));
   const [confirmClear, setConfirmClear] = useState(false);
 
   const entries = data?.entries ?? [];
@@ -26,21 +28,21 @@ export function HistoryPage({ offset }: HistoryPageProps) {
     onSuccess: () => {
       setConfirmClear(false);
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
-      navigate({ to: '/activity/history', search: { offset: 0 } });
+      navigate({ to: '/activity/history', search: { offset: 0, state } });
     },
   });
 
   const goToPage = (page: number) => {
     navigate({
       to: '/activity/history',
-      search: { offset: page },
+      search: { offset: page, state },
     });
   };
 
   return (
     <div className={styles.page}>
       <div className={styles.toolbar}>
-        <span className={styles.toolbarTitle}>{total} download{total !== 1 ? 's' : ''}</span>
+        <span className={styles.toolbarTitle}>{total} {state === 'all' ? '' : `${state} `}download{total !== 1 ? 's' : ''}</span>
         <Button
           variant="secondary"
           onClick={() => setConfirmClear(true)}

@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import { z } from 'zod';
 import { apiClient, readJson, getUrlBase } from '@/app/api-client';
 import type { VolumesSearch, VolumeSummary, VolumeListResponse, VolumeDetail, SectionType } from './-comics.types';
 
@@ -53,12 +54,12 @@ function toVolumeDetail(raw: Record<string, any>): VolumeDetail {
 
 const VOLUME_PAGE_SIZE = 60;
 
-interface RawVolumeListResponse {
-  items: Record<string, any>[];
-  total: number;
-  offset: number;
-  page_size: number;
-}
+const rawVolumeListSchema = z.object({
+  items: z.array(z.record(z.unknown())), total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(), page_size: z.number().int().positive(),
+});
+const emptyObjectSchema = z.object({}).strict();
+const nullSchema = z.null();
 
 async function fetchVolumeList(params: VolumesSearch, section: SectionType): Promise<VolumeListResponse> {
   const sp = new URLSearchParams();
@@ -71,7 +72,7 @@ async function fetchVolumeList(params: VolumesSearch, section: SectionType): Pro
   sp.set('limit', String(VOLUME_PAGE_SIZE));
 
   const response = await apiClient.get('volumes', { searchParams: sp });
-  const data = await readJson<RawVolumeListResponse>(response);
+  const data = await readJson(response, rawVolumeListSchema);
   if (
     !data
     || !Array.isArray(data.items)
@@ -122,12 +123,12 @@ export async function runVolumeTask(id: number, cmd: VolumeTaskCommand): Promise
 
 export async function setVolumeMonitored(id: number, monitored: boolean): Promise<void> {
   const response = await apiClient.put(`volumes/${id}`, { json: { monitored } });
-  await readJson<null>(response);
+  await readJson(response, nullSchema);
 }
 
 export async function deleteLibraryVolume(id: number): Promise<void> {
   const response = await apiClient.delete(`volumes/${id}`, {
     searchParams: { delete_folder: 'false' },
   });
-  await readJson<Record<string, never>>(response);
+  await readJson(response, emptyObjectSchema);
 }

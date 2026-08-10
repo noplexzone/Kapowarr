@@ -27,7 +27,7 @@ import {
 } from '../-comics.types';
 import { ComicCard } from './comic-card';
 import { ComicTableRow } from './comic-table-row';
-import { getSelectionScopeKey } from '../-comics.helpers';
+import { getSelectionScopeKey, runBounded } from '../-comics.helpers';
 import styles from './comics-page.module.css';
 
 interface ComicsPageProps {
@@ -147,7 +147,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   ) => {
     const ids = [...selectedIds];
     await performAction(name, async () => {
-      const results = await Promise.allSettled(ids.map(action));
+      const results = await runBounded(ids, 4, action);
       const failures = results.filter((result) => result.status === 'rejected');
       if (failures.length) {
         throw new Error(`${failures.length} of ${ids.length} selected volumes failed.`);

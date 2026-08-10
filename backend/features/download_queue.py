@@ -1172,7 +1172,8 @@ class DownloadHandler(metaclass=Singleton):
 def get_download_history(
     volume_id: Union[int, None] = None,
     issue_id: Union[int, None] = None,
-    offset: int = 0
+    offset: int = 0,
+    state: Union[str, None] = None
 ) -> List[Dict[str, Any]]:
     """Get the download history in blocks of 50.
 
@@ -1233,19 +1234,25 @@ def get_download_history(
             OFFSET :offset;
             """
 
+    if state is not None:
+        clause = {'downloaded': 'success = 1', 'failed': 'success = 0', 'cancelled': 'success IS NULL'}[state]
+        comm = comm.replace('ORDER BY downloaded_at', ('AND ' if 'WHERE' in comm else 'WHERE ') + clause + '\n            ORDER BY downloaded_at')
+
     return get_db().execute(
         comm,
         {
             'issue_id': issue_id,
             'volume_id': volume_id,
-            'offset': offset * 50
+            'offset': offset * 50,
+            'state': state
         }
     ).fetchalldict()
 
 
 def get_download_history_count(
     volume_id: Union[int, None] = None,
-    issue_id: Union[int, None] = None
+    issue_id: Union[int, None] = None,
+    state: Union[str, None] = None
 ) -> int:
     """Return a truthful count using the same history scope as the list."""
     if issue_id is not None:
@@ -1254,9 +1261,12 @@ def get_download_history_count(
         where = "WHERE volume_id = :volume_id"
     else:
         where = ""
+    if state is not None:
+        clause = {'downloaded': 'success = 1', 'failed': 'success = 0', 'cancelled': 'success IS NULL'}[state]
+        where += (' AND ' if where else ' WHERE ') + clause
     return int(get_db().execute(
         f"SELECT COUNT(*) FROM download_history {where};",
-        {'issue_id': issue_id, 'volume_id': volume_id}
+        {'issue_id': issue_id, 'volume_id': volume_id, 'state': state}
     ).fetchone()[0] or 0)
 
 

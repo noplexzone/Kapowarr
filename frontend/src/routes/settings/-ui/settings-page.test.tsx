@@ -10,7 +10,17 @@ const settings: AllSettings = {
 vi.mock('@tanstack/react-router', () => ({ useBlocker }));
 vi.mock('../-settings.api', async () => {
   const actual = await vi.importActual<typeof import('../-settings.api')>('../-settings.api');
-  return { ...actual, updateSettings, settingsQueryOptions: () => ({ queryKey: ['settings'], queryFn: async () => settings, staleTime: Infinity }), suwayomiSourcesQueryOptions: () => ({ queryKey: ['suwayomi-sources'], queryFn: async () => ({ sources: [] }) }) };
+  return {
+    ...actual,
+    updateSettings,
+    settingsQueryOptions: () => ({ queryKey: ['settings'], queryFn: async () => settings, staleTime: Infinity }),
+    suwayomiSourcesQueryOptions: () => ({ queryKey: ['suwayomi-sources'], queryFn: async () => ({ sources: [] }) }),
+    rootFoldersQueryOptions: () => ({ queryKey: ['root-folders'], queryFn: async () => [] }),
+    nzbIndexersQueryOptions: () => ({ queryKey: ['nzb-indexers'], queryFn: async () => [] }),
+    externalClientsQueryOptions: () => ({ queryKey: ['external-clients'], queryFn: async () => [] }),
+    clientOptionsQueryOptions: () => ({ queryKey: ['client-options'], queryFn: async () => ({}) }),
+    remoteMappingsQueryOptions: () => ({ queryKey: ['remote-mappings'], queryFn: async () => [] }),
+  };
 });
 import { SettingsPage } from './settings-page';
 import { SettingsField } from './settings-field';
@@ -31,12 +41,12 @@ describe('SettingsField', () => {
 
 describe('SettingsPage', () => {
   beforeEach(() => { vi.clearAllMocks(); updateSettings.mockResolvedValue(undefined); document.documentElement.dataset.theme = 'dark-mode'; });
-  it('searches user-facing labels and help text and selects the matching category', async () => {
+  it('filters categories by user-facing labels and help without navigating away from a draft', async () => {
     const onCategoryChange = vi.fn(); renderPage({ onCategoryChange });
     fireEvent.change(await screen.findByLabelText('Search settings'), { target: { value: 'API key' } });
     expect(screen.getByRole('button', { name: 'Metadata' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'General' })).toBeNull();
-    expect(onCategoryChange).toHaveBeenCalledWith('metadata');
+    expect(onCategoryChange).not.toHaveBeenCalled();
   });
   it('associates labels and help descriptions with controls', async () => {
     renderPage(); const host = await screen.findByLabelText('Host');
@@ -60,10 +70,64 @@ describe('SettingsPage', () => {
     const options = useBlocker.mock.calls[useBlocker.mock.calls.length - 1]?.[0];
     expect(options.disabled).toBe(false);
     expect(options.enableBeforeUnload).toBe(true);
-    expect(options.shouldBlockFn()).toBe(true);
+    expect(options.shouldBlockFn({
+      current: { pathname: '/settings', search: { category: 'general' } },
+      next: { pathname: '/comics', search: {} },
+    })).toBe(true);
     expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/unsaved settings/i));
     confirm.mockReturnValue(true);
-    expect(options.shouldBlockFn()).toBe(false);
+    expect(options.shouldBlockFn({
+      current: { pathname: '/settings', search: { category: 'general' } },
+      next: { pathname: '/comics', search: {} },
+    })).toBe(false);
+    confirm.mockRestore();
+  });
+  it('does not prompt for same-route category navigation that preserves a top-level draft', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('Host'), { target: { value: '127.0.0.1' } });
+    const options = useBlocker.mock.calls[useBlocker.mock.calls.length - 1]?.[0];
+    expect(options.shouldBlockFn({
+      current: { pathname: '/settings', search: { category: 'general' } },
+      next: { pathname: '/settings', search: { category: 'metadata' } },
+    })).toBe(false);
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+  it('protects a root-folder editor draft that category navigation would unmount', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderPage({ category: 'root-folders' });
+    fireEvent.change(await screen.findByLabelText('Path'), { target: { value: '/library/comics' } });
+    await waitFor(() => {
+      const options = useBlocker.mock.calls[useBlocker.mock.calls.length - 1]?.[0];
+      expect(options.disabled).toBe(false);
+      expect(options.enableBeforeUnload).toBe(true);
+      expect(options.shouldBlockFn({
+        current: { pathname: '/settings', search: { category: 'root-folders' } },
+        next: { pathname: '/settings', search: { category: 'general' } },
+      })).toBe(true);
+    });
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/root folder/i));
+    confirm.mockRestore();
+  });
+  it.each([
+    ['indexers', 'Add NZB Indexer', 'Name', 'My indexer', 'NZB indexer'],
+    ['download-clients', 'Add Download Client', 'Title', 'My client', 'download client'],
+    ['remote-mappings', 'Add Remote Path Mapping', 'Remote Path', '/downloads', 'remote path mapping'],
+  ] as const)('protects a %s editor draft', async (category, addButton, fieldLabel, value, promptLabel) => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderPage({ category });
+    fireEvent.click(await screen.findByRole('button', { name: addButton }));
+    fireEvent.change(screen.getByLabelText(fieldLabel), { target: { value } });
+    await waitFor(() => {
+      const options = useBlocker.mock.calls[useBlocker.mock.calls.length - 1]?.[0];
+      expect(options.disabled).toBe(false);
+      expect(options.shouldBlockFn({
+        current: { pathname: '/settings', search: { category } },
+        next: { pathname: '/settings', search: { category: 'general' } },
+      })).toBe(true);
+    });
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining(promptLabel));
     confirm.mockRestore();
   });
   it('blocks invalid edited settings and renders an inline error', async () => {

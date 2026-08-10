@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
+import type { ShouldBlockFn } from '@tanstack/react-router';
 import { Button, Notice } from '@/components/primitives';
 import { useShellStore } from '@/platform/shell/store';
 import { settingsQueryOptions, updateSettings, SETTINGS_KEY, suwayomiSourcesQueryOptions } from '../-settings.api';
@@ -10,10 +11,15 @@ import { validateChangedSettings } from '../-settings-validation';
 import { SETTINGS_CATEGORIES, SettingsCategoryPanel } from './settings-category-panels';
 import type { SettingsCategory } from './settings-category-panels';
 import { ExternalClientsSection, NZBIndexersSection, RemoteMappingsSection, RootFoldersSection } from './settings-service-editors';
+import { SettingsDirtyStateProvider, useSettingsDirtySource, useSettingsDirtyState } from './settings-dirty-state';
 import { SettingsSection } from './settings-field';
 import styles from './settings-page.module.css';
 
-export function SettingsPage({ category = 'general', onCategoryChange }: { category?: SettingsCategory; onCategoryChange?: (category: SettingsCategory) => void }) {
+export function SettingsPage(props: { category?: SettingsCategory; onCategoryChange?: (category: SettingsCategory) => void }) {
+  return <SettingsDirtyStateProvider><SettingsPageContent {...props} /></SettingsDirtyStateProvider>;
+}
+
+function SettingsPageContent({ category = 'general', onCategoryChange }: { category?: SettingsCategory; onCategoryChange?: (category: SettingsCategory) => void }) {
   const queryClient = useQueryClient();
   const { data: settings } = useSuspenseQuery(settingsQueryOptions());
   const [baseline, setBaseline] = useState<AllSettings>(() => ({ ...settings }));
@@ -25,15 +31,25 @@ export function SettingsPage({ category = 'general', onCategoryChange }: { categ
   const [theme, setThemeState] = useState(() => document.documentElement.dataset.theme || 'batman-mode');
   const { data: suwayomiSourcesData, isFetching: suwayomiSourcesFetching } = useQuery({ ...suwayomiSourcesQueryOptions(), enabled: Boolean(form.suwayomi_base_url) });
   const changedSettings = useMemo(() => getChangedSettings(form, baseline), [form, baseline]);
-  const dirtyCount = Object.keys(changedSettings).length;
-  const shouldBlockNavigation = useCallback(
-    () => dirtyCount > 0 && !window.confirm('Continue with unsaved settings changes?'),
-    [dirtyCount],
-  );
+  const topLevelDirtyCount = Object.keys(changedSettings).length;
+  useSettingsDirtySource('settings-form', topLevelDirtyCount > 0, { label: 'settings' });
+  const { dirtySources } = useSettingsDirtyState();
+  const childDirtyCount = dirtySources.filter(source => source.label !== 'settings').length;
+  const dirtyCount = topLevelDirtyCount + childDirtyCount;
+  const shouldBlockNavigation = useCallback<ShouldBlockFn>(({ current, next }) => {
+    const sameSettingsRoute = current.pathname === next.pathname && next.pathname.endsWith('/settings');
+    const nextCategory = (next.search as { category?: SettingsCategory }).category;
+    const sourcesAtRisk = sameSettingsRoute
+      ? dirtySources.filter(source => source.category && source.category !== nextCategory)
+      : dirtySources;
+    if (sourcesAtRisk.length === 0) return false;
+    const labels = [...new Set(sourcesAtRisk.map(source => source.label))].join(' and ');
+    return !window.confirm(`Continue and discard unsaved ${labels} changes?`);
+  }, [dirtySources]);
   useBlocker({
     shouldBlockFn: shouldBlockNavigation,
-    enableBeforeUnload: dirtyCount > 0,
-    disabled: dirtyCount === 0,
+    enableBeforeUnload: dirtySources.length > 0,
+    disabled: dirtySources.length === 0,
   });
   const filteredCategories = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -58,11 +74,6 @@ export function SettingsPage({ category = 'general', onCategoryChange }: { categ
   const selectCategory = (next: SettingsCategory) => onCategoryChange?.(next);
   const handleSearch = (value: string) => {
     setSearch(value);
-    const query = value.trim().toLowerCase();
-    if (query) {
-      const first = SETTINGS_CATEGORIES.find(item => `${item.label} ${item.searchText}`.toLowerCase().includes(query));
-      if (first) selectCategory(first.id);
-    }
   };
   const handleSave = () => {
     const validation = validateChangedSettings(changedSettings);
@@ -87,8 +98,8 @@ export function SettingsPage({ category = 'general', onCategoryChange }: { categ
     <div className={styles.toolbar}>
       <div><h1 className={styles.pageTitle}>Settings</h1><p className={styles.dirtyState} role="status">{dirtyCount ? `${dirtyCount} unsaved ${dirtyCount === 1 ? 'change' : 'changes'}` : 'All changes saved'}</p></div>
       <div className={styles.toolbarRight}>
-        <Button variant="secondary" onClick={discard} disabled={!dirtyCount || mutation.isPending}>Discard</Button>
-        <Button variant="primary" onClick={handleSave} disabled={!dirtyCount || mutation.isPending}>{mutation.isPending ? 'Saving…' : 'Save Changes'}</Button>
+        <Button variant="secondary" onClick={discard} disabled={!topLevelDirtyCount || mutation.isPending}>Discard</Button>
+        <Button variant="primary" onClick={handleSave} disabled={!topLevelDirtyCount || mutation.isPending}>{mutation.isPending ? 'Saving…' : 'Save Changes'}</Button>
       </div>
     </div>
     {mutation.isError && <Notice tone="danger">{mutation.error instanceof Error ? mutation.error.message : 'Failed to save settings'}</Notice>}

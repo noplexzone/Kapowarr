@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { Button } from '@/components/primitives';
+import { useSettingsDirtySource } from './settings-dirty-state';
 import { SettingsField as Field, ToggleField } from './settings-field';
 import styles from './settings-page.module.css';
 import { addNzbIndexer, updateNzbIndexer, deleteNzbIndexer, testNzbIndexer, nzbIndexersQueryOptions, NZB_INDEXERS_KEY, externalClientsQueryOptions, clientOptionsQueryOptions, CLIENTS_KEY, CLIENT_OPTIONS_KEY, addExternalClient, updateExternalClient, deleteExternalClient, testExternalClient, remoteMappingsQueryOptions, REMOTE_MAPPINGS_KEY, addRemoteMapping, updateRemoteMapping, deleteRemoteMapping, rootFoldersQueryOptions, ROOT_FOLDERS_KEY, addRootFolder, deleteRootFolder } from '../-settings.api';
@@ -19,9 +20,11 @@ export function NZBIndexersSection() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ name: '', base_url: '', api_key: '', categories: '', enabled: true });
+  const [initialFormData, setInitialFormData] = useState(formData);
   const [testResult, setTestResult] = useState<{success: boolean; description: string | null} | null>(null);
   const [testPending, setTestPending] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  useSettingsDirtySource('nzb-indexer-editor', showForm && JSON.stringify(formData) !== JSON.stringify(initialFormData), { category: 'indexers', label: 'NZB indexer' });
 
   const addMutation = useMutation({
     mutationFn: (data: Partial<NZBIndexer>) => addNzbIndexer(data),
@@ -49,14 +52,18 @@ export function NZBIndexersSection() {
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setFormData({ name: '', base_url: '', api_key: '', categories: '', enabled: true });
+    const emptyForm = { name: '', base_url: '', api_key: '', categories: '', enabled: true };
+    setFormData(emptyForm);
+    setInitialFormData(emptyForm);
     setTestResult(null);
     setShowSecret(false);
   };
 
   const startEdit = (idx: NZBIndexer) => {
+    const editForm = { name: idx.name, base_url: idx.base_url, api_key: idx.api_key, categories: idx.categories, enabled: idx.enabled };
     setEditingId(idx.id);
-    setFormData({ name: idx.name, base_url: idx.base_url, api_key: idx.api_key, categories: idx.categories, enabled: idx.enabled });
+    setFormData(editForm);
+    setInitialFormData(editForm);
     setShowForm(true);
     setTestResult(null);
   };
@@ -165,9 +172,11 @@ export function ExternalClientsSection() {
     api_token: '',
     category: '',
   });
+  const [initialFormData, setInitialFormData] = useState(formData);
   const [testResult, setTestResult] = useState<{success: boolean; description: string | null} | null>(null);
   const [testPending, setTestPending] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  useSettingsDirtySource('download-client-editor', showForm && JSON.stringify(formData) !== JSON.stringify(initialFormData), { category: 'download-clients', label: 'download client' });
 
   // Backend returns download_type as integer: 1=direct, 2=torrent, 3=usenet
   const downloadTypeName = (t: number | string): string => {
@@ -205,14 +214,15 @@ export function ExternalClientsSection() {
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setFormData({ client_type: '', title: '', base_url: '', username: '', password: '', api_token: '', category: '' });
+    const emptyForm = { client_type: '', title: '', base_url: '', username: '', password: '', api_token: '', category: '' };
+    setFormData(emptyForm);
+    setInitialFormData(emptyForm);
     setTestResult(null);
     setShowSecret(false);
   };
 
   const startEdit = (c: ExternalClient) => {
-    setEditingId(c.id);
-    setFormData({
+    const editForm = {
       client_type: c.client_type,
       title: c.title,
       base_url: c.base_url,
@@ -220,7 +230,10 @@ export function ExternalClientsSection() {
       password: c.password || '',
       api_token: c.api_token || '',
       category: c.category || '',
-    });
+    };
+    setEditingId(c.id);
+    setFormData(editForm);
+    setInitialFormData(editForm);
     setShowForm(true);
     setTestResult(null);
   };
@@ -373,6 +386,8 @@ export function RemoteMappingsSection() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ external_download_client_id: 0, remote_path: '', local_path: '' });
+  const [initialFormData, setInitialFormData] = useState(formData);
+  useSettingsDirtySource('remote-mapping-editor', showForm && JSON.stringify(formData) !== JSON.stringify(initialFormData), { category: 'remote-mappings', label: 'remote path mapping' });
 
   const clientLookup = new Map(clients.map(c => [c.id, c]));
 
@@ -402,12 +417,16 @@ export function RemoteMappingsSection() {
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setFormData({ external_download_client_id: 0, remote_path: '', local_path: '' });
+    const emptyForm = { external_download_client_id: 0, remote_path: '', local_path: '' };
+    setFormData(emptyForm);
+    setInitialFormData(emptyForm);
   };
 
   const startEdit = (m: RemoteMapping) => {
+    const editForm = { external_download_client_id: m.external_download_client_id, remote_path: m.remote_path, local_path: m.local_path };
     setEditingId(m.id);
-    setFormData({ external_download_client_id: m.external_download_client_id, remote_path: m.remote_path, local_path: m.local_path });
+    setFormData(editForm);
+    setInitialFormData(editForm);
     setShowForm(true);
   };
 
@@ -485,12 +504,14 @@ export function RootFoldersSection() {
   const { data: folders } = useSuspenseQuery(rootFoldersQueryOptions());
   const [newPath, setNewPath] = useState('');
   const [newSection, setNewSection] = useState('comic');
+  useSettingsDirtySource('root-folder-editor', newPath !== '' || newSection !== 'comic', { category: 'root-folders', label: 'root folder' });
 
   const addMutation = useMutation({
     mutationFn: ({ folder, section }: { folder: string; section: string }) => addRootFolder(folder, section),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ROOT_FOLDERS_KEY });
       setNewPath('');
+      setNewSection('comic');
     },
   });
 

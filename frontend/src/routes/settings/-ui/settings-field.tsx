@@ -1,4 +1,4 @@
-import { cloneElement, useId } from 'react';
+import { Children, cloneElement, useId } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import styles from './settings-page.module.css';
 
@@ -9,8 +9,7 @@ function bindControl(element: ReactElement<ControlProps>, props: ControlProps): 
     return cloneElement(element, props);
   }
   let bound = false;
-  const children = Array.isArray(element.props.children) ? element.props.children : [element.props.children];
-  const nextChildren = children.map((child) => {
+  const nextChildren = Children.map(element.props.children, (child) => {
     if (bound || child == null || typeof child !== 'object' || !('type' in child)) return child;
     const candidate = child as ReactElement<ControlProps>;
     if (typeof candidate.type === 'string' && ['input', 'select', 'textarea'].includes(candidate.type)) {

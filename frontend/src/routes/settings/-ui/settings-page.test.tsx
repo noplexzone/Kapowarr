@@ -12,11 +12,21 @@ vi.mock('../-settings.api', async () => {
   return { ...actual, updateSettings, settingsQueryOptions: () => ({ queryKey: ['settings'], queryFn: async () => settings, staleTime: Infinity }), suwayomiSourcesQueryOptions: () => ({ queryKey: ['suwayomi-sources'], queryFn: async () => ({ sources: [] }) }) };
 });
 import { SettingsPage } from './settings-page';
+import { SettingsField } from './settings-field';
 
 function renderPage(props: Partial<React.ComponentProps<typeof SettingsPage>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(<QueryClientProvider client={client}><SettingsPage {...props} /></QueryClientProvider>);
 }
+
+describe('SettingsField', () => {
+  it('associates labels with nested secret controls rather than their wrapper', () => {
+    render(<SettingsField label="API Token"><div><input type="password" /></div></SettingsField>);
+    const input = screen.getByLabelText('API Token');
+    expect(input.tagName).toBe('INPUT');
+    expect(input.id).toMatch(/^setting-/);
+  });
+});
 
 describe('SettingsPage', () => {
   beforeEach(() => { vi.clearAllMocks(); updateSettings.mockResolvedValue(undefined); document.documentElement.dataset.theme = 'dark-mode'; });

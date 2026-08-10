@@ -5,7 +5,7 @@ from io import BytesIO
 from json import dumps
 from os.path import isfile, join
 
-from flask import Blueprint, Response, redirect, send_file, send_from_directory
+from flask import Blueprint, Response, redirect, request, send_file, send_from_directory
 
 from backend.base.files import folder_path
 from backend.internals.server import Server
@@ -110,12 +110,21 @@ def ui_legacy_service_worker():
 @ui.route('/ui/', defaults={'path': ''}, methods=methods)
 @ui.route('/ui/<path:path>', methods=methods)
 def ui_legacy_spa(path: str):
-    return redirect(_base_url(path), code=308)
+    target = _base_url(path)
+    if request.query_string:
+        target += '?' + request.query_string.decode('latin-1')
+    return redirect(target, code=308)
 
 
 @ui.route('/', defaults={'path': ''}, methods=methods)
 @ui.route('/<path:path>', methods=methods)
 def ui_spa(path: str):
+    if path == 'api' or path.startswith(('api/', 'socket.io/')):
+        return Response(
+            dumps({'error': 'NotFound', 'result': {}}),
+            status=404,
+            mimetype='application/json',
+        )
     if path and isfile(join(SPA_DIR, path)):
         return _serve_static(path)
     return _serve_index()

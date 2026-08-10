@@ -6,7 +6,7 @@ import type { HistoryEntry, HistoryResponse } from './-history.types';
 export const HISTORY_KEY = ['activity', 'history'] as const;
 
 interface RawHistoryEntry {
-  web_link: string;
+  web_link: string | null;
   web_title: string | null;
   web_sub_title: string | null;
   file_title: string | null;
@@ -38,7 +38,7 @@ export function historyQueryOptions(offset: number, state: HistoryState = 'all')
   });
 }
 
-const rawHistoryEntrySchema = z.object({ web_link: z.string(), web_title: z.string().nullable(), web_sub_title: z.string().nullable(), file_title: z.string().nullable(), volume_id: z.number().int().nullable(), issue_id: z.number().int().nullable(), source: z.string().nullable(), source_name: z.string().nullable(), downloaded_at: z.number(), success: z.boolean().nullable() });
+export const rawHistoryEntrySchema = z.object({ web_link: z.string().nullable(), web_title: z.string().nullable(), web_sub_title: z.string().nullable(), file_title: z.string().nullable(), volume_id: z.number().int().nullable(), issue_id: z.number().int().nullable(), source: z.string().nullable(), source_name: z.string().nullable(), downloaded_at: z.number(), success: z.boolean().nullable() });
 const rawHistoryResponseSchema = z.object({ entries: z.array(rawHistoryEntrySchema), total: z.number().int().nonnegative(), offset: z.number().int().nonnegative(), page_size: z.number().int().positive() });
 const emptyObjectSchema = z.object({}).strict();
 

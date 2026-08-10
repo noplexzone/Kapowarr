@@ -1072,7 +1072,7 @@ class Library:
         result = get_db().execute(f"""
             WITH v AS (
                 SELECT COUNT(*) AS volumes,
-                    SUM(vol.monitored) AS monitored
+                    COALESCE(SUM(vol.monitored), 0) AS monitored
                 FROM volumes vol
                 INNER JOIN root_folders rf ON rf.id = vol.root_folder
                 WHERE rf.section = '{section}'
@@ -1116,8 +1116,32 @@ class Library:
                     WHERE NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.file_id = f.id)
                     AND NOT EXISTS (SELECT 1 FROM volume_files vf WHERE vf.file_id = f.id)
                 ) AS import_problems,
-                (SELECT COUNT(DISTINCT f.id) FROM files f INNER JOIN issues_files if ON if.file_id = f.id INNER JOIN issues i ON i.id = if.issue_id INNER JOIN volumes vol ON vol.id = i.volume_id INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}') AS files,
-                (SELECT IFNULL(SUM(size), 0) FROM (SELECT DISTINCT f.id, f.size FROM files f INNER JOIN issues_files if ON if.file_id = f.id INNER JOIN issues i ON i.id = if.issue_id INNER JOIN volumes vol ON vol.id = i.volume_id INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}')) AS total_file_size
+                (SELECT COUNT(*) FROM (
+                    SELECT if.file_id FROM issues_files if
+                    INNER JOIN issues i ON i.id = if.issue_id
+                    INNER JOIN volumes vol ON vol.id = i.volume_id
+                    INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                    WHERE rf.section = '{section}'
+                    UNION
+                    SELECT vf.file_id FROM volume_files vf
+                    INNER JOIN volumes vol ON vol.id = vf.volume_id
+                    INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                    WHERE rf.section = '{section}'
+                )) AS files,
+                (SELECT IFNULL(SUM(f.size), 0) FROM files f
+                    WHERE f.id IN (
+                        SELECT if.file_id FROM issues_files if
+                        INNER JOIN issues i ON i.id = if.issue_id
+                        INNER JOIN volumes vol ON vol.id = i.volume_id
+                        INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                        WHERE rf.section = '{section}'
+                        UNION
+                        SELECT vf.file_id FROM volume_files vf
+                        INNER JOIN volumes vol ON vol.id = vf.volume_id
+                        INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                        WHERE rf.section = '{section}'
+                    )
+                ) AS total_file_size
             FROM v;
         """).fetchonedict() or {}
         return result

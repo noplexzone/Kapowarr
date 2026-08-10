@@ -42,8 +42,9 @@ class DashboardStatsTests(unittest.TestCase):
             (104, 10, 1, '2020-01-01'),
             (201, 20, 1, '2020-01-01'),
         ])
-        self.db.executemany('INSERT INTO files VALUES (?, ?)', [(1, 100), (2, 200), (3, 300)])
+        self.db.executemany('INSERT INTO files VALUES (?, ?)', [(1, 100), (2, 200), (3, 300), (4, 400)])
         self.db.executemany('INSERT INTO issues_files VALUES (?, ?)', [(104, 1), (201, 3)])
+        self.db.execute('INSERT INTO volume_files VALUES (10, 2)')
         self.db.executemany('INSERT INTO download_history VALUES (?, ?)', [(1, 0), (2, 1)])
         self.db.execute('INSERT INTO download_queue VALUES (1)')
         self.db.commit()
@@ -62,8 +63,19 @@ class DashboardStatsTests(unittest.TestCase):
         self.assertEqual(stats['failed_downloads'], 1)
         self.assertEqual(stats['active_downloads'], 1)
         self.assertEqual(stats['import_problems'], 1)
-        self.assertEqual(stats['files'], 1)
-        self.assertEqual(stats['total_file_size'], 100)
+        self.assertEqual(stats['files'], 2)
+        self.assertEqual(stats['total_file_size'], 300)
+
+    def test_empty_section_returns_numeric_zero_counts(self):
+        cursor = _Cursor(self.db)
+        with patch('backend.implementations.volumes.get_db', return_value=cursor):
+            stats = Library.get_stats('empty')
+
+        self.assertEqual(stats['volumes'], 0)
+        self.assertEqual(stats['monitored'], 0)
+        self.assertEqual(stats['unmonitored'], 0)
+        self.assertEqual(stats['files'], 0)
+        self.assertEqual(stats['total_file_size'], 0)
 
     def test_manga_stats_do_not_include_comic_files(self):
         cursor = _Cursor(self.db)

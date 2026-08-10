@@ -6,7 +6,7 @@ vi.mock('@/app/api-client', () => ({
 }));
 
 import { apiClient, readJson } from '@/app/api-client';
-import { historyQueryOptions } from './-history.api';
+import { historyQueryOptions, rawHistoryEntrySchema } from './-history.api';
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -24,4 +24,13 @@ it('preserves page-number offset and truthful history total', async () => {
   expect(params.get('paginated')).toBe('true');
   expect(result.total).toBe(151);
   expect(result.entries[0]?.downloaded_at).toBe(100_000);
+});
+
+
+it('accepts failed history rows without a web link', () => {
+  expect(() => rawHistoryEntrySchema.parse({
+    web_link: null, web_title: null, web_sub_title: null, file_title: 'failed.cbz',
+    volume_id: 1, issue_id: null, source: 'suwayomi', source_name: null,
+    downloaded_at: 100, success: false,
+  })).not.toThrow();
 });

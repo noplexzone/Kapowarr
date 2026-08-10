@@ -69,6 +69,25 @@ class RuntimeBasePathTests(unittest.TestCase):
         self.assertEqual(redirect.status_code, 308)
         self.assertEqual(redirect.headers['Location'], '/kapowarr/')
 
+    def test_unknown_api_paths_remain_json_404s(self):
+        for base in ('', '/kapowarr'):
+            response = self._client(base).get(
+                '{}{}'.format(base, '/api/definitely-not-found')
+            )
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(response.mimetype, 'application/json')
+            self.assertEqual(response.get_json()['error'], 'NotFound')
+
+    def test_legacy_redirect_preserves_encoded_query_string(self):
+        response = self._client('/kapowarr').get(
+            '/kapowarr/ui/login?redirect=%2Fcomics%3Ffilter%3Dwanted'
+        )
+        self.assertEqual(response.status_code, 308)
+        self.assertEqual(
+            response.headers['Location'],
+            '/kapowarr/login?redirect=%2Fcomics%3Ffilter%3Dwanted',
+        )
+
     def test_runtime_meta_escapes_the_authoritative_base(self):
         client = self._client('/kapowarr')
         ui_mod.Server.url_base = '/kapowarr" data-injected="yes'

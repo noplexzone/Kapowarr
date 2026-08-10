@@ -33,20 +33,19 @@ function normalizeScanEvent(value: unknown): BulkScanItem | null {
   if (item.cv_id !== null && (!Number.isInteger(item.cv_id) || (item.cv_id as number) <= 0)) {
     throw new Error('Invalid cv_id in library-import scan result');
   }
-  if (item.id_type !== undefined && item.id_type !== null && typeof item.id_type !== 'string') {
+  if (item.id_type !== null && item.id_type !== 'volume' && item.id_type !== 'issue') {
     throw new Error('Invalid id_type in library-import scan result');
   }
   if (
-    item.match_type !== undefined
-    && item.match_type !== null
+    item.match_type !== null
     && item.match_type !== 'comicinfo'
     && item.match_type !== 'title'
   ) {
     throw new Error('Invalid match_type in library-import scan result');
   }
 
-  const idType = (item.id_type as string | null | undefined) ?? null;
-  const matchType = (item.match_type as BulkScanItem['match_type'] | undefined) ?? null;
+  const idType = item.id_type as BulkScanItem['id_type'];
+  const matchType = item.match_type as BulkScanItem['match_type'];
   const matched = item.cv_id !== null;
   if (matched ? idType === null || matchType === null : idType !== null || matchType !== null) {
     throw new Error('Inconsistent match classification in library-import scan result');

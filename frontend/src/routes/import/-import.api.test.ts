@@ -63,6 +63,22 @@ describe('scanBulk', () => {
     expect(items[0]?.folder).toBe('/library/Unmatched');
   });
 
+  it.each(['series', 'book', ''])(
+    'fails closed on unknown id_type %j',
+    async idType => {
+      const stream = JSON.stringify({
+        folder: '/library/Ambiguous',
+        file_title: 'Ambiguous',
+        cv_id: 123,
+        id_type: idType,
+        match_type: 'comicinfo',
+      }) + '\n';
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream, { status: 200 })));
+
+      await expect(collectScan()).rejects.toThrow(/invalid id_type/i);
+    },
+  );
+
   it.each([
     { cv_id: null, id_type: null, match_type: 'title' },
     { cv_id: 123, id_type: 'volume', match_type: null },

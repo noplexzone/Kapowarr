@@ -279,3 +279,12 @@ details[open] > .sectionHeader::after {
   color: var(--text);
   margin: 0.75rem 0 0.4rem;
 }
+
+.fieldHelp { margin: 0; color: var(--text-dim); font-size: 0.78rem; line-height: 1.35; }
+.fieldError { margin: 0; color: #ef4444; font-size: 0.8rem; font-weight: 600; }
+.dirtyState { margin: 0.2rem 0 0; color: var(--text-dim); font-size: 0.82rem; }
+.settingsSearch { display: flex; flex-direction: column; gap: 0.35rem; max-width: 32rem; }
+.settingsSearch label { font-size: 0.82rem; font-weight: 600; }
+.categoryNav { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.categoryButton, .categoryActive { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0.45rem 0.7rem; cursor: pointer; }
+.categoryActive { border-color: var(--accent); color: var(--accent); font-weight: 600; }

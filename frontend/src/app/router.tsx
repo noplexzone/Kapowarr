@@ -25,6 +25,7 @@ import { queueQueryOptions } from '@/routes/activity/queue/-queue.api';
 import { historyQueryOptions } from '@/routes/activity/history/-history.api';
 import { blocklistQueryOptions } from '@/routes/activity/blocklist/-blocklist.api';
 import { settingsQueryOptions } from '@/routes/settings/-settings.api';
+import type { SettingsCategory } from '@/routes/settings/-ui/settings-category-panels';
 import { systemAboutQueryOptions } from '@/routes/system/-system.api';
 
 export interface RouterContext {
@@ -270,43 +271,52 @@ const blocklistRoute = createRoute({
 });
 
 // Settings
+const settingsSearchSchema = z.object({
+  category: z.enum(['general', 'media-management', 'root-folders', 'download', 'metadata', 'indexers', 'download-clients', 'remote-mappings', 'proxy']).default('general').catch('general'),
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'settings',
+  validateSearch: settingsSearchSchema,
   loader: async ({ context }: any) => {
     await context.queryClient.ensureQueryData(settingsQueryOptions());
   },
-  component: SettingsPage,
+  component: function SettingsRouteComponent() {
+    const search = settingsRoute.useSearch();
+    const navigate = settingsRoute.useNavigate();
+    return <SettingsPage category={search.category} onCategoryChange={(category: SettingsCategory) => void navigate({ search: { category } })} />;
+  },
 });
 
 const settingsMediaManagementRedirect = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'settings/mediamanagement',
-  loader: () => { throw redirect({ to: '/settings' }); },
+  loader: () => { throw redirect({ to: '/settings', search: { category: 'media-management' as const } }); },
 });
 
 const settingsDownloadRedirect = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'settings/download',
-  loader: () => { throw redirect({ to: '/settings' }); },
+  loader: () => { throw redirect({ to: '/settings', search: { category: 'download' as const } }); },
 });
 
 const settingsGeneralRedirect = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'settings/general',
-  loader: () => { throw redirect({ to: '/settings' }); },
+  loader: () => { throw redirect({ to: '/settings', search: { category: 'general' as const } }); },
 });
 
 const settingsMetadataRedirect = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'settings/metadata',
-  loader: () => { throw redirect({ to: '/settings' }); },
+  loader: () => { throw redirect({ to: '/settings', search: { category: 'metadata' as const } }); },
 });
 
 const settingsIndexersRedirect = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'settings/indexers',
-  loader: () => { throw redirect({ to: '/settings' }); },
+  loader: () => { throw redirect({ to: '/settings', search: { category: 'indexers' as const } }); },
 });
 
 // System

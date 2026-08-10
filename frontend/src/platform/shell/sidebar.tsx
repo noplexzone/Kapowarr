@@ -130,6 +130,61 @@ function useQueueBadge(): number | undefined {
 
 // ── Component ──────────────────────────────────────────────────────────
 
+interface SidebarSearchProps {
+  collapsed: boolean;
+  query: string;
+  onQueryChange: (value: string) => void;
+  onSubmit: () => void;
+  onExpand: () => void;
+}
+
+export function SidebarSearch({
+  collapsed,
+  query,
+  onQueryChange,
+  onSubmit,
+  onExpand,
+}: SidebarSearchProps) {
+  const searchIcon = (
+    <svg className={styles.searchIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        className={styles.collapsedSearchButton}
+        onClick={onExpand}
+        aria-label="Open library search"
+        title="Open library search"
+      >
+        {searchIcon}
+      </button>
+    );
+  }
+
+  return (
+    <div className={styles.searchBar} role="search">
+      {searchIcon}
+      <input
+        type="search"
+        className={styles.searchInput}
+        aria-label="Search library"
+        placeholder="Search library…"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && query.trim()) onSubmit();
+        }}
+        autoComplete="off"
+      />
+    </div>
+  );
+}
+
 export interface SidebarProps {
   overlayOpen?: boolean;
   onClose?: () => void;
@@ -165,15 +220,12 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
     [setTheme],
   );
 
-  const handleSearchKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter' && query.trim()) {
-        navigate({ to: '/comics', search: { search: query.trim() } });
-        onClose?.();
-      }
-    },
-    [navigate, query, onClose],
-  );
+  const handleSearchSubmit = useCallback(() => {
+    if (query.trim()) {
+      navigate({ to: '/comics', search: { search: query.trim() } });
+      onClose?.();
+    }
+  }, [navigate, query, onClose]);
 
   return (
     <aside
@@ -199,15 +251,13 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
         )}
       </div>
 
-      <div className={styles.searchBar}>
-        <svg className={styles.searchIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        {(!sidebarCollapsed || overlayOpen) && (
-          <input type="text" className={styles.searchInput} placeholder="Search library…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleSearchKeyDown} autoComplete="off" />
-        )}
-      </div>
+      <SidebarSearch
+        collapsed={sidebarCollapsed && !overlayOpen}
+        query={query}
+        onQueryChange={setQuery}
+        onSubmit={handleSearchSubmit}
+        onExpand={toggleSidebar}
+      />
 
       <nav className={styles.nav}>
         {NAV_ITEMS.map((item) => {

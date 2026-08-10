@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Card, Badge } from '@/components/primitives';
+import { Card, Badge, Button } from '@/components/primitives';
+import { PageHeader, StatusBanner } from '@/components/patterns';
 import { getCoverUrl } from '@/routes/comics/-comics.helpers';
 import {
   comicStatsQueryOptions,
@@ -12,12 +13,23 @@ import {
 import styles from './dashboard-page.module.css';
 
 export function DashboardPage() {
-  const { data: comicStats } = useQuery(comicStatsQueryOptions());
-  const { data: mangaStats } = useQuery(mangaStatsQueryOptions());
-  const { data: comicRecent } = useQuery(recentlyAddedQueryOptions('comic'));
-  const { data: mangaRecent } = useQuery(recentlyAddedQueryOptions('manga'));
-  const { data: queueData } = useQuery(dashboardQueueQueryOptions());
-  const { data: historyData } = useQuery(dashboardHistoryQueryOptions());
+  const queryClient = useQueryClient();
+  const comicStatsQuery = useQuery(comicStatsQueryOptions());
+  const mangaStatsQuery = useQuery(mangaStatsQueryOptions());
+  const comicRecentQuery = useQuery(recentlyAddedQueryOptions('comic'));
+  const mangaRecentQuery = useQuery(recentlyAddedQueryOptions('manga'));
+  const queueQuery = useQuery(dashboardQueueQueryOptions());
+  const historyQuery = useQuery(dashboardHistoryQueryOptions());
+  const comicStats = comicStatsQuery.data;
+  const mangaStats = mangaStatsQuery.data;
+  const comicRecent = comicRecentQuery.data;
+  const mangaRecent = mangaRecentQuery.data;
+  const queueData = queueQuery.data;
+  const historyData = historyQuery.data;
+  const hasError = [comicStatsQuery, mangaStatsQuery, comicRecentQuery, mangaRecentQuery, queueQuery, historyQuery]
+    .some((query) => query.isError);
+  const isRefreshing = [comicStatsQuery, mangaStatsQuery, comicRecentQuery, mangaRecentQuery, queueQuery, historyQuery]
+    .some((query) => query.isFetching);
 
   const queueItems = Array.isArray(queueData) ? queueData : [];
   const historyEntries = (historyData?.entries ?? []).slice(0, 6);
@@ -29,7 +41,24 @@ export function DashboardPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.pageTitle}>Dashboard</h1>
+      <PageHeader
+        title="Dashboard"
+        description="Library health, downloads, and recent additions at a glance."
+        actions={
+          <Button
+            variant="secondary"
+            disabled={isRefreshing}
+            onClick={() => queryClient.invalidateQueries()}
+          >
+            {isRefreshing ? 'Refreshing…' : 'Refresh dashboard'}
+          </Button>
+        }
+      />
+      {hasError && (
+        <StatusBanner error>
+          Some dashboard data could not be loaded. Existing sections may be stale.
+        </StatusBanner>
+      )}
 
       {/* ── Section stats row (Comics + Manga) ── */}
       <div className={styles.statsRow}>

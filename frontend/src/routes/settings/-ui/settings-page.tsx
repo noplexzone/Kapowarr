@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Notice } from '@/components/primitives';
 import { useShellStore } from '@/platform/shell/store';
@@ -32,6 +32,7 @@ import {
   deleteRootFolder,
 } from '../-settings.api';
 import type { AllSettings, NZBIndexer, ExternalClient, RemoteMapping, SuwayomiSource } from '../-settings.types';
+import { getChangedSettings, requiresRestart } from '../-settings-change';
 import styles from './settings-page.module.css';
 
 function MutationError({ error }: { error: unknown }) {
@@ -42,8 +43,6 @@ function MutationError({ error }: { error: unknown }) {
     </p>
   );
 }
-
-const HOSTING_KEYS = new Set(['host', 'port', 'url_base']);
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
@@ -59,6 +58,11 @@ export function SettingsPage() {
     enabled: Boolean(form.suwayomi_base_url),
   });
   const suwayomiSources = suwayomiSourcesData?.sources ?? [];
+  const changedSettings = useMemo(
+    () => getChangedSettings(form, settings),
+    [form, settings],
+  );
+  const isDirty = Object.keys(changedSettings).length > 0;
 
   const mutation = useMutation({
     mutationFn: (data: Partial<AllSettings>) => updateSettings(data),
@@ -70,15 +74,12 @@ export function SettingsPage() {
   });
 
   const handleSave = () => {
-    const changed: Record<string, unknown> = {};
-    for (const key of Object.keys(form)) {
-      if (JSON.stringify(form[key as keyof AllSettings]) !== JSON.stringify(settings[key as keyof AllSettings])) {
-        changed[key] = form[key as keyof AllSettings];
-      }
-    }
-    const willRestart = Object.keys(changed).some(k => HOSTING_KEYS.has(k));
+    const willRestart = requiresRestart(changedSettings);
+    if (willRestart && !window.confirm(
+      'Apply hosting changes? Kapowarr will restart and may be briefly unavailable.',
+    )) return;
     setRestartWarning(willRestart);
-    mutation.mutate(changed as Partial<AllSettings>);
+    mutation.mutate(changedSettings);
   };
 
   function set<K extends keyof AllSettings>(key: K, value: AllSettings[K]) {
@@ -102,9 +103,13 @@ export function SettingsPage() {
       <div className={styles.toolbar}>
         <h1 className={styles.pageTitle}>Settings</h1>
         <div className={styles.toolbarRight}>
-          {mutation.isError && <Notice tone="danger">Failed to save settings</Notice>}
+          {mutation.isError && (
+            <Notice tone="danger">
+              {mutation.error instanceof Error ? mutation.error.message : 'Failed to save settings'}
+            </Notice>
+          )}
           {savedMsg && <Notice tone="success">{savedMsg}</Notice>}
-          <Button variant="primary" onClick={handleSave} disabled={mutation.isPending}>
+          <Button variant="primary" onClick={handleSave} disabled={!isDirty || mutation.isPending}>
             {mutation.isPending ? 'Saving…' : 'Save Changes'}
           </Button>
         </div>

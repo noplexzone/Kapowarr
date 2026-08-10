@@ -1243,6 +1243,23 @@ def get_download_history(
     ).fetchalldict()
 
 
+def get_download_history_count(
+    volume_id: Union[int, None] = None,
+    issue_id: Union[int, None] = None
+) -> int:
+    """Return a truthful count using the same history scope as the list."""
+    if issue_id is not None:
+        where = "WHERE issue_id = :issue_id"
+    elif volume_id is not None:
+        where = "WHERE volume_id = :volume_id"
+    else:
+        where = ""
+    return int(get_db().execute(
+        f"SELECT COUNT(*) FROM download_history {where};",
+        {'issue_id': issue_id, 'volume_id': volume_id}
+    ).fetchone()[0] or 0)
+
+
 def delete_download_history() -> None:
     """
     Delete complete download history

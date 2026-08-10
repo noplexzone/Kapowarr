@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSuspenseQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Badge, Button } from '@/components/primitives';
+import { Pagination } from '@/components/pagination/pagination';
 import { DialogFrame, DialogHeader, DialogBody, DialogFooter } from '@/components/dialog';
 import { historyQueryOptions, HISTORY_KEY, clearHistory } from '../-history.api';
 import styles from './history-page.module.css';
@@ -19,8 +20,6 @@ export function HistoryPage({ offset }: HistoryPageProps) {
   const entries = data?.entries ?? [];
   const total = data?.total ?? 0;
   const pageSize = data?.page_size ?? 50;
-  const pageCount = Math.ceil(total / pageSize);
-  const currentPage = Math.floor(offset / pageSize) + 1;
 
   const clearMutation = useMutation({
     mutationFn: clearHistory,
@@ -34,7 +33,7 @@ export function HistoryPage({ offset }: HistoryPageProps) {
   const goToPage = (page: number) => {
     navigate({
       to: '/activity/history',
-      search: { offset: (page - 1) * pageSize },
+      search: { offset: page },
     });
   };
 
@@ -86,25 +85,12 @@ export function HistoryPage({ offset }: HistoryPageProps) {
         </div>
       )}
 
-      {pageCount > 1 && (
-        <div className={styles.pagination}>
-          <Button
-            variant="ghost"
-            onClick={() => goToPage(currentPage - 1)}
-            disabled={currentPage <= 1}
-          >
-            Previous
-          </Button>
-          <span className={styles.pageInfo}>Page {currentPage} of {pageCount}</span>
-          <Button
-            variant="ghost"
-            onClick={() => goToPage(currentPage + 1)}
-            disabled={currentPage >= pageCount}
-          >
-            Next
-          </Button>
-        </div>
-      )}
+      <Pagination
+        page={offset}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={goToPage}
+      />
 
       <DialogFrame open={confirmClear} onOpenChange={(open) => !open && setConfirmClear(false)}>
         <DialogHeader title="Clear History" onClose={() => setConfirmClear(false)} />

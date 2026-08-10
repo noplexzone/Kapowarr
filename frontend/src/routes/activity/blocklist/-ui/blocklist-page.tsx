@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSuspenseQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
+import { Pagination } from '@/components/pagination/pagination';
 import { DialogFrame, DialogHeader, DialogBody, DialogFooter } from '@/components/dialog';
 import {
   blocklistQueryOptions,
@@ -26,8 +27,6 @@ export function BlocklistPage({ offset }: BlocklistPageProps) {
   const entries = data?.entries ?? [];
   const total = data?.total ?? 0;
   const pageSize = data?.page_size ?? 50;
-  const pageCount = Math.ceil(total / pageSize);
-  const currentPage = Math.floor(offset / pageSize) + 1;
 
   const clearMutation = useMutation({
     mutationFn: clearBlocklist,
@@ -49,7 +48,7 @@ export function BlocklistPage({ offset }: BlocklistPageProps) {
   const goToPage = (page: number) => {
     navigate({
       to: '/activity/blocklist',
-      search: { offset: (page - 1) * pageSize },
+      search: { offset: page },
     });
   };
 
@@ -95,25 +94,12 @@ export function BlocklistPage({ offset }: BlocklistPageProps) {
         </div>
       )}
 
-      {pageCount > 1 && (
-        <div className={styles.pagination}>
-          <Button
-            variant="ghost"
-            onClick={() => goToPage(currentPage - 1)}
-            disabled={currentPage <= 1}
-          >
-            Previous
-          </Button>
-          <span className={styles.pageInfo}>Page {currentPage} of {pageCount}</span>
-          <Button
-            variant="ghost"
-            onClick={() => goToPage(currentPage + 1)}
-            disabled={currentPage >= pageCount}
-          >
-            Next
-          </Button>
-        </div>
-      )}
+      <Pagination
+        page={offset}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={goToPage}
+      />
 
       {/* Delete single entry confirmation */}
       <DialogFrame

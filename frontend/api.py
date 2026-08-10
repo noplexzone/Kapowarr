@@ -23,7 +23,8 @@ from backend.base.helpers import force_suffix, hash_credential
 from backend.base.logging import LOGGER, get_log_file_contents
 from backend.features.download_queue import (DownloadHandler,
                                              delete_download_history,
-                                             get_download_history)
+                                             get_download_history,
+                                             get_download_history_count)
 from backend.base.files import delete_file_folder, folder_is_inside_folder
 from backend.features.library_import import (generate_bulk_scan,
                                              prepare_bulk_scan)
@@ -40,6 +41,7 @@ from backend.implementations.blocklist import (add_to_blocklist,
                                                delete_blocklist,
                                                delete_blocklist_entry,
                                                get_blocklist,
+                                               get_blocklist_count,
                                                get_blocklist_entry)
 from backend.implementations.comicvine import ComicVine
 from backend.implementations.conversion import preview_mass_convert
@@ -1722,7 +1724,13 @@ def api_download_history():
             volume_id, issue_id,
             offset
         )
-        return return_api(result)
+        total = get_download_history_count(volume_id, issue_id)
+        return return_api({
+            'entries': result,
+            'total': total,
+            'offset': offset,
+            'page_size': 50
+        })
 
     elif request.method == 'DELETE':
         delete_download_history()
@@ -1753,7 +1761,12 @@ def api_blocklist():
             b.todict()
             for b in blocklist
         ]
-        return return_api(result)
+        return return_api({
+            'entries': result,
+            'total': get_blocklist_count(),
+            'offset': offset,
+            'page_size': 50
+        })
 
     elif request.method == 'POST':
         data = request.get_json()

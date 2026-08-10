@@ -12,22 +12,29 @@ export function blocklistQueryOptions(offset: number) {
   });
 }
 
+interface RawBlocklistResponse {
+  entries: BlocklistEntry[];
+  total: number;
+  offset: number;
+  page_size: number;
+}
+
 async function getBlocklist(offset: number): Promise<BlocklistResponse> {
   const sp = new URLSearchParams({ offset: String(offset) });
   const response = await apiClient.get('blocklist', { searchParams: sp });
-  // Backend returns a raw array; wrap it into the envelope the SPA expects.
-  const data = await readJson<BlocklistEntry[]>(response);
-  return {
-    entries: data,
-    total: Array.isArray(data) ? data.length : 0,
-    page_size: 50,
-  };
+  const data = await readJson<RawBlocklistResponse>(response);
+  if (!data || !Array.isArray(data.entries) || !Number.isInteger(data.total)) {
+    throw new Error('Invalid paginated blocklist response');
+  }
+  return { entries: data.entries, total: data.total, page_size: data.page_size };
 }
 
 export async function deleteBlocklistEntry(id: number): Promise<void> {
-  await apiClient.delete(`blocklist/${id}`);
+  const response = await apiClient.delete(`blocklist/${id}`);
+  await readJson<unknown>(response);
 }
 
 export async function clearBlocklist(): Promise<void> {
-  await apiClient.delete('blocklist');
+  const response = await apiClient.delete('blocklist');
+  await readJson<unknown>(response);
 }

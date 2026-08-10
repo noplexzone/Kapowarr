@@ -50,6 +50,13 @@ def get_blocklist(offset: int = 0) -> List[BlocklistEntry]:
     return result
 
 
+def get_blocklist_count() -> int:
+    """Return the truthful number of blocklist entries."""
+    return int(get_db().execute(
+        "SELECT COUNT(*) FROM blocklist;"
+    ).fetchone()[0] or 0)
+
+
 def get_blocklist_entry(id: int) -> BlocklistEntry:
     """Get info about a blocklist entry.
 

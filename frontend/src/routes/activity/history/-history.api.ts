@@ -35,18 +35,28 @@ export function historyQueryOptions(offset: number) {
   });
 }
 
+interface RawHistoryResponse {
+  entries: RawHistoryEntry[];
+  total: number;
+  offset: number;
+  page_size: number;
+}
+
 async function getHistory(offset: number): Promise<HistoryResponse> {
   const sp = new URLSearchParams({ offset: String(offset) });
   const response = await apiClient.get('activity/history', { searchParams: sp });
-  const data = await readJson<RawHistoryEntry[]>(response);
-  const entries = (Array.isArray(data) ? data : []).map(toHistoryEntry);
+  const data = await readJson<RawHistoryResponse>(response);
+  if (!data || !Array.isArray(data.entries) || !Number.isInteger(data.total)) {
+    throw new Error('Invalid paginated history response');
+  }
   return {
-    entries,
-    total: entries.length,
-    page_size: 50,
+    entries: data.entries.map(toHistoryEntry),
+    total: data.total,
+    page_size: data.page_size,
   };
 }
 
 export async function clearHistory(): Promise<void> {
-  await apiClient.delete('activity/history');
+  const response = await apiClient.delete('activity/history');
+  await readJson<unknown>(response);
 }

@@ -3,11 +3,12 @@ name: Build and push Docker develop image
 on:
   push:
     branches:
-      - '**'
+      - develop
   workflow_dispatch:
 
 jobs:
   docker:
+    if: github.ref == 'refs/heads/develop'
     name: Build and push develop image to Docker Hub
     runs-on: ubuntu-latest
     steps:

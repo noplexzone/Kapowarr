@@ -11,15 +11,27 @@ import styles from './comic-card.module.css';
 
 interface ComicCardProps {
   volume: VolumeSummary;
+  selected: boolean;
+  pending?: boolean;
+  onSelect: (id: number) => void;
   onSearch: (id: number) => void;
+  onMonitor: (id: number, monitored: boolean) => void;
 }
 
-export function ComicCard({ volume, onSearch }: ComicCardProps) {
+export function ComicCard({ volume, selected, pending = false, onSelect, onSearch, onMonitor }: ComicCardProps) {
   const progressPct = getProgressPercent(volume.progress);
   const progressTone = progressPct >= 100 ? 'success' : 'danger';
 
   return (
     <Card className={styles.card}>
+      <label className={styles.selectControl}>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onSelect(volume.id)}
+          aria-label={`Select ${volume.title}`}
+        />
+      </label>
       <Link
         to="/volumes/$volumeId"
         params={{ volumeId: String(volume.id) }}
@@ -54,13 +66,26 @@ export function ComicCard({ volume, onSearch }: ComicCardProps) {
           <Badge tone={volume.monitored ? 'success' : 'neutral'}>
             {volume.monitored ? 'Monitored' : 'Unmonitored'}
           </Badge>
-          <Button
-            variant="icon"
-            onClick={() => onSearch(volume.id)}
-            title="Auto Search"
-          >
-            🔍
-          </Button>
+          <div className={styles.cardActions}>
+            <Button
+              variant="icon"
+              disabled={pending}
+              onClick={() => onMonitor(volume.id, !volume.monitored)}
+              title={volume.monitored ? 'Unmonitor volume' : 'Monitor volume'}
+              aria-label={`${volume.monitored ? 'Unmonitor' : 'Monitor'} ${volume.title}`}
+            >
+              {volume.monitored ? '◉' : '○'}
+            </Button>
+            <Button
+              variant="icon"
+              disabled={pending}
+              onClick={() => onSearch(volume.id)}
+              title="Auto Search"
+              aria-label={`Auto search ${volume.title}`}
+            >
+              🔍
+            </Button>
+          </div>
         </div>
       </div>
     </Card>

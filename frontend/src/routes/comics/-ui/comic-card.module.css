@@ -1,4 +1,5 @@
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   transition: transform 0.15s;
@@ -6,6 +7,25 @@
 
 .card:hover {
   transform: scale(1.02);
+}
+
+.selectControl {
+  position: absolute;
+  z-index: 2;
+  top: var(--space-2, 0.5rem);
+  left: var(--space-2, 0.5rem);
+  display: grid;
+  place-items: center;
+  width: var(--touch-target, 2.75rem);
+  height: var(--touch-target, 2.75rem);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.68);
+}
+
+.selectControl input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--accent);
 }
 
 .coverArea {
@@ -78,6 +98,12 @@
   align-items: center;
   justify-content: space-between;
   margin-top: 0.3rem;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
 }
 
 /* ── Mobile ───────────────────────────────────────── */

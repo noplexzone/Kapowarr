@@ -3,6 +3,7 @@ import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
 import { Pagination } from '@/components/pagination/pagination';
+import { EmptyState, StatusBanner } from '@/components/patterns';
 import {
   deleteLibraryVolume,
   runLibraryTask,
@@ -156,6 +157,19 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
     <div className={styles.page}>
       <div className={styles.toolbar}>
         <div className={styles.toolbarLeft}>
+          <div className={styles.searchBar}>
+            <label className={styles.srOnly} htmlFor={`${section}-library-search`}>Search library</label>
+            <input
+              id={`${section}-library-search`}
+              className={styles.searchInput}
+              type="search"
+              placeholder={`Search ${section === 'comic' ? 'comics' : 'manga'}…`}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+            />
+            {search.search && <span className={styles.searchCount}>{total} results</span>}
+          </div>
+
           <div className={styles.viewToggle}>
             {VIEW_OPTIONS.map((opt) => (
               <Button
@@ -163,7 +177,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
                 variant={view === opt ? 'primary' : 'ghost'}
                 onClick={() => {
                   setView(opt);
-                  setStorageVal(STORAGE_KEY_VIEW, opt);
+                  updateSearch({ view: opt });
                 }}
               >
                 {opt === 'posters' ? '▦' : '☰'} {VIEW_LABELS[opt] ?? opt}
@@ -171,17 +185,18 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
             ))}
           </div>
 
-          <select
-            className={styles.select}
-            value={search.filter}
-            onChange={(e) => updateSearch({ filter: e.target.value })}
-          >
+          <div className={styles.filterChips} aria-label="Library filter">
             {FILTER_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
+              <Button
+                key={opt || 'all'}
+                variant={search.filter === opt ? 'primary' : 'ghost'}
+                aria-pressed={search.filter === opt}
+                onClick={() => updateSearch({ filter: opt })}
+              >
                 {FILTER_LABELS[opt] ?? (opt || 'All')}
-              </option>
+              </Button>
             ))}
-          </select>
+          </div>
 
           <select
             className={styles.select}
@@ -222,7 +237,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
         </div>
       </div>
 
-      {actionMessage && <p role="status" className={styles.actionMessage}>{actionMessage}</p>}
+      {actionMessage && <StatusBanner>{actionMessage}</StatusBanner>}
 
       {selectedIds.size > 0 && (
         <div className={styles.massBar}>
@@ -282,15 +297,26 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
       )}
 
       {volumes.length === 0 ? (
-        <div className={styles.empty}>
-          <p>Library is empty</p>
-        </div>
+        <EmptyState
+          title={search.search || search.filter ? 'No matching volumes' : 'Library is empty'}
+          description={search.search || search.filter
+            ? 'Clear the search or filters to see the rest of the library.'
+            : 'Add or import a volume to start building this library.'}
+        />
       ) : view === 'posters' ? (
         <div className={styles.posterGrid}>
           {volumes.map((v) => (
             <ComicCard
               key={v.id}
               volume={v}
+              selected={selectedIds.has(v.id)}
+              pending={pendingAction === `search-${v.id}` || pendingAction === `monitor-${v.id}`}
+              onSelect={toggleSelect}
+              onMonitor={(id, monitored) => performAction(
+                `monitor-${id}`,
+                () => setVolumeMonitored(id, monitored),
+                `${v.title} is now ${monitored ? 'monitored' : 'unmonitored'}.`,
+              )}
               onSearch={(id) => performAction(
                 `search-${id}`,
                 () => runVolumeTask(id, 'auto_search'),
@@ -332,22 +358,6 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
         total={total}
         onPageChange={(offset) => updateSearch({ offset })}
       />
-
-      {/* Floating bottom search bar */}
-      <div className={styles.searchBar}>
-        <input
-          className={styles.searchInput}
-          type="search"
-          placeholder="Search volumes..."
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-        />
-        {search.search && (
-          <span className={styles.searchCount}>
-            {total} result{total !== 1 ? 's' : ''}
-          </span>
-        )}
-      </div>
 
       <div className={styles.statsBar}>
         <div className={styles.stat}>

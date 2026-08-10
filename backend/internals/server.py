@@ -8,7 +8,7 @@ Also handling startup types and the websocket.
 from __future__ import annotations
 
 from multiprocessing import Queue
-from os import urandom
+from os import environ, urandom
 from queue import Full
 from threading import Thread, Timer
 from typing import (TYPE_CHECKING, Any, Callable, Dict,
@@ -47,6 +47,61 @@ CONTENT_SECURITY_POLICY = '; '.join((
     "frame-ancestors 'none'",
     "form-action 'self'"
 ))
+
+
+
+CORS_ORIGINS_ENV = 'KAPOWARR_CORS_ORIGINS'
+CORS_ALLOWED_HEADERS = ('Content-Type', 'X-Api-Key')
+CORS_ALLOWED_METHODS = ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS')
+
+
+def _allowed_cors_origins() -> List[str]:
+    """Return explicitly configured cross-origin API clients."""
+    origins = [
+        origin.strip().rstrip('/')
+        for origin in environ.get(CORS_ORIGINS_ENV, '').split(',')
+        if origin.strip()
+    ]
+    return [origin for origin in origins if origin not in ('*', 'null')]
+
+
+def _origin_is_allowed(origin: Union[str, None]) -> bool:
+    return bool(origin and origin.rstrip('/') in _allowed_cors_origins())
+
+
+def _socketio_origin_is_allowed(
+    origin: Union[str, None],
+    request_environ: Mapping[str, Any]
+) -> bool:
+    """Allow same-origin Socket.IO plus explicitly configured clients."""
+    if not origin or origin in ('*', 'null'):
+        return False
+
+    scheme = request_environ.get('wsgi.url_scheme')
+    host = request_environ.get('HTTP_HOST')
+    allowed = set(_allowed_cors_origins())
+    if scheme and host:
+        allowed.add(f'{scheme}://{host}')
+        if (
+            'HTTP_X_FORWARDED_PROTO' in request_environ
+            or 'HTTP_X_FORWARDED_HOST' in request_environ
+        ):
+            forwarded_scheme = str(request_environ.get(
+                'HTTP_X_FORWARDED_PROTO', scheme
+            )).split(',')[0].strip()
+            forwarded_host = str(request_environ.get(
+                'HTTP_X_FORWARDED_HOST', host
+            )).split(',')[0].strip()
+            allowed.add(f'{forwarded_scheme}://{forwarded_host}')
+
+    return origin.rstrip('/') in allowed
+
+
+def _merge_vary_origin(response: Any) -> None:
+    vary = [item.strip() for item in response.headers.get('Vary', '').split(',') if item.strip()]
+    if 'Origin' not in vary:
+        vary.append('Origin')
+    response.headers['Vary'] = ', '.join(vary)
 
 
 if TYPE_CHECKING:
@@ -121,7 +176,7 @@ class Server(metaclass=Singleton):
         ws.init_app(
             app,
             path=f'{Constants.API_PREFIX}/socket.io',
-            cors_allowed_origins='*',
+            cors_allowed_origins=_socketio_origin_is_allowed,
             async_mode='threading',
             client_manager=MPWebSocketQueue(Queue(maxsize=1000), write_only=False)
         )
@@ -143,13 +198,28 @@ class Server(metaclass=Singleton):
 
             return True
 
-        # CORS — allows the browser extension (and other local clients) to call
-        # the API from a different origin (e.g. moz-extension://, comicvine.gamespot.com).
         @app.after_request
         def add_response_headers(response):
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            # Cross-origin access applies only to API routes and explicitly
+            # configured origins. Same-origin clients require no CORS headers.
+            if request.path.startswith(Constants.API_PREFIX):
+                origin = request.headers.get('Origin')
+                _merge_vary_origin(response)
+                if (
+                    request.path != f'{Constants.API_PREFIX}/auth'
+                    and not (
+                        request.method == 'OPTIONS'
+                        and response.status_code == 403
+                    )
+                    and _origin_is_allowed(origin)
+                ):
+                    response.headers['Access-Control-Allow-Origin'] = origin
+                    response.headers['Access-Control-Allow-Headers'] = ', '.join(
+                        CORS_ALLOWED_HEADERS
+                    )
+                    response.headers['Access-Control-Allow-Methods'] = ', '.join(
+                        CORS_ALLOWED_METHODS
+                    )
             response.headers['Content-Security-Policy'] = CONTENT_SECURITY_POLICY
             response.headers['X-Content-Type-Options'] = 'nosniff'
             response.headers['Referrer-Policy'] = 'same-origin'
@@ -159,10 +229,38 @@ class Server(metaclass=Singleton):
             )
             return response
 
-        @app.route('/<path:path>', methods=['OPTIONS'])
-        @app.route('/', methods=['OPTIONS'])
-        def handle_options(**_):
-            return make_response(), 200
+        @app.before_request
+        def handle_api_options():
+            if (
+                request.method != 'OPTIONS'
+                or not request.path.startswith(Constants.API_PREFIX)
+                or not request.headers.get('Origin')
+                or not request.headers.get('Access-Control-Request-Method')
+            ):
+                return None
+
+            origin = request.headers.get('Origin')
+            requested_method = request.headers[
+                'Access-Control-Request-Method'
+            ].upper()
+            requested_headers = {
+                header.strip().lower()
+                for header in request.headers.get(
+                    'Access-Control-Request-Headers', ''
+                ).split(',')
+                if header.strip()
+            }
+            allowed_headers = {
+                header.lower() for header in CORS_ALLOWED_HEADERS
+            }
+            if (
+                request.path == f'{Constants.API_PREFIX}/auth'
+                or not _origin_is_allowed(origin)
+                or requested_method not in CORS_ALLOWED_METHODS
+                or not requested_headers.issubset(allowed_headers)
+            ):
+                return make_response(), 403
+            return make_response(), 204
 
         # Add error handlers
         @app.errorhandler(400)

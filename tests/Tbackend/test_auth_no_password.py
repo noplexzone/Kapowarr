@@ -5,15 +5,16 @@ localStorage and sends it as the X-Api-Key header. When no auth
 password is configured and the user clears browser site data,
 localStorage is empty and the key header is absent.
 
-The auth decorator should skip api_key validation when auth_password
-is empty/null, matching standard *arr behaviour where a fresh install
-allows requests without authentication.
+The auth decorator should permit passwordless reads but continue to
+require the provisioned installation key for state-changing requests.
 """
 import sys
 import types
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+from flask import request as flask_request
 
 
 class _StubModule(types.ModuleType):
@@ -86,11 +87,16 @@ def _restore_externals(originals):
             sys.modules[module_name] = original
 
 
+_original_api_module = sys.modules.get('frontend.api')
 _original_modules = _patch_externals()
 try:
     import frontend.api as api
 finally:
     _restore_externals(_original_modules)
+    if _original_api_module is None:
+        sys.modules.pop('frontend.api', None)
+    else:
+        sys.modules['frontend.api'] = _original_api_module
 
 
 class _Request:
@@ -117,12 +123,18 @@ class AuthNoPasswordTests(unittest.TestCase):
     """Auth decorator behaviour when auth_password is not configured."""
 
     def setUp(self):
+        self.original_settings = api.Settings
+        api.request = flask_request
         api.Settings = lambda: SimpleNamespace(
             sv=SimpleNamespace(
                 api_key='some-key',
                 auth_password='',  # no password configured
             )
         )
+
+    def tearDown(self):
+        api.Settings = self.original_settings
+        api.request = flask_request
 
     def test_auth_passes_without_api_key_when_no_password(self):
         """No password → no api_key required."""
@@ -145,17 +157,36 @@ class AuthNoPasswordTests(unittest.TestCase):
 
         self.assertEqual(result, ({}, 200))
 
+    def test_passwordless_mutation_requires_api_key(self):
+        request = _Request(method='DELETE')
+        api.request = request
+        wrapped = api.auth(_make_view())
+        result = wrapped()
+        self.assertEqual(result[1], 401)
+
+    def test_passwordless_mutation_accepts_provisioned_api_key(self):
+        request = _Request(method='POST', headers={'X-Api-Key': 'some-key'})
+        api.request = request
+        wrapped = api.auth(_make_view())
+        self.assertEqual(wrapped(), ({}, 200))
+
 
 class AuthWithPasswordTests(unittest.TestCase):
     """Auth decorator behaviour when auth_password IS configured."""
 
     def setUp(self):
+        self.original_settings = api.Settings
+        api.request = flask_request
         api.Settings = lambda: SimpleNamespace(
             sv=SimpleNamespace(
                 api_key='secret-key',
                 auth_password='hashed-password',
             )
         )
+
+    def tearDown(self):
+        api.Settings = self.original_settings
+        api.request = flask_request
 
     def test_auth_rejects_without_api_key_when_password_set(self):
         """Password configured → api_key is required."""

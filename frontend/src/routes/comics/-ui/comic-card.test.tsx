@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, ...props }: any) => <a href="#volume" {...props}>{children}</a>,
 }));
+vi.mock('@/components/authenticated-resource', () => ({
+  AuthenticatedImage: ({ alt }: { alt: string }) => <img alt={alt} />,
+}));
 
 import { ComicCard } from './comic-card';
 

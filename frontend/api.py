@@ -17,8 +17,9 @@ import json as _json
 
 from flask import Blueprint, Response, request, send_file, stream_with_context
 
-from backend.base.custom_exceptions import (InvalidKeyValue,
-                                            KeyNotFound, TaskNotFound)
+from backend.base.custom_exceptions import (DeletionCapabilityUnavailable,
+                                            InvalidKeyValue, KeyNotFound,
+                                            TaskNotFound)
 from backend.base.definitions import (BlocklistReason, BlocklistReasonID,
                                       Constants, CredentialData, CredentialSource,
                                       DownloadSource, FileMatch,
@@ -183,6 +184,22 @@ def _validate_unmatched_deletion_target(
     return _ValidatedDeletionTarget(candidate_text, volume_stat, candidate_stat)
 
 
+def _descriptor_delete_supported() -> bool:
+    """Return whether every required descriptor-relative primitive is safe."""
+    required_flags = ('O_DIRECTORY', 'O_NOFOLLOW')
+    if os.name != 'posix' or not all(hasattr(os, flag) for flag in required_flags):
+        return False
+
+    dir_fd_functions = getattr(os, 'supports_dir_fd', ())
+    follow_symlink_functions = getattr(os, 'supports_follow_symlinks', ())
+    return (
+        all(function in dir_fd_functions for function in (
+            os.open, os.rename, os.stat, os.unlink
+        ))
+        and os.stat in follow_symlink_functions
+    )
+
+
 def _open_directory_no_symlinks(path: Path) -> int:
     """Open an absolute directory by descriptor without following components."""
     flags = os.O_RDONLY | os.O_DIRECTORY
@@ -208,6 +225,9 @@ def _secure_delete_unmatched_target(volume_id: int, filepath: str) -> None:
     captures the directory entry before final type/inode validation. No later
     operation resolves the user-visible pathname, closing parent-symlink races.
     """
+    if not _descriptor_delete_supported():
+        raise DeletionCapabilityUnavailable()
+
     quarantined = None
     original_name = None
     parent_fd = None
@@ -462,10 +482,13 @@ def auth(method):
         if not request.path.endswith('/cover'):
             LOGGER.debug(f'{request.method} {request.path}')
 
-        # Skip api_key validation when no auth password is configured.
-        # This matches the standard *arr behaviour: a fresh install
-        # (no password set) allows requests without authentication.
-        if getattr(Settings().sv, 'auth_password', None):
+        # Passwordless mode removes the login screen, not mutation
+        # authorization. The SPA provisions the installation API key through
+        # /auth and sends it in X-Api-Key for state-changing requests.
+        requires_key = bool(getattr(Settings().sv, 'auth_password', None)) or request.method not in (
+            'GET', 'HEAD', 'OPTIONS'
+        )
+        if requires_key:
             try:
                 extract_key(request, 'api_key')
             except (KeyNotFound, InvalidKeyValue):

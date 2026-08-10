@@ -233,6 +233,20 @@ class RawFileDeletionSecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(target.exists())
 
+    def test_delete_fails_closed_when_descriptor_operations_are_unsupported(self):
+        target = self.volume / 'Saga 001.cbz'
+        target.write_bytes(b'comic')
+        file_id = api_mod._unmatched_file_id(1, str(target), 'test-api-key')
+        matches = [{'filepath': str(target), 'issue_ids': [], 'general_file': False, 'forced_match': False, 'unmatched_file_id': file_id}]
+
+        with patch.object(api_mod, '_descriptor_delete_supported', return_value=False):
+            response = self._delete(1, file_id, matches, 'test-api-key')
+
+        self.assertEqual(response.status_code, 501)
+        self.assertEqual(response.get_json()['error'], 'DeletionCapabilityUnavailable')
+        self.assertIn('descriptor-relative', response.get_json()['result']['reason'])
+        self.assertTrue(target.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

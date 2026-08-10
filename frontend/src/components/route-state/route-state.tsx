@@ -1,10 +1,13 @@
 import { runtimeConfig } from '@/app/runtime-config';
+import { useEffect, useState } from 'react';
 import type { ErrorComponentProps } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
 import styles from './route-state.module.css';
 
 export function RoutePending() {
-  return <div className={styles.state} role="status">Loading…</div>;
+  const [visible, setVisible] = useState(false);
+  useEffect(() => { const timer = window.setTimeout(() => setVisible(true), 150); return () => window.clearTimeout(timer); }, []);
+  return visible ? <div className={styles.state} role="status">Loading…</div> : null;
 }
 
 export function RouteError({ error, reset }: ErrorComponentProps) {

@@ -15,6 +15,7 @@ interface NavItem {
   to: string;
   badge?: number;
   children?: NavItem[];
+  search?: Record<string, string>;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -25,7 +26,6 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: 'Library', to: '/comics' },
       { label: 'Add Volume', to: '/comics/add' },
-      { label: 'Mismatch Review', to: '/mismatch-review' },
     ],
   },
   {
@@ -34,7 +34,6 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: 'Library', to: '/manga' },
       { label: 'Add Volume', to: '/manga/add' },
-      { label: 'Mismatch Review', to: '/manga/mismatch-review' },
     ],
   },
   { label: 'Discovery', to: '/discovery' },
@@ -45,6 +44,8 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: 'Queue', to: '/activity/queue' },
       { label: 'History', to: '/activity/history' },
+      { label: 'Comic Mismatches', to: '/activity/mismatches', search: { section: 'comic' } },
+      { label: 'Manga Mismatches', to: '/activity/mismatches', search: { section: 'manga' } },
       { label: 'Blocklist', to: '/activity/blocklist' },
     ],
   },
@@ -98,15 +99,15 @@ function saveGroupState(state: Record<string, boolean>) {
   } catch { /* ignore */ }
 }
 
-function isNavActive(item: NavItem, pathname: string): boolean {
+export function isNavActive(item: NavItem, pathname: string, search: Record<string, unknown> = {}): boolean {
   if (item.to === '/') return pathname === '/';
-  const base = item.to.split('?')[0];
-  return pathname.startsWith(base.split('/').slice(0, 2).join('/'));
+  if (item.children?.some((child) => isSubActive(child, pathname, search))) return true;
+  return pathname === item.to || pathname.startsWith(`${item.to}/`);
 }
 
-function isSubActive(child: NavItem, pathname: string): boolean {
-  const path = child.to.split('?')[0];
-  return pathname === path || pathname.startsWith(path + '/');
+export function isSubActive(child: NavItem, pathname: string, search: Record<string, unknown> = {}): boolean {
+  if (pathname !== child.to && !pathname.startsWith(`${child.to}/`)) return false;
+  return !child.search || Object.entries(child.search).every(([key, value]) => search[key] === value);
 }
 
 function useQueueBadge(): number | undefined {
@@ -192,7 +193,7 @@ export interface SidebarProps {
 }
 
 export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const sidebarCollapsed = useShellStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useShellStore((s) => s.toggleSidebar);
@@ -262,7 +263,7 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
 
       <nav className={styles.nav}>
         {NAV_ITEMS.map((item) => {
-          const active = isNavActive(item, pathname);
+          const active = isNavActive(item, pathname, search as Record<string, unknown>);
           const badge = item.label === 'Activity' ? queueBadge : item.badge;
           const hasChildren = item.children && item.children.length > 0;
           const isExpanded = hasChildren ? groupExpanded[item.label] ?? false : false;
@@ -270,7 +271,7 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
           if (!hasChildren) {
             return (
               <div key={item.to + item.label} className={styles.navGroup}>
-                <Link to={item.to as any} className={clsx(styles.navItem, active && styles.active)} onClick={onClose} title={sidebarCollapsed ? item.label : undefined}>
+                <Link to={item.to as any} className={clsx(styles.navItem, active && styles.active)} onClick={onClose} title={sidebarCollapsed ? item.label : undefined} aria-current={active ? 'page' : undefined}>
                   <NavIcon name={item.label} className={styles.navIcon} />
                   {!sidebarCollapsed && <span>{item.label}</span>}
                   {badge != null && badge > 0 && <span className={styles.badge}>{badge}</span>}
@@ -303,7 +304,7 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
 
               <div className={clsx(styles.subNav, (!isExpanded || (sidebarCollapsed && !overlayOpen)) && styles.subNavCollapsed)} aria-hidden={!isExpanded || (sidebarCollapsed && !overlayOpen) || undefined} inert={isExpanded && (!sidebarCollapsed || overlayOpen) ? undefined : true}>
                 {item.children!.map((child) => (
-                  <Link key={child.to} to={child.to as any} className={clsx(styles.subNavItem, isSubActive(child, pathname) && styles.subActive)} onClick={onClose} tabIndex={isExpanded && (!sidebarCollapsed || overlayOpen) ? 0 : -1} title={sidebarCollapsed && !overlayOpen ? child.label : undefined}>
+                  <Link key={`${child.to}:${JSON.stringify(child.search)}`} to={child.to as any} search={child.search as any} className={clsx(styles.subNavItem, isSubActive(child, pathname, search as Record<string, unknown>) && styles.subActive)} aria-current={isSubActive(child, pathname, search as Record<string, unknown>) ? 'page' : undefined} onClick={onClose} tabIndex={isExpanded && (!sidebarCollapsed || overlayOpen) ? 0 : -1} title={sidebarCollapsed && !overlayOpen ? child.label : undefined}>
                     <NavIcon name={child.label} className={styles.subNavIcon} />
                     <span>{child.label}</span>
                   </Link>

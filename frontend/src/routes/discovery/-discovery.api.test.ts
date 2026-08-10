@@ -16,8 +16,8 @@ describe('Discovery to Add identity', () => {
 
     expect(getDiscoveryAddSearch(volume, 'comic')).toEqual({
       section: 'comic',
-      metadata_source: 'comicvine',
-      metadata_id: '4050',
+      source: 'comicvine',
+      id: '4050',
       title: 'Saga',
     });
   });

@@ -50,6 +50,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
 
   const [view, setView] = useState<ViewOption>(search.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [manageMode, setManageMode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState('');
   const selectionScopeKey = getSelectionScopeKey(section, search);
@@ -218,6 +219,9 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
         </div>
 
         <div className={styles.toolbarRight}>
+          <Button variant={manageMode ? 'primary' : 'secondary'} aria-pressed={manageMode} onClick={() => { setManageMode((value) => { if (value) setSelectedIds(new Set()); return !value; }); }}>
+            {manageMode ? 'Done Managing' : 'Manage'}
+          </Button>
           <Button
             variant="secondary"
             disabled={pendingAction !== null}
@@ -245,9 +249,10 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
 
       {actionMessage && <StatusBanner>{actionMessage}</StatusBanner>}
 
-      {selectedIds.size > 0 && (
-        <div className={styles.massBar}>
+      {manageMode && (
+        <div className={styles.massBar} data-testid="bulk-toolbar">
           <span>{selectedIds.size} selected</span>
+          <Button variant="ghost" onClick={() => setSelectedIds(new Set())} disabled={selectedIds.size === 0}>Clear Selection</Button>
           <Button
             variant="ghost"
             disabled={pendingAction !== null}
@@ -316,6 +321,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
               key={v.id}
               volume={v}
               selected={selectedIds.has(v.id)}
+              selectionVisible={manageMode || selectedIds.size > 0}
               pending={pendingAction === `search-${v.id}` || pendingAction === `monitor-${v.id}`}
               onSelect={toggleSelect}
               onMonitor={(id, monitored) => performAction(
@@ -350,6 +356,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
                   key={v.id}
                   volume={v}
                   selected={selectedIds.has(v.id)}
+                  selectionVisible={manageMode || selectedIds.size > 0}
                   onSelect={toggleSelect}
                 />
               ))}

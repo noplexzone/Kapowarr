@@ -7,22 +7,23 @@ import styles from './comic-table-row.module.css';
 interface ComicTableRowProps {
   volume: VolumeSummary;
   selected: boolean;
+  selectionVisible?: boolean;
   onSelect: (id: number) => void;
 }
 
-export function ComicTableRow({ volume, selected, onSelect }: ComicTableRowProps) {
+export function ComicTableRow({ volume, selected, selectionVisible = false, onSelect }: ComicTableRowProps) {
   const progressPct = getProgressPercent(volume.progress);
   const progressTone = progressPct >= 100 ? 'success' : 'danger';
 
   return (
     <tr className={styles.row}>
       <td className={styles.checkCell}>
-        <input
+        {(selectionVisible || selected) && <input
           type="checkbox"
           aria-label={`Select ${volume.title}`}
           checked={selected}
           onChange={() => onSelect(volume.id)}
-        />
+        />}
       </td>
       <td className={styles.titleCell}>
         <Link

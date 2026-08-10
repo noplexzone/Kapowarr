@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { routeTree } from './router';
+import { applyRuntimeDocumentUrls, registerServiceWorker, runtimeConfig } from './runtime-config';
+
+applyRuntimeDocumentUrls();
+void registerServiceWorker();
 
 // Theme initialization — uses 'kapowarr-theme' in localStorage
 const savedTheme = localStorage.getItem('kapowarr-theme');
@@ -23,7 +27,7 @@ const queryClient = new QueryClient({
 
 const router = createRouter({
   routeTree,
-  basepath: '/ui',
+  basepath: runtimeConfig.routerBasePath,
   context: {
     queryClient,
     shell: { profile: 1 },

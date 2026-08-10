@@ -1,9 +1,9 @@
 import { io, type Socket } from 'socket.io-client';
 import { useEffect } from 'react';
-import { getUrlBase } from '@/app/api-client';
+import { runtimeConfig } from '@/app/runtime-config';
 
 const socket: Socket = io(window.location.origin, {
-  path: `${getUrlBase()}/socket.io`,
+  path: runtimeConfig.socketPath,
   autoConnect: true,
 });
 

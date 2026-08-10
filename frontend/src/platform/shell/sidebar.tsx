@@ -1,3 +1,4 @@
+import { runtimeConfig } from '@/app/runtime-config';
 import { useCallback, useState } from 'react';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -236,7 +237,7 @@ export function Sidebar({ overlayOpen = false, onClose }: SidebarProps) {
       )}
     >
       <div className={styles.brand}>
-        <img className={styles.brandIcon} src="/ui/favicon.svg" alt="Kapowarr" />
+        <img className={styles.brandIcon} src={runtimeConfig.faviconUrl} alt="Kapowarr" />
         {(!sidebarCollapsed || overlayOpen) && <span className={styles.brandText}>Kapowarr</span>}
         {overlayOpen && onClose && (
           <button

@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Serve the SPA and PWA safely from the configured reverse-proxy base path, with static-only service-worker caching.
 - Replace arbitrary-path unmatched-file deletion with authenticated, volume-scoped opaque identifiers and root containment checks.
 - Normalize and validate streamed library-import results so matched folders cannot be classified for unmatched-folder deletion.
 - Fix unmatched library-import deletion to send the backend-compatible folder list and keep confirmed paths visible when deletion fails.

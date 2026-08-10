@@ -1,3 +1,4 @@
+import { runtimeConfig } from '@/app/runtime-config';
 import type { ErrorComponentProps } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
 import styles from './route-state.module.css';
@@ -22,7 +23,7 @@ export function RouteNotFound() {
     <div className={styles.state}>
       <h2>Page not found</h2>
       <p>The requested Kapowarr page does not exist.</p>
-      <a href="/ui/">Return to dashboard</a>
+      <a href={runtimeConfig.routerBasePath}>Return to dashboard</a>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import ky from 'ky';
+import { runtimeConfig } from './runtime-config';
 
 const API_KEY_STORAGE_KEY = 'kapowarr_api_key';
 
@@ -18,31 +19,12 @@ export function clearApiKey(): void {
   localStorage.removeItem(API_KEY_STORAGE_KEY);
 }
 
-/**
- * Derive the URL base from the current page location.
- * The SPA always loads at /ui/ — everything before /ui/ is the base prefix.
- * Examples:
- *   /ui/comics       → base = ''
- *   /kapowarr/ui/    → base = '/kapowarr'
- */
 export function getUrlBase(): string {
-  const path = window.location.pathname;
-  const uiIndex = path.indexOf('/ui/');
-  if (uiIndex > 0) {
-    return path.substring(0, uiIndex);
-  }
-  // Also handle root path when SPA redirects to /ui/
-  if (path === '/' || path === '') return '';
-  return '';
-}
-
-function apiPrefix(): string {
-  const base = getUrlBase();
-  return `${base}/api/`;
+  return runtimeConfig.urlBase;
 }
 
 export const apiClient = ky.create({
-  prefixUrl: typeof window !== 'undefined' ? apiPrefix() : '/api/',
+  prefixUrl: runtimeConfig.apiBase,
   hooks: {
     beforeRequest: [
       (request) => {

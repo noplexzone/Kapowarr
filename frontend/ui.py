@@ -1,229 +1,121 @@
 # -*- coding: utf-8 -*-
 
+from html import escape
 from io import BytesIO
 from json import dumps
-from os.path import exists, join
+from os.path import isfile, join
 
-from flask import Blueprint, redirect, send_file, send_from_directory
+from flask import Blueprint, Response, redirect, send_file, send_from_directory
 
 from backend.base.files import folder_path
 from backend.internals.server import Server
 
 ui = Blueprint('ui', __name__)
 methods = ['GET']
+SPA_DIR = folder_path('frontend', 'dist')
 
 
-def spa_redirect(path: str = ''):
-    """Redirect a legacy URL to the equivalent SPA path under /ui/."""
-    base = Server.url_base
-    target = f'{base}/ui/{path}' if path else f'{base}/ui/'
-    return redirect(target)
+def _url_base() -> str:
+    """Return Server.url_base in the canonical external URL form."""
+    value = (Server.url_base or '').strip()
+    if not value or value == '/':
+        return ''
+    return '/' + value.strip('/')
+
+
+def _base_url(path: str = '') -> str:
+    base = _url_base()
+    return f'{base}/{path.lstrip("/")}' if path else f'{base}/'
+
+
+def _serve_index():
+    index_path = join(SPA_DIR, 'index.html')
+    if not isfile(index_path):
+        return 'SPA not built. Run "cd frontend && npm run build" to build the React UI.', 503
+
+    with open(index_path, 'r', encoding='utf-8') as index_file:
+        html = index_file.read()
+
+    url_base = _url_base()
+    runtime_tags = (
+        f'<base href="{escape(_base_url(), quote=True)}">\n'
+        f'    <meta name="kapowarr-url-base" '
+        f'content="{escape(url_base, quote=True)}">'
+    )
+    html = html.replace('<head>', f'<head>\n    {runtime_tags}', 1)
+    response = Response(html, mimetype='text/html')
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+def _serve_static(path: str):
+    response = send_from_directory(SPA_DIR, path)
+    if path == 'sw.js':
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Service-Worker-Allowed'] = _base_url()
+    return response
 
 
 @ui.route('/manifest.json', methods=methods)
 def ui_manifest():
-    return send_file(
+    base_url = _base_url()
+    response = send_file(
         BytesIO(dumps(
             {
-                "name": "Kapowarr",
-                "short_name": "Kapowarr",
-                "description": "Comic and manga library manager",
-                "display": "standalone",
-                "orientation": "any",
-                "start_url": f"{Server.url_base}/",
-                "scope": f"{Server.url_base}/",
-                "id": f"{Server.url_base}/",
-                "theme_color": "#1a1a1a",
-                "background_color": "#1a1a1a",
-                "icons": [
+                'name': 'Kapowarr',
+                'short_name': 'Kapowarr',
+                'description': 'Comic and manga library manager',
+                'display': 'standalone',
+                'orientation': 'any',
+                'start_url': base_url,
+                'scope': base_url,
+                'id': base_url,
+                'theme_color': '#1a1a1a',
+                'background_color': '#1a1a1a',
+                'icons': [
                     {
-                        "src": f"{Server.url_base}/ui/icon-192.png",
-                        "sizes": "192x192",
-                        "type": "image/png"
+                        'src': _base_url('icon-192.png'),
+                        'sizes': '192x192',
+                        'type': 'image/png'
                     },
                     {
-                        "src": f"{Server.url_base}/ui/icon-512.png",
-                        "sizes": "512x512",
-                        "type": "image/png"
+                        'src': _base_url('icon-512.png'),
+                        'sizes': '512x512',
+                        'type': 'image/png'
                     },
                     {
-                        "src": f"{Server.url_base}/ui/favicon.svg",
-                        "sizes": "any",
-                        "type": "image/svg+xml",
-                        "purpose": "any maskable"
+                        'src': _base_url('favicon.svg'),
+                        'sizes': 'any',
+                        'type': 'image/svg+xml',
+                        'purpose': 'any maskable'
                     }
                 ]
             },
             indent=4
         ).encode('utf-8')),
-        mimetype="application/manifest+json",
-        download_name="manifest.json"
-    ), 200
+        mimetype='application/manifest+json',
+        download_name='manifest.json'
+    )
+    response.headers['Cache-Control'] = 'no-cache'
+    return response, 200
 
 
-# Root → SPA dashboard
-@ui.route('/', methods=methods)
-def ui_root():
-    return spa_redirect()
-
-
-# Dashboard redirect
-@ui.route('/dashboard', methods=methods)
-def ui_dashboard():
-    return spa_redirect()
-
-
-# Legacy login → SPA login
-@ui.route('/login', methods=methods)
-def ui_login():
-    return spa_redirect('login')
-
-
-# Comics
-@ui.route('/comics', methods=methods)
-def ui_volumes():
-    return spa_redirect('comics')
-
-
-@ui.route('/add', methods=methods)
-def ui_add_volume():
-    return spa_redirect('add')
-
-
-# Library import
-@ui.route('/library-import', methods=methods)
-def ui_library_import():
-    return spa_redirect('import')
-
-
-# Mismatch review
-@ui.route('/mismatch-review', methods=methods)
-def ui_mismatch_review():
-    return spa_redirect('mismatch-review')
-
-
-@ui.route('/manga/mismatch-review', methods=methods)
-def ui_manga_mismatch_review():
-    return spa_redirect('mismatch-review?section=manga')
-
-
-# Discovery
-@ui.route('/discovery', methods=methods)
-def ui_discovery():
-    return spa_redirect('discovery')
-
-
-@ui.route('/story-arcs', methods=methods)
-def ui_story_arcs():
-    return spa_redirect('discovery?type=story-arcs')
-
-
-# Manga
-@ui.route('/manga', methods=methods)
-def ui_manga_library():
-    return spa_redirect('manga')
-
-
-@ui.route('/manga/add', methods=methods)
-def ui_manga_add():
-    return spa_redirect('add?section=manga')
-
-
-@ui.route('/manga/discovery', methods=methods)
-def ui_manga_discovery():
-    return spa_redirect('discovery?section=manga')
-
-
-@ui.route('/manga/story-arcs', methods=methods)
-def ui_manga_story_arcs():
-    return spa_redirect('discovery?section=manga&type=story-arcs')
-
-
-# Volume detail
-@ui.route('/volumes/<id>', methods=methods)
-def ui_view_volume(id):
-    return spa_redirect(f'volumes/{id}')
-
-
-# Activity
-@ui.route('/activity/queue', methods=methods)
-def ui_queue():
-    return spa_redirect('activity/queue')
-
-
-@ui.route('/activity/history', methods=methods)
-def ui_history():
-    return spa_redirect('activity/history')
-
-
-@ui.route('/activity/blocklist', methods=methods)
-def ui_blocklist():
-    return spa_redirect('activity/blocklist')
-
-
-# System
-@ui.route('/system/status', methods=methods)
-def ui_status():
-    return spa_redirect('system/status')
-
-
-@ui.route('/system/tasks', methods=methods)
-def ui_tasks():
-    return spa_redirect('system/tasks')
-
-
-# Settings
-@ui.route('/settings', methods=methods)
-def ui_settings():
-    return spa_redirect('settings')
-
-
-@ui.route('/settings/mediamanagement', methods=methods)
-def ui_mediamanagement():
-    return spa_redirect('settings')
-
-
-@ui.route('/settings/download', methods=methods)
-def ui_download():
-    return spa_redirect('settings')
-
-
-@ui.route('/settings/downloadclients', methods=methods)
-def ui_download_clients():
-    return spa_redirect('settings')
-
-
-@ui.route('/settings/indexers', methods=methods)
-def ui_indexers():
-    return spa_redirect('settings')
-
-
-@ui.route('/settings/metadata', methods=methods)
-def ui_metadata():
-    return spa_redirect('settings')
-
-
-@ui.route('/settings/general', methods=methods)
-def ui_general():
-    return spa_redirect('settings')
-
-
-# ── SPA entry point ───────────────────────────────────────────────────────────
-SPA_DIR = folder_path('frontend', 'dist')
+# Keep the former /ui service worker reachable so existing installations receive
+# the safe worker and then follow the navigation redirect to the new root scope.
+@ui.route('/ui/sw.js', methods=methods)
+def ui_legacy_service_worker():
+    return _serve_static('sw.js')
 
 
 @ui.route('/ui/', defaults={'path': ''}, methods=methods)
 @ui.route('/ui/<path:path>', methods=methods)
+def ui_legacy_spa(path: str):
+    return redirect(_base_url(path), code=308)
+
+
+@ui.route('/', defaults={'path': ''}, methods=methods)
+@ui.route('/<path:path>', methods=methods)
 def ui_spa(path: str):
-    index_path = join(SPA_DIR, 'index.html')
-
-    # Serve static assets directly
-    if path and exists(join(SPA_DIR, path)):
-        return send_from_directory(SPA_DIR, path)
-
-    # All other paths → index.html for client-side routing
-    if exists(index_path):
-        return send_file(index_path)
-
-    # Fallback: dev mode message
-    return 'SPA not built. Run "cd frontend && npm run build" to build the React UI.', 503
+    if path and isfile(join(SPA_DIR, path)):
+        return _serve_static(path)
+    return _serve_index()

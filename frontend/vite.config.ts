@@ -7,7 +7,7 @@ const KAPOWARR_PORT = process.env.KAPOWARR_PORT || '5656';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/ui/',
+  base: './',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -17,7 +17,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': `http://localhost:${KAPOWARR_PORT}`,
-      '/socket.io': {
+      '/api/socket.io': {
         target: `http://localhost:${KAPOWARR_PORT}`,
         ws: true,
       },

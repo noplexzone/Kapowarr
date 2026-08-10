@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Report truthful monitored issue health and operational dashboard metrics with actionable filtered destinations.
 - Bound selected library mutations to four concurrent requests with partial-failure feedback and validate focused API responses at runtime with Zod.
 - Harden Settings with URL-addressable categories, label/help search, accessible fields, validated global Save/Discard controls, and explicit restart confirmation.
+- Add production-build Playwright and axe accessibility gates at desktop, 390 px, and 320 px widths in both supported themes.
 - Add truthful server-side library pagination with URL-backed page controls that cap rendered records at 60 per page.
 - Add poster-first library controls, responsive volume-detail issue cards, operational dashboard refresh/error states, and safer settings workflows.
 - Add shared loading, error, empty, form, status, pagination, focus, motion, and touch-target foundations.
@@ -22,7 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Serve the SPA and PWA safely from the configured reverse-proxy base path, with static-only service-worker caching.
+- Replace regex HTML sanitization with DOMPurify, apply restrictive browser security headers, and harden the non-root container runtime.
+- Preserve JSON 404 behavior for unknown API paths, retain query strings during legacy UI migration, and return numeric dashboard metrics for empty sections.
+- Redact API keys, passwords, and provider tokens from settings and startup logs.
 - Replace arbitrary-path unmatched-file deletion with authenticated, volume-scoped opaque identifiers and root containment checks.
 - Normalize and validate streamed library-import results so matched folders cannot be classified for unmatched-folder deletion.
 - Fix unmatched library-import deletion to send the backend-compatible folder list and keep confirmed paths visible when deletion fails.
+- Publish both `develop` and the current application-version container tags with OCI source, version, and revision labels.
 - Preserve every file during colliding mass renames, keep filesystem and database paths consistent on failures, and record post-processing failures instead of false download successes.

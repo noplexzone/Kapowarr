@@ -3,6 +3,8 @@ export interface BulkScanItem {
   cv_id?: number;
   file_title: string;
   matched: boolean;
+  id_type: string | null;
+  match_type: 'comicinfo' | 'title' | null;
   match_title?: string;
   year?: number;
   volume_number?: number;

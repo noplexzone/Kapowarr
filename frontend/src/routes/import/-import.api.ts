@@ -1,6 +1,66 @@
 import { apiClient, getUrlBase, readJson } from '@/app/api-client';
 import type { BulkScanItem, ImportSelection } from './-import.types';
 
+interface BulkScanWireItem {
+  folder: unknown;
+  file_title: unknown;
+  cv_id: unknown;
+  id_type?: unknown;
+  match_type?: unknown;
+}
+
+function normalizeScanEvent(value: unknown): BulkScanItem | null {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('Invalid library-import scan event');
+  }
+
+  const event = value as Record<string, unknown>;
+  if (event.type === 'status') return null;
+  if ('type' in event) throw new Error('Invalid library-import scan event type');
+
+  const item = event as unknown as BulkScanWireItem;
+  if (typeof item.folder !== 'string' || item.folder.length === 0) {
+    throw new Error('Invalid folder in library-import scan result');
+  }
+  if (typeof item.file_title !== 'string' || item.file_title.length === 0) {
+    throw new Error('Invalid file_title in library-import scan result');
+  }
+  if (item.cv_id !== null && (!Number.isInteger(item.cv_id) || (item.cv_id as number) <= 0)) {
+    throw new Error('Invalid cv_id in library-import scan result');
+  }
+  if (item.id_type !== undefined && item.id_type !== null && typeof item.id_type !== 'string') {
+    throw new Error('Invalid id_type in library-import scan result');
+  }
+  if (
+    item.match_type !== undefined
+    && item.match_type !== null
+    && item.match_type !== 'comicinfo'
+    && item.match_type !== 'title'
+  ) {
+    throw new Error('Invalid match_type in library-import scan result');
+  }
+
+  const idType = (item.id_type as string | null | undefined) ?? null;
+  const matchType = (item.match_type as BulkScanItem['match_type'] | undefined) ?? null;
+  const matched = item.cv_id !== null;
+  if (matched ? idType === null || matchType === null : idType !== null || matchType !== null) {
+    throw new Error('Inconsistent match classification in library-import scan result');
+  }
+
+  return {
+    folder: item.folder,
+    file_title: item.file_title,
+    ...(matched ? { cv_id: item.cv_id as number } : {}),
+    id_type: idType,
+    match_type: matchType,
+    matched,
+  };
+}
+
+function parseScanLine(line: string): BulkScanItem | null {
+  return normalizeScanEvent(JSON.parse(line) as unknown);
+}
+
 export async function* scanBulk(
   folderFilter = '',
   fuzzyFallback = false,
@@ -34,14 +94,16 @@ export async function* scanBulk(
     buffer = lines.pop() ?? '';
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed) {
-        yield JSON.parse(trimmed) as BulkScanItem;
-      }
+      if (!trimmed) continue;
+      const item = parseScanLine(trimmed);
+      if (item) yield item;
     }
   }
 
+  buffer += decoder.decode();
   if (buffer.trim()) {
-    yield JSON.parse(buffer) as BulkScanItem;
+    const item = parseScanLine(buffer);
+    if (item) yield item;
   }
 }
 

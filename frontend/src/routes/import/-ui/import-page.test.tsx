@@ -40,17 +40,23 @@ const matched = {
   cv_id: 1,
   file_title: 'Matched',
   matched: true,
+  id_type: 'volume',
+  match_type: 'comicinfo' as const,
   match_title: 'Matched',
 };
 const unmatchedOne = {
   folder: '/library/Unmatched One',
   file_title: 'Unmatched One',
   matched: false,
+  id_type: null,
+  match_type: null,
 };
 const unmatchedTwo = {
   folder: '/library/Unmatched Two',
   file_title: 'Unmatched Two',
   matched: false,
+  id_type: null,
+  match_type: null,
 };
 
 function readyScan() {

@@ -51,18 +51,42 @@ function toVolumeDetail(raw: Record<string, any>): VolumeDetail {
   };
 }
 
+const VOLUME_PAGE_SIZE = 60;
+
+interface RawVolumeListResponse {
+  items: Record<string, any>[];
+  total: number;
+  offset: number;
+  page_size: number;
+}
+
 async function fetchVolumeList(params: VolumesSearch, section: SectionType): Promise<VolumeListResponse> {
   const sp = new URLSearchParams();
   sp.set('section', section);
   if (params.sort) sp.set('sort', params.sort);
   if (params.filter) sp.set('filter', params.filter);
   if (params.search) sp.set('query', params.search);
-  if (params.offset != null) sp.set('offset', String(params.offset));
+  sp.set('offset', String(params.offset ?? 0));
+  sp.set('limit', String(VOLUME_PAGE_SIZE));
 
   const response = await apiClient.get('volumes', { searchParams: sp });
-  const data = await readJson<Record<string, any>[]>(response);
-  const volumes = Array.isArray(data) ? data.map(toVolumeSummary) : [];
-  return { volumes, total: volumes.length };
+  const data = await readJson<RawVolumeListResponse>(response);
+  if (
+    !data
+    || !Array.isArray(data.items)
+    || !Number.isInteger(data.total)
+    || !Number.isInteger(data.offset)
+    || !Number.isInteger(data.page_size)
+  ) {
+    throw new Error('Invalid paginated volume response');
+  }
+
+  return {
+    volumes: data.items.map(toVolumeSummary),
+    total: data.total,
+    offset: data.offset,
+    page_size: data.page_size,
+  };
 }
 
 export function volumeDetailQueryOptions(profile: number, id: number) {

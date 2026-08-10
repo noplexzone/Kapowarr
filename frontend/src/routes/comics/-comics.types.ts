@@ -76,6 +76,8 @@ export interface VolumeSummary {
 export interface VolumeListResponse {
   volumes: VolumeSummary[];
   total: number;
+  offset: number;
+  page_size: number;
 }
 
 export interface VolumeDetail extends VolumeSummary {

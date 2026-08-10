@@ -895,36 +895,37 @@ class Volume:
 # region Library
 class Library:
     @classmethod
-    def get_public_volumes(
+    def _get_public_volume_rows(
         cls,
-        sort: LibrarySorting = LibrarySorting.TITLE,
-        filter: Union[LibraryFilter, int, None] = None,
-        section: str = 'comic'
+        sort: LibrarySorting,
+        filter: Union[LibraryFilter, int, None],
+        section: str,
+        page: Union[int, None] = None,
+        page_size: Union[int, None] = None
     ) -> List[Dict[str, Any]]:
-        """Get all the volumes in the library.
+        """Run the public-volume query, optionally as a zero-based page."""
+        if section not in ('comic', 'manga'):
+            raise ValueError(f'Unknown library section: {section}')
 
-        Args:
-            sort (LibrarySorting, optional): How to sort the list.
-                Defaults to LibrarySorting.TITLE.
-
-            filter (Union[LibraryFilter, None], optional): Apply a filter to
-                the list if not `None`.
-                Defaults to None.
-
-            section (str, optional): Section to filter by ('comic' or 'manga').
-                Defaults to 'comic'.
-
-        Returns:
-            List[Dict[str, Any]]: The list of volumes in the library.
-        """
+        params: List[Any] = []
         if isinstance(filter, LibraryFilter):
-            sql_filter = filter.value + f" AND rf.section = '{section}'"
+            sql_filter = filter.value + " AND rf.section = ?"
+            params.append(section)
         elif isinstance(filter, int):
-            sql_filter = f"WHERE comicvine_id = {filter} AND rf.section = '{section}'"
+            sql_filter = "WHERE comicvine_id = ? AND rf.section = ?"
+            params.extend((filter, section))
         else:
-            sql_filter = f"WHERE rf.section = '{section}'"
+            sql_filter = "WHERE rf.section = ?"
+            params.append(section)
 
-        volumes = get_db().execute(f"""
+        pagination = ''
+        if page is not None or page_size is not None:
+            if page is None or page_size is None or page < 0 or page_size < 1:
+                raise ValueError('Invalid library page')
+            pagination = "LIMIT ? OFFSET ?"
+            params.extend((page_size, page * page_size))
+
+        return get_db().execute(f"""
             WITH
                 vol_issues AS (
                     SELECT id, monitored, date
@@ -961,15 +962,53 @@ class Library:
                 ) AS issues_downloaded_monitored,
                 (
                     SELECT SUM(size) FROM (SELECT DISTINCT id, size FROM issues_to_files)
-                ) AS total_size
+                ) AS total_size,
+                COUNT(*) OVER () AS _total_count
             FROM volumes
             INNER JOIN root_folders rf ON rf.id = volumes.root_folder
             {sql_filter}
-            ORDER BY {sort.value};
-            """
+            ORDER BY {sort.value}
+            {pagination};
+            """, tuple(params)
         ).fetchalldict()
 
-        return volumes
+    @classmethod
+    def get_public_volumes(
+        cls,
+        sort: LibrarySorting = LibrarySorting.TITLE,
+        filter: Union[LibraryFilter, int, None] = None,
+        section: str = 'comic'
+    ) -> List[Dict[str, Any]]:
+        """Get all public volumes while preserving the legacy list contract."""
+        rows = cls._get_public_volume_rows(sort, filter, section)
+        for row in rows:
+            row.pop('_total_count', None)
+        return rows
+
+    @classmethod
+    def get_public_volumes_page(
+        cls,
+        sort: LibrarySorting = LibrarySorting.TITLE,
+        filter: Union[LibraryFilter, int, None] = None,
+        section: str = 'comic',
+        page: int = 0,
+        page_size: int = 60
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Get one zero-based page and the total matching volume count."""
+        rows = cls._get_public_volume_rows(
+            sort, filter, section, page, page_size
+        )
+        if rows:
+            total = int(rows[0].get('_total_count') or 0)
+        elif page:
+            first = cls._get_public_volume_rows(sort, filter, section, 0, 1)
+            total = int(first[0].get('_total_count') or 0) if first else 0
+        else:
+            total = 0
+
+        for row in rows:
+            row.pop('_total_count', None)
+        return rows, total
 
     @classmethod
     def search(

@@ -946,18 +946,51 @@ def api_volumes():
         sort = extract_key(request, 'sort', False)
         filter = extract_key(request, 'filter', False)
         section = extract_key(request, 'section', False) or 'comic'
-        LOGGER.debug('api_volumes GET: query=%r sort=%r filter=%r section=%r', query, sort, filter, section)
+        offset = extract_key(request, 'offset', False)
+        requested_limit = extract_key(request, 'limit', False)
+        limit = 60 if requested_limit is None else requested_limit
+        if section not in ('comic', 'manga'):
+            raise InvalidKeyValue('section', section)
+        if offset < 0:
+            raise InvalidKeyValue('offset', offset)
+        if limit < 1 or limit > 100:
+            raise InvalidKeyValue('limit', limit)
+
+        LOGGER.debug(
+            'api_volumes GET: query=%r sort=%r filter=%r section=%r '
+            'offset=%r limit=%r',
+            query, sort, filter, section, offset, limit
+        )
         try:
             if query:
-                volumes = Library.search(query, sort or LibrarySorting.TITLE, filter, section)
+                matching = Library.search(
+                    query, sort or LibrarySorting.TITLE, filter, section
+                )
+                total = len(matching)
+                start = offset * limit
+                volumes = matching[start:start + limit]
             else:
-                volumes = Library.get_public_volumes(sort or LibrarySorting.TITLE, filter, section)
-            LOGGER.debug('api_volumes GET: returning %d volumes', len(volumes))
+                volumes, total = Library.get_public_volumes_page(
+                    sort or LibrarySorting.TITLE,
+                    filter,
+                    section,
+                    offset,
+                    limit
+                )
+            LOGGER.debug(
+                'api_volumes GET: returning %d of %d volumes',
+                len(volumes), total
+            )
         except Exception as e:
             LOGGER.exception('api_volumes GET: unexpected error: %s', e)
             raise
 
-        return return_api(volumes)
+        return return_api({
+            'items': volumes,
+            'total': total,
+            'offset': offset,
+            'page_size': limit
+        })
 
     elif request.method == 'POST':
         data: dict = request.get_json()

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
+import { Pagination } from '@/components/pagination/pagination';
 import { volumeListQueryOptions } from '../-comics.api';
 import { type ViewOption, type SectionType, type VolumesSearch } from '../-comics.types';
 import {
@@ -80,7 +81,16 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
       if ('filter' in patch) setStorageVal(STORAGE_KEY_FILTER, patch.filter);
       if ('search' in patch) setStorageVal(STORAGE_KEY_SEARCH, patch.search);
 
-      navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...patch }) });
+      const resetsPage = ('sort' in patch || 'filter' in patch || 'search' in patch)
+        && !('offset' in patch);
+      navigate({
+        to: section === 'comic' ? '/comics' : '/manga',
+        search: (prev: any) => ({
+          ...prev,
+          ...patch,
+          ...(resetsPage ? { offset: 0 } : {}),
+        }),
+      });
     },
     [navigate, section],
   );
@@ -198,6 +208,13 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
           </table>
         </div>
       )}
+
+      <Pagination
+        page={data.offset}
+        pageSize={data.page_size}
+        total={total}
+        onPageChange={(offset) => updateSearch({ offset })}
+      />
 
       {/* Floating bottom search bar */}
       <div className={styles.searchBar}>

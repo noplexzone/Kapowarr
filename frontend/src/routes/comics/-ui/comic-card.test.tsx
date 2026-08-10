@@ -37,4 +37,14 @@ describe('ComicCard actions', () => {
     expect(onMonitor).toHaveBeenCalledWith(7, false);
     expect(onSearch).toHaveBeenCalledWith(7);
   });
+
+  it('keeps a compact indicator inside an accessible hit target', () => {
+    render(<ComicCard volume={volume} selected selectionVisible onSelect={vi.fn()} onMonitor={vi.fn()} onSearch={vi.fn()} />);
+    const checkbox = screen.getByRole('checkbox', { name: 'Select Saga' });
+    const target = screen.getByTestId('selection-hit-target');
+    expect(getComputedStyle(checkbox).width).toBe('22px');
+    expect(getComputedStyle(checkbox).height).toBe('22px');
+    expect(getComputedStyle(target).width).toBe('44px');
+    expect(getComputedStyle(target).height).toBe('44px');
+  });
 });

@@ -12,24 +12,26 @@ import styles from './comic-card.module.css';
 interface ComicCardProps {
   volume: VolumeSummary;
   selected: boolean;
+  selectionVisible?: boolean;
   pending?: boolean;
   onSelect: (id: number) => void;
   onSearch: (id: number) => void;
   onMonitor: (id: number, monitored: boolean) => void;
 }
 
-export function ComicCard({ volume, selected, pending = false, onSelect, onSearch, onMonitor }: ComicCardProps) {
+export function ComicCard({ volume, selected, selectionVisible = false, pending = false, onSelect, onSearch, onMonitor }: ComicCardProps) {
   const progressPct = getProgressPercent(volume.progress);
   const progressTone = progressPct >= 100 ? 'success' : 'danger';
 
   return (
-    <Card className={styles.card}>
-      <label className={styles.selectControl}>
+    <Card className={`${styles.card}${selected ? ` ${styles.selected}` : ''}${selectionVisible ? ` ${styles.selectionVisible}` : ''}`}>
+      <label className={styles.selectControl} data-testid="selection-hit-target" style={{ width: 44, height: 44 }}>
         <input
           type="checkbox"
           checked={selected}
           onChange={() => onSelect(volume.id)}
           aria-label={`Select ${volume.title}`}
+          style={{ width: 22, height: 22 }}
         />
       </label>
       <Link

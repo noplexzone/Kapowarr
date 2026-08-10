@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
+import { chunkForModule } from './build-chunks';
 
 const KAPOWARR_PORT = process.env.KAPOWARR_PORT || '5656';
 
@@ -26,5 +27,10 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: chunkForModule,
+      },
+    },
   },
 });

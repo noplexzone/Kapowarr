@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Add truthful server-side library pagination with URL-backed page controls that cap rendered records at 60 per page.
+- Add poster-first library controls, responsive volume-detail issue cards, operational dashboard refresh/error states, and safer settings workflows.
+- Add shared loading, error, empty, form, status, pagination, focus, motion, and touch-target foundations.
+- Add automated UI contract and build-budget checks, with vendor chunking that reduces the main JavaScript bundle from about 584 kB to 162 kB.
 - Allow interactive volume and issue searches to use an exact user-supplied source query, with an explicit force-download action for metadata mismatches.
 - Speed up large direct downloads with validated four-part HTTP range transfers, per-part retries, and automatic single-stream fallback.
 

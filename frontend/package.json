@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:check": "npm run build && node scripts/check-build-budgets.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

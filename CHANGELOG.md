@@ -31,4 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Normalize and validate streamed library-import results so matched folders cannot be classified for unmatched-folder deletion.
 - Fix unmatched library-import deletion to send the backend-compatible folder list and keep confirmed paths visible when deletion fails.
 - Publish both `develop` and the current application-version container tags with OCI source, version, and revision labels.
+- Gate container publication behind the complete backend, frontend, and production-browser matrix, and use the reviewed image in Compose.
+- Close directory- and inode-replacement races in unmatched-file deletion, use authoritative file IDs for matched deletion, and label destructive issue controls.
+- Parameterize dashboard section queries, bound Recently Added requests, and link mismatch counts to the records that compose them.
+- Protect top-level and service-editor Settings drafts across route changes, refreshes, and tab closure without blocking safe category changes.
 - Preserve every file during colliding mass renames, keep filesystem and database paths consistent on failures, and record post-processing failures instead of false download successes.

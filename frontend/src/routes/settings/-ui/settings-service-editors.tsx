@@ -552,4 +552,3 @@ export function RootFoldersSection() {
     </div>
   );
 }
-

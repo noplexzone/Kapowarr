@@ -34,6 +34,15 @@ import {
 import type { AllSettings, NZBIndexer, ExternalClient, RemoteMapping, SuwayomiSource } from '../-settings.types';
 import styles from './settings-page.module.css';
 
+function MutationError({ error }: { error: unknown }) {
+  if (!error) return null;
+  return (
+    <p role="alert" className={styles.testFailure}>
+      {error instanceof Error ? error.message : 'The settings change failed.'}
+    </p>
+  );
+}
+
 const HOSTING_KEYS = new Set(['host', 'port', 'url_base']);
 
 export function SettingsPage() {
@@ -403,10 +412,13 @@ function NZBIndexersSection() {
           <div className={styles.clientMeta}>{idx.base_url}</div>
           <div className={styles.actionBtns}>
             <button className={styles.smallBtn} type="button" onClick={() => startEdit(idx)}>Edit</button>
-            <button className={styles.smallBtn} type="button" onClick={() => delMutation.mutate(idx.id)} disabled={delMutation.isPending}>Delete</button>
+            <button className={styles.smallBtn} type="button" onClick={() => {
+              if (window.confirm(`Delete NZB indexer “${idx.name}” (${idx.base_url})?`)) delMutation.mutate(idx.id);
+            }} disabled={delMutation.isPending}>Delete</button>
           </div>
         </div>
       ))}
+      <MutationError error={delMutation.error} />
       {showForm && (
         <div className={styles.inlineForm}>
           <Field label="Name">
@@ -586,10 +598,13 @@ function ExternalClientsSection() {
           {c.category && <div className={styles.clientMeta}>Category: {c.category}</div>}
           <div className={styles.actionBtns}>
             <button className={styles.smallBtn} type="button" onClick={() => startEdit(c)}>Edit</button>
-            <button className={styles.smallBtn} type="button" onClick={() => delMutation.mutate(c.id)} disabled={delMutation.isPending}>Delete</button>
+            <button className={styles.smallBtn} type="button" onClick={() => {
+              if (window.confirm(`Delete external client “${c.title}” (${c.base_url})?`)) delMutation.mutate(c.id);
+            }} disabled={delMutation.isPending}>Delete</button>
           </div>
         </div>
       ))}
+      <MutationError error={delMutation.error} />
     </div>
   );
 
@@ -736,11 +751,15 @@ function RemoteMappingsSection() {
             <div className={styles.clientMeta}>{m.remote_path} → {m.local_path}</div>
             <div className={styles.actionBtns}>
               <button className={styles.smallBtn} type="button" onClick={() => startEdit(m)}>Edit</button>
-              <button className={styles.smallBtn} type="button" onClick={() => delMutation.mutate(m.id)} disabled={delMutation.isPending}>Delete</button>
+              <button className={styles.smallBtn} type="button" onClick={() => {
+                const clientName = cl ? cl.title : `Client #${m.external_download_client_id}`;
+                if (window.confirm(`Delete remote mapping for “${clientName}”?\n\n${m.remote_path} → ${m.local_path}`)) delMutation.mutate(m.id);
+              }} disabled={delMutation.isPending}>Delete</button>
             </div>
           </div>
         );
       })}
+      <MutationError error={delMutation.error} />
       {showForm && (
         <div className={styles.inlineForm}>
           <Field label="External Client">
@@ -821,10 +840,15 @@ function RootFoldersSection() {
             Free: {formatBytes(rf.free_space)} / Total: {formatBytes(rf.total_space)}
           </div>
           <div className={styles.actionBtns}>
-            <button className={styles.smallBtn} type="button" onClick={() => delMutation.mutate(rf.id)} disabled={delMutation.isPending}>Delete</button>
+            <button className={styles.smallBtn} type="button" onClick={() => {
+              if (window.confirm(
+                `Remove root folder configuration “${rf.folder}”?\n\nKapowarr will stop managing this location. Media files on disk are not deleted.`,
+              )) delMutation.mutate(rf.id);
+            }} disabled={delMutation.isPending}>Delete</button>
           </div>
         </div>
       ))}
+      <MutationError error={delMutation.error} />
       <div className={styles.inlineForm}>
         <Field label="Path">
           <input className={styles.input} value={newPath} onChange={e => setNewPath(e.target.value)} placeholder="/path/to/comics" />

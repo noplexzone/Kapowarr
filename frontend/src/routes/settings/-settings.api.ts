@@ -13,11 +13,13 @@ export function settingsQueryOptions() {
 }
 
 export async function updateSettings(data: Partial<AllSettings>): Promise<void> {
-  await apiClient.put('settings', { json: data });
+  const response = await apiClient.put('settings', { json: data });
+  await readJson<unknown>(response);
 }
 
 export async function resetKeys(keys: string[]): Promise<void> {
-  await apiClient.delete('settings', { json: { reset_keys: keys } });
+  const response = await apiClient.delete('settings', { json: { reset_keys: keys } });
+  await readJson<unknown>(response);
 }
 
 export const SUWAYOMI_SOURCES_KEY = ['suwayomi-sources'] as const;
@@ -50,7 +52,8 @@ export async function updateNzbIndexer(id: number, data: Partial<NZBIndexer>): P
 }
 
 export async function deleteNzbIndexer(id: number): Promise<void> {
-  await apiClient.delete(`nzbindexers/${id}`);
+  const response = await apiClient.delete(`nzbindexers/${id}`);
+  await readJson<unknown>(response);
 }
 
 export async function testNzbIndexer(base_url: string, api_key: string): Promise<{success: boolean; description: string | null}> {
@@ -86,7 +89,8 @@ export async function updateExternalClient(id: number, data: Partial<ExternalCli
 }
 
 export async function deleteExternalClient(id: number): Promise<void> {
-  await apiClient.delete(`externalclients/${id}`);
+  const response = await apiClient.delete(`externalclients/${id}`);
+  await readJson<unknown>(response);
 }
 
 export async function testExternalClient(data: {client_type: string; base_url: string; username?: string; password?: string; api_token?: string}): Promise<{success: boolean; description: string | null}> {
@@ -113,7 +117,8 @@ export async function updateRemoteMapping(id: number, data: Partial<RemoteMappin
 }
 
 export async function deleteRemoteMapping(id: number): Promise<void> {
-  await apiClient.delete(`remotemapping/${id}`);
+  const response = await apiClient.delete(`remotemapping/${id}`);
+  await readJson<unknown>(response);
 }
 
 // Root Folders
@@ -140,9 +145,11 @@ export async function addRootFolder(folder: string, section: string): Promise<Ro
 }
 
 export async function updateRootFolder(id: number, data: Partial<{ folder: string; section: string }>): Promise<void> {
-  await apiClient.put(`rootfolder/${id}`, { json: data });
+  const response = await apiClient.put(`rootfolder/${id}`, { json: data });
+  await readJson<unknown>(response);
 }
 
 export async function deleteRootFolder(id: number): Promise<void> {
-  await apiClient.delete(`rootfolder/${id}`);
+  const response = await apiClient.delete(`rootfolder/${id}`);
+  await readJson<unknown>(response);
 }

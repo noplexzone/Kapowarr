@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
+import { useBlocker } from '@tanstack/react-router';
 import { Button, Notice } from '@/components/primitives';
 import { useShellStore } from '@/platform/shell/store';
 import { settingsQueryOptions, updateSettings, SETTINGS_KEY, suwayomiSourcesQueryOptions } from '../-settings.api';
@@ -25,6 +26,15 @@ export function SettingsPage({ category = 'general', onCategoryChange }: { categ
   const { data: suwayomiSourcesData, isFetching: suwayomiSourcesFetching } = useQuery({ ...suwayomiSourcesQueryOptions(), enabled: Boolean(form.suwayomi_base_url) });
   const changedSettings = useMemo(() => getChangedSettings(form, baseline), [form, baseline]);
   const dirtyCount = Object.keys(changedSettings).length;
+  const shouldBlockNavigation = useCallback(
+    () => dirtyCount > 0 && !window.confirm('Discard unsaved settings changes?'),
+    [dirtyCount],
+  );
+  useBlocker({
+    shouldBlockFn: shouldBlockNavigation,
+    enableBeforeUnload: dirtyCount > 0,
+    disabled: dirtyCount === 0,
+  });
   const filteredCategories = useMemo(() => {
     const query = search.trim().toLowerCase();
     return query ? SETTINGS_CATEGORIES.filter(item => `${item.label} ${item.searchText}`.toLowerCase().includes(query)) : SETTINGS_CATEGORIES;

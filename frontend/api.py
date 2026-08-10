@@ -949,8 +949,11 @@ def api_volumes():
         filter = extract_key(request, 'filter', False)
         section = extract_key(request, 'section', False) or 'comic'
         offset = extract_key(request, 'offset', False)
-        requested_limit = extract_key(request, 'limit', False)
-        limit = 60 if requested_limit is None else requested_limit
+        limit = (
+            extract_key(request, 'limit', False)
+            if request.values.get('limit') is not None
+            else 60
+        )
         if section not in ('comic', 'manga'):
             raise InvalidKeyValue('section', section)
         if offset < 0:

@@ -5,8 +5,8 @@ interface BulkScanWireItem {
   folder: unknown;
   file_title: unknown;
   cv_id: unknown;
-  id_type?: unknown;
-  match_type?: unknown;
+  id_type: unknown;
+  match_type: unknown;
 }
 
 function normalizeScanEvent(value: unknown): BulkScanItem | null {
@@ -17,6 +17,11 @@ function normalizeScanEvent(value: unknown): BulkScanItem | null {
   const event = value as Record<string, unknown>;
   if (event.type === 'status') return null;
   if ('type' in event) throw new Error('Invalid library-import scan event type');
+  for (const field of ['cv_id', 'id_type', 'match_type'] as const) {
+    if (!Object.prototype.hasOwnProperty.call(event, field)) {
+      throw new Error(`Missing ${field} in library-import scan result`);
+    }
+  }
 
   const item = event as unknown as BulkScanWireItem;
   if (typeof item.folder !== 'string' || item.folder.length === 0) {

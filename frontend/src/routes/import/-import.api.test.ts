@@ -78,12 +78,25 @@ describe('scanBulk', () => {
     await expect(collectScan()).rejects.toThrow(/inconsistent match classification/i);
   });
 
-  it('fails closed when a folder result has no explicit cv_id classification', async () => {
-    const stream = JSON.stringify({ folder: '/library/Ambiguous', file_title: 'Ambiguous', match_type: null }) + '\n';
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream, { status: 200 })));
+  it.each(['cv_id', 'id_type', 'match_type'] as const)(
+    'fails closed when a folder result omits the %s classification field',
+    async missingField => {
+      const classification: Record<string, unknown> = {
+        cv_id: null,
+        id_type: null,
+        match_type: null,
+      };
+      delete classification[missingField];
+      const stream = JSON.stringify({
+        folder: '/library/Ambiguous',
+        file_title: 'Ambiguous',
+        ...classification,
+      }) + '\n';
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream, { status: 200 })));
 
-    await expect(collectScan()).rejects.toThrow(/invalid cv_id/i);
-  });
+      await expect(collectScan()).rejects.toThrow(new RegExp(`missing ${missingField}`, 'i'));
+    },
+  );
 });
 
 describe('deleteUnmatched', () => {

@@ -59,8 +59,9 @@ ENV PUID=1000 \
 
 EXPOSE 5656
 
+# A TCP readiness probe remains valid when the application is hosted below a URL base.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["python3", "-c", "import json,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:5656/api/health', timeout=3); assert r.status == 200 and json.load(r).get('healthy') is True"]
+    CMD ["python3", "-c", "import socket; s=socket.create_connection(('127.0.0.1',5656),3); s.close()"]
 
 USER kapowarr:kapowarr
 

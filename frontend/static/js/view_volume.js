@@ -220,7 +220,7 @@ function fillPage(data, api_key) {
 	};
 
 	// Cover
-	ViewEls.vol_data.cover.src = `${url_base}/api/volumes/${data.id}/cover?api_key=${api_key}`;
+	setAuthenticatedImage(ViewEls.vol_data.cover, `/volumes/${data.id}/cover`, api_key);
 
 	// Monitored state
 	ViewEls.vol_edit.monitor_new_issues.value = data.monitor_new_issues;

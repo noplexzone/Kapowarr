@@ -1,8 +1,8 @@
+import { AuthenticatedImage } from '@/components/authenticated-resource';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Card, Badge, Button } from '@/components/primitives';
 import { PageHeader, StatusBanner } from '@/components/patterns';
-import { getCoverUrl } from '@/routes/comics/-comics.helpers';
 import {
   comicStatsQueryOptions,
   mangaStatsQueryOptions,
@@ -160,8 +160,8 @@ export function DashboardPage() {
                     params={{ volumeId: String(v.id) }}
                     className={styles.coverLink}
                   >
-                    <img
-                      src={getCoverUrl(v.id)}
+                    <AuthenticatedImage
+                      endpoint={`volumes/${v.id}/cover`}
                       alt=""
                       className={styles.coverImg}
                       loading="lazy"
@@ -210,8 +210,8 @@ export function DashboardPage() {
                     params={{ volumeId: String(v.id) }}
                     className={styles.coverLink}
                   >
-                    <img
-                      src={getCoverUrl(v.id)}
+                    <AuthenticatedImage
+                      endpoint={`volumes/${v.id}/cover`}
                       alt=""
                       className={styles.coverImg}
                       loading="lazy"

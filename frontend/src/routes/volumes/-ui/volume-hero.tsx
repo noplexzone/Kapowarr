@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { Badge, Button, Progress } from '@/components/primitives';
 import { StatusBanner } from '@/components/patterns';
-import { getCoverUrl } from '@/routes/comics/-comics.helpers';
+import { AuthenticatedImage } from '@/components/authenticated-resource';
 import type { VolumeDetailFull } from '../-volumes.types';
 import { sanitizeHtml } from './sanitize';
 import { PencilIcon, PersonIcon, RefreshIcon, SearchIcon } from './volume-detail-icons';
@@ -22,9 +22,9 @@ export function VolumeHero({ volume, actionMsg, progressPct, progressTone, refre
       {actionMsg && <StatusBanner>{actionMsg}</StatusBanner>}
 
       <div className={styles.header} data-testid="volume-hero">
-        <img
+        <AuthenticatedImage
           className={styles.cover}
-          src={getCoverUrl(volume.id)}
+          endpoint={`volumes/${volume.id}/cover`}
           alt={`Cover for ${volume.title}`}
         />
 

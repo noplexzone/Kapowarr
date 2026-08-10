@@ -22,52 +22,60 @@ function hide(to_hide, to_show=null) {
 };
 
 async function fetchAPI(endpoint, api_key, params={}, json_return=true) {
-	let formatted_params = '';
-	if (Object.keys(params).length) {
-		formatted_params = '&' + Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-	};
-
-	return fetch(`${url_base}/api${endpoint}?api_key=${api_key}${formatted_params}`)
+	const query = new URLSearchParams(params).toString();
+	return fetch(`${url_base}/api${endpoint}${query ? `?${query}` : ''}`, {
+		headers: {'X-Api-Key': api_key}
+	})
 	.then(response => {
 		if (!response.ok) return Promise.reject(response);
-		if (json_return)
-			return response.json();
-		else
-			return response;
+		return json_return ? response.json() : response;
 	})
 	.catch(response => {
 		if (response.status === 401) {
-			setLocalStorage({api_key: null})
+			setLocalStorage({api_key: null});
 			window.location.href = `${url_base}/login?redirect=${window.location.pathname}`;
-		} else {
-			return Promise.reject(response);
-		};
+		} else return Promise.reject(response);
 	});
 };
 
 async function sendAPI(method, endpoint, api_key, params={}, body={}) {
-	let formatted_params = '';
-	if (Object.keys(params).length) {
-		formatted_params = '&' + Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-	};
-
-	return fetch(`${url_base}/api${endpoint}?api_key=${api_key}${formatted_params}`, {
-		'method': method,
-		'headers': {'Content-Type': 'application/json'},
-		'body': JSON.stringify(body)
-	})
-	.then(response => {
+	const query = new URLSearchParams(params).toString();
+	return fetch(`${url_base}/api${endpoint}${query ? `?${query}` : ''}`, {
+		method,
+		headers: {'Content-Type': 'application/json', 'X-Api-Key': api_key},
+		body: JSON.stringify(body)
+	}).then(response => {
 		if (!response.ok) return Promise.reject(response);
-		return response
-	})
-	.catch(response => {
+		return response;
+	}).catch(response => {
 		if (response.status === 401) {
-			setLocalStorage({api_key: null})
+			setLocalStorage({api_key: null});
 			window.location.href = `${url_base}/login?redirect=${window.location.pathname}`;
-		} else {
-			return Promise.reject(response);
-		};
+		} else return Promise.reject(response);
 	});
+};
+
+const authenticatedImageUrls = new WeakMap();
+async function setAuthenticatedImage(image, endpoint, api_key) {
+	const response = await fetchAPI(endpoint, api_key, {}, false);
+	const next = URL.createObjectURL(await response.blob());
+	const previous = authenticatedImageUrls.get(image);
+	if (previous) URL.revokeObjectURL(previous);
+	authenticatedImageUrls.set(image, next);
+	image.src = next;
+};
+
+async function downloadAuthenticated(endpoint, api_key, filename) {
+	const response = await fetchAPI(endpoint, api_key, {}, false);
+	const objectUrl = URL.createObjectURL(await response.blob());
+	try {
+		const link = document.createElement('a');
+		link.href = objectUrl;
+		link.download = filename;
+		link.click();
+	} finally {
+		setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+	}
 };
 
 //
@@ -190,8 +198,9 @@ function unspinButton(task_string) {
 };
 
 function fillTaskQueue(api_key) {
-	fetch(`${url_base}/api/system/tasks?api_key=${api_key}`, {
-		'priority': 'low'
+	fetch(`${url_base}/api/system/tasks`, {
+		'priority': 'low',
+		'headers': {'X-Api-Key': api_key}
 	})
 	.then(response => {
 		if (!response.ok) return Promise.reject(response.status);

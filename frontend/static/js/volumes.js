@@ -146,8 +146,7 @@ function populateLibrary(volumes, api_key) {
 			`${url_base}/volumes/${volume.id}`;
 
 		// Cover
-		list_entry.querySelector('.list-img').src =
-			`${url_base}/api/volumes/${volume.id}/cover?api_key=${api_key}`;
+		setAuthenticatedImage(list_entry.querySelector('.list-img'), `/volumes/${volume.id}/cover`, api_key);
 
 		// Title
 		const list_title = list_entry.querySelector('.list-title');

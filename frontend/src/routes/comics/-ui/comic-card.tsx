@@ -1,10 +1,10 @@
 import { Link } from '@tanstack/react-router';
 import { Card, Progress, Badge, Button } from '@/components/primitives';
+import { AuthenticatedImage } from '@/components/authenticated-resource';
 import {
   formatVolumeSubtitle,
   getProgressLabel,
   getProgressPercent,
-  getCoverUrl,
 } from '../-comics.helpers';
 import type { VolumeSummary } from '../-comics.types';
 import styles from './comic-card.module.css';
@@ -39,9 +39,9 @@ export function ComicCard({ volume, selected, selectionVisible = false, pending 
         params={{ volumeId: String(volume.id) }}
         className={styles.coverArea}
       >
-        <img
+        <AuthenticatedImage
           className={styles.cover}
-          src={getCoverUrl(volume.id)}
+          endpoint={`volumes/${volume.id}/cover`}
           alt={`Cover for ${volume.title}`}
           loading="lazy"
         />

@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/primitives';
-import { fileInfoQueryOptions, pageUrl, rawFileUrl } from '../-reader.api';
+import { useAuthenticatedObjectUrl } from '@/components/authenticated-resource';
+import { fileInfoQueryOptions } from '../-reader.api';
 import styles from './reader-page.module.css';
 
 // ── SVG icon components ──────────────────────────────────────────
@@ -90,6 +91,8 @@ export function ReaderPage() {
   const filename = fileInfo ? basename(fileInfo.filepath) : '';
   const isPdf = fileInfo?.is_pdf ?? false;
   const pageCount = fileInfo?.page_count ?? 0;
+  const pageSrc = useAuthenticatedObjectUrl(fileInfo && !isPdf && pageCount > 0 ? `files/${fileId}/page/${currentPage}` : null);
+  const pdfSrc = useAuthenticatedObjectUrl(fileInfo && isPdf ? `files/${fileId}/raw` : null);
 
   return (
     <div className={styles.overlay}>
@@ -138,7 +141,7 @@ export function ReaderPage() {
         <div className={styles.content}>
           <iframe
             title={filename || 'PDF document'}
-            src={rawFileUrl(fileId)}
+            src={pdfSrc ?? undefined}
             className={styles.pdfEmbed}
           />
         </div>
@@ -164,7 +167,7 @@ export function ReaderPage() {
             <img
               key={currentPage}
               className={styles.pageImage}
-              src={pageUrl(fileId, currentPage)}
+              src={pageSrc ?? undefined}
               alt={`Page ${currentPage + 1}`}
               onClick={handleNext}
             />

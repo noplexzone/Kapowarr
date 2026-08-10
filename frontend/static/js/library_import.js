@@ -69,10 +69,11 @@ async function loadBulkProposal(api_key) {
 	const ffi = document.querySelector('#bulk-folder-filter-input');
 	const progressEl = document.querySelector('#bulk-loading-progress');
 
-	let url = `${url_base}/api/libraryimport/bulk?api_key=${api_key}`;
+	let url = `${url_base}/api/libraryimport/bulk`;
+	const query = new URLSearchParams();
 	const filterVal = ffi.value.trim();
 	if (filterVal)
-		url += `&folder_filter=${encodeURIComponent(filterVal)}`;
+		query.set('folder_filter', filterVal);
 	const fuzzyEnabled = LIEls.bulk_fuzzy.value === 'true';
 	if (fuzzyEnabled)
 		url += '&fuzzy_fallback=true';

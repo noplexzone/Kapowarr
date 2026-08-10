@@ -1,8 +1,19 @@
-import type { VolumeSummary } from './-comics.types';
+import type { SectionType, VolumesSearch, VolumeSummary } from './-comics.types';
 import { getUrlBase } from '@/app/api-client';
 
 export function formatVolumeTitle(volume: VolumeSummary): string {
   return volume.title;
+}
+
+export function getSelectionScopeKey(section: SectionType, search: VolumesSearch): string {
+  return [
+    section,
+    search.search ?? '',
+    search.filter ?? '',
+    search.sort ?? '',
+    search.offset ?? 0,
+    search.view ?? '',
+  ].join('|');
 }
 
 export function formatVolumeSubtitle(volume: VolumeSummary): string {

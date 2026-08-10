@@ -20,7 +20,7 @@ interface RawBlocklistResponse {
 }
 
 async function getBlocklist(offset: number): Promise<BlocklistResponse> {
-  const sp = new URLSearchParams({ offset: String(offset) });
+  const sp = new URLSearchParams({ offset: String(offset), paginated: 'true' });
   const response = await apiClient.get('blocklist', { searchParams: sp });
   const data = await readJson<RawBlocklistResponse>(response);
   if (!data || !Array.isArray(data.entries) || !Number.isInteger(data.total)) {

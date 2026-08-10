@@ -9,6 +9,8 @@ const indexCss = read('../index.css');
 const buttonCss = read('../components/primitives/button.module.css');
 const volumeCss = read('../routes/volumes/-ui/volume-detail-page.module.css');
 const dashboardCss = read('../routes/dashboard/-ui/dashboard-page.module.css');
+const historyCss = read('../routes/activity/history/-ui/history-page.module.css');
+const blocklistCss = read('../routes/activity/blocklist/-ui/blocklist-page.module.css');
 const routerSource = read('../app/router.tsx');
 
 describe('responsive and accessibility contracts', () => {
@@ -30,6 +32,15 @@ describe('responsive and accessibility contracts', () => {
     const mobileDashboard = dashboardCss.slice(dashboardCss.indexOf('@media (max-width: 768px)'));
     expect(mobileDashboard).toContain('grid-template-columns: repeat(2');
     expect(mobileDashboard).not.toContain('overflow-x: auto');
+  });
+
+  it('turns activity tables into labelled mobile cards', () => {
+    for (const css of [historyCss, blocklistCss]) {
+      const mobile = css.slice(css.indexOf('@media (max-width: 700px)'));
+      expect(mobile).toContain('overflow-x: visible');
+      expect(mobile).toContain('content: attr(data-label)');
+      expect(mobile).toContain('.table thead { display: none; }');
+    }
   });
 
   it('keeps route resilience and heavy-page splitting configured', () => {

@@ -9,7 +9,7 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 COPY frontend/ ./
-RUN npm run build
+RUN npm test -- --run && npm run build:check
 
 # --- Python Build Stage ---
 # Use Python slim as the base (it already has Python), install Rust on top

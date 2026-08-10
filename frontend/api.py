@@ -948,6 +948,15 @@ def api_volumes():
         sort = extract_key(request, 'sort', False)
         filter = extract_key(request, 'filter', False)
         section = extract_key(request, 'section', False) or 'comic'
+        paginated = request.values.get('paginated') == 'true'
+        if not paginated:
+            if query:
+                return return_api(Library.search(
+                    query, sort or LibrarySorting.TITLE, filter, section
+                ))
+            return return_api(Library.get_public_volumes(
+                sort or LibrarySorting.TITLE, filter, section
+            ))
         offset = extract_key(request, 'offset', False)
         limit = (
             extract_key(request, 'limit', False)
@@ -1727,6 +1736,8 @@ def api_download_history():
             volume_id, issue_id,
             offset
         )
+        if request.values.get('paginated') != 'true':
+            return return_api(result)
         total = get_download_history_count(volume_id, issue_id)
         return return_api({
             'entries': result,
@@ -1764,6 +1775,8 @@ def api_blocklist():
             b.todict()
             for b in blocklist
         ]
+        if request.values.get('paginated') != 'true':
+            return return_api(result)
         return return_api({
             'entries': result,
             'total': get_blocklist_count(),

@@ -40,6 +40,7 @@ describe('volume list pagination', () => {
     expect(get).toHaveBeenCalledWith('volumes', expect.any(Object));
     expect(searchParams.get('offset')).toBe('2');
     expect(searchParams.get('limit')).toBe('60');
+    expect(searchParams.get('paginated')).toBe('true');
     expect(result).toMatchObject({ total: 1167, offset: 2, page_size: 60 });
     expect(result.volumes).toHaveLength(1);
     expect(result.volumes[0]?.progress).toEqual({ have: 2, total: 5 });

@@ -21,6 +21,7 @@ it('preserves page-number offset and truthful history total', async () => {
   const result = await historyQueryOptions(2).queryFn!({} as never);
   const params = vi.mocked(apiClient.get).mock.calls[0]?.[1]?.searchParams as URLSearchParams;
   expect(params.get('offset')).toBe('2');
+  expect(params.get('paginated')).toBe('true');
   expect(result.total).toBe(151);
   expect(result.entries[0]?.downloaded_at).toBe(100_000);
 });

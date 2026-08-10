@@ -9,6 +9,7 @@ import { apiClient, readJson } from '@/app/api-client';
 import {
   downloadIssue,
   downloadVolume,
+  fetchIssueHistory,
   manualSearchIssue,
   manualSearchVolume,
 } from './-volumes.api';
@@ -84,5 +85,18 @@ describe('manual search query overrides', () => {
         timeout: 60000,
       }),
     );
+  });
+});
+
+describe('issue history compatibility', () => {
+  it('consumes the legacy list response used by the issue dialog', async () => {
+    const entries = [{ web_title: 'Saga #1', downloaded_at: 100 }];
+    get.mockResolvedValue({} as Response);
+    parse.mockResolvedValue(entries);
+
+    await expect(fetchIssueHistory(7)).resolves.toEqual(entries);
+    expect(get).toHaveBeenCalledWith('activity/history', {
+      searchParams: { issue_id: 7 },
+    });
   });
 });

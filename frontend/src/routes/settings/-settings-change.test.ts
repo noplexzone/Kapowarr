@@ -11,6 +11,8 @@ describe('settings change detection', () => {
 
   it('identifies restart-causing hosting changes', () => {
     expect(requiresRestart({ port: 5657 })).toBe(true);
+    expect(requiresRestart({ proxy_host: 'proxy.internal' })).toBe(true);
+    expect(requiresRestart({ proxy_password: 'changed' })).toBe(true);
     expect(requiresRestart({ log_level: 'DEBUG' })).toBe(false);
   });
 });

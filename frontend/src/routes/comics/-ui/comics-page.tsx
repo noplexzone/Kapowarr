@@ -27,6 +27,7 @@ import {
 } from '../-comics.types';
 import { ComicCard } from './comic-card';
 import { ComicTableRow } from './comic-table-row';
+import { getSelectionScopeKey } from '../-comics.helpers';
 import styles from './comics-page.module.css';
 
 interface ComicsPageProps {
@@ -51,6 +52,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState('');
+  const selectionScopeKey = getSelectionScopeKey(section, search);
 
   // Local search text for instant typing; debounced sync to URL/query
   const [searchText, setSearchText] = useState(search.search ?? '');
@@ -60,6 +62,10 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   useEffect(() => {
     setSearchText(search.search ?? '');
   }, [search.search]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [selectionScopeKey]);
 
   // Debounced: flush local text to URL after 350ms of inactivity
   useEffect(() => {

@@ -21,39 +21,64 @@ class PaginationApiDefaultsTests(unittest.TestCase):
             patch.object(api_mod.StartTypeHandlers, 'diffuse_timer'),
         )
 
-    def test_volumes_defaults_to_first_page(self):
+    def test_volumes_preserves_legacy_list_without_opt_in(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        volumes = [{'id': 1, 'title': 'Saga'}]
+        with request_patch, settings_patch, timer_patch, patch.object(
+            api_mod.Library, 'get_public_volumes', return_value=volumes
+        ) as get_all:
+            response = self._client().get('/api/volumes')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['result'], volumes)
+        get_all.assert_called_once_with(
+            api_mod.LibrarySorting.TITLE, None, 'comic'
+        )
+
+    def test_volumes_paginated_mode_defaults_to_first_page(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         with request_patch, settings_patch, timer_patch, patch.object(
             api_mod.Library, 'get_public_volumes_page', return_value=([], 0)
         ) as get_page:
-            response = self._client().get('/api/volumes')
+            response = self._client().get('/api/volumes?paginated=true')
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['result']['items'], [])
         get_page.assert_called_once_with(
             api_mod.LibrarySorting.TITLE, None, 'comic', 0, 60
         )
 
-    def test_history_defaults_to_first_page(self):
+    def test_history_legacy_and_paginated_shapes(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
+        entries = [{'source': 'test'}]
         with request_patch, settings_patch, timer_patch, patch.object(
-            api_mod, 'get_download_history', return_value=[]
+            api_mod, 'get_download_history', return_value=entries
         ) as get_history, patch.object(
-            api_mod, 'get_download_history_count', return_value=0
-        ):
-            response = self._client().get('/api/activity/history')
+            api_mod, 'get_download_history_count', return_value=1
+        ) as get_count:
+            legacy = self._client().get('/api/activity/history')
+            paginated = self._client().get('/api/activity/history?paginated=true')
 
-        self.assertEqual(response.status_code, 200)
-        get_history.assert_called_once_with(None, None, 0)
+        self.assertEqual(legacy.get_json()['result'], entries)
+        self.assertEqual(paginated.get_json()['result']['entries'], entries)
+        self.assertEqual(paginated.get_json()['result']['total'], 1)
+        self.assertEqual(get_history.call_count, 2)
+        get_count.assert_called_once_with(None, None)
 
-    def test_blocklist_defaults_to_first_page(self):
+    def test_blocklist_legacy_and_paginated_shapes(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
+        entry = MagicMock()
+        entry.todict.return_value = {'id': 3}
         with request_patch, settings_patch, timer_patch, patch.object(
-            api_mod, 'get_blocklist', return_value=[]
-        ) as get_blocklist, patch.object(api_mod, 'get_blocklist_count', return_value=0):
-            response = self._client().get('/api/blocklist')
+            api_mod, 'get_blocklist', return_value=[entry]
+        ), patch.object(api_mod, 'get_blocklist_count', return_value=1) as get_count:
+            legacy = self._client().get('/api/blocklist')
+            paginated = self._client().get('/api/blocklist?paginated=true')
 
-        self.assertEqual(response.status_code, 200)
-        get_blocklist.assert_called_once_with(0)
+        self.assertEqual(legacy.get_json()['result'], [{'id': 3}])
+        self.assertEqual(paginated.get_json()['result']['entries'], [{'id': 3}])
+        self.assertEqual(paginated.get_json()['result']['total'], 1)
+        get_count.assert_called_once_with()
 
 
 if __name__ == '__main__':

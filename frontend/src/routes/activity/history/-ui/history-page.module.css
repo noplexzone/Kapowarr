@@ -85,3 +85,33 @@
   color: var(--text-dim);
   font-size: 0.85rem;
 }
+
+@media (max-width: 700px) {
+  .tableWrap { overflow-x: visible; }
+  .table, .table tbody { display: block; }
+  .table thead { display: none; }
+  .table tbody tr {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.875rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 0.5rem);
+  }
+  .table tbody td {
+    display: grid;
+    grid-template-columns: minmax(6.5rem, 35%) minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .table tbody td::before {
+    content: attr(data-label);
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .date { white-space: normal; }
+}

@@ -16,5 +16,6 @@ it('preserves page-number offset and truthful blocklist total', async () => {
   const result = await blocklistQueryOptions(1).queryFn!({} as never);
   const params = vi.mocked(apiClient.get).mock.calls[0]?.[1]?.searchParams as URLSearchParams;
   expect(params.get('offset')).toBe('1');
+  expect(params.get('paginated')).toBe('true');
   expect(result.total).toBe(77);
 });

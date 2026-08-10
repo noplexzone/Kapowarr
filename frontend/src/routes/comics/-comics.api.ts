@@ -62,6 +62,7 @@ interface RawVolumeListResponse {
 
 async function fetchVolumeList(params: VolumesSearch, section: SectionType): Promise<VolumeListResponse> {
   const sp = new URLSearchParams();
+  sp.set('paginated', 'true');
   sp.set('section', section);
   if (params.sort) sp.set('sort', params.sort);
   if (params.filter) sp.set('filter', params.filter);

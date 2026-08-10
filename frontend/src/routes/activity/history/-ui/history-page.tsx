@@ -66,14 +66,14 @@ export function HistoryPage({ offset }: HistoryPageProps) {
             <tbody>
               {entries.map((entry) => (
                 <tr key={entry.id}>
-                  <td>{entry.title}</td>
-                  <td>
+                  <td data-label="Title">{entry.title}</td>
+                  <td data-label="Source">
                     <Badge tone="neutral">{entry.source}</Badge>
                   </td>
-                  <td className={styles.date}>
+                  <td data-label="Downloaded At" className={styles.date}>
                     {new Date(entry.downloaded_at).toLocaleString()}
                   </td>
-                  <td>
+                  <td data-label="State">
                     <Badge tone={stateTone(entry.state)}>
                       {entry.state.charAt(0).toUpperCase() + entry.state.slice(1)}
                     </Badge>

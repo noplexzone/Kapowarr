@@ -43,7 +43,7 @@ interface RawHistoryResponse {
 }
 
 async function getHistory(offset: number): Promise<HistoryResponse> {
-  const sp = new URLSearchParams({ offset: String(offset) });
+  const sp = new URLSearchParams({ offset: String(offset), paginated: 'true' });
   const response = await apiClient.get('activity/history', { searchParams: sp });
   const data = await readJson<RawHistoryResponse>(response);
   if (!data || !Array.isArray(data.entries) || !Number.isInteger(data.total)) {

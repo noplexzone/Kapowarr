@@ -1,6 +1,10 @@
 import type { AllSettings } from './-settings.types';
 
-const HOSTING_KEYS = new Set<keyof AllSettings>(['host', 'port', 'url_base']);
+const HOSTING_KEYS = new Set<keyof AllSettings>([
+  'host', 'port', 'url_base',
+  'proxy_type', 'proxy_host', 'proxy_port',
+  'proxy_username', 'proxy_password', 'proxy_ignored_addresses',
+]);
 
 export function getChangedSettings(
   current: AllSettings,

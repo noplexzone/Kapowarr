@@ -159,8 +159,8 @@ interface BlocklistRowProps {
 function BlocklistRow({ entry, onDelete }: BlocklistRowProps) {
   return (
     <tr>
-      <td>{displayTitle(entry)}</td>
-      <td>
+      <td data-label="Title">{displayTitle(entry)}</td>
+      <td data-label="Link">
         {entry.web_link && (
           <a
             href={entry.web_link}
@@ -172,9 +172,9 @@ function BlocklistRow({ entry, onDelete }: BlocklistRowProps) {
           </a>
         )}
       </td>
-      <td className={styles.reason}>{entry.reason}</td>
-      <td className={styles.date}>{new Date(entry.added_at).toLocaleString()}</td>
-      <td>
+      <td data-label="Reason" className={styles.reason}>{entry.reason}</td>
+      <td data-label="Added At" className={styles.date}>{new Date(entry.added_at).toLocaleString()}</td>
+      <td data-label="Actions">
         <Button variant="ghost" onClick={onDelete} title="Delete">✕</Button>
       </td>
     </tr>

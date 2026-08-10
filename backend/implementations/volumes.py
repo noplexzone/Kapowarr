@@ -925,6 +925,10 @@ class Library:
             pagination = "LIMIT ? OFFSET ?"
             params.extend((page_size, page * page_size))
 
+        order_by = sort.value
+        if sort != LibrarySorting.RECENTLY_ADDED:
+            order_by = f'{order_by}, volumes.id'
+
         return get_db().execute(f"""
             WITH
                 vol_issues AS (
@@ -967,7 +971,7 @@ class Library:
             FROM volumes
             INNER JOIN root_folders rf ON rf.id = volumes.root_folder
             {sql_filter}
-            ORDER BY {sort.value}
+            ORDER BY {order_by}
             {pagination};
             """, tuple(params)
         ).fetchalldict()

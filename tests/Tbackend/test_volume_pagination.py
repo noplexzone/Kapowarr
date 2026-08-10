@@ -40,6 +40,7 @@ class VolumePaginationTests(unittest.TestCase):
         query, params = db.calls[0]
         self.assertIn('COUNT(*) OVER () AS _total_count', query)
         self.assertIn('LIMIT ? OFFSET ?', query)
+        self.assertIn('ORDER BY title, year, volume_number, volumes.id', query)
         self.assertEqual(params, ('comic', 60, 120))
 
     def test_empty_out_of_range_page_still_reports_total(self):

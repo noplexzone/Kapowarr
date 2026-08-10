@@ -19,6 +19,7 @@ export function ComicTableRow({ volume, selected, onSelect }: ComicTableRowProps
       <td className={styles.checkCell}>
         <input
           type="checkbox"
+          aria-label={`Select ${volume.title}`}
           checked={selected}
           onChange={() => onSelect(volume.id)}
         />

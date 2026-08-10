@@ -15,3 +15,6 @@ class TestDockerWorkflowSafety(TestCase):
         self.assertIn('npm ci', workflow)
         self.assertIn('npm test -- --run', workflow)
         self.assertIn('npm run build:check', workflow)
+
+        dockerfile = Path('Dockerfile').read_text()
+        self.assertIn('RUN npm test -- --run && npm run build:check', dockerfile)

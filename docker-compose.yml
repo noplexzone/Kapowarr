@@ -1,17 +1,28 @@
 services:
   kapowarr:
     container_name: kapowarr
-    image: mrcas/kapowarr:latest
+    image: ${KAPOWARR_IMAGE:-mrcas/kapowarr:1.5.0}
+    user: "${PUID:-1000}:${PGID:-1000}"
     environment:
-      - PUID=99
-      - PGID=100
-      - TZ=Etc/UTC
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
     volumes:
-      - "kapowarr-db:/app/db"
-      - "/path/to/download_folder:/app/temp_downloads"
-      - "/path/to/comics:/comics"
+      - kapowarr-db:/app/db
+      - kapowarr-logs:/app/logs
+      - /path/to/download_folder:/app/temp_downloads:rw
+      - /path/to/comics:/comics:rw
+      - /path/to/manga:/manga:rw
     ports:
-      - 5656:5656
+      - "5656:5656"
 
 volumes:
   kapowarr-db:
+  kapowarr-logs:

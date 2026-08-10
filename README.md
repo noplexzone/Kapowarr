@@ -35,6 +35,24 @@ Featured on [Noted](https://noted.lol/kapowarr/) and [Respectlytics](https://res
 - For all documentation, see the [documentation hub](https://casvt.github.io/Kapowarr/).
 - For donations, go to the [Ko-Fi page](https://ko-fi.com/casvt).
 
+## Container writable paths
+
+The image runs as UID/GID `1000:1000` by default and supports a read-only root filesystem.
+Prepare bind mounts with ownership matching `PUID`/`PGID`; the hardened Compose example
+runs without capabilities and cannot change host ownership during startup. Only these paths
+should be writable:
+
+- `/app/db` — configuration and the SQLite database;
+- `/app/logs` — application logs;
+- `/app/temp_downloads` — temporary and in-progress downloads;
+- `/tmp` — reader extraction/cache scratch space (provided as `tmpfs`);
+- every configured comics or manga library root (for imports, renames, conversion, and replacement).
+
+Application source under `/app` remains read-only. Add each configured library root as an
+explicit read-write mount; file replacement can create temporary files beside the library
+artifact. To use different IDs, set `PUID` and `PGID` and set the Compose `user` to the same
+values before starting the container.
+
 ## Screenshots
 
 ![](https://github.com/user-attachments/assets/04656209-288e-4263-a2df-93e06758c443)

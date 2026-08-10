@@ -136,9 +136,9 @@ export function ReaderPage() {
 
       {!isLoading && fileInfo && isPdf && (
         <div className={styles.content}>
-          <embed
+          <iframe
+            title={filename || 'PDF document'}
             src={rawFileUrl(fileId)}
-            type="application/pdf"
             className={styles.pdfEmbed}
           />
         </div>

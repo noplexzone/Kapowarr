@@ -32,6 +32,23 @@ from backend.internals.db import (DBConnectionManager, close_db,
                                   setup_db_adapters_and_converters)
 from backend.internals.settings import Settings
 
+CONTENT_SECURITY_POLICY = '; '.join((
+    "default-src 'self'",
+    "script-src 'self' https://cdn.socket.io",
+    "connect-src 'self' ws: wss:",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: blob: http: https:",
+    "font-src 'self' https://fonts.gstatic.com",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+    "frame-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'"
+))
+
+
 if TYPE_CHECKING:
     from flask.ctx import AppContext
 
@@ -129,10 +146,17 @@ class Server(metaclass=Singleton):
         # CORS — allows the browser extension (and other local clients) to call
         # the API from a different origin (e.g. moz-extension://, comicvine.gamespot.com).
         @app.after_request
-        def add_cors_headers(response):
+        def add_response_headers(response):
             response.headers['Access-Control-Allow-Origin'] = '*'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Content-Security-Policy'] = CONTENT_SECURITY_POLICY
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            response.headers['Referrer-Policy'] = 'same-origin'
+            response.headers['X-Frame-Options'] = 'DENY'
+            response.headers['Permissions-Policy'] = (
+                'camera=(), geolocation=(), microphone=()'
+            )
             return response
 
         @app.route('/<path:path>', methods=['OPTIONS'])

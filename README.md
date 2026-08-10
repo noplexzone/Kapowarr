@@ -37,7 +37,7 @@ Featured on [Noted](https://noted.lol/kapowarr/) and [Respectlytics](https://res
 
 ## Container writable paths
 
-The image runs as UID/GID `1000:1000` by default and supports a read-only root filesystem.
+The image runs as Unraid-compatible UID/GID `99:100` by default and supports a read-only root filesystem.
 Prepare bind mounts with ownership matching `PUID`/`PGID`; the hardened Compose example
 runs without capabilities and cannot change host ownership during startup. Only these paths
 should be writable:
@@ -53,10 +53,11 @@ explicit read-write mount; file replacement can create temporary files beside th
 artifact. To use different IDs, set `PUID` and `PGID` and set the Compose `user` to the same
 values before starting the container.
 
-> **Migration note:** the image now starts as non-root `1000:1000`. Existing
-> deployments that set only `PUID`/`PGID` must also set the Docker/Compose
-> runtime `user` to the same numeric IDs. Startup now fails explicitly when
-> these values disagree instead of silently running with inaccessible mounts.
+> **Runtime identity note:** the image starts as non-root `99:100`, matching
+> Unraid's standard `nobody:users` ownership. Deployments using other IDs must
+> set both `PUID`/`PGID` and the Docker/Compose runtime `user` to the same values.
+> Startup fails explicitly when they disagree instead of silently running with
+> inaccessible mounts.
 
 ## Screenshots
 

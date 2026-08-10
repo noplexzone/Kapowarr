@@ -39,8 +39,8 @@ COPY --from=builder /wheels /wheels
 RUN pip3 install --no-index --find-links=/wheels -r /wheels/requirements.txt && \
     rm -rf /wheels
 
-RUN groupadd -g 1000 kapowarr && \
-    useradd -u 1000 -g kapowarr -d /nonexistent -M -s /bin/bash kapowarr && \
+RUN groupadd -o -g 100 kapowarr && \
+    useradd -o -u 99 -g kapowarr -d /nonexistent -M -s /bin/bash kapowarr && \
     mkdir -p /app/db /app/logs /app/temp_downloads
 
 ARG CACHE_BUST=0
@@ -52,8 +52,8 @@ RUN chmod -R 755 /app && \
 # Copy built SPA from Node stage (overwrites source files with dist)
 COPY --from=node-builder /app/frontend/dist /app/frontend/dist
 
-ENV PUID=1000 \
-    PGID=1000 \
+ENV PUID=99 \
+    PGID=100 \
     TZ=UTC \
     PYTHONDONTWRITEBYTECODE=1
 
@@ -63,7 +63,7 @@ EXPOSE 5656
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python3", "-c", "import socket; s=socket.create_connection(('127.0.0.1',5656),3); s.close()"]
 
-USER kapowarr:kapowarr
+USER 99:100
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python3", "/app/Kapowarr.py", "--LogFolder", "/app/logs"]

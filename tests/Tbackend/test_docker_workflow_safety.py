@@ -11,6 +11,17 @@ class TestDockerWorkflowSafety(TestCase):
         self.assertIn('noplexzone/kapowarr:${{ steps.version.outputs.value }}', workflow)
         self.assertFalse(Path('.github/workflows/docker.yml').exists())
 
+    def test_container_defaults_to_unraid_runtime_identity(self) -> None:
+        dockerfile = Path('Dockerfile').read_text()
+        compose = Path('docker-compose.yml').read_text()
+        entrypoint = Path('entrypoint.sh').read_text()
+        self.assertIn('USER 99:100', dockerfile)
+        self.assertIn('ENV PUID=99', dockerfile)
+        self.assertIn('PGID=100', dockerfile)
+        self.assertIn('user: "${PUID:-99}:${PGID:-100}"', compose)
+        self.assertIn('PUID=${PUID:-99}', entrypoint)
+        self.assertIn('PGID=${PGID:-100}', entrypoint)
+
     def test_ci_runs_frontend_tests_build_budget_and_browser_gate(self) -> None:
         workflow = Path('.github/workflows/tests.yml').read_text()
         self.assertIn('frontend:', workflow)

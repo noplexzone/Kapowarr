@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
-PUID=${PUID:-1000}
-PGID=${PGID:-1000}
+PUID=${PUID:-99}
+PGID=${PGID:-100}
 
 DB_DIR="/app/db"
 LOG_DIR="/app/logs"

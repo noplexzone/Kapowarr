@@ -2,10 +2,10 @@ services:
   kapowarr:
     container_name: kapowarr
     image: ${KAPOWARR_IMAGE:-noplexzone/kapowarr:1.5.0}
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "${PUID:-99}:${PGID:-100}"
     environment:
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
+      PUID: ${PUID:-99}
+      PGID: ${PGID:-100}
       TZ: ${TZ:-Etc/UTC}
     read_only: true
     cap_drop:

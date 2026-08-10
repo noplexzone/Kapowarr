@@ -50,7 +50,9 @@ class RawFileDeletionSecurityTests(unittest.TestCase):
         volume_patch, roots_patch, settings_patch = self._patches()
         with volume_patch, roots_patch, settings_patch:
             resolved = api_mod._validate_unmatched_deletion_target(1, str(target))
-        self.assertEqual(resolved, str(target.resolve()))
+        self.assertEqual(resolved.path, str(target.resolve()))
+        self.assertEqual(resolved.volume_stat.st_ino, self.volume.stat().st_ino)
+        self.assertEqual(resolved.target_stat.st_ino, target.stat().st_ino)
 
     def test_rejects_parent_traversal_outside_volume(self):
         target = self.root / 'outside.cbz'
@@ -162,10 +164,13 @@ class RawFileDeletionSecurityTests(unittest.TestCase):
         matches = [{'filepath': str(target), 'issue_ids': [], 'general_file': False, 'forced_match': False, 'unmatched_file_id': file_id}]
         original_volume = self.base / 'original-volume'
 
-        def swap_parent(*_args):
+        validate = api_mod._validate_unmatched_deletion_target
+
+        def swap_parent(*args, **kwargs):
+            validated = validate(*args, **kwargs)
             self.volume.rename(original_volume)
             os.symlink(str(outside_dir), str(self.volume))
-            return str(target)
+            return validated
 
         with patch.object(api_mod, '_validate_unmatched_deletion_target', side_effect=swap_parent):
             response = self._delete(1, file_id, matches, 'test-api-key')
@@ -173,6 +178,51 @@ class RawFileDeletionSecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertTrue(outside_target.exists())
         self.assertTrue((original_volume / target.name).exists())
+
+    def test_ordinary_volume_directory_replacement_is_rejected(self):
+        target = self.volume / 'Saga 001.cbz'
+        target.write_bytes(b'validated')
+        replacement_target = self.base / 'replacement-target.cbz'
+        replacement_target.write_bytes(b'replacement')
+        file_id = api_mod._unmatched_file_id(1, str(target), 'test-api-key')
+        matches = [{'filepath': str(target), 'issue_ids': [], 'general_file': False, 'forced_match': False, 'unmatched_file_id': file_id}]
+        original_volume = self.base / 'original-volume'
+        validate = api_mod._validate_unmatched_deletion_target
+
+        def replace_volume(*args, **kwargs):
+            validated = validate(*args, **kwargs)
+            self.volume.rename(original_volume)
+            self.volume.mkdir()
+            replacement_target.rename(self.volume / target.name)
+            return validated
+
+        with patch.object(api_mod, '_validate_unmatched_deletion_target', side_effect=replace_volume):
+            response = self._delete(1, file_id, matches, 'test-api-key')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual((original_volume / target.name).read_bytes(), b'validated')
+        self.assertEqual((self.volume / target.name).read_bytes(), b'replacement')
+
+    def test_target_inode_substitution_is_rejected(self):
+        target = self.volume / 'Saga 001.cbz'
+        target.write_bytes(b'validated')
+        original_target = self.volume / 'validated-original.cbz'
+        file_id = api_mod._unmatched_file_id(1, str(target), 'test-api-key')
+        matches = [{'filepath': str(target), 'issue_ids': [], 'general_file': False, 'forced_match': False, 'unmatched_file_id': file_id}]
+        validate = api_mod._validate_unmatched_deletion_target
+
+        def replace_target(*args, **kwargs):
+            validated = validate(*args, **kwargs)
+            target.rename(original_target)
+            target.write_bytes(b'replacement')
+            return validated
+
+        with patch.object(api_mod, '_validate_unmatched_deletion_target', side_effect=replace_target):
+            response = self._delete(1, file_id, matches, 'test-api-key')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(original_target.read_bytes(), b'validated')
+        self.assertEqual(target.read_bytes(), b'replacement')
 
     def test_delete_succeeds_with_current_identifier_and_api_key(self):
         target = self.volume / 'Saga 001.cbz'

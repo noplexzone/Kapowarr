@@ -1,8 +1,12 @@
 import sqlite3
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from flask import Flask, request as flask_request
 
 from backend.implementations.volumes import Library
+import frontend.api as api_mod
 
 
 class _Cursor:
@@ -85,6 +89,36 @@ class DashboardStatsTests(unittest.TestCase):
         self.assertEqual(stats['missing_monitored'], 0)
         self.assertEqual(stats['files'], 1)
         self.assertEqual(stats['total_file_size'], 300)
+
+    def test_section_value_cannot_inject_stats_predicates(self):
+        cursor = _Cursor(self.db)
+        injection = "comic' OR '1'='1"
+        with patch('backend.implementations.volumes.get_db', return_value=cursor):
+            stats = Library.get_stats(injection)
+
+        self.assertEqual(stats['volumes'], 0)
+        self.assertEqual(stats['issues'], 0)
+        self.assertEqual(stats['files'], 0)
+        self.assertEqual(stats['total_file_size'], 0)
+
+    def test_stats_route_rejects_invalid_section(self):
+        app = Flask(__name__)
+        app.register_blueprint(api_mod.api, url_prefix='/api')
+        settings = MagicMock()
+        settings.sv = SimpleNamespace(auth_password=None)
+
+        with patch.object(api_mod, 'request', flask_request), patch.object(
+            api_mod, 'Settings', return_value=settings
+        ), patch.object(
+            api_mod.StartTypeHandlers, 'diffuse_timer'
+        ), patch.object(api_mod.Library, 'get_stats') as get_stats:
+            response = app.test_client().get(
+                '/api/volumes/stats',
+                query_string={'section': "comic' OR '1'='1"},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        get_stats.assert_not_called()
 
 
 if __name__ == '__main__':

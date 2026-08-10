@@ -1069,13 +1069,13 @@ class Library:
         Returns:
             Dict[str, int]: The statistics.
         """
-        result = get_db().execute(f"""
+        result = get_db().execute("""
             WITH v AS (
                 SELECT COUNT(*) AS volumes,
                     COALESCE(SUM(vol.monitored), 0) AS monitored
                 FROM volumes vol
                 INNER JOIN root_folders rf ON rf.id = vol.root_folder
-                WHERE rf.section = '{section}'
+                WHERE rf.section = :section
             )
             SELECT
                 v.volumes,
@@ -1085,7 +1085,7 @@ class Library:
                     WHERE volume_id IN (
                         SELECT vol.id FROM volumes vol
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
-                        WHERE rf.section = '{section}'
+                        WHERE rf.section = :section
                     )
                 ) AS issues,
                 (SELECT COUNT(DISTINCT issue_id) FROM issues_files
@@ -1093,22 +1093,22 @@ class Library:
                         SELECT i.id FROM issues i
                         INNER JOIN volumes vol ON vol.id = i.volume_id
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
-                        WHERE rf.section = '{section}'
+                        WHERE rf.section = :section
                     )
                 ) AS downloaded_issues,
                 (SELECT COUNT(*) FROM issues i
                     WHERE i.monitored = 1 AND (i.date IS NULL OR i.date <= date('now'))
                     AND NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.issue_id = i.id)
-                    AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}')
+                    AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = :section)
                 ) AS missing_monitored,
                 (SELECT COUNT(*) FROM issues i
                     WHERE i.monitored = 1 AND i.date > date('now')
                     AND NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.issue_id = i.id)
-                    AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}')
+                    AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = :section)
                 ) AS upcoming_monitored,
                 (SELECT COUNT(*) FROM issues i
                     WHERE i.monitored = 0
-                    AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = '{section}')
+                    AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = :section)
                 ) AS unmonitored_issues,
                 (SELECT COUNT(*) FROM download_history WHERE success = 0) AS failed_downloads,
                 (SELECT COUNT(*) FROM download_queue) AS active_downloads,
@@ -1121,12 +1121,12 @@ class Library:
                     INNER JOIN issues i ON i.id = if.issue_id
                     INNER JOIN volumes vol ON vol.id = i.volume_id
                     INNER JOIN root_folders rf ON rf.id = vol.root_folder
-                    WHERE rf.section = '{section}'
+                    WHERE rf.section = :section
                     UNION
                     SELECT vf.file_id FROM volume_files vf
                     INNER JOIN volumes vol ON vol.id = vf.volume_id
                     INNER JOIN root_folders rf ON rf.id = vol.root_folder
-                    WHERE rf.section = '{section}'
+                    WHERE rf.section = :section
                 )) AS files,
                 (SELECT IFNULL(SUM(f.size), 0) FROM files f
                     WHERE f.id IN (
@@ -1134,16 +1134,16 @@ class Library:
                         INNER JOIN issues i ON i.id = if.issue_id
                         INNER JOIN volumes vol ON vol.id = i.volume_id
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
-                        WHERE rf.section = '{section}'
+                        WHERE rf.section = :section
                         UNION
                         SELECT vf.file_id FROM volume_files vf
                         INNER JOIN volumes vol ON vol.id = vf.volume_id
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
-                        WHERE rf.section = '{section}'
+                        WHERE rf.section = :section
                     )
                 ) AS total_file_size
             FROM v;
-        """).fetchonedict() or {}
+        """, {'section': section}).fetchonedict() or {}
         return result
 
     @classmethod

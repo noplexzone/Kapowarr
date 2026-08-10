@@ -11,7 +11,7 @@ from secrets import token_hex
 from os.path import basename, commonpath, dirname, exists, getsize, join, splitext
 from pathlib import Path
 from stat import S_ISREG
-from typing import Any, Dict, List, Tuple, Type, Union
+from typing import Any, Dict, List, NamedTuple, Tuple, Type, Union
 
 import json as _json
 
@@ -90,6 +90,12 @@ _PROTECTED_SYSTEM_TREES = (
 )
 
 
+class _ValidatedDeletionTarget(NamedTuple):
+    path: str
+    volume_stat: os.stat_result
+    target_stat: os.stat_result
+
+
 def _path_is_within(path: Path, root: Path) -> bool:
     try:
         return commonpath((str(path), str(root))) == str(root)
@@ -136,12 +142,16 @@ def _unmatched_file_id(volume_id: int, filepath: str, api_key: str) -> str:
     return hmac_new(api_key.encode('utf-8'), payload, sha256).hexdigest()
 
 
-def _validate_unmatched_deletion_target(volume_id: int, filepath: str) -> str:
+def _validate_unmatched_deletion_target(
+    volume_id: int,
+    filepath: str
+) -> _ValidatedDeletionTarget:
     """Resolve and validate a server-discovered unmatched file for deletion."""
     try:
         volume_data = Library.get_volume(volume_id).get_data()
         root = Path(RootFolders()[volume_data.root_folder]).resolve(strict=True)
         volume_folder = Path(volume_data.folder).resolve(strict=True)
+        volume_stat = volume_folder.stat()
         requested = Path(filepath)
         if requested.is_symlink():
             raise ValueError
@@ -170,7 +180,7 @@ def _validate_unmatched_deletion_target(volume_id: int, filepath: str) -> str:
     except (OSError, ValueError):
         raise InvalidKeyValue('unmatched_file_id', 'invalid')
 
-    return candidate_text
+    return _ValidatedDeletionTarget(candidate_text, volume_stat, candidate_stat)
 
 
 def _open_directory_no_symlinks(path: Path) -> int:
@@ -201,9 +211,11 @@ def _secure_delete_unmatched_target(volume_id: int, filepath: str) -> None:
     quarantined = None
     original_name = None
     parent_fd = None
+    target_fd = None
     volume_fd = None
     try:
-        safe_path = Path(_validate_unmatched_deletion_target(volume_id, filepath))
+        validated = _validate_unmatched_deletion_target(volume_id, filepath)
+        safe_path = Path(validated.path)
         volume_data = Library.get_volume(volume_id).get_data()
         root = Path(RootFolders()[volume_data.root_folder]).resolve(strict=True)
         volume_folder = Path(volume_data.folder).resolve(strict=True)
@@ -215,6 +227,12 @@ def _secure_delete_unmatched_target(volume_id: int, filepath: str) -> None:
         original_name = relative.name
 
         volume_fd = _open_directory_no_symlinks(volume_folder)
+        opened_volume_stat = os.fstat(volume_fd)
+        if (
+            opened_volume_stat.st_dev != validated.volume_stat.st_dev
+            or opened_volume_stat.st_ino != validated.volume_stat.st_ino
+        ):
+            raise ValueError
         parent_fd = volume_fd
         directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
         if hasattr(os, 'O_CLOEXEC'):
@@ -224,6 +242,22 @@ def _secure_delete_unmatched_target(volume_id: int, filepath: str) -> None:
             if parent_fd != volume_fd:
                 os.close(parent_fd)
             parent_fd = next_fd
+
+        target_flags = os.O_RDONLY | os.O_NOFOLLOW
+        if hasattr(os, 'O_CLOEXEC'):
+            target_flags |= os.O_CLOEXEC
+        if hasattr(os, 'O_NONBLOCK'):
+            target_flags |= os.O_NONBLOCK
+        target_fd = os.open(original_name, target_flags, dir_fd=parent_fd)
+        opened_target_stat = os.fstat(target_fd)
+        if (
+            opened_target_stat.st_dev != validated.target_stat.st_dev
+            or opened_target_stat.st_ino != validated.target_stat.st_ino
+            or not S_ISREG(opened_target_stat.st_mode)
+        ):
+            raise ValueError
+        os.close(target_fd)
+        target_fd = None
 
         quarantine_name = f'.kapowarr-delete-{token_hex(16)}'
         os.rename(
@@ -238,6 +272,8 @@ def _secure_delete_unmatched_target(volume_id: int, filepath: str) -> None:
         )
         if (
             not S_ISREG(moved_stat.st_mode)
+            or moved_stat.st_dev != validated.target_stat.st_dev
+            or moved_stat.st_ino != validated.target_stat.st_ino
             or _is_protected_delete_target(safe_path, moved_stat)
         ):
             raise ValueError
@@ -265,6 +301,8 @@ def _secure_delete_unmatched_target(volume_id: int, filepath: str) -> None:
                     LOGGER.exception('Failed to restore rejected unmatched file')
         raise InvalidKeyValue('unmatched_file_id', 'invalid')
     finally:
+        if target_fd is not None:
+            os.close(target_fd)
         if parent_fd is not None and parent_fd != volume_fd:
             os.close(parent_fd)
         if volume_fd is not None:
@@ -1350,6 +1388,8 @@ def api_volumes():
 @auth
 def api_volumes_stats():
     section = extract_key(request, 'section', False) or 'comic'
+    if section not in ('comic', 'manga'):
+        raise InvalidKeyValue('section', section)
     result = Library.get_stats(section)
     return return_api(result)
 

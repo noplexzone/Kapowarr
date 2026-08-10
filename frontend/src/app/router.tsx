@@ -379,7 +379,7 @@ const mismatchSearchSchema = z.object({
 
 const mismatchRoute = createRoute({
   getParentRoute: () => layoutRoute,
-  path: 'mismatch-review',
+  path: 'activity/mismatches',
   validateSearch: mismatchSearchSchema,
   component: function MismatchRouteComponent() {
     const search = mismatchRoute.useSearch();
@@ -387,11 +387,17 @@ const mismatchRoute = createRoute({
   },
 });
 
+const comicMismatchRedirectRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'mismatch-review',
+  loader: () => { throw redirect({ to: '/activity/mismatches', search: { section: 'comic' as const } }); },
+});
+
 const mangaMismatchRedirectRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'manga/mismatch-review',
   loader: () => {
-    throw redirect({ to: '/mismatch-review', search: { section: 'manga' as const } });
+    throw redirect({ to: '/activity/mismatches', search: { section: 'manga' as const } });
   },
 });
 
@@ -428,6 +434,7 @@ export const routeTree = rootRoute.addChildren([
     discoveryRoute,
     importRoute,
     mismatchRoute,
+    comicMismatchRedirectRoute,
     mangaMismatchRedirectRoute,
     catchAllRoute,
   ]),

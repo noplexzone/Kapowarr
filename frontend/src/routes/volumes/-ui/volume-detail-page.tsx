@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useSocketEvent } from '@/platform/socketio/socket';
 import type { QueueEntry } from '@/routes/activity/queue/-queue.types';
-import { useParams, useNavigate, Link } from '@tanstack/react-router';
+import { useParams, useNavigate, useLocation, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getApiKey, getUrlBase } from '@/app/api-client';
 import { Badge, Button } from '@/components/primitives';
@@ -88,6 +88,7 @@ export function VolumeDetailPage() {
   const { volumeId } = useParams({ strict: false }) as { volumeId: string };
   const id = parseInt(volumeId ?? '0', 10);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const queryClient = useQueryClient();
   const [actionMsg, setActionMsg] = useState('');
   const [queueEntries, setQueueEntries] = useState<Map<number, QueueEntry>>(new Map());
@@ -927,6 +928,7 @@ export function VolumeDetailPage() {
   const selectedManualSearchIssue = volume.issues.find(
     (issue) => issue.id === manualSearchIssueId,
   );
+  const tab = pathname.endsWith('/issues') ? 'issues' : pathname.endsWith('/files') ? 'files' : pathname.endsWith('/history') ? 'history' : 'overview';
   const manualSearchTitle = formatIssueSearchTitle(
     volume.title,
     selectedManualSearchIssue,
@@ -935,7 +937,12 @@ export function VolumeDetailPage() {
     <div className={styles.page}>
       <VolumeHero volume={volume} actionMsg={actionMsg} progressPct={progressPct} progressTone={progressTone} refreshPending={refreshMutation.isPending} autoSearchPending={autoSearchMutation.isPending} manualSearchPending={volManualSearching} onRefresh={() => refreshMutation.mutate()} onAutoSearch={() => autoSearchMutation.mutate()} onManualSearch={handleVolumeManualSearch} onEdit={openEdit} onFixMatch={openFixMatch} onPreviewRename={handleOpenRename} onManageIssues={openManageIssues} />
 
-      <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} />
+      <nav aria-label="Volume sections" className={styles.volumeTabs}>
+        {([['overview', 'Overview', '/volumes/$volumeId'], ['issues', 'Issues', '/volumes/$volumeId/issues'], ['files', 'Files', '/volumes/$volumeId/files'], ['history', 'History', '/volumes/$volumeId/history']] as const).map(([key, label, to]) => <Link key={key} to={to} params={{ volumeId: String(id) }} aria-current={tab === key ? 'page' : undefined}>{label}</Link>)}
+      </nav>
+      <section data-testid="volume-tab-panel">
+        {tab === 'issues' ? <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} /> : tab === 'files' ? <p>Files for this volume are managed from Manage Issues.</p> : tab === 'history' ? <p>Select an issue to view its download history.</p> : <p>{volume.description ? 'Volume overview and metadata are shown above.' : 'No additional description is available.'}</p>}
+      </section>
 
       {/* ── Manual Search Dialog ────────────────────────────── */}
       <DialogFrame

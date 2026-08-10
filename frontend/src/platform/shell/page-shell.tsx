@@ -36,6 +36,7 @@ export function PageShell({ children }: PageShellProps) {
   return (
     <div
       className={styles.shell}
+      data-testid="application-shell"
       data-theme={theme}
       style={{
         '--nav-column-width': sidebarCollapsed ? '56px' : 'var(--nav-width)',

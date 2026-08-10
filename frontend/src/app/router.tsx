@@ -75,13 +75,7 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   pendingComponent: RoutePending,
   errorComponent: RouteError,
   notFoundComponent: RouteNotFound,
-  component: function RootLayout() {
-    return (
-      <Suspense fallback={<RoutePending />}>
-        <Outlet />
-      </Suspense>
-    );
-  },
+  component: Outlet,
 });
 
 // ── Login (public — no AuthGuard, no sidebar) ─────────────────────────────────
@@ -104,7 +98,7 @@ const layoutRoute = createRoute({
     return (
       <AuthGuard>
         <PageShell>
-          <Outlet />
+          <Suspense fallback={<RoutePending />}><Outlet /></Suspense>
         </PageShell>
       </AuthGuard>
     );
@@ -158,6 +152,10 @@ const volumeDetailRoute = createRoute({
   path: 'volumes/$volumeId',
   component: VolumeDetailPage,
 });
+const volumeOverviewRoute = createRoute({ getParentRoute: () => volumeDetailRoute, path: '/', component: () => null });
+const volumeIssuesRoute = createRoute({ getParentRoute: () => volumeDetailRoute, path: 'issues', component: () => null });
+const volumeFilesRoute = createRoute({ getParentRoute: () => volumeDetailRoute, path: 'files', component: () => null });
+const volumeHistoryRoute = createRoute({ getParentRoute: () => volumeDetailRoute, path: 'history', component: () => null });
 
 // Comic reader
 const readerRoute = createRoute({
@@ -428,7 +426,7 @@ export const routeTree = rootRoute.addChildren([
     indexRoute,
     comicsRoute,
     comicsAddRedirectRoute,
-    volumeDetailRoute,
+    volumeDetailRoute.addChildren([volumeOverviewRoute, volumeIssuesRoute, volumeFilesRoute, volumeHistoryRoute]),
     readerRoute,
     mangaRoute,
     mangaAddRedirectRoute,

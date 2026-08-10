@@ -21,7 +21,7 @@ export function VolumeHero({ volume, actionMsg, progressPct, progressTone, refre
 
       {actionMsg && <StatusBanner>{actionMsg}</StatusBanner>}
 
-      <div className={styles.header}>
+      <div className={styles.header} data-testid="volume-hero">
         <img
           className={styles.cover}
           src={getCoverUrl(volume.id)}

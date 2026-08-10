@@ -1,0 +1,27 @@
+.state {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 0.75rem;
+  min-height: min(28rem, 65vh);
+  padding: 2rem;
+  color: var(--text);
+  text-align: center;
+}
+
+.state h2,
+.state p {
+  margin: 0;
+}
+
+.state p {
+  max-width: 38rem;
+  color: var(--text-dim);
+}
+
+.state a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+}

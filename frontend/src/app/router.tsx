@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import {
   createRoute,
   createRootRouteWithContext,
@@ -12,17 +13,11 @@ import { LoginPage } from '@/routes/login/-ui/login-page';
 import { DashboardPage } from '@/routes/dashboard/-ui/dashboard-page';
 import { ComicsPage } from '@/routes/comics/-ui/comics-page';
 import { AddPage } from '@/routes/add/-ui/add-page';
-import { QueuePage } from '@/routes/activity/queue/-ui/queue-page';
-import { HistoryPage } from '@/routes/activity/history/-ui/history-page';
-import { BlocklistPage } from '@/routes/activity/blocklist/-ui/blocklist-page';
-import { SettingsPage } from '@/routes/settings/-ui/settings-page';
 import { SystemStatusPage } from '@/routes/system/-ui/system-status-page';
 import { SystemTasksPage } from '@/routes/system/-ui/system-tasks-page';
-import { DiscoveryPage } from '@/routes/discovery/-ui/discovery-page';
-import { ImportPage } from '@/routes/import/-ui/import-page';
-import { VolumeDetailPage } from '@/routes/volumes/-ui/volume-detail-page';
 import { ReaderPage } from '@/routes/reader/-ui/reader-page';
 import { MismatchPage } from '@/routes/mismatch/-ui/mismatch-page';
+import { RouteError, RouteNotFound, RoutePending } from '@/components/route-state/route-state';
 import { volumesSearchSchema } from '@/routes/comics/-comics.types';
 import { volumeListQueryOptions } from '@/routes/comics/-comics.api';
 import { rootFoldersQueryOptions } from '@/routes/add/-add.api';
@@ -36,6 +31,14 @@ export interface RouterContext {
   queryClient: QueryClient;
   shell: { profile: number };
 }
+
+const QueuePage = lazy(() => import('@/routes/activity/queue/-ui/queue-page').then(module => ({ default: module.QueuePage })));
+const HistoryPage = lazy(() => import('@/routes/activity/history/-ui/history-page').then(module => ({ default: module.HistoryPage })));
+const BlocklistPage = lazy(() => import('@/routes/activity/blocklist/-ui/blocklist-page').then(module => ({ default: module.BlocklistPage })));
+const SettingsPage = lazy(() => import('@/routes/settings/-ui/settings-page').then(module => ({ default: module.SettingsPage })));
+const DiscoveryPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then(module => ({ default: module.DiscoveryPage })));
+const ImportPage = lazy(() => import('@/routes/import/-ui/import-page').then(module => ({ default: module.ImportPage })));
+const VolumeDetailPage = lazy(() => import('@/routes/volumes/-ui/volume-detail-page').then(module => ({ default: module.VolumeDetailPage })));
 
 // ── Persistence helpers ───────────────────────────────────────────────────
 
@@ -68,8 +71,15 @@ function redirectFromLocalStorage(deps: Record<string, unknown>, path: string) {
 
 // ── Root (renders <Outlet /> only — no wrapper) ────────────────────────────────
 const rootRoute = createRootRouteWithContext<RouterContext>()({
+  pendingComponent: RoutePending,
+  errorComponent: RouteError,
+  notFoundComponent: RouteNotFound,
   component: function RootLayout() {
-    return <Outlet />;
+    return (
+      <Suspense fallback={<RoutePending />}>
+        <Outlet />
+      </Suspense>
+    );
   },
 });
 
@@ -373,14 +383,7 @@ const mangaMismatchRedirectRoute = createRoute({
 const catchAllRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: '$',
-  component: function NotFound() {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <h2>Page Not Found</h2>
-        <p>The page you&apos;re looking for doesn&apos;t exist.</p>
-      </div>
-    );
-  },
+  component: RouteNotFound,
 });
 
 export const routeTree = rootRoute.addChildren([

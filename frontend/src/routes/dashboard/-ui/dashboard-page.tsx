@@ -65,7 +65,8 @@ export function DashboardPage() {
         <MetricCard label="Manga unmonitored" value={mangaStats?.unmonitored_issues ?? null} to="/manga" search={{ sort: 'title', filter: 'unmonitored', view: 'posters', offset: 0 }} />
         <MetricCard label="Failed downloads" value={comicStats?.failed_downloads ?? null} to="/activity/history" search={{ offset: 0, state: 'failed' }} />
         <MetricCard label="Active downloads" value={comicStats?.active_downloads ?? null} to="/activity/queue" />
-        <MetricCard label="Unmatched files" value={comicStats?.import_problems ?? null} to="/import" />
+        <MetricCard label="Comic mismatches" value={comicStats?.mismatches ?? null} to="/mismatch-review" search={{ section: 'comic' }} />
+        <MetricCard label="Manga mismatches" value={mangaStats?.mismatches ?? null} to="/mismatch-review" search={{ section: 'manga' }} />
       </div>
 
       {/* ── Recent activity + Queue ── */}

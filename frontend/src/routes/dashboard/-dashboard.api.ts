@@ -8,10 +8,16 @@ const volumeStatsSchema = z.object({
   issues: z.number().int().nonnegative(), downloaded_issues: z.number().int().nonnegative(),
   missing_monitored: z.number().int().nonnegative(), upcoming_monitored: z.number().int().nonnegative(),
   unmonitored_issues: z.number().int().nonnegative(), failed_downloads: z.number().int().nonnegative(),
-  active_downloads: z.number().int().nonnegative(), import_problems: z.number().int().nonnegative(),
+  active_downloads: z.number().int().nonnegative(), mismatches: z.number().int().nonnegative(),
   files: z.number().int().nonnegative().optional(), total_file_size: z.number().nonnegative().optional(),
 });
 const rawVolumeEntrySchema = z.object({ id: z.number().int(), title: z.string(), year: z.number().nullable(), publisher: z.string().nullable(), issue_count: z.number().int(), issues_downloaded: z.number().int() });
+const volumePageSchema = z.object({
+  items: z.array(rawVolumeEntrySchema),
+  total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(),
+  page_size: z.number().int().positive(),
+});
 const queueEntrySchema = z.object({ id: z.number().int() }).passthrough();
 
 interface RawHistoryEntry {
@@ -66,13 +72,16 @@ export function recentlyAddedQueryOptions(section: 'comic' | 'manga') {
   return queryOptions({
     queryKey: ['volumes', 'recently-added', section],
     queryFn: async () => {
-      const params: Record<string, string> = { sort: 'recently_added' };
+      const params: Record<string, string> = {
+        sort: 'recently_added',
+        paginated: 'true',
+        offset: '0',
+        limit: '6',
+      };
       if (section === 'manga') params.section = 'manga';
       const r = await apiClient.get('volumes', { searchParams: params });
-      const data = await readJson(r, z.array(rawVolumeEntrySchema));
-      return (Array.isArray(data) ? data : [])
-        .slice(0, 6)
-        .map(
+      const data = await readJson(r, volumePageSchema);
+      return data.items.map(
           (v): VolumeCard => ({ ...v, section: section === 'manga' ? 'manga' : 'comics' }),
         );
     },

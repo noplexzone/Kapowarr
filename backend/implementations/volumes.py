@@ -892,6 +892,45 @@ class Volume:
         return f'<{self.__class__.__name__}; ID {self.id}>'
 
 
+# Keep this in sync with the Mismatch Review client filter so dashboard counts
+# always lead to the exact records the destination displays.
+_MISMATCH_YEAR_RE = compile(r'\(\d{4}\)')
+_MISMATCH_PUNCTUATION_RE = compile(r'[:\\*?"<>|,]')
+_MISMATCH_NON_ALNUM_RE = compile(r'[^a-z0-9 ]')
+_MISMATCH_SPACE_RE = compile(r'\s+')
+_FOREIGN_PUBLISHER_SIGNALS = (
+    'verlag', 'deutschland', 'deutsch', 'gmbh',
+    'éditions', 'editeur', 'française',
+    'editore', 'edizioni', 'planeta',
+    'carlsen', 'egmont ehapa', 'splitter', 'cross cult',
+    'glenat', 'glénat',
+)
+
+
+def _normalise_mismatch_name(value: str) -> str:
+    value = _MISMATCH_YEAR_RE.sub('', value.lower())
+    value = _MISMATCH_PUNCTUATION_RE.sub('', value).replace("'", '')
+    value = _MISMATCH_NON_ALNUM_RE.sub(' ', value)
+    return _MISMATCH_SPACE_RE.sub(' ', value).strip()
+
+
+def _is_mismatch_volume(folder: str, title: str, publisher: str) -> bool:
+    parts = folder.replace('\\', '/').split('/')
+    folder_base = parts[-1] or (parts[-2] if len(parts) > 1 else '')
+    normal_folder = _normalise_mismatch_name(folder_base)
+    normal_title = _normalise_mismatch_name(title)
+    name_mismatch = bool(
+        normal_folder
+        and normal_title
+        and normal_title not in normal_folder
+        and normal_folder not in normal_title
+    )
+    normal_publisher = publisher.lower()
+    return name_mismatch or any(
+        signal in normal_publisher for signal in _FOREIGN_PUBLISHER_SIGNALS
+    )
+
+
 # region Library
 class Library:
     @classmethod
@@ -1069,7 +1108,8 @@ class Library:
         Returns:
             Dict[str, int]: The statistics.
         """
-        result = get_db().execute("""
+        db = get_db()
+        result = db.execute("""
             WITH v AS (
                 SELECT COUNT(*) AS volumes,
                     COALESCE(SUM(vol.monitored), 0) AS monitored
@@ -1144,6 +1184,18 @@ class Library:
                 ) AS total_file_size
             FROM v;
         """, {'section': section}).fetchonedict() or {}
+        mismatch_rows = db.execute(
+            """SELECT vol.folder, vol.title, vol.publisher
+            FROM volumes vol
+            INNER JOIN root_folders rf ON rf.id = vol.root_folder
+            WHERE rf.section = ?;""",
+            (section,)
+        ).fetchall()
+        result['mismatches'] = sum(
+            1
+            for folder, title, publisher in mismatch_rows
+            if _is_mismatch_volume(folder or '', title or '', publisher or '')
+        )
         return result
 
     @classmethod

@@ -18,7 +18,7 @@ export interface VolumeStats {
   unmonitored_issues: number;
   failed_downloads: number;
   active_downloads: number;
-  import_problems: number;
+  mismatches: number;
   files?: number;
   total_file_size?: number;
 }

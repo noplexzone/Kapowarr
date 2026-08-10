@@ -47,7 +47,7 @@ import type {
 import { VolumeHero } from './volume-hero';
 import { IssuesSection } from './issues-section';
 import { IssueHistoryDialog } from './issue-history-dialog';
-import { ManageIssuesDialog } from './manage-issues-dialog';
+import { ManageIssuesDialog, selectedIssueFileIds } from './manage-issues-dialog';
 import styles from './volume-detail-page.module.css';
 
 function getCoverPreviewSrc(candidate: CoverCandidate): string {
@@ -599,22 +599,8 @@ export function VolumeDetailPage() {
     if (manageChecked.size === 0) return;
     setManageDeleting(true);
     const checkedIds = [...manageChecked];
-    // Collect file IDs for every checked issue by cross-referencing
-    // their filenames against manualMatches (which carries file_id).
-    const fileIds: number[] = [];
     const issues = volume?.issues ?? [];
-    for (const issueId of checkedIds) {
-      const issue = issues.find((i) => i.id === issueId);
-      if (!issue || issue.filenames.length === 0) continue;
-      for (const fn of issue.filenames) {
-        const mf = manualMatches.find(
-          (m) => m.filepath.endsWith(fn) || m.filepath === fn,
-        );
-        if (mf?.file_id != null && !fileIds.includes(mf.file_id)) {
-          fileIds.push(mf.file_id);
-        }
-      }
-    }
+    const fileIds = selectedIssueFileIds(issues, manageChecked);
     if (fileIds.length === 0) {
       setActionMsg('No files to delete for selected issues.');
       setManageDeleting(false);
@@ -648,7 +634,7 @@ export function VolumeDetailPage() {
     } finally {
       setManageDeleting(false);
     }
-  }, [manageChecked, id, queryClient, volume?.issues, manualMatches]);
+  }, [manageChecked, id, queryClient, volume?.issues]);
 
   const handleForceMatchSelected = useCallback(async () => {
     if (manageChecked.size === 0) return;

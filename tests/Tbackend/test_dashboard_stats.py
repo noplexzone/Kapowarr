@@ -22,6 +22,9 @@ class _Cursor:
         row = self.cursor.fetchone()
         return dict(row) if row is not None else None
 
+    def fetchall(self):
+        return self.cursor.fetchall()
+
 
 class DashboardStatsTests(unittest.TestCase):
     def setUp(self):
@@ -29,7 +32,14 @@ class DashboardStatsTests(unittest.TestCase):
         self.db.row_factory = sqlite3.Row
         self.db.executescript('''
             CREATE TABLE root_folders (id INTEGER PRIMARY KEY, section TEXT);
-            CREATE TABLE volumes (id INTEGER PRIMARY KEY, root_folder INTEGER, monitored INTEGER);
+            CREATE TABLE volumes (
+                id INTEGER PRIMARY KEY,
+                root_folder INTEGER,
+                monitored INTEGER,
+                folder TEXT,
+                title TEXT,
+                publisher TEXT
+            );
             CREATE TABLE issues (id INTEGER PRIMARY KEY, volume_id INTEGER, monitored INTEGER, date TEXT);
             CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER);
             CREATE TABLE issues_files (issue_id INTEGER, file_id INTEGER);
@@ -38,7 +48,11 @@ class DashboardStatsTests(unittest.TestCase):
             CREATE TABLE download_queue (id INTEGER PRIMARY KEY);
         ''')
         self.db.executemany('INSERT INTO root_folders VALUES (?, ?)', [(1, 'comic'), (2, 'manga')])
-        self.db.executemany('INSERT INTO volumes VALUES (?, ?, ?)', [(10, 1, 1), (20, 2, 1)])
+        self.db.executemany('INSERT INTO volumes VALUES (?, ?, ?, ?, ?, ?)', [
+            (10, 1, 1, '/comics/Wrong Folder (2020)', 'Saga', 'Image'),
+            (11, 1, 1, '/comics/Invincible (2003)', 'Invincible', 'Image'),
+            (20, 2, 1, '/manga/Berserk (1989)', 'Berserk', 'Glénat'),
+        ])
         self.db.executemany('INSERT INTO issues VALUES (?, ?, ?, ?)', [
             (101, 10, 1, '2020-01-01'),
             (102, 10, 1, '2999-01-01'),
@@ -66,7 +80,7 @@ class DashboardStatsTests(unittest.TestCase):
         self.assertEqual(stats['unmonitored_issues'], 1)
         self.assertEqual(stats['failed_downloads'], 1)
         self.assertEqual(stats['active_downloads'], 1)
-        self.assertEqual(stats['import_problems'], 1)
+        self.assertEqual(stats['mismatches'], 1)
         self.assertEqual(stats['files'], 2)
         self.assertEqual(stats['total_file_size'], 300)
 
@@ -87,6 +101,7 @@ class DashboardStatsTests(unittest.TestCase):
             stats = Library.get_stats('manga')
 
         self.assertEqual(stats['missing_monitored'], 0)
+        self.assertEqual(stats['mismatches'], 1)
         self.assertEqual(stats['files'], 1)
         self.assertEqual(stats['total_file_size'], 300)
 

@@ -1,9 +1,23 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { Badge, Button } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
-import type { FileMatch, VolumeDetailFull } from '../-volumes.types';
+import type { FileMatch, IssueDetail, VolumeDetailFull } from '../-volumes.types';
 import styles from './volume-detail-page.module.css';
 interface ManageIssuesDialogProps { open: boolean; volume: VolumeDetailFull; loading: boolean; checked: Set<number>; deleting: boolean; forceMatching: boolean; manualMatches: FileMatch[]; unmatchedFiles: FileMatch[]; unmatchedChecked: Set<string>; unmatchedDeleting: boolean; forceMatchTargets: Record<string, number>; setForceMatchTargets: Dispatch<SetStateAction<Record<string, number>>>; onClose: () => void; onToggleIssue: (issueId: number) => void; onToggleAllIssues: (checked: boolean, issueIds: number[]) => void; onToggleUnmatched: (filepath: string) => void; onToggleAllUnmatched: (checked: boolean, filepaths: string[]) => void; onForceMatchFile: (filepath: string) => void; onDeleteUnmatchedSelected: () => void; onDeleteAllUnmatched: () => void; onDeleteSelected: () => void; onForceMatchSelected: () => void; }
+
+export function selectedIssueFileIds(
+  issues: IssueDetail[],
+  selectedIssueIds: ReadonlySet<number>,
+): number[] {
+  return [
+    ...new Set(
+      issues
+        .filter(issue => selectedIssueIds.has(issue.id))
+        .flatMap(issue => issue.file_ids),
+    ),
+  ];
+}
+
 export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: manageLoading, checked: manageChecked, deleting: manageDeleting, forceMatching: manageForceMatching, manualMatches, unmatchedFiles, unmatchedChecked, unmatchedDeleting, forceMatchTargets, setForceMatchTargets, onClose: closeManageIssues, onToggleIssue: toggleManageCheck, onToggleAllIssues: toggleAllManage, onToggleUnmatched: toggleUnmatchedCheck, onToggleAllUnmatched: toggleAllUnmatched, onForceMatchFile: handleForceMatchFile, onDeleteUnmatchedSelected: handleDeleteUnmatchedSelected, onDeleteAllUnmatched: handleDeleteAllUnmatched, onDeleteSelected: handleDeleteSelected, onForceMatchSelected: handleForceMatchSelected }: ManageIssuesDialogProps) { return (
       <DialogFrame
         open={manageIssuesOpen}
@@ -31,6 +45,7 @@ export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: ma
                         <th className={styles.renameCheck}>
                           <input
                             type="checkbox"
+                            aria-label="Select all matched issues"
                             checked={
                               volume.issues.length > 0 &&
                               manageChecked.size === volume.issues.length
@@ -55,6 +70,7 @@ export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: ma
                           <td className={styles.renameCheck}>
                             <input
                               type="checkbox"
+                              aria-label={`Select matched issue #${issue.issue_number}`}
                               checked={manageChecked.has(issue.id)}
                               onChange={() => toggleManageCheck(issue.id)}
                             />
@@ -112,6 +128,7 @@ export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: ma
                         <th className={styles.renameCheck}>
                           <input
                             type="checkbox"
+                            aria-label="Select all unmatched files"
                             checked={
                               unmatchedFiles.length > 0 &&
                               unmatchedChecked.size === unmatchedFiles.length
@@ -145,6 +162,7 @@ export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: ma
                             <td className={styles.renameCheck}>
                               <input
                                 type="checkbox"
+                                aria-label={`Select unmatched file ${fn}`}
                                 checked={unmatchedChecked.has(uf.filepath)}
                                 onChange={() =>
                                   toggleUnmatchedCheck(uf.filepath)
@@ -159,6 +177,7 @@ export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: ma
                             <td className={styles.actionsCell}>
                               <select
                                 className={styles.editSelect}
+                                aria-label={`Force match ${fn} to issue`}
                                 value={forceMatchTargets[uf.filepath] ?? ''}
                                 onChange={(e) => {
                                   const val = e.target.value;

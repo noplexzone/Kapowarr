@@ -10,18 +10,45 @@ import { dashboardHistoryQueryOptions, recentlyAddedQueryOptions } from './-dash
 
 beforeEach(() => vi.clearAllMocks());
 
-it('maps the legacy volume list used by recently added', async () => {
+it('requests and maps a bounded paginated volume list for recently added', async () => {
   vi.mocked(apiClient.get).mockResolvedValue({} as Response);
-  vi.mocked(readJson).mockResolvedValue([
-    { id: 7, title: 'Saga', year: 2012, publisher: 'Image', issue_count: 10, issues_downloaded: 4 },
-  ]);
+  vi.mocked(readJson).mockResolvedValue({
+    items: [
+      { id: 7, title: 'Saga', year: 2012, publisher: 'Image', issue_count: 10, issues_downloaded: 4 },
+    ],
+    total: 1,
+    offset: 0,
+    page_size: 6,
+  });
 
   const result = await recentlyAddedQueryOptions('comic').queryFn!({} as never);
 
   expect(result).toHaveLength(1);
   expect(result[0]).toMatchObject({ id: 7, title: 'Saga', section: 'comics' });
   expect(apiClient.get).toHaveBeenCalledWith('volumes', {
-    searchParams: { sort: 'recently_added' },
+    searchParams: {
+      sort: 'recently_added',
+      paginated: 'true',
+      offset: '0',
+      limit: '6',
+    },
+  });
+});
+
+it('bounds the manga recently-added request and scopes it to manga', async () => {
+  vi.mocked(apiClient.get).mockResolvedValue({} as Response);
+  vi.mocked(readJson).mockResolvedValue({ items: [], total: 0, offset: 0, page_size: 6 });
+
+  await recentlyAddedQueryOptions('manga').queryFn!({} as never);
+
+  expect(apiClient.get).toHaveBeenCalledWith('volumes', {
+    searchParams: {
+      sort: 'recently_added',
+      paginated: 'true',
+      offset: '0',
+      limit: '6',
+      section: 'manga',
+    },
   });
 });
 

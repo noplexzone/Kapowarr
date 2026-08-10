@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/app/api-client', () => ({
-  apiClient: { get: vi.fn(), post: vi.fn() },
+  apiClient: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
   readJson: vi.fn(),
 }));
 
@@ -9,6 +9,7 @@ import { apiClient, readJson } from '@/app/api-client';
 import {
   downloadIssue,
   downloadVolume,
+  deleteRawFile,
   fetchIssueHistory,
   manualSearchIssue,
   manualSearchVolume,
@@ -16,6 +17,7 @@ import {
 
 const get = vi.mocked(apiClient.get);
 const post = vi.mocked(apiClient.post);
+const del = vi.mocked(apiClient.delete);
 const parse = vi.mocked(readJson);
 
 describe('direct-download request budgets', () => {
@@ -98,5 +100,20 @@ describe('issue history compatibility', () => {
     expect(get).toHaveBeenCalledWith('activity/history', {
       searchParams: { issue_id: 7 },
     });
+  });
+});
+
+
+describe('unmatched file deletion', () => {
+  it('sends only the volume-scoped server identifier', async () => {
+    del.mockResolvedValue({} as Response);
+    parse.mockResolvedValue({});
+
+    await deleteRawFile(42, 'opaque-id');
+
+    expect(del).toHaveBeenCalledWith('files/raw', {
+      json: { volume_id: 42, unmatched_file_id: 'opaque-id' },
+    });
+    expect(parse).toHaveBeenCalled();
   });
 });

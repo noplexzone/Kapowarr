@@ -2,9 +2,13 @@
 
 from asyncio import run
 from datetime import datetime
+from hashlib import sha256
+from hmac import compare_digest, new as hmac_new
 from io import BytesIO
 from os import makedirs, remove
-from os.path import basename, dirname, exists, getsize, join, splitext
+from os.path import basename, commonpath, dirname, exists, getsize, join, splitext
+from pathlib import Path
+from stat import S_ISREG
 from typing import Any, Dict, List, Tuple, Type, Union
 
 import json as _json
@@ -71,6 +75,55 @@ def return_api(
     code: int = 200
 ) -> Tuple[Dict[str, Any], int]:
     return {'error': error, 'result': result}, code
+
+
+_PROTECTED_DELETE_NAMES = {
+    '.env', 'config.ini', 'config.json', 'config.yaml', 'config.yml',
+    'kapowarr.db', 'settings.ini', 'settings.json',
+}
+_PROTECTED_DELETE_SUFFIXES = {'.db', '.sqlite', '.sqlite3'}
+
+
+def _unmatched_file_id(volume_id: int, filepath: str, api_key: str) -> str:
+    """Return an opaque, volume-scoped identifier for a discovered file."""
+    normalized = str(Path(filepath).resolve(strict=False))
+    payload = f'{volume_id}\0{normalized}'.encode('utf-8')
+    return hmac_new(api_key.encode('utf-8'), payload, sha256).hexdigest()
+
+
+def _validate_unmatched_deletion_target(volume_id: int, filepath: str) -> str:
+    """Resolve and validate a server-discovered unmatched file for deletion."""
+    try:
+        volume_data = Library.get_volume(volume_id).get_data()
+        root = Path(RootFolders()[volume_data.root_folder]).resolve(strict=True)
+        volume_folder = Path(volume_data.folder).resolve(strict=True)
+        requested = Path(filepath)
+        if requested.is_symlink():
+            raise ValueError
+        candidate = requested.resolve(strict=True)
+
+        root_text = str(root)
+        volume_text = str(volume_folder)
+        candidate_text = str(candidate)
+        if commonpath((root_text, volume_text)) != root_text:
+            raise ValueError
+        if commonpath((root_text, candidate_text)) != root_text:
+            raise ValueError
+        if commonpath((volume_text, candidate_text)) != volume_text:
+            raise ValueError
+        if not S_ISREG(candidate.stat().st_mode):
+            raise ValueError
+
+        lower_name = candidate.name.lower()
+        if (
+            lower_name in _PROTECTED_DELETE_NAMES
+            or candidate.suffix.lower() in _PROTECTED_DELETE_SUFFIXES
+        ):
+            raise ValueError
+    except (OSError, ValueError):
+        raise InvalidKeyValue('unmatched_file_id', 'invalid')
+
+    return candidate_text
 
 
 def error_handler(method) -> Any:
@@ -1518,6 +1571,12 @@ def api_manual_match(id: int):
 
     if request.method == 'GET':
         result = get_file_matching(id)
+        api_key = Settings().sv.api_key
+        for match in result:
+            if not match['issue_ids'] and not match['general_file']:
+                match['unmatched_file_id'] = _unmatched_file_id(
+                    id, match['filepath'], api_key
+                )
         return return_api(result)
 
     elif request.method == 'PUT':
@@ -2190,14 +2249,43 @@ def api_file_add_cover_page(file_id: int):
 @error_handler
 @auth
 def api_files_raw():
-    """Delete a file from disk by filepath. Used for unmatched files without DB records."""
-    data: dict = request.get_json() or {}
-    filepath = data.get('filepath', '')
-    if not filepath or not exists(filepath):
-        raise KeyNotFound('filepath')
-    if not filepath.startswith('/'):
-        raise InvalidKeyValue('filepath', filepath)
-    remove(filepath)
+    """Delete a current unmatched file using a server-issued identifier."""
+    settings = Settings().sv
+    supplied_key = (
+        request.headers.get('x-api-key')
+        or request.headers.get('X-Api-Key')
+        or ''
+    )
+    if not supplied_key or not compare_digest(supplied_key, settings.api_key):
+        return return_api({}, 'ApiKeyInvalid', 401)
+
+    data: dict = request.get_json(silent=True) or {}
+    volume_id = data.get('volume_id')
+    unmatched_file_id = data.get('unmatched_file_id')
+    if (
+        not isinstance(volume_id, int)
+        or isinstance(volume_id, bool)
+        or not isinstance(unmatched_file_id, str)
+        or not unmatched_file_id
+    ):
+        raise InvalidKeyValue('body', data)
+
+    filepath = None
+    for match in get_file_matching(volume_id):
+        if match['issue_ids'] or match['general_file']:
+            continue
+        candidate_id = _unmatched_file_id(
+            volume_id, match['filepath'], settings.api_key
+        )
+        if compare_digest(candidate_id, unmatched_file_id):
+            filepath = match['filepath']
+            break
+
+    if filepath is None:
+        raise InvalidKeyValue('unmatched_file_id', unmatched_file_id)
+
+    safe_path = _validate_unmatched_deletion_target(volume_id, filepath)
+    remove(safe_path)
     return return_api({})
 
 

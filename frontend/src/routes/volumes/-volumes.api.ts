@@ -324,8 +324,14 @@ export async function deleteFile(fileId: number): Promise<void> {
   await apiClient.delete(`files/${fileId}`);
 }
 
-export async function deleteRawFile(filepath: string): Promise<void> {
-  await apiClient.delete('files/raw', { json: { filepath } });
+export async function deleteRawFile(
+  volumeId: number,
+  unmatchedFileId: string,
+): Promise<void> {
+  const response = await apiClient.delete('files/raw', {
+    json: { volume_id: volumeId, unmatched_file_id: unmatchedFileId },
+  });
+  await readJson<Record<string, never>>(response);
 }
 
 // ── Cover art ─────────────────────────────────────────────────────

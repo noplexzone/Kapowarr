@@ -805,7 +805,8 @@ export function VolumeDetailPage() {
         if (match?.file_id != null) {
           await deleteFile(match.file_id);
         } else {
-          await deleteRawFile(fp);
+          if (!match?.unmatched_file_id) throw new Error('Missing unmatched file identifier');
+          await deleteRawFile(id, match.unmatched_file_id);
         }
         deleted++;
       }
@@ -835,7 +836,8 @@ export function VolumeDetailPage() {
         if (uf.file_id != null) {
           await deleteFile(uf.file_id);
         } else {
-          await deleteRawFile(uf.filepath);
+          if (!uf.unmatched_file_id) throw new Error('Missing unmatched file identifier');
+          await deleteRawFile(id, uf.unmatched_file_id);
         }
         deleted++;
       }

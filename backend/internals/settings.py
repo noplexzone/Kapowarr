@@ -35,6 +35,26 @@ from backend.internals.db import DBConnection, commit, get_db
 from backend.internals.db_migration import DatabaseMigrationHandler
 
 
+_REDACTED_LOG_VALUE = '[REDACTED]'
+_SECRET_SETTING_NAMES = {
+    'api_key', 'auth_password', 'comicvine_api_key', 'proxy_password',
+    'suwayomi_password',
+}
+
+
+def _settings_for_log(values: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return settings safe to include in application logs."""
+    return {
+        key: (
+            _REDACTED_LOG_VALUE
+            if key in _SECRET_SETTING_NAMES
+            or key.endswith(('_api_key', '_password', '_token'))
+            else value
+        )
+        for key, value in values.items()
+    }
+
+
 class System:
     os_type = get_os_type()
     "What the OS of the system is"
@@ -312,7 +332,7 @@ class Settings(metaclass=Singleton):
 
         self.clear_cache()
 
-        LOGGER.info(f'Settings changed: {formatted_data}')
+        LOGGER.info('Settings changed: %s', _settings_for_log(formatted_data))
 
         return
 
@@ -360,7 +380,7 @@ class Settings(metaclass=Singleton):
         self.update({"api_key": api_key}, from_public=False)
         self.clear_cache()
 
-        LOGGER.info(f'Setting api key regenerated: {api_key}')
+        LOGGER.info('Setting api key regenerated')
         return
 
     def backup_hosting_settings(self) -> None:

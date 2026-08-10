@@ -27,7 +27,7 @@ export function SettingsPage({ category = 'general', onCategoryChange }: { categ
   const changedSettings = useMemo(() => getChangedSettings(form, baseline), [form, baseline]);
   const dirtyCount = Object.keys(changedSettings).length;
   const shouldBlockNavigation = useCallback(
-    () => dirtyCount > 0 && !window.confirm('Discard unsaved settings changes?'),
+    () => dirtyCount > 0 && !window.confirm('Continue with unsaved settings changes?'),
     [dirtyCount],
   );
   useBlocker({

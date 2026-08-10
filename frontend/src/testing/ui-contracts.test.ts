@@ -11,6 +11,7 @@ const volumeCss = read('../routes/volumes/-ui/volume-detail-page.module.css');
 const dashboardCss = read('../routes/dashboard/-ui/dashboard-page.module.css');
 const historyCss = read('../routes/activity/history/-ui/history-page.module.css');
 const blocklistCss = read('../routes/activity/blocklist/-ui/blocklist-page.module.css');
+const blocklistSource = read('../routes/activity/blocklist/-ui/blocklist-page.tsx');
 const routerSource = read('../app/router.tsx');
 
 describe('responsive and accessibility contracts', () => {
@@ -41,6 +42,7 @@ describe('responsive and accessibility contracts', () => {
       expect(mobile).toContain('content: attr(data-label)');
       expect(mobile).toContain('.table thead { display: none; }');
     }
+    expect(blocklistSource).toContain('aria-label={`Remove ${displayTitle(entry)} from blocklist`}');
   });
 
   it('keeps route resilience and heavy-page splitting configured', () => {

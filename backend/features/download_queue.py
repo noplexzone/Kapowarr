@@ -1201,7 +1201,7 @@ def get_download_history(
                 source, source_name, downloaded_at, success
             FROM download_history
             WHERE issue_id = :issue_id
-            ORDER BY downloaded_at DESC
+            ORDER BY downloaded_at DESC, rowid DESC
             LIMIT 50
             OFFSET :offset;
             """
@@ -1215,7 +1215,7 @@ def get_download_history(
                 source, source_name, downloaded_at, success
             FROM download_history
             WHERE volume_id = :volume_id
-            ORDER BY downloaded_at DESC
+            ORDER BY downloaded_at DESC, rowid DESC
             LIMIT 50
             OFFSET :offset;
             """
@@ -1228,7 +1228,7 @@ def get_download_history(
                 volume_id, issue_id,
                 source, source_name, downloaded_at, success
             FROM download_history
-            ORDER BY downloaded_at DESC
+            ORDER BY downloaded_at DESC, rowid DESC
             LIMIT 50
             OFFSET :offset;
             """

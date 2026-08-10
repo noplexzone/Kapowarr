@@ -520,14 +520,11 @@ def api_settings():
             raise InvalidKeyValue('reset_keys', reset_keys)
 
         hosting_changes = any(
-            s in data
-            and data[s] is not None
-            and data[s] != getattr(settings.sv, s)
+            s in reset_keys
             for s in ('host', 'port', 'url_base')
         )
         proxy_changes = any(
-            s in data
-            and data[s] != getattr(settings.sv, s)
+            s in reset_keys
             for s in (
                 'proxy_type', 'proxy_host', 'proxy_port',
                 'proxy_username', 'proxy_password', 'proxy_ignored_addresses'

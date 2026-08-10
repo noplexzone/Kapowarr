@@ -175,7 +175,14 @@ function BlocklistRow({ entry, onDelete }: BlocklistRowProps) {
       <td data-label="Reason" className={styles.reason}>{entry.reason}</td>
       <td data-label="Added At" className={styles.date}>{new Date(entry.added_at).toLocaleString()}</td>
       <td data-label="Actions">
-        <Button variant="ghost" onClick={onDelete} title="Delete">✕</Button>
+        <Button
+          variant="ghost"
+          onClick={onDelete}
+          title="Delete"
+          aria-label={`Remove ${displayTitle(entry)} from blocklist`}
+        >
+          ✕
+        </Button>
       </td>
     </tr>
   );

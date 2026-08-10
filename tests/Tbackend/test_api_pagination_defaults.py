@@ -80,6 +80,43 @@ class PaginationApiDefaultsTests(unittest.TestCase):
         self.assertEqual(paginated.get_json()['result']['total'], 1)
         get_count.assert_called_once_with()
 
+    def test_resetting_hosting_setting_restarts_with_hosting_mode(self):
+        settings = MagicMock()
+        settings.sv.auth_password = None
+        settings.get_public_settings.return_value.todict.return_value = {}
+        server = MagicMock()
+        with patch.object(api_mod, 'request', flask_request), patch.object(
+            api_mod, 'Settings', return_value=settings
+        ), patch.object(api_mod, 'Server', return_value=server), patch.object(
+            api_mod.StartTypeHandlers, 'diffuse_timer'
+        ):
+            response = self._client().delete(
+                '/api/settings', json={'reset_keys': ['host']}
+            )
+
+        self.assertEqual(response.status_code, 200)
+        settings.backup_hosting_settings.assert_called_once_with()
+        server.restart.assert_called_once_with(
+            api_mod.StartType.RESTART_HOSTING_CHANGES
+        )
+
+    def test_resetting_proxy_setting_restarts_server(self):
+        settings = MagicMock()
+        settings.sv.auth_password = None
+        settings.get_public_settings.return_value.todict.return_value = {}
+        server = MagicMock()
+        with patch.object(api_mod, 'request', flask_request), patch.object(
+            api_mod, 'Settings', return_value=settings
+        ), patch.object(api_mod, 'Server', return_value=server), patch.object(
+            api_mod.StartTypeHandlers, 'diffuse_timer'
+        ):
+            response = self._client().delete(
+                '/api/settings', json={'reset_keys': ['proxy_host']}
+            )
+
+        self.assertEqual(response.status_code, 200)
+        server.restart.assert_called_once_with()
+
 
 if __name__ == '__main__':
     unittest.main()

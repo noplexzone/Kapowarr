@@ -60,3 +60,9 @@ jobs:
 
       - run: npm run build:check
         name: Build frontend and enforce budgets
+
+      - run: npx playwright install --with-deps chromium
+        name: Install Chromium for production smoke tests
+
+      - run: npm run test:e2e
+        name: Run production browser and accessibility tests

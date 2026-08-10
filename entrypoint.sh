@@ -10,7 +10,9 @@ TD_DIR="/app/temp_downloads"
 
 if [ "$(id -u)" != "0" ]; then
     if [ "$(id -u)" != "$PUID" ] || [ "$(id -g)" != "$PGID" ]; then
-        echo "Running as $(id -u):$(id -g); PUID:PGID is applied by the container runtime when needed"
+        echo "ERROR: runtime identity $(id -u):$(id -g) does not match PUID:PGID $PUID:$PGID." >&2
+        echo "Set the container runtime user to $PUID:$PGID, or remove the PUID/PGID overrides." >&2
+        exit 64
     fi
     exec "$@"
 fi

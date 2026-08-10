@@ -53,6 +53,11 @@ explicit read-write mount; file replacement can create temporary files beside th
 artifact. To use different IDs, set `PUID` and `PGID` and set the Compose `user` to the same
 values before starting the container.
 
+> **Migration note:** the image now starts as non-root `1000:1000`. Existing
+> deployments that set only `PUID`/`PGID` must also set the Docker/Compose
+> runtime `user` to the same numeric IDs. Startup now fails explicitly when
+> these values disagree instead of silently running with inaccessible mounts.
+
 ## Screenshots
 
 ![](https://github.com/user-attachments/assets/04656209-288e-4263-a2df-93e06758c443)

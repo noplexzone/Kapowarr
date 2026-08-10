@@ -10,7 +10,8 @@ interface VolumeHeroProps { volume: VolumeDetailFull; actionMsg: string; progres
 export function VolumeHero({ volume, actionMsg, progressPct, progressTone, refreshPending, autoSearchPending, manualSearchPending, onRefresh, onAutoSearch, onManualSearch, onEdit, onFixMatch, onPreviewRename, onManageIssues }: VolumeHeroProps) { return <>
       <nav className={styles.breadcrumb}>
         <Link
-          to={volume.section === 'manga' ? '/manga' : '/comics'}
+          to="/library"
+          search={{ section: volume.section === 'manga' ? 'manga' : 'comic' }}
           className={styles.breadcrumbLink}
         >
           {volume.section === 'manga' ? 'Manga' : 'Comics'}

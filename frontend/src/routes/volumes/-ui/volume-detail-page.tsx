@@ -225,7 +225,10 @@ export function VolumeDetailPage() {
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: VOLUME_FULL_KEY(id) });
       queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
-      navigate({ to: volume?.section === 'manga' ? '/manga' : '/comics' });
+      navigate({
+        to: '/library',
+        search: { section: volume?.section === 'manga' ? 'manga' : 'comic' },
+      });
     },
   });
 
@@ -913,8 +916,8 @@ export function VolumeDetailPage() {
     return (
       <div className={styles.errorPage}>
         <p className={styles.errorMsg}>Volume not found or failed to load.</p>
-        <Link to="/comics" className={styles.backLink}>
-          ← Back to Comics
+        <Link to="/library" search={{ section: 'comic' }} className={styles.backLink}>
+          ← Back to Library
         </Link>
       </div>
     );

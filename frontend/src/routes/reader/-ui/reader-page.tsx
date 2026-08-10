@@ -55,7 +55,7 @@ export function ReaderPage() {
     if (window.history.length > 1) {
       window.history.back();
     } else {
-      navigate({ to: '/comics' });
+      navigate({ to: '/library', search: { section: 'comic' } });
     }
   }, [navigate]);
 
@@ -125,8 +125,8 @@ export function ReaderPage() {
       {!isLoading && (error || !fileInfo) && (
         <div className={styles.centered}>
           <p>File not found or failed to load.</p>
-          <Link to="/comics" className={styles.backLink}>
-            ← Back to Comics
+          <Link to="/library" search={{ section: 'comic' }} className={styles.backLink}>
+            ← Back to Library
           </Link>
         </div>
       )}

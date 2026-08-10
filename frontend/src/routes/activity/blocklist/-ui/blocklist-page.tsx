@@ -33,7 +33,7 @@ export function BlocklistPage({ offset }: BlocklistPageProps) {
     onSuccess: () => {
       setConfirmClear(false);
       queryClient.invalidateQueries({ queryKey: BLOCKLIST_KEY });
-      navigate({ to: '/activity/blocklist', search: { offset: 0 } });
+      navigate({ to: '/activity/blocklist', search: (prev: any) => ({ ...prev, page: 1 }) });
     },
   });
 
@@ -48,7 +48,7 @@ export function BlocklistPage({ offset }: BlocklistPageProps) {
   const goToPage = (page: number) => {
     navigate({
       to: '/activity/blocklist',
-      search: { offset: page },
+      search: (prev: any) => ({ ...prev, page: page + 1 }),
     });
   };
 

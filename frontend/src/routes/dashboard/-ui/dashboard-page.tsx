@@ -44,7 +44,7 @@ export function DashboardPage() {
           <Button
             variant="secondary"
             disabled={isRefreshing}
-            onClick={() => queryClient.invalidateQueries()}
+            onClick={() => Promise.all([['volumes', 'stats'], ['volumes', 'recently-added'], ['activity', 'queue', 'dashboard'], ['activity', 'history', 'dashboard']].map(queryKey => queryClient.invalidateQueries({ queryKey })))}
           >
             {isRefreshing ? 'Refreshing…' : 'Refresh dashboard'}
           </Button>
@@ -57,16 +57,16 @@ export function DashboardPage() {
       )}
 
       <div className={styles.metricsGrid}>
-        <MetricCard label="Comics missing" value={comicStats?.missing_monitored ?? null} to="/comics" search={{ sort: 'wanted', filter: 'wanted', view: 'posters', offset: 0 }} />
-        <MetricCard label="Manga missing" value={mangaStats?.missing_monitored ?? null} to="/manga" search={{ sort: 'wanted', filter: 'wanted', view: 'posters', offset: 0 }} />
-        <MetricCard label="Comics upcoming" value={comicStats?.upcoming_monitored ?? null} to="/comics" search={{ sort: 'recently_released', filter: 'upcoming', view: 'posters', offset: 0 }} />
-        <MetricCard label="Manga upcoming" value={mangaStats?.upcoming_monitored ?? null} to="/manga" search={{ sort: 'recently_released', filter: 'upcoming', view: 'posters', offset: 0 }} />
-        <MetricCard label="Comics unmonitored" value={comicStats?.unmonitored_issues ?? null} to="/comics" search={{ sort: 'title', filter: 'unmonitored', view: 'posters', offset: 0 }} />
-        <MetricCard label="Manga unmonitored" value={mangaStats?.unmonitored_issues ?? null} to="/manga" search={{ sort: 'title', filter: 'unmonitored', view: 'posters', offset: 0 }} />
-        <MetricCard label="Failed downloads" value={comicStats?.failed_downloads ?? null} to="/activity/history" search={{ offset: 0, state: 'failed' }} />
+        <MetricCard label="Comics missing" value={comicStats?.missing_monitored ?? null} to="/library" search={{ section: 'comic', sort: 'wanted', status: 'missing', monitoring: 'all', view: 'grid', page: 1 }} />
+        <MetricCard label="Manga missing" value={mangaStats?.missing_monitored ?? null} to="/library" search={{ section: 'manga', sort: 'wanted', status: 'missing', monitoring: 'all', view: 'grid', page: 1 }} />
+        <MetricCard label="Comics upcoming" value={comicStats?.upcoming_monitored ?? null} to="/library" search={{ section: 'comic', sort: 'recently_released', status: 'upcoming', monitoring: 'all', view: 'grid', page: 1 }} />
+        <MetricCard label="Manga upcoming" value={mangaStats?.upcoming_monitored ?? null} to="/library" search={{ section: 'manga', sort: 'recently_released', status: 'upcoming', monitoring: 'all', view: 'grid', page: 1 }} />
+        <MetricCard label="Comics unmonitored" value={comicStats?.unmonitored_issues ?? null} to="/library" search={{ section: 'comic', sort: 'title', status: 'all', monitoring: 'unmonitored', view: 'grid', page: 1 }} />
+        <MetricCard label="Manga unmonitored" value={mangaStats?.unmonitored_issues ?? null} to="/library" search={{ section: 'manga', sort: 'title', status: 'all', monitoring: 'unmonitored', view: 'grid', page: 1 }} />
+        <MetricCard label="Failed downloads" value={comicStats?.failed_downloads ?? null} to="/activity/history" search={{ page: 1, status: 'failed', section: 'all' }} />
         <MetricCard label="Active downloads" value={comicStats?.active_downloads ?? null} to="/activity/queue" />
-        <MetricCard label="Comic mismatches" value={comicStats?.mismatches ?? null} to="/mismatch-review" search={{ section: 'comic' }} />
-        <MetricCard label="Manga mismatches" value={mangaStats?.mismatches ?? null} to="/mismatch-review" search={{ section: 'manga' }} />
+        <MetricCard label="Comic mismatches" value={comicStats?.mismatches ?? null} to="/activity/mismatches" search={{ section: 'comic' }} />
+        <MetricCard label="Manga mismatches" value={mangaStats?.mismatches ?? null} to="/activity/mismatches" search={{ section: 'manga' }} />
       </div>
 
       {/* ── Recent activity + Queue ── */}
@@ -143,7 +143,7 @@ export function DashboardPage() {
               <span className={styles.sectionBadge}>Comics</span>{' '}
               Recently Added
             </h2>
-            <Link to="/comics" className={styles.sectionLink}>
+            <Link to="/library" search={{ section: 'comic' }} className={styles.sectionLink}>
               View all
             </Link>
           </div>
@@ -193,7 +193,7 @@ export function DashboardPage() {
               <span className={styles.sectionBadge}>Manga</span>{' '}
               Recently Added
             </h2>
-            <Link to="/manga" className={styles.sectionLink}>
+            <Link to="/library" search={{ section: 'manga' }} className={styles.sectionLink}>
               View all
             </Link>
           </div>

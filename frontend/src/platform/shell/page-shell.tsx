@@ -1,61 +1,36 @@
-import { type ReactNode, createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { type ReactNode } from 'react';
+import { Link, useLocation } from '@tanstack/react-router';
 import { useShellStore } from './store';
 import { Sidebar } from './sidebar';
+import { MobileNavigation } from './mobile-navigation';
+import { ACTIVITY_NAV } from './navigation';
 import styles from './page-shell.module.css';
 
-interface ShellContextValue {
-  profile: number;
-}
-
-const ShellContext = createContext<ShellContextValue>({ profile: 1 });
-
-export function useShell() {
-  return useContext(ShellContext);
-}
-
-export interface PageShellProps {
-  children: ReactNode;
-}
-
-export function PageShell({ children }: PageShellProps) {
-  const theme = useShellStore((s) => s.theme);
-  const sidebarCollapsed = useShellStore((s) => s.sidebarCollapsed);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const openSidebar = useCallback(() => setSidebarOpen(true), []);
-  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
-
-  useEffect(() => {
-    if (!sidebarOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeSidebar();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [sidebarOpen, closeSidebar]);
+export function PageShell({ children }: { children: ReactNode }) {
+  const theme = useShellStore((state) => state.theme);
+  const { pathname } = useLocation();
 
   return (
-    <div
-      className={styles.shell}
-      data-testid="application-shell"
-      data-theme={theme}
-      style={{
-        '--nav-column-width': sidebarCollapsed ? '56px' : 'var(--nav-width)',
-      } as React.CSSProperties}
-    >
-      <Sidebar overlayOpen={sidebarOpen} onClose={closeSidebar} />
-      {sidebarOpen && (
-        <div className={styles.backdrop} onClick={closeSidebar} />
-      )}
-      <button
-        className={styles.hamburger}
-        onClick={openSidebar}
-        aria-label="Open navigation"
-      >
-        ≡
-      </button>
+    <div className={styles.shell} data-theme={theme} data-testid="application-shell">
+      <Sidebar />
       <main className={styles.content}>
+        {pathname.startsWith('/activity/') && (
+          <nav className={styles.sectionNav} aria-label="Activity sections">
+            {ACTIVITY_NAV.map(([label, to]) => (
+              <Link
+                key={to}
+                to={to as never}
+                search
+                aria-current={pathname === to ? 'page' : undefined}
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
+        )}
         {children}
       </main>
+      <MobileNavigation />
     </div>
   );
 }

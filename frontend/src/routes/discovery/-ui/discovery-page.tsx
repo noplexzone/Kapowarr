@@ -15,9 +15,10 @@ import styles from './discovery-page.module.css';
 interface DiscoveryPageProps {
   section: DiscoverySection;
   type: DiscoveryType;
+  canonical?: boolean;
 }
 
-export function DiscoveryPage({ section, type }: DiscoveryPageProps) {
+export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -32,10 +33,16 @@ export function DiscoveryPage({ section, type }: DiscoveryPageProps) {
     setTimeout(() => setRefreshing(false), 600);
   }, [queryClient]);
 
-  const setSection = (s: DiscoverySection) =>
-    navigate({ to: '/discovery', search: (prev: Record<string, unknown>) => ({ ...prev, section: s }) });
-  const setType = (t: DiscoveryType) =>
-    navigate({ to: '/discovery', search: (prev: Record<string, unknown>) => ({ ...prev, type: t }) });
+  const setSection = (nextSection: DiscoverySection) => navigate({
+    to: canonical ? '/discover' : '/discovery',
+    search: (previous: Record<string, unknown>) => ({ ...previous, section: nextSection }),
+  });
+  const setType = (nextType: DiscoveryType) => navigate({
+    to: canonical ? '/discover' : '/discovery',
+    search: (previous: Record<string, unknown>) => canonical
+      ? ({ ...previous, category: nextType })
+      : ({ ...previous, type: nextType }),
+  });
 
   return (
     <div className={styles.page}>

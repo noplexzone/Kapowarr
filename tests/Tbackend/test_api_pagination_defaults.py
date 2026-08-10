@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from flask import Flask, request as flask_request
 
@@ -79,6 +79,30 @@ class PaginationApiDefaultsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         get_history.assert_called_once_with(None, None, 0, 'failed')
         get_count.assert_called_once_with(None, None, 'failed')
+
+    def test_exact_comicvine_metadata_lookup_uses_requested_identifier(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = MagicMock()
+        comicvine.search_volumes = AsyncMock(return_value=[{
+            'comicvine_id': 4050,
+            'metadata_source': 'comicvine',
+            'metadata_id': '4050',
+            'title': 'Saga',
+            'cover': b'not-json-safe',
+        }])
+        with request_patch, settings_patch, timer_patch, patch.object(
+            api_mod, 'ComicVine', return_value=comicvine
+        ):
+            response = self._client().get(
+                '/api/volumes/search/exact?metadata_source=comicvine'
+                '&metadata_id=4050&section=comic'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()['result']
+        self.assertEqual(result['metadata_id'], '4050')
+        self.assertNotIn('cover', result)
+        comicvine.search_volumes.assert_awaited_once_with('cv:4050', section='comic')
 
     def test_blocklist_legacy_and_paginated_shapes(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()

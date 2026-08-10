@@ -5,6 +5,7 @@ import { Button, Badge } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody, DialogFooter } from '@/components/dialog';
 import {
   searchVolumesQueryOptions,
+  exactVolumeQueryOptions,
   rootFoldersQueryOptions,
   addVolume,
   type AddVolumePayload,
@@ -48,17 +49,19 @@ export function AddPage({ section, selection }: AddPageProps) {
     ...searchVolumesQueryOptions(query, section, metadataSource),
     enabled: query.length >= 2,
   });
+  const { data: exactSelection } = useQuery(
+    exactVolumeQueryOptions(selection, section),
+  );
 
   const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
 
   useEffect(() => {
-    if (!selection || modalResult || results.length === 0) return;
-    const selected = results.find((result) =>
-      (result.metadata_source ?? 'comicvine') === selection.metadata_source
-      && String(result.metadata_id ?? result.comicvine_id) === selection.metadata_id
-    );
-    if (selected) setModalResult({ ...selected, metadata_language: selection.metadata_language ?? selected.metadata_language });
-  }, [selection, results, modalResult]);
+    if (!exactSelection || modalResult) return;
+    setModalResult({
+      ...exactSelection,
+      metadata_language: selection?.metadata_language ?? exactSelection.metadata_language,
+    });
+  }, [selection?.metadata_language, exactSelection, modalResult]);
 
   const sectionLabel = section === 'manga' ? 'Manga' : 'Comics';
   const placeholder = `Search ${sectionLabel}…`;

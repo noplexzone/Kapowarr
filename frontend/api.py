@@ -1045,6 +1045,74 @@ def api_discovery_story_arc(arc_id: int):
 # =====================
 
 
+@api.route('/volumes/search/exact', methods=['GET'])
+@error_handler
+@auth
+def api_volumes_search_exact():
+    """Hydrate one Add candidate by its source-owned metadata identity."""
+    metadata_source = extract_key(request, 'metadata_source')
+    metadata_id = extract_key(request, 'metadata_id')
+    section = extract_key(request, 'section', False) or 'comic'
+    metadata_language = (
+        extract_key(request, 'metadata_language', False) or 'en'
+    )
+    if section not in ('comic', 'manga'):
+        raise InvalidKeyValue('section', section)
+
+    if metadata_source == 'comicvine':
+        results = run(ComicVine().search_volumes(
+            f'cv:{metadata_id}', section=section
+        ))
+        result = next((
+            item for item in results
+            if str(item.get('metadata_id') or item.get('comicvine_id'))
+            == str(metadata_id)
+        ), None)
+    elif metadata_source == 'mangadex' and section == 'manga':
+        from backend.implementations.mangadex import (
+            MangaDexClient, format_mangadex_volume_result
+        )
+        from requests import RequestException
+        try:
+            client = MangaDexClient()
+            manga = client.get_manga(str(metadata_id))
+            if str(manga.get('id') or '') != str(metadata_id):
+                raise ValueError
+            mapping = client.get_aggregate_volume_map(
+                str(metadata_id), metadata_language
+            )
+            covers = client.get_covers(str(metadata_id))
+            result = format_mangadex_volume_result(
+                manga, mapping, metadata_language, covers
+            )
+            already_added = get_db().execute(
+                """
+                SELECT id
+                FROM volumes
+                WHERE metadata_source = 'mangadex'
+                    AND metadata_id = ?
+                    AND metadata_language = ?
+                LIMIT 1;
+                """,
+                (str(metadata_id), metadata_language)
+            ).fetchone()
+            result['already_added'] = (
+                already_added[0] if already_added else None
+            )
+        except (KeyError, RequestException, ValueError) as exc:
+            LOGGER.warning(
+                'Exact MangaDex lookup failed for %s: %s', metadata_id, exc
+            )
+            result = None
+    else:
+        raise InvalidKeyValue('metadata_source', metadata_source)
+
+    if result is None:
+        raise InvalidKeyValue('metadata_id', metadata_id)
+    result.pop('cover', None)
+    return return_api(result)
+
+
 @api.route('/volumes/search', methods=['GET', 'POST'])
 @error_handler
 @auth

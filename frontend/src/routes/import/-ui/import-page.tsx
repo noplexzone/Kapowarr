@@ -14,6 +14,7 @@ export function ImportPage({ section }: ImportPageProps) {
   const [fuzzyFallback, setFuzzyFallback] = useState(false);
   const [quick, setQuick] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [scanComplete, setScanComplete] = useState(false);
   const [items, setItems] = useState<BulkScanItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
@@ -25,6 +26,7 @@ export function ImportPage({ section }: ImportPageProps) {
 
   const startScan = useCallback(async () => {
     setScanning(true);
+    setScanComplete(false);
     setItems([]);
     setSelected(new Set());
     setError('');
@@ -34,6 +36,7 @@ export function ImportPage({ section }: ImportPageProps) {
       for await (const item of scanBulk(folderFilter, fuzzyFallback, quick)) {
         setItems(prev => [...prev, item]);
       }
+      setScanComplete(true);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -78,6 +81,7 @@ export function ImportPage({ section }: ImportPageProps) {
   const unmatchedFolders = items.filter(i => !i.matched).map(i => i.folder);
 
   const openDeleteDialog = () => {
+    if (!scanComplete) return;
     setDeleteError('');
     setConfirmDelete(true);
   };
@@ -89,7 +93,7 @@ export function ImportPage({ section }: ImportPageProps) {
   };
 
   const handleDelete = async () => {
-    if (deleting) return;
+    if (deleting || !scanComplete) return;
 
     const foldersToDelete = [...unmatchedFolders];
     const deletedFolders = new Set(foldersToDelete);
@@ -179,7 +183,7 @@ export function ImportPage({ section }: ImportPageProps) {
                 {importing ? 'Importing…' : `Import Selected (${selected.size})`}
               </Button>
               {unmatchedCount > 0 && (
-                <Button variant="secondary" onClick={openDeleteDialog} disabled={scanning || deleting}>
+                <Button variant="secondary" onClick={openDeleteDialog} disabled={!scanComplete || scanning || deleting}>
                   Delete Unmatched ({unmatchedCount})
                 </Button>
               )}

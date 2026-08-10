@@ -79,6 +79,23 @@ describe('unmatched folder deletion', () => {
     readyScan();
   });
 
+  it('keeps deletion disabled when a scan fails after partial results', async () => {
+    scanBulk.mockImplementation(async function* () {
+      yield unmatchedOne;
+      throw new Error('Invalid library-import scan event');
+    });
+
+    render(<ImportPage section='comic' />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start Scan' }));
+
+    await screen.findByText(/Invalid library-import scan event/);
+    const deleteAfterFailure = screen.getByRole('button', { name: 'Delete Unmatched (1)' });
+    expect((deleteAfterFailure as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(deleteAfterFailure);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(deleteUnmatched).not.toHaveBeenCalled();
+  });
+
   it('does not allow deletion until the streaming scan is complete', async () => {
     let finishScan: (() => void) | undefined;
     scanBulk.mockImplementation(async function* () {

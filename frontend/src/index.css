@@ -19,6 +19,19 @@
   --info: #3b82f6;
   --warning: #eab308;
   --danger: #db5461;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --control-height: 2.5rem;
+  --touch-target: 2.75rem;
+  --focus-ring: 0 0 0 3px rgba(var(--accent-rgb), 0.45);
+  --shadow-raised: 0 8px 24px rgb(0 0 0 / 0.16);
 }
 
 /* ── Dark mode ───────────────────────────────── */
@@ -203,62 +216,54 @@ button {
   cursor: pointer;
 }
 
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 /* ── Mobile responsive (≤ 768px) ──────────────── */
 @media (max-width: 768px) {
-  html {
-    font-size: 14px;
-  }
-
   body {
     -webkit-text-size-adjust: 100%;
   }
 
-  /* Tighter content padding for mobile viewport */
   .content {
-    padding: 0.75rem;
+    padding: var(--space-3);
   }
 
-  /* Global spacing reduction */
-  h1 { font-size: 1.25rem; }
-  h2 { font-size: 1.1rem; }
-  h3 { font-size: 1rem; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+  h3 { font-size: 1.1rem; }
 
-  /* Compact cards & panels on mobile */
-  .card,
-  [class*="card"] {
-    padding: 0.75rem;
-    gap: 0.5rem;
-  }
-
-  /* Reduce table cell padding */
-  table th,
-  table td {
-    padding: 0.375rem 0.5rem;
-  }
-
-  /* Compact form elements */
   input,
   select,
   textarea,
   button {
-    font-size: 0.875rem;
+    font-size: 1rem;
   }
 
-  /* Tighter button spacing */
-  .button,
-  [class*="button"] {
-    padding: 0.375rem 0.75rem;
-    gap: 0.375rem;
+  button,
+  [role='button'],
+  input:not([type='checkbox']):not([type='radio']),
+  select {
+    min-height: var(--touch-target);
   }
 }
 
-/* ── Small phone breakpoint (≤ 480px) ──────────── */
 @media (max-width: 480px) {
-  html {
-    font-size: 13px;
-  }
-
   .content {
-    padding: 0.5rem;
+    padding: var(--space-2);
   }
 }

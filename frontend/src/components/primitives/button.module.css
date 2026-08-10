@@ -3,11 +3,12 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  padding: 0.4em 0.85em;
-  font-size: 0.85rem;
+  padding: 0.5rem 0.9rem;
+  min-height: var(--control-height, 2.5rem);
+  font-size: 0.9rem;
   font-weight: 500;
   line-height: 1.4;
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   border: 1px solid transparent;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, opacity 0.15s;
@@ -54,9 +55,9 @@
 }
 
 .icon {
-  padding: 0.35em;
-  min-width: 2em;
-  min-height: 2em;
+  padding: 0.5rem;
+  min-width: var(--touch-target, 2.75rem);
+  min-height: var(--touch-target, 2.75rem);
   background: transparent;
   border-color: transparent;
   color: var(--text-dim);

@@ -292,11 +292,12 @@
 }
 
 .footerAttribution {
-  opacity: 0.6;
+  color: var(--text);
 }
 
 .footerAttribution a {
   color: var(--accent);
+  text-decoration: underline;
 }
 
 .footerAttribution a:hover {

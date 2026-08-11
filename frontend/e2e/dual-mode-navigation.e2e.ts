@@ -156,7 +156,7 @@ for (const { route, evidence } of workflowRoutes) {
 test('Discover exposes a bottom Search/Add Comics control', async ({ page }) => {
   await boot(page);
   await page.getByRole('link', { name: 'Discover', exact: true }).click();
-  const search = page.getByRole('searchbox', { name: 'Add comics' });
+  const search = page.getByRole('searchbox', { name: 'Search to add comics' });
   await expect(search).toBeVisible();
   await search.fill('Acceptance');
   await expect(page.getByRole('button', { name: /Acceptance Search Result/ })).toBeVisible();
@@ -193,6 +193,15 @@ test('volume issue history dialog consumes the issue-history array contract', as
   await page.goto('/volumes/1/issues');
   await page.getByRole('button', { name: 'History' }).click();
   await expect(page.getByRole('dialog')).toContainText('Pilot issue release');
+});
+
+test('volume detail defaults to Issues without an Overview tab', async ({ page }) => {
+  await page.route('**/*', injectProductionBase);
+  await page.route('**/api/**', mockApi);
+  await page.goto('/volumes/1');
+  const sections = page.getByRole('navigation', { name: 'Volume sections' });
+  await expect(sections.getByRole('link', { name: 'Issues' })).toHaveAttribute('aria-current', 'page');
+  await expect(sections.getByRole('link', { name: 'Overview' })).toHaveCount(0);
 });
 
 test('login branding honors a prefixed production base path', async ({ page }) => {

@@ -1,5 +1,19 @@
-import { describe, expect, it } from 'vitest';
-import { getActivePrimary, PRIMARY_NAV } from './navigation';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { getActivePrimary, getStoredLibrarySearch, PRIMARY_NAV } from './navigation';
+
+const storage = new Map<string, string>();
+
+beforeEach(() => {
+  storage.clear();
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      clear: () => storage.clear(),
+    },
+  });
+});
 
 describe('canonical navigation model', () => {
   it('contains exactly the five product destinations', () => {
@@ -30,5 +44,36 @@ describe('canonical navigation model', () => {
 
   it('marks only navigation groups as active parents', () => {
     expect(PRIMARY_NAV.filter((item) => item.parent).map((item) => item.label)).toEqual(['Activity']);
+  });
+});
+
+
+it('hydrates the Library nav target from stored preferences', () => {
+  window.localStorage.setItem('kapowarr_sort', JSON.stringify('recently_added'));
+  window.localStorage.setItem('kapowarr_view', JSON.stringify('table'));
+  window.localStorage.setItem('kapowarr_filter', JSON.stringify('wanted'));
+  window.localStorage.setItem('kapowarr_search', JSON.stringify('batman'));
+
+  expect(getStoredLibrarySearch()).toEqual({
+    section: 'comic',
+    sort: 'recently_added',
+    view: 'list',
+    status: 'missing',
+    monitoring: 'all',
+    q: 'batman',
+    page: 1,
+  });
+});
+
+it('ignores invalid stored Library nav preferences', () => {
+  window.localStorage.setItem('kapowarr_sort', JSON.stringify('bogus'));
+  window.localStorage.setItem('kapowarr_view', JSON.stringify('huge'));
+  window.localStorage.setItem('kapowarr_filter', JSON.stringify('bad'));
+
+  expect(getStoredLibrarySearch()).toMatchObject({
+    sort: 'title',
+    view: 'grid',
+    status: 'all',
+    monitoring: 'all',
   });
 });

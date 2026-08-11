@@ -369,8 +369,8 @@ function FloatingAddSearch({ section, query, rawQuery, onQueryChange, onSelect }
           ))}
         </div>
       )}
-      <label className={styles.floatingSearchLabel} htmlFor="discover-add-search">
-        Add {section === 'manga' ? 'manga' : 'comics'}
+      <label className={styles.srOnly} htmlFor="discover-add-search">
+        Search to add {section === 'manga' ? 'manga' : 'comics'}
       </label>
       <input
         id="discover-add-search"

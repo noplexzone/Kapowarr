@@ -3,7 +3,7 @@ import { Link, useLocation } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { systemAboutQueryOptions } from '@/routes/system/-system.api';
 import { NavIcon } from './nav-icons';
-import { getActivePrimary, PRIMARY_NAV } from './navigation';
+import { getActivePrimary, getStoredLibrarySearch, PRIMARY_NAV } from './navigation';
 import styles from './sidebar.module.css';
 
 interface ActiveNavItem {
@@ -79,6 +79,7 @@ export function Sidebar() {
             <Link
               key={item.label}
               to={item.to as never}
+              search={item.label === 'Library' ? getStoredLibrarySearch() as never : undefined}
               activeOptions={item.parent ? { exact: true } : undefined}
               className={styles.navItem}
               data-active={isActive || undefined}

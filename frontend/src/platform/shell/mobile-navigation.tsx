@@ -1,6 +1,6 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { NavIcon } from './nav-icons';
-import { getActivePrimary, PRIMARY_NAV } from './navigation';
+import { getActivePrimary, getStoredLibrarySearch, PRIMARY_NAV } from './navigation';
 import styles from './mobile-navigation.module.css';
 
 export function MobileNavigation() {
@@ -15,6 +15,7 @@ export function MobileNavigation() {
           <Link
             key={item.label}
             to={item.to as never}
+            search={item.label === 'Library' ? getStoredLibrarySearch() as never : undefined}
             activeOptions={item.parent ? { exact: true } : undefined}
             className={styles.link}
             data-active={isActive || undefined}

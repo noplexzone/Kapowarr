@@ -22,8 +22,9 @@ from backend.base.file_extraction import (extract_issue_number,
                                           extract_volume_number, volume_regex)
 from backend.base.helpers import (AsyncSession, Session, batched,
                                   first_of_range, force_range, force_suffix,
-                                  normalise_string, normalise_year,
-                                  to_full_string_cv_id, to_string_cv_id)
+                                  normalise_query_string, normalise_string,
+                                  normalise_year, to_full_string_cv_id,
+                                  to_string_cv_id)
 from backend.base.logging import LOGGER
 from backend.implementations.matching import select_best_volume_result_for_file
 from backend.internals.db import get_db
@@ -55,7 +56,7 @@ _NON_ENGLISH_PUBLISHERS = frozenset({
     'irodori comics', 'denpa', 'ablaze manga', 'cmx', 'bandai entertainment',
     'ize press', 'yen on', 'netcomics', 'kuma', 'steamship', 'airship',
     'manga classics', 'manga university', 'star fruit books',
-    'glacier bay books', 'drawn and quarterly manga',
+    'glacier bay books', 'drawn and quarterly manga', 'line manga',
     # The shorter alias so substring check catches "Seven Seas" without "Entertainment"
     'seven seas',
     # French/European manga publishers
@@ -100,7 +101,7 @@ _NON_ENGLISH_TITLE_KEYWORDS = frozenset({
     'megastore', 'comic megastore', 'comic unreal', 'comic anthurium',
     'comic tenma', 'comic mujin', 'comic europa', 'comic penguin',
     'comic lo', 'comic potpourri', 'girls forM', 'comic kuribayashi',
-    'e★everystar', 'e*everystar', 'comic valkyrie',
+    'e★everystar', 'e*everystar', 'comic valkyrie', 'isekai',
 })
 _MANGA_TITLE_KEYWORDS = _NON_ENGLISH_TITLE_KEYWORDS
 
@@ -169,7 +170,7 @@ _ENGLISH_MANGA_PUBLISHERS = frozenset({
 
 
 def _publisher_matches(pub: str, publishers: FrozenSet[str]) -> bool:
-    normalized = (pub or '').strip().lower()
+    normalized = normalise_query_string(pub or '').strip().lower()
     if not normalized:
         return False
     return any(
@@ -1000,7 +1001,7 @@ class ComicVine:
 
     async def get_new_volumes(
         self,
-        limit: int = 100
+        limit: int = 200
     ) -> List[VolumeMetadata]:
         """Get volumes sorted by publish date (start year), newest first.
 
@@ -1015,8 +1016,8 @@ class ComicVine:
             List of VolumeMetadata dicts with already_added populated.
         """
         # date_added:desc avoids the NULL-first ordering that start_year:desc has.
-        # We fetch 400 candidates (4 pages) so that after filtering out the heavy
-        # manga/non-English content we still have at least `limit` results.
+        # Fetch a wider candidate pool so the Discover hide-library option still
+        # has enough non-library comics left to show after local filtering.
         from datetime import date as _date
         cutoff = _date.today().year - 3          # 2023+ = "new"
         params = {
@@ -1025,20 +1026,18 @@ class ComicVine:
             'limit': 100,
         }
         async with AsyncSession() as session:
-            page1, page2, page3, page4, page5 = await gather(
-                self.__call_api(session, '/volumes', {**params, 'offset': 0},   {'results': []}),
-                self.__call_api(session, '/volumes', {**params, 'offset': 100}, {'results': []}),
-                self.__call_api(session, '/volumes', {**params, 'offset': 200}, {'results': []}),
-                self.__call_api(session, '/volumes', {**params, 'offset': 300}, {'results': []}),
-                self.__call_api(session, '/volumes', {**params, 'offset': 400}, {'results': []}),
-            )
-        all_results = (
-            (page1.get('results') or [])
-            + (page2.get('results') or [])
-            + (page3.get('results') or [])
-            + (page4.get('results') or [])
-            + (page5.get('results') or [])
-        )
+            pages = await gather(*(
+                self.__call_api(
+                    session, '/volumes', {**params, 'offset': offset},
+                    {'results': []}
+                )
+                for offset in range(0, 1000, 100)
+            ))
+        all_results = [
+            result
+            for page in pages
+            for result in (page.get('results') or [])
+        ]
 
         def _year(v: Dict[str, Any]) -> int:
             try:
@@ -1053,11 +1052,16 @@ class ComicVine:
         def _has_non_ascii_title(v: Dict[str, Any]) -> bool:
             return any(ord(c) > 127 for c in (v.get('name') or ''))
 
+        def _has_manga_title_keyword(v: Dict[str, Any]) -> bool:
+            name = normalise_query_string(v.get('name') or '').lower()
+            return any(k in name for k in _MANGA_TITLE_KEYWORDS)
+
         pre_filtered = [
             v for v in all_results
             if _year(v) >= cutoff
             and not _is_comic_discovery_excluded(v)
             and not _has_non_ascii_title(v)
+            and not _has_manga_title_keyword(v)
         ]
         formatted = [self.__format_volume_output(v) for v in pre_filtered]
         filtered = [v for v in formatted if not v['translated']][:limit]

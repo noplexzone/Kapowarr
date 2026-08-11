@@ -30,3 +30,37 @@ export function getActivePrimary(pathname: string): PrimaryNavLabel | undefined 
   if (pathname === '/settings' || pathname.startsWith('/settings/')) return 'Settings';
   return undefined;
 }
+
+
+const SORT_OPTIONS = new Set(['title', 'volume_number', 'year', 'recently_added', 'recently_released', 'publisher', 'wanted']);
+const VIEW_OPTIONS = new Set(['posters', 'table']);
+const FILTER_OPTIONS = new Set(['', 'wanted', 'upcoming', 'unmonitored', 'monitored']);
+
+function readStoredString(key: string): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return undefined;
+    const value = JSON.parse(raw);
+    return typeof value === 'string' ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function getStoredLibrarySearch() {
+  const sort = readStoredString('kapowarr_sort');
+  const view = readStoredString('kapowarr_view');
+  const filter = readStoredString('kapowarr_filter');
+  const q = readStoredString('kapowarr_search');
+  const validFilter = filter && FILTER_OPTIONS.has(filter) ? filter : '';
+  return {
+    section: 'comic',
+    sort: sort && SORT_OPTIONS.has(sort) ? sort : 'title',
+    view: view && VIEW_OPTIONS.has(view) ? (view === 'table' ? 'list' : 'grid') : 'grid',
+    status: validFilter === 'wanted' ? 'missing' : validFilter === 'upcoming' ? 'upcoming' : 'all',
+    monitoring: validFilter === 'unmonitored' ? 'unmonitored' : validFilter === 'monitored' ? 'monitored' : 'all',
+    q: q || undefined,
+    page: 1,
+  };
+}

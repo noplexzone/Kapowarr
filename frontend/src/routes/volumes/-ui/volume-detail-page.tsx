@@ -984,7 +984,7 @@ export function VolumeDetailPage() {
   const selectedManualSearchIssue = volume.issues.find(
     (issue) => issue.id === manualSearchIssueId,
   );
-  const tab = pathname.endsWith('/issues') ? 'issues' : pathname.endsWith('/files') ? 'files' : pathname.endsWith('/history') ? 'history' : 'overview';
+  const tab = pathname.endsWith('/files') ? 'files' : pathname.endsWith('/history') ? 'history' : 'issues';
   const manualSearchTitle = formatIssueSearchTitle(
     volume.title,
     selectedManualSearchIssue,
@@ -994,13 +994,11 @@ export function VolumeDetailPage() {
       <VolumeHero volume={volume} actionMsg={actionMsg} progressPct={progressPct} progressTone={progressTone} refreshPending={refreshMutation.isPending} autoSearchPending={autoSearchMutation.isPending} manualSearchPending={volManualSearching} onRefresh={() => refreshMutation.mutate()} onAutoSearch={() => autoSearchMutation.mutate()} onManualSearch={handleVolumeManualSearch} onEdit={openEdit} onFixMatch={openFixMatch} onPreviewRename={handleOpenRename} onManageIssues={openManageIssues} />
 
       <nav aria-label="Volume sections" className={styles.volumeTabs}>
-        {([['overview', 'Overview', '/volumes/$volumeId'], ['issues', 'Issues', '/volumes/$volumeId/issues'], ['files', 'Files', '/volumes/$volumeId/files'], ['history', 'History', '/volumes/$volumeId/history']] as const).map(([key, label, to]) => <Link key={key} to={to} params={{ volumeId: String(id) }} aria-current={tab === key ? 'page' : undefined}>{label}</Link>)}
+        {([['issues', 'Issues', '/volumes/$volumeId/issues'], ['files', 'Files', '/volumes/$volumeId/files'], ['history', 'History', '/volumes/$volumeId/history']] as const).map(([key, label, to]) => <Link key={key} to={to} params={{ volumeId: String(id) }} aria-current={tab === key ? 'page' : undefined}>{label}</Link>)}
       </nav>
-      {tab !== 'overview' && (
-        <section data-testid="volume-tab-panel">
-          {tab === 'issues' ? <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} /> : tab === 'files' ? <VolumeFilesPanel issues={volume.issues} generalFiles={volume.general_files} /> : <VolumeHistoryPanel entries={volumeHistoryQuery.data ?? []} issues={volume.issues} loading={volumeHistoryQuery.isLoading} error={volumeHistoryQuery.error} />}
-        </section>
-      )}
+      <section data-testid="volume-tab-panel">
+        {tab === 'issues' ? <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} /> : tab === 'files' ? <VolumeFilesPanel issues={volume.issues} generalFiles={volume.general_files} /> : <VolumeHistoryPanel entries={volumeHistoryQuery.data ?? []} issues={volume.issues} loading={volumeHistoryQuery.isLoading} error={volumeHistoryQuery.error} />}
+      </section>
 
       {/* ── Manual Search Dialog ────────────────────────────── */}
       <DialogFrame

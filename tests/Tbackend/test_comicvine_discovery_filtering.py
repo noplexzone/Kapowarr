@@ -4,6 +4,14 @@ import ast
 import unittest
 from pathlib import Path
 from typing import FrozenSet
+from unicodedata import normalize
+
+
+def _normalise_query_string(value):
+    return ''.join(
+        c for c in normalize('NFKD', value)
+        if not ('\u0300' <= c <= '\u036f')
+    )
 
 
 def _load_discovery_filter_symbols():
@@ -26,7 +34,7 @@ def _load_discovery_filter_symbols():
             and node.name in names
         )
     ]
-    namespace = {'frozenset': frozenset, 'FrozenSet': FrozenSet, 'str': str, 'bool': bool, 'any': any}
+    namespace = {'frozenset': frozenset, 'FrozenSet': FrozenSet, 'str': str, 'bool': bool, 'any': any, 'normalise_query_string': _normalise_query_string}
     exec(compile(ast.Module(body=selected, type_ignores=[]), str(source_path), 'exec'), namespace)
     return namespace
 
@@ -43,6 +51,8 @@ class ComicVineDiscoveryFilteringTests(unittest.TestCase):
         self.assertTrue(excluded('Ize Press'))
         self.assertTrue(excluded('Manga Classics Inc.'))
         self.assertTrue(excluded('Yen On'))
+        self.assertTrue(excluded('Shōnen Gahōsha'))
+        self.assertTrue(excluded('Line Manga'))
 
     def test_western_publishers_are_not_excluded_from_comic_discovery(self):
         excluded = _SYMBOLS['_is_comic_discovery_excluded_publisher']

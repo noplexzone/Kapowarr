@@ -9,6 +9,7 @@ export function queueQueryOptions() {
     queryKey: QUEUE_KEY,
     queryFn: getQueue,
     staleTime: 0,
+    refetchInterval: 2_000,
   });
 }
 

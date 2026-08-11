@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useSuspenseQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Badge, Button } from '@/components/primitives';
+import { useSocketEvent } from '@/platform/socketio/socket';
 import { Pagination } from '@/components/pagination/pagination';
 import { DialogFrame, DialogHeader, DialogBody, DialogFooter } from '@/components/dialog';
 import { historyQueryOptions, HISTORY_KEY, clearHistory } from '../-history.api';
@@ -22,6 +23,13 @@ export function HistoryPage({ offset, state }: HistoryPageProps) {
   const entries = data?.entries ?? [];
   const total = data?.total ?? 0;
   const pageSize = data?.page_size ?? 50;
+
+  const refreshHistory = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
+  }, [queryClient]);
+
+  useSocketEvent('queue_ended', refreshHistory);
+  useSocketEvent('downloaded_status', refreshHistory);
 
   const clearMutation = useMutation({
     mutationFn: clearHistory,

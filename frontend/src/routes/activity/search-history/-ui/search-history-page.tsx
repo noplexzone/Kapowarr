@@ -1,8 +1,10 @@
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Badge } from '@/components/primitives';
+import { useSocketEvent } from '@/platform/socketio/socket';
 import { Pagination } from '@/components/pagination/pagination';
-import { searchHistoryQueryOptions } from '../-search-history.api';
+import { SEARCH_HISTORY_KEY, searchHistoryQueryOptions } from '../-search-history.api';
 import type { SearchOutcome } from '../-search-history.types';
 import styles from './search-history-page.module.css';
 
@@ -12,10 +14,18 @@ interface SearchHistoryPageProps {
 
 export function SearchHistoryPage({ offset }: SearchHistoryPageProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(searchHistoryQueryOptions(offset));
   const entries = data?.entries ?? [];
   const total = data?.total ?? 0;
   const pageSize = data?.page_size ?? 15;
+
+  const refreshSearchHistory = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: SEARCH_HISTORY_KEY });
+  }, [queryClient]);
+
+  useSocketEvent('task_added', refreshSearchHistory);
+  useSocketEvent('task_ended', refreshSearchHistory);
 
   const goToPage = (page: number) => {
     navigate({

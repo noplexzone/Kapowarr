@@ -88,3 +88,9 @@ it('deduplicates query strings from search-all volume details', async () => {
 
   expect(result.entries[0]?.queries).toEqual(['A (2024)', 'A', 'B']);
 });
+
+
+it('uses a live refetch interval for search outcomes', () => {
+  expect(searchHistoryQueryOptions(0).staleTime).toBe(0);
+  expect(searchHistoryQueryOptions(0).refetchInterval).toBe(5_000);
+});

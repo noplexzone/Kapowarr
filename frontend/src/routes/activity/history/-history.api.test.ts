@@ -34,3 +34,9 @@ it('accepts failed history rows without a web link', () => {
     downloaded_at: 100, success: false,
   })).not.toThrow();
 });
+
+
+it('uses a live refetch interval for completed downloads', () => {
+  expect(historyQueryOptions(0, 'all').staleTime).toBe(0);
+  expect(historyQueryOptions(0, 'all').refetchInterval).toBe(5_000);
+});

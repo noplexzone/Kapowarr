@@ -34,7 +34,8 @@ export function historyQueryOptions(offset: number, state: HistoryState = 'all')
   return queryOptions({
     queryKey: [...HISTORY_KEY, offset, state],
     queryFn: () => getHistory(offset, state),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: 5_000,
   });
 }
 

@@ -33,3 +33,14 @@ it('links active searches view-all to search history outcomes', () => {
   expect(activeSearchSection).toContain('to="/activity/search-history"');
   expect(activeSearchSection).not.toContain('to="/system/tasks"');
 });
+
+
+it('refreshes dashboard data from live operation events', () => {
+  expect(source).toContain("useSocketEvent('task_added'");
+  expect(source).toContain("useSocketEvent('task_status'");
+  expect(source).toContain("useSocketEvent('task_ended'");
+  expect(source).toContain("useSocketEvent('queue_added'");
+  expect(source).toContain("useSocketEvent('queue_status'");
+  expect(source).toContain("useSocketEvent('queue_ended'");
+  expect(source).toContain("useSocketEvent('downloaded_status'");
+});

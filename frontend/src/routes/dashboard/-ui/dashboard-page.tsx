@@ -1,7 +1,9 @@
+import { useCallback } from 'react';
 import { AuthenticatedImage } from '@/components/authenticated-resource';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Card, Badge, Button } from '@/components/primitives';
+import { useSocketEvent } from '@/platform/socketio/socket';
 import { PageHeader, StatusBanner } from '@/components/patterns';
 import {
   comicStatsQueryOptions,
@@ -38,6 +40,23 @@ export function DashboardPage() {
   const queueItems = Array.isArray(queueData) ? queueData : [];
   const historyEntries = (historyData?.entries ?? []).slice(0, 6);
 
+  const refreshLiveDashboard = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['system', 'tasks'] });
+    void queryClient.invalidateQueries({ queryKey: ['activity', 'queue'] });
+    void queryClient.invalidateQueries({ queryKey: ['activity', 'history'] });
+    void queryClient.invalidateQueries({ queryKey: ['activity', 'search-history'] });
+    void queryClient.invalidateQueries({ queryKey: ['volumes', 'stats'] });
+    void queryClient.invalidateQueries({ queryKey: ['volumes', 'recently-added'] });
+    void queryClient.invalidateQueries({ queryKey: ['nav', 'badges'] });
+  }, [queryClient]);
+
+  useSocketEvent('task_added', refreshLiveDashboard);
+  useSocketEvent('task_status', refreshLiveDashboard);
+  useSocketEvent('task_ended', refreshLiveDashboard);
+  useSocketEvent('queue_added', refreshLiveDashboard);
+  useSocketEvent('queue_status', refreshLiveDashboard);
+  useSocketEvent('queue_ended', refreshLiveDashboard);
+  useSocketEvent('downloaded_status', refreshLiveDashboard);
 
   return (
     <div className={styles.page}>

@@ -17,7 +17,6 @@ import { AddPage, ExactAddReview } from '@/routes/add/-ui/add-page';
 import { ReaderPage } from '@/routes/reader/-ui/reader-page';
 import { MismatchPage } from '@/routes/mismatch/-ui/mismatch-page';
 import { SystemStatusPage } from '@/routes/system/-ui/system-status-page';
-import { SystemTasksPage } from '@/routes/system/-ui/system-tasks-page';
 import { RouteError, RouteNotFound, RoutePending } from '@/components/route-state/route-state';
 import { volumeListQueryOptions } from '@/routes/comics/-comics.api';
 import { rootFoldersQueryOptions } from '@/routes/add/-add.api';
@@ -428,11 +427,6 @@ const systemStatusRoute = createRoute({
   },
   component: SystemStatusPage,
 });
-const systemTasksRoute = createRoute({
-  getParentRoute: () => layoutRoute,
-  path: 'system/tasks',
-  component: SystemTasksPage,
-});
 
 const catchAllRoute = createRoute({
   getParentRoute: () => layoutRoute,
@@ -474,7 +468,6 @@ export const routeTree = rootRoute.addChildren([
     readerRoute,
     systemRedirectRoute,
     systemStatusRoute,
-    systemTasksRoute,
     catchAllRoute,
   ]),
 ]);

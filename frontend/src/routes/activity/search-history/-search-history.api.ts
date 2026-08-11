@@ -59,7 +59,8 @@ export function searchHistoryQueryOptions(offset: number) {
   return queryOptions({
     queryKey: [...SEARCH_HISTORY_KEY, offset],
     queryFn: () => getSearchHistory(offset),
-    staleTime: 10_000,
+    staleTime: 0,
+    refetchInterval: 5_000,
   });
 }
 

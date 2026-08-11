@@ -82,7 +82,8 @@ export function comicStatsQueryOptions() {
       apiClient
         .get('volumes/stats', { searchParams: { section: 'comic' } })
         .then((r) => readJson(r, volumeStatsSchema)),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: 15_000,
   });
 }
 
@@ -93,7 +94,8 @@ export function mangaStatsQueryOptions() {
       apiClient
         .get('volumes/stats', { searchParams: { section: 'manga' } })
         .then((r) => readJson(r, volumeStatsSchema)),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: 15_000,
   });
 }
 
@@ -114,7 +116,8 @@ export function recentlyAddedQueryOptions(section: 'comic' | 'manga') {
           (v): VolumeCard => ({ ...v, section: section === 'manga' ? 'manga' : 'comics' }),
         );
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: 15_000,
   });
 }
 
@@ -128,7 +131,8 @@ export function dashboardActiveSearchesQueryOptions() {
         .filter((task) => ['auto_search', 'auto_search_issue', 'search_all'].includes(task.action))
         .map((task) => activeSearchTaskSchema.parse(task));
     },
-    staleTime: 5_000,
+    staleTime: 0,
+    refetchInterval: 2_000,
   });
 }
 
@@ -136,7 +140,8 @@ export function dashboardQueueQueryOptions() {
   return queryOptions({
     queryKey: ['activity', 'queue', 'dashboard'],
     queryFn: () => apiClient.get('activity/queue').then((r) => readJson(r, z.array(queueEntrySchema))),
-    staleTime: 5_000,
+    staleTime: 0,
+    refetchInterval: 2_000,
   });
 }
 
@@ -158,6 +163,7 @@ export function dashboardHistoryQueryOptions() {
       );
       return { entries, total: entries.length, page_size: 50 };
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: 5_000,
   });
 }

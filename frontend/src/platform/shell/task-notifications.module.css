@@ -1,12 +1,172 @@
 .region {
   position: fixed;
+  top: var(--space-5);
   right: var(--space-5);
-  bottom: var(--space-5);
   z-index: 90;
   display: grid;
-  width: min(380px, calc(100vw - 2rem));
+  width: min(400px, calc(100vw - 2rem));
   gap: var(--space-3);
   pointer-events: none;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: auto;
+}
+
+.historyButton {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+}
+
+.historyButton span {
+  display: grid;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 var(--space-1);
+  color: var(--surface);
+  font-size: 0.72rem;
+  background: var(--accent);
+  border-radius: 999px;
+  place-items: center;
+}
+
+.historyButton:hover,
+.historyButton:focus-visible {
+  border-color: rgb(var(--accent-rgb) / 45%);
+}
+
+.historyPanel {
+  display: grid;
+  gap: var(--space-3);
+  max-height: min(520px, calc(100vh - 8rem));
+  padding: var(--space-3);
+  overflow: auto;
+  color: var(--text);
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--surface-raised) 97%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.historyHeader {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.historyHeader h2,
+.empty {
+  margin: 0;
+}
+
+.historyHeader h2 {
+  font-size: 0.95rem;
+}
+
+.historyHeader button,
+.historyList button {
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+}
+
+.historyHeader button {
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.historyHeader button:hover,
+.historyHeader button:focus-visible,
+.historyList button:hover,
+.historyList button:focus-visible {
+  color: var(--text);
+  background: rgb(var(--accent-rgb) / 12%);
+}
+
+.empty {
+  color: var(--text-dim);
+  font-size: 0.86rem;
+}
+
+.historyList {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.historyList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.historyList li[data-tone='success'] {
+  border-color: rgb(34 197 94 / 35%);
+}
+
+.historyList li[data-tone='danger'] {
+  border-color: rgb(239 68 68 / 40%);
+}
+
+.historyList li[data-tone='info'] {
+  border-color: rgb(var(--accent-rgb) / 35%);
+}
+
+.historyList li div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.historyList strong,
+.historyList span,
+.historyList small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyList strong {
+  font-size: 0.82rem;
+}
+
+.historyList span,
+.historyList small,
+.historyList time {
+  color: var(--text-dim);
+  font-size: 0.76rem;
+}
+
+.historyList button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
 }
 
 .toast {
@@ -113,15 +273,6 @@
   font-size: 0.78rem;
 }
 
-@media (max-width: 768px) {
-  .region {
-    right: var(--space-3);
-    bottom: calc(76px + env(safe-area-inset-bottom));
-    left: var(--space-3);
-    width: auto;
-  }
-}
-
 .openLink {
   min-height: 32px;
   padding: 0 var(--space-2);
@@ -134,4 +285,13 @@
 .openLink:hover,
 .openLink:focus-visible {
   background: rgb(var(--accent-rgb) / 12%);
+}
+
+@media (max-width: 768px) {
+  .region {
+    top: var(--space-3);
+    right: var(--space-3);
+    left: var(--space-3);
+    width: auto;
+  }
 }

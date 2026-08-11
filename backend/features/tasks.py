@@ -1388,7 +1388,7 @@ class TaskHandler(metaclass=Singleton):
             LOGGER.info(f'Added task: {task.display_title} ({id})')
             self._process_queue()
 
-        _emit_task_event(TaskAddedEvent(task))
+        _emit_task_event(TaskAddedEvent(task, id))
         return id
 
     @staticmethod

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSocketEvent } from '@/platform/socketio/socket';
@@ -15,11 +15,13 @@ interface TaskEndedPayload {
   message?: string | null;
 }
 
-interface CompletedTaskNotice {
+interface TaskNotice {
   id: string;
   tone: TaskNoticeTone;
   title: string;
   message: string;
+  detail?: string | null;
+  createdAt: number;
 }
 
 export function TaskNotificationCenter() {
@@ -29,7 +31,9 @@ export function TaskNotificationCenter() {
     refetchInterval: 5000,
   });
   const [dismissedActiveId, setDismissedActiveId] = useState<number | null>(null);
-  const [completed, setCompleted] = useState<CompletedTaskNotice[]>([]);
+  const panelId = useId();
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notices, setNotices] = useState<TaskNotice[]>([]);
   const lastActiveTask = useRef<SystemTask | null>(null);
 
   const activeTask = useMemo(
@@ -57,24 +61,74 @@ export function TaskNotificationCenter() {
     const finishedTask = lastActiveTask.current;
     const message = payload.message || finishedTask?.message || '';
     const failed = /error|failed|permission denied/i.test(message);
-    const notice: CompletedTaskNotice = {
+    const notice: TaskNotice = {
       id: `${Date.now()}-${payload.action ?? finishedTask?.action ?? 'task'}`,
       tone: failed ? 'danger' : 'success',
       title: failed ? 'Task failed' : 'Task completed',
       message: formatTaskLabel(finishedTask, payload),
+      detail: failed ? message : null,
+      createdAt: Date.now(),
     };
-    setCompleted((items) => [notice, ...items].slice(0, 4));
+    setNotices((items) => [notice, ...items].slice(0, 12));
     lastActiveTask.current = null;
     setDismissedActiveId(null);
     refreshTasks();
   }, [refreshTasks]));
 
-  const visibleCompleted = completed.slice(0, activeTask && dismissedActiveId !== activeTask.id ? 2 : 3);
-  if (!activeTask && visibleCompleted.length === 0) return null;
+  const showActiveToast = activeTask && dismissedActiveId !== activeTask.id;
+  const visibleNotices = notices.slice(0, showActiveToast ? 1 : 2);
+  if (!activeTask && notices.length === 0) return null;
 
   return (
     <section className={styles.region} aria-label="Task notifications" aria-live="polite">
-      {activeTask && dismissedActiveId !== activeTask.id && (
+      <div className={styles.toolbar}>
+        <button
+          type="button"
+          className={styles.historyButton}
+          aria-expanded={notificationsOpen}
+          aria-controls={panelId}
+          onClick={() => setNotificationsOpen((open) => !open)}
+        >
+          Notifications
+          <span>{notices.length}</span>
+        </button>
+      </div>
+
+      {notificationsOpen && (
+        <div id={panelId} className={styles.historyPanel}>
+          <div className={styles.historyHeader}>
+            <h2>Task notifications</h2>
+            {notices.length > 0 && (
+              <button type="button" onClick={() => setNotices([])}>Clear all</button>
+            )}
+          </div>
+          {notices.length === 0 ? (
+            <p className={styles.empty}>No previous task notifications.</p>
+          ) : (
+            <ol className={styles.historyList}>
+              {notices.map((notice) => (
+                <li key={notice.id} data-tone={notice.tone}>
+                  <div>
+                    <strong>{notice.title}</strong>
+                    <span>{notice.message}</span>
+                    {notice.detail && <small>{notice.detail}</small>}
+                    <time>{formatNoticeTime(notice.createdAt)}</time>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Dismiss ${notice.message}`}
+                    onClick={() => setNotices((items) => items.filter((item) => item.id !== notice.id))}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+
+      {showActiveToast && (
         <TaskToast
           tone="info"
           title={activeTask.status === 'running' ? 'Task running' : 'Task queued'}
@@ -85,13 +139,14 @@ export function TaskNotificationCenter() {
           onDismiss={() => setDismissedActiveId(activeTask.id)}
         />
       )}
-      {visibleCompleted.map((notice) => (
+      {visibleNotices.map((notice) => (
         <TaskToast
           key={notice.id}
           tone={notice.tone}
           title={notice.title}
           message={notice.message}
-          onDismiss={() => setCompleted((items) => items.filter((item) => item.id !== notice.id))}
+          currentFile={notice.detail}
+          onDismiss={() => setNotices((items) => items.filter((item) => item.id !== notice.id))}
         />
       ))}
     </section>
@@ -167,4 +222,8 @@ function formatTaskLabel(task: SystemTask | null, payload: TaskEndedPayload): st
   }
   if (payload.action) return payload.action.replace(/_/g, ' ');
   return 'Task';
+}
+
+function formatNoticeTime(value: number): string {
+  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

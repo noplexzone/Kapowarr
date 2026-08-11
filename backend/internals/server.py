@@ -613,13 +613,15 @@ class RemovedFromQueueEvent(WebSocketEvent):
 class TaskAddedEvent(WebSocketEvent):
     "A task has been added to the queue"
 
-    def __init__(self, task: Task) -> None:
+    def __init__(self, task: Task, task_id: int | None = None) -> None:
         """Create the event.
 
         Args:
             task (Task): The task that has been added.
+            task_id (int | None): Queue ID assigned by TaskHandler.
         """
         self.task = task
+        self.task_id = task_id
         return
 
     def get_type(self) -> WebSocketEventType:
@@ -627,6 +629,7 @@ class TaskAddedEvent(WebSocketEvent):
 
     def get_body(self) -> Dict[str, Any]:
         return {
+            "id": self.task_id,
             "action": self.task.action,
             "display_title": self.task.display_title,
             "message": self.task.message,

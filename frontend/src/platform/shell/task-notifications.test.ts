@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { formatTaskStatus } from './task-notifications';
 import type { SystemTask } from '@/routes/system/-system.types';
@@ -32,5 +34,17 @@ describe('task notification formatting', () => {
     };
 
     expect(formatTaskStatus(task)).toBe('Searching issue 3/10 for Batman');
+  });
+});
+
+
+describe('task notification layout', () => {
+  it('anchors task notifications in the top right with a history panel', () => {
+    const css = readFileSync(resolve(__dirname, 'task-notifications.module.css'), 'utf8');
+
+    expect(css).toContain('top: var(--space-5);');
+    expect(css).toContain('right: var(--space-5);');
+    expect(css).toContain('.historyPanel');
+    expect(css).not.toContain('bottom: var(--space-5);');
   });
 });

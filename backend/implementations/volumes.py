@@ -946,16 +946,22 @@ class Library:
         if section not in ('comic', 'manga'):
             raise ValueError(f'Unknown library section: {section}')
 
-        params: List[Any] = []
-        if isinstance(filter, LibraryFilter):
-            sql_filter = filter.value + " AND rf.section = ?"
-            params.append(section)
+        params: List[Any] = [section]
+        base_filters = ["rf.section = ?"]
+        stats_filter = ""
+        if filter == LibraryFilter.WANTED:
+            stats_filter = "WHERE COALESCE(issue_stats.has_wanted, 0) = 1"
+        elif filter == LibraryFilter.UPCOMING:
+            stats_filter = "WHERE COALESCE(issue_stats.has_upcoming, 0) = 1"
+        elif filter == LibraryFilter.UNMONITORED:
+            stats_filter = "WHERE COALESCE(issue_stats.has_unmonitored, 0) = 1"
+        elif filter == LibraryFilter.MONITORED:
+            base_filters.append("volumes.monitored = 1")
         elif isinstance(filter, int):
-            sql_filter = "WHERE comicvine_id = ? AND rf.section = ?"
-            params.extend((filter, section))
-        else:
-            sql_filter = "WHERE rf.section = ?"
-            params.append(section)
+            base_filters.append("comicvine_id = ?")
+            params.append(filter)
+
+        sql_filter = "WHERE " + " AND ".join(base_filters)
 
         pagination = ''
         if page is not None or page_size is not None:
@@ -970,19 +976,56 @@ class Library:
 
         return get_db().execute(f"""
             WITH
-                vol_issues AS (
-                    SELECT id, monitored, date
-                    FROM issues
-                    WHERE volume_id = volumes.id
+                scoped_volumes AS (
+                    SELECT volumes.*
+                    FROM volumes
+                    INNER JOIN root_folders rf ON rf.id = volumes.root_folder
+                    {sql_filter}
                 ),
-                issues_to_files AS (
-                    SELECT issue_id, monitored, f.id, size
+                linked_issues AS (
+                    SELECT DISTINCT issue_id
+                    FROM issues_files
+                ),
+                issue_stats AS (
+                    SELECT
+                        i.volume_id,
+                        COUNT(i.id) AS issue_count,
+                        SUM(CASE WHEN i.monitored = 1 THEN 1 ELSE 0 END)
+                            AS issue_count_monitored,
+                        SUM(CASE WHEN li.issue_id IS NOT NULL THEN 1 ELSE 0 END)
+                            AS issues_downloaded,
+                        SUM(CASE WHEN i.monitored = 1 AND li.issue_id IS NOT NULL THEN 1 ELSE 0 END)
+                            AS issues_downloaded_monitored,
+                        MAX(CASE
+                            WHEN i.monitored = 1
+                                AND (i.date IS NULL OR i.date <= date('now'))
+                                AND li.issue_id IS NULL
+                            THEN 1 ELSE 0
+                        END) AS has_wanted,
+                        MAX(CASE
+                            WHEN i.monitored = 1
+                                AND i.date > date('now')
+                                AND li.issue_id IS NULL
+                            THEN 1 ELSE 0
+                        END) AS has_upcoming,
+                        MAX(CASE WHEN i.monitored = 0 THEN 1 ELSE 0 END)
+                            AS has_unmonitored
                     FROM issues i
-                    INNER JOIN issues_files if
-                    INNER JOIN files f
-                    ON i.id = if.issue_id
-                        AND if.file_id = f.id
-                    WHERE volume_id = volumes.id
+                    INNER JOIN scoped_volumes sv ON sv.id = i.volume_id
+                    LEFT JOIN linked_issues li ON li.issue_id = i.id
+                    GROUP BY i.volume_id
+                ),
+                issue_file_links AS (
+                    SELECT DISTINCT i.volume_id, f.id, f.size
+                    FROM issues i
+                    INNER JOIN scoped_volumes sv ON sv.id = i.volume_id
+                    INNER JOIN issues_files issue_links ON i.id = issue_links.issue_id
+                    INNER JOIN files f ON issue_links.file_id = f.id
+                ),
+                file_stats AS (
+                    SELECT volume_id, SUM(size) AS total_size
+                    FROM issue_file_links
+                    GROUP BY volume_id
                 )
             SELECT
                 volumes.id, comicvine_id,
@@ -991,25 +1034,19 @@ class Library:
                 special_version,
                 monitored, monitor_new_issues,
                 volumes.folder,
-                (
-                    SELECT COUNT(id) FROM vol_issues
-                ) AS issue_count,
-                (
-                    SELECT COUNT(id) FROM vol_issues WHERE monitored = 1
-                ) AS issue_count_monitored,
-                (
-                    SELECT COUNT(DISTINCT issue_id) FROM issues_to_files
-                ) AS issues_downloaded,
-                (
-                    SELECT COUNT(DISTINCT issue_id) FROM issues_to_files WHERE monitored = 1
-                ) AS issues_downloaded_monitored,
-                (
-                    SELECT SUM(size) FROM (SELECT DISTINCT id, size FROM issues_to_files)
-                ) AS total_size,
+                COALESCE(issue_stats.issue_count, 0) AS issue_count,
+                COALESCE(issue_stats.issue_count_monitored, 0)
+                    AS issue_count_monitored,
+                COALESCE(issue_stats.issues_downloaded, 0)
+                    AS issues_downloaded,
+                COALESCE(issue_stats.issues_downloaded_monitored, 0)
+                    AS issues_downloaded_monitored,
+                COALESCE(file_stats.total_size, 0) AS total_size,
                 COUNT(*) OVER () AS _total_count
-            FROM volumes
-            INNER JOIN root_folders rf ON rf.id = volumes.root_folder
-            {sql_filter}
+            FROM scoped_volumes volumes
+            LEFT JOIN issue_stats ON issue_stats.volume_id = volumes.id
+            LEFT JOIN file_stats ON file_stats.volume_id = volumes.id
+            {stats_filter}
             ORDER BY {order_by}
             {pagination};
             """, tuple(params)

@@ -124,7 +124,11 @@ class AutoSearchIssue(Task):
         stats: dict = {'total_found': 0, 'per_issue': []}
         results = auto_search(self._volume_id, self._issue_id, _stats=stats)
         # Per-issue search: download info is embedded in per_issue entries; no downloads array needed
-        self.details = {'per_issue': stats['per_issue'], 'downloads': []}
+        self.details = {
+            'per_issue': stats['per_issue'],
+            'downloads': [],
+            'total_found': stats.get('total_found', 0),
+        }
         if results:
             _emit_task_event(TaskStatusEvent(
                 f'Found download for {volume_title} #{issue_number}',
@@ -327,6 +331,7 @@ class AutoSearchVolume(Task):
         self.details = {
             'per_issue': stats['per_issue'],
             'downloads': [_dl_entry(r) for r in results[:n_volume_level]],
+            'total_found': stats.get('total_found', 0),
         }
         if results:
             n = len(results)
@@ -1710,37 +1715,18 @@ def _record_and_track_download_reserved(
     return added, fail_reason
 
 
-def get_task_history(offset: int = 0) -> List[dict]:
-    """Get the task history in blocks of 50.
-
-    Args:
-        offset (int, optional): The offset of the list.
-            The higher the number, the deeper into history you go.
-
-            Defaults to 0.
-
-    Returns:
-        List[dict]: The history entries.
-    """
+def _normalise_task_history_entries(entries: List[dict]) -> List[dict]:
     db = get_db()
-    result = db.execute(
-        """
-        SELECT
-            task_name, display_title, run_at,
-            queued_at, started_at, volume_id, issue_id, details
-        FROM task_history
-        ORDER BY run_at DESC
-        LIMIT 15
-        OFFSET ?;
-        """,
-        (offset * 15,)
-    ).fetchalldict()
-    for entry in result:
+    for entry in entries:
         raw = entry.get('details')
         if raw:
             parsed = json_loads(raw)
             # Backward compat: old entries stored a plain list (per_issue only)
-            entry['details'] = parsed if isinstance(parsed, dict) else {'per_issue': parsed, 'downloads': []}
+            entry['details'] = (
+                parsed
+                if isinstance(parsed, dict)
+                else {'per_issue': parsed, 'downloads': []}
+            )
         else:
             entry['details'] = {'per_issue': [], 'downloads': []}
         entry['volume_title'] = None
@@ -1757,7 +1743,54 @@ def get_task_history(offset: int = 0) -> List[dict]:
             ).fetchone()
             if row:
                 entry['issue_number'] = row['issue_number']
-    return result
+    return entries
+
+
+def get_task_history(
+    offset: int = 0,
+    task_names: Union[List[str], None] = None,
+    page_size: int = 15
+) -> List[dict]:
+    """Get task history in page-sized blocks."""
+    db = get_db()
+    params: List[Union[int, str]] = []
+    where = ''
+    if task_names:
+        placeholders = ','.join('?' for _ in task_names)
+        where = f'WHERE task_name IN ({placeholders})'
+        params.extend(task_names)
+    params.append(offset * page_size)
+    result = db.execute(
+        f"""
+        SELECT
+            task_name, display_title, run_at,
+            queued_at, started_at, volume_id, issue_id, details
+        FROM task_history
+        {where}
+        ORDER BY run_at DESC
+        LIMIT {page_size}
+        OFFSET ?;
+        """,
+        tuple(params)
+    ).fetchalldict()
+    return _normalise_task_history_entries(result)
+
+
+def get_task_history_count(
+    task_names: Union[List[str], None] = None
+) -> int:
+    """Count task history entries, optionally restricted to task names."""
+    db = get_db()
+    params: List[str] = []
+    where = ''
+    if task_names:
+        placeholders = ','.join('?' for _ in task_names)
+        where = f'WHERE task_name IN ({placeholders})'
+        params.extend(task_names)
+    return int(db.execute(
+        f"SELECT COUNT(*) FROM task_history {where};",
+        tuple(params)
+    ).fetchone()[0])
 
 
 def delete_task_history() -> None:

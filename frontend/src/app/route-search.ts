@@ -58,6 +58,10 @@ export const blocklistSearchSchema = activitySearchSchema.extend({
   page: z.coerce.number().int().min(1).default(1).catch(1),
 });
 
+export const searchHistorySearchSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1).catch(1),
+});
+
 export const scopedActivitySearchSchema = z.object({
   section: sectionSchema,
   q: cleanQuery,

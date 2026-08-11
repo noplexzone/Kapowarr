@@ -43,7 +43,8 @@ from backend.features.tasks import (BulkLibraryImport, ImportFilesVolume,
                                     RefreshAndScanVolume,
                                     Task, TaskHandler,
                                     delete_task_history, get_task_history,
-                                    get_task_planning, record_and_track_download,
+                                    get_task_history_count, get_task_planning,
+                                    record_and_track_download,
                                     task_library)
 from backend.features.reader import clear_cache, get_page, get_page_count, serve_pdf_file
 from backend.implementations.blocklist import (add_to_blocklist,
@@ -677,7 +678,21 @@ def api_tasks():
 def api_task_history():
     if request.method == 'GET':
         offset = extract_key(request, 'offset', False)
-        tasks = get_task_history(offset)
+        paginated = request.values.get('paginated') == 'true'
+        history_type = extract_key(request, 'type', False)
+        task_names = None
+        if history_type:
+            if history_type != 'search':
+                raise InvalidKeyValue('type', history_type)
+            task_names = ['auto_search', 'auto_search_issue', 'search_all']
+        tasks = get_task_history(offset, task_names=task_names)
+        if paginated:
+            return return_api({
+                'entries': tasks,
+                'total': get_task_history_count(task_names=task_names),
+                'offset': offset,
+                'page_size': 15,
+            })
         return return_api(tasks)
 
     elif request.method == 'DELETE':

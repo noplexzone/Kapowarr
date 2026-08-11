@@ -971,6 +971,8 @@ class Library:
             params.extend((page_size, page * page_size))
 
         order_by = sort.value
+        if sort == LibrarySorting.RECENTLY_RELEASED:
+            order_by = "latest_issue_date DESC, title, year, volume_number"
         if sort != LibrarySorting.RECENTLY_ADDED:
             order_by = f'{order_by}, volumes.id'
 
@@ -1009,7 +1011,8 @@ class Library:
                             THEN 1 ELSE 0
                         END) AS has_upcoming,
                         MAX(CASE WHEN i.monitored = 0 THEN 1 ELSE 0 END)
-                            AS has_unmonitored
+                            AS has_unmonitored,
+                        MAX(i.date) AS latest_issue_date
                     FROM issues i
                     INNER JOIN scoped_volumes sv ON sv.id = i.volume_id
                     LEFT JOIN linked_issues li ON li.issue_id = i.id
@@ -1042,6 +1045,7 @@ class Library:
                 COALESCE(issue_stats.issues_downloaded_monitored, 0)
                     AS issues_downloaded_monitored,
                 COALESCE(file_stats.total_size, 0) AS total_size,
+                issue_stats.latest_issue_date,
                 COUNT(*) OVER () AS _total_count
             FROM scoped_volumes volumes
             LEFT JOIN issue_stats ON issue_stats.volume_id = volumes.id

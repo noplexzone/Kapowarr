@@ -17,6 +17,7 @@ export const PRIMARY_NAV: PrimaryNavItem[] = [
 export const ACTIVITY_NAV = [
   ['Queue', '/activity/queue'],
   ['History', '/activity/history'],
+  ['Searches', '/activity/search-history'],
   ['Mismatches', '/activity/mismatches'],
   ['Imports', '/activity/imports'],
   ['Blocklist', '/activity/blocklist'],

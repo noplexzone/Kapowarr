@@ -63,6 +63,38 @@ class PaginationApiDefaultsTests(unittest.TestCase):
         self.assertEqual(get_page.call_count, 2)
         sleep.assert_called_once_with(1)
 
+    def test_task_history_search_filter_returns_paginated_entries(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        entries = [{'task_name': 'auto_search'}]
+        with request_patch, settings_patch, timer_patch, patch.object(
+            api_mod, 'get_task_history', return_value=entries
+        ) as get_tasks, patch.object(
+            api_mod, 'get_task_history_count', return_value=7
+        ) as get_count:
+            response = self._client().get(
+                '/api/system/tasks/history?paginated=true&type=search&offset=2'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()['result']
+        self.assertEqual(result['entries'], entries)
+        self.assertEqual(result['total'], 7)
+        self.assertEqual(result['offset'], 2)
+        self.assertEqual(result['page_size'], 15)
+        search_names = ['auto_search', 'auto_search_issue', 'search_all']
+        get_tasks.assert_called_once_with(2, task_names=search_names)
+        get_count.assert_called_once_with(task_names=search_names)
+
+    def test_task_history_rejects_unknown_type_filter(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        with request_patch, settings_patch, timer_patch:
+            response = self._client().get(
+                '/api/system/tasks/history?paginated=true&type=rename'
+            )
+
+        self.assertEqual(response.status_code, 400)
+
+
     def test_history_legacy_and_paginated_shapes(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         entries = [{'source': 'test'}]

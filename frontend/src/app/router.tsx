@@ -23,6 +23,7 @@ import { volumeListQueryOptions } from '@/routes/comics/-comics.api';
 import { rootFoldersQueryOptions } from '@/routes/add/-add.api';
 import { queueQueryOptions } from '@/routes/activity/queue/-queue.api';
 import { historyQueryOptions } from '@/routes/activity/history/-history.api';
+import { searchHistoryQueryOptions } from '@/routes/activity/search-history/-search-history.api';
 import { blocklistQueryOptions } from '@/routes/activity/blocklist/-blocklist.api';
 import { settingsQueryOptions } from '@/routes/settings/-settings.api';
 import type { SettingsCategory } from '@/routes/settings/-ui/settings-category-panels';
@@ -32,6 +33,7 @@ import {
   blocklistSearchSchema,
   discoverySearchSchema,
   historySearchSchema,
+  searchHistorySearchSchema,
   legacyDiscoverySearchSchema,
   legacyDiscoveryToCanonical,
   legacyLibrarySearchSchema,
@@ -48,6 +50,7 @@ export interface RouterContext {
 
 const QueuePage = lazy(() => import('@/routes/activity/queue/-ui/queue-page').then((module) => ({ default: module.QueuePage })));
 const HistoryPage = lazy(() => import('@/routes/activity/history/-ui/history-page').then((module) => ({ default: module.HistoryPage })));
+const SearchHistoryPage = lazy(() => import('@/routes/activity/search-history/-ui/search-history-page').then((module) => ({ default: module.SearchHistoryPage })));
 const BlocklistPage = lazy(() => import('@/routes/activity/blocklist/-ui/blocklist-page').then((module) => ({ default: module.BlocklistPage })));
 const SettingsPage = lazy(() => import('@/routes/settings/-ui/settings-page').then((module) => ({ default: module.SettingsPage })));
 const DiscoveryPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoveryPage })));
@@ -189,6 +192,17 @@ const historyRoute = createRoute({
     const search = historyRoute.useSearch();
     return <HistoryPage offset={search.page - 1} state={search.status} />;
   },
+});
+
+const searchHistoryRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'activity/search-history',
+  validateSearch: searchHistorySearchSchema,
+  loaderDeps: ({ search }) => search,
+  loader: async ({ context, deps }) => {
+    await context.queryClient.ensureQueryData(searchHistoryQueryOptions(deps.page - 1));
+  },
+  component: () => <SearchHistoryPage offset={searchHistoryRoute.useSearch().page - 1} />,
 });
 
 const mismatchRoute = createRoute({
@@ -441,6 +455,7 @@ export const routeTree = rootRoute.addChildren([
     activityRedirectRoute,
     queueRoute,
     historyRoute,
+    searchHistoryRoute,
     mismatchRoute,
     importsRoute,
     blocklistRoute,

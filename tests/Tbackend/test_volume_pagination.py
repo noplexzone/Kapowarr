@@ -74,6 +74,29 @@ class VolumePaginationTests(unittest.TestCase):
         self.assertEqual(total, 87)
         self.assertEqual(db.calls[1][1], ('manga', 1, 0))
 
+    def test_recently_released_sort_uses_set_based_issue_date(self):
+        db = _DB([[{'id': 1, 'latest_issue_date': '2024-01-01', '_total_count': 1}]])
+        with patch('backend.implementations.volumes.get_db', return_value=db):
+            rows, total = Library.get_public_volumes_page(
+                LibrarySorting.RECENTLY_RELEASED,
+                None,
+                'comic',
+                page=0,
+                page_size=60,
+            )
+
+        self.assertEqual(rows, [{'id': 1, 'latest_issue_date': '2024-01-01'}])
+        self.assertEqual(total, 1)
+        query, params = db.calls[0]
+        self.assertIn('MAX(i.date) AS latest_issue_date', query)
+        self.assertIn(
+            'ORDER BY latest_issue_date DESC, title, year, volume_number, volumes.id',
+            query,
+        )
+        self.assertNotIn('(SELECT MAX(date) FROM vol_issues)', query)
+        self.assertEqual(params, ('comic', 60, 0))
+
+
     def test_section_and_page_bounds_fail_closed(self):
         with self.assertRaises(ValueError):
             Library.get_public_volumes_page(section='comic\' OR 1=1 --')

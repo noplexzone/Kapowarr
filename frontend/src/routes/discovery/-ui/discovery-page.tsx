@@ -68,6 +68,12 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
           </button>
         </div>
         <div className={styles.toolbarRight}>
+          <button
+            className={styles.searchAddBtn}
+            onClick={() => navigate({ to: '/add', search: { section } })}
+          >
+            Search / Add {section === 'manga' ? 'Manga' : 'Comics'}
+          </button>
           <div className={styles.sectionToggle}>
             <button
               className={`${styles.sectionBtn}${section === 'comic' ? ` ${styles.sectionActive}` : ''}`}

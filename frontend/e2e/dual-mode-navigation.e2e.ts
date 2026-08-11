@@ -14,7 +14,8 @@ async function mockApi(route: Route) {
   else if (pathname.endsWith('/api/volumes/stats')) result = stats;
   else if (pathname.endsWith('/api/volumes/search')) result = [{
     comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result',
-    year: 2026, publisher: 'Test Publisher', volume_number: 1, issue_count: 5, already_added: null,
+    year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null,
+    description: null, aliases: null, issue_count: 5, already_added: null,
   }];
   else if (pathname.endsWith('/api/volumes/1')) result = {
     id: 1, comicvine_id: 101, title: 'Acceptance Volume', year: 2026,
@@ -149,6 +150,16 @@ for (const { route, evidence } of workflowRoutes) {
     }
   }
 }
+
+
+
+test('Discover exposes a direct Search/Add Comics path', async ({ page }) => {
+  await boot(page);
+  await page.getByRole('link', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Search / Add Comics' }).click();
+  await expect(page).toHaveURL(/\/add\?section=comic/);
+  await expect(page.getByRole('searchbox', { name: 'Search Comics' })).toBeVisible();
+});
 
 test('Add review modal is keyboard-operable, labelled, and mobile-safe', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });

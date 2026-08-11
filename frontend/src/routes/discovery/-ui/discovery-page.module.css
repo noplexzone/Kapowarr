@@ -64,6 +64,23 @@
   gap: 0.5rem;
 }
 
+.searchAddBtn {
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.searchAddBtn:hover {
+  filter: brightness(1.05);
+}
+
 .refreshBtn {
   width: 2rem;
   height: 2rem;

@@ -25,6 +25,11 @@ export function AddPage({ section, initialQuery = '' }: AddPageProps) {
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
   const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>('comicvine');
 
+  useEffect(() => {
+    setRawQuery(initialQuery);
+    setQuery(initialQuery.trim().length >= 2 ? initialQuery.trim() : '');
+  }, [initialQuery]);
+
   useEffect(() => { setMetadataSource('comicvine'); }, [section]);
 
   useEffect(() => {
@@ -271,7 +276,7 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
     mutation.mutate({
       comicvine_id: result.comicvine_id,
       metadata_source: result.metadata_source ?? 'comicvine',
-      metadata_id: result.metadata_id,
+      metadata_id: result.metadata_id ?? undefined,
       metadata_language: result.metadata_source === 'mangadex' ? metadataLanguage : undefined,
       root_folder_id: rootFolderId,
       monitor_volume: monitorVolume,

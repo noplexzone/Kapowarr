@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Speed up large direct downloads with validated four-part HTTP range transfers, per-part retries, and automatic single-stream fallback.
 
 ### Fixed
+- Make the Discover page search-bar add flow hydrate exact metadata, clear stale search results after success, and show add failures instead of appearing inert.
 
 - Make PWA updates activate without leaving installed mobile clients on stale bundles, and make manual search results readable on tablet/mobile dialogs.
 - Remove the redundant Discover add-search label, retain stored Library sort/filter state through primary navigation, show the Issues tab by default on volume pages, and broaden comic Discovery refill/filtering for library-heavy collections.

@@ -631,10 +631,10 @@ class TaskAddedEvent(WebSocketEvent):
         return {
             "id": self.task_id,
             "action": self.task.action,
-            "display_title": self.task.display_title,
-            "message": self.task.message,
-            "volume_id": self.task.volume_id,
-            "issue_id": self.task.issue_id
+            "display_title": getattr(self.task, "display_title", str(self.task)),
+            "message": getattr(self.task, "message", str(self.task)),
+            "volume_id": getattr(self.task, "volume_id", None),
+            "issue_id": getattr(self.task, "issue_id", None)
         }
 
 
@@ -684,10 +684,10 @@ class TaskEndedEvent(WebSocketEvent):
     def get_body(self) -> Dict[str, Any]:
         return {
             "action": self.task.action,
-            "display_title": self.task.display_title,
-            "message": self.task.message,
-            "volume_id": self.task.volume_id,
-            "issue_id": self.task.issue_id
+            "display_title": getattr(self.task, "display_title", str(self.task)),
+            "message": getattr(self.task, "message", str(self.task)),
+            "volume_id": getattr(self.task, "volume_id", None),
+            "issue_id": getattr(self.task, "issue_id", None)
         }
 
 

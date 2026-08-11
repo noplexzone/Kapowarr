@@ -150,6 +150,10 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
           result={searchSelection}
           section={section}
           onClose={() => setSearchSelection(null)}
+          onAdded={() => {
+            setRawAddSearch('');
+            setSearchSelection(null);
+          }}
         />
       )}
 
@@ -384,20 +388,61 @@ function FloatingAddSearch({ section, query, rawQuery, onQueryChange, onSelect }
   );
 }
 
-function SearchResultAddModal({ result, section, onClose }: { result: SearchResult; section: DiscoverySection; onClose: () => void }) {
+function SearchResultAddModal({
+  result,
+  section,
+  onClose,
+  onAdded,
+}: {
+  result: SearchResult;
+  section: DiscoverySection;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
   const queryClient = useQueryClient();
-  const { data: rootFolders = [] } = useQuery(rootFoldersQueryOptions());
+  const selection = {
+    metadata_source: result.metadata_source ?? 'comicvine',
+    metadata_id: result.metadata_id ?? String(result.comicvine_id),
+    metadata_language: result.metadata_language ?? undefined,
+    title: result.title,
+  };
+  const exact = useQuery(exactVolumeQueryOptions(selection, section));
+  const { data: rootFolders = [], isPending: rootFoldersPending } = useQuery(rootFoldersQueryOptions());
+
+  if (exact.isPending || rootFoldersPending) {
+    return (
+      <DialogFrame open onOpenChange={(open) => !open && onClose()}>
+        <DialogHeader title={`Add ${result.title}`} onClose={onClose} />
+        <DialogBody><div className={styles.empty}>Loading add settings…</div></DialogBody>
+      </DialogFrame>
+    );
+  }
+
+  if (exact.isError) {
+    return (
+      <DialogFrame open onOpenChange={(open) => !open && onClose()}>
+        <DialogHeader title={`Add ${result.title}`} onClose={onClose} />
+        <DialogBody><div className={styles.empty}>Could not load add settings: {exact.error.message}</div></DialogBody>
+      </DialogFrame>
+    );
+  }
+
+  const hydratedResult = {
+    ...exact.data,
+    metadata_language: result.metadata_language ?? exact.data.metadata_language,
+  };
 
   return (
     <AddModal
-      result={result}
+      result={hydratedResult}
       rootFolders={rootFolders}
       section={section}
       onClose={onClose}
       onAdded={() => {
         void queryClient.invalidateQueries({ queryKey: ['discovery'] });
+        void queryClient.invalidateQueries({ queryKey: ['volumes', 'search'] });
         void queryClient.invalidateQueries({ queryKey: VOLUMES_KEY });
-        onClose();
+        onAdded();
       }}
     />
   );

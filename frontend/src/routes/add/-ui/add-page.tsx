@@ -399,6 +399,12 @@ export function AddModal({ result, rootFolders, section, onClose, onAdded }: Add
                 onChange={(e) => setAutoSearch(e.target.checked)}
               />
             </label>
+
+            {mutation.isError && (
+              <div className={styles.modalError} role="alert">
+                Could not add volume: {mutation.error.message}
+              </div>
+            )}
           </div>
         </div>
       </DialogBody>

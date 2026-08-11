@@ -3,6 +3,7 @@ import { Link, useLocation } from '@tanstack/react-router';
 import { useShellStore } from './store';
 import { Sidebar } from './sidebar';
 import { MobileNavigation } from './mobile-navigation';
+import { TaskNotificationCenter } from './task-notifications';
 import { ACTIVITY_NAV } from './navigation';
 import styles from './page-shell.module.css';
 
@@ -30,6 +31,7 @@ export function PageShell({ children }: { children: ReactNode }) {
         )}
         {children}
       </main>
+      <TaskNotificationCenter />
       <MobileNavigation />
     </div>
   );

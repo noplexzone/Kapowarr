@@ -628,6 +628,8 @@ class TaskAddedEvent(WebSocketEvent):
     def get_body(self) -> Dict[str, Any]:
         return {
             "action": self.task.action,
+            "display_title": self.task.display_title,
+            "message": self.task.message,
             "volume_id": self.task.volume_id,
             "issue_id": self.task.issue_id
         }
@@ -679,6 +681,8 @@ class TaskEndedEvent(WebSocketEvent):
     def get_body(self) -> Dict[str, Any]:
         return {
             "action": self.task.action,
+            "display_title": self.task.display_title,
+            "message": self.task.message,
             "volume_id": self.task.volume_id,
             "issue_id": self.task.issue_id
         }

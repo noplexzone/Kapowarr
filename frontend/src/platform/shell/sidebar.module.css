@@ -70,50 +70,6 @@
   font-size: 0.75rem;
 }
 
-.liveTask {
-  display: grid;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  color: var(--text);
-  background: rgb(var(--accent-rgb) / 10%);
-  border: 1px solid rgb(var(--accent-rgb) / 22%);
-  border-radius: var(--radius-sm);
-}
-
-.liveTask:hover {
-  background: rgb(var(--accent-rgb) / 16%);
-}
-
-.liveTaskLabel {
-  color: var(--text-dim);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.liveTaskText {
-  overflow: hidden;
-  font-size: 0.78rem;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.liveTaskTrack {
-  height: 6px;
-  overflow: hidden;
-  background: var(--border);
-  border-radius: 999px;
-}
-
-.liveTaskBar {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  border-radius: inherit;
-  transform-origin: left center;
-}
 
 @media (max-width: 768px) {
   .sidebar {

@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Show live file-scan task progress in the sidebar and API, including per-file counts such as `Scanning 1/168 Strange Tales`.
+- Show live task notifications with file-scan progress and completion updates, including per-file counts such as `Scanning 1/168 Strange Tales`.
 - Preserve Discovery and story-arc metadata identity through Add review, with exact volume redirects for existing and newly added titles.
 - Report truthful monitored issue health and operational dashboard metrics with actionable filtered destinations.
 - Bound selected library mutations to four concurrent requests with partial-failure feedback and validate focused API responses at runtime with Zod.

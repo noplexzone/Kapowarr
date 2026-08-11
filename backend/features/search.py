@@ -1322,14 +1322,17 @@ def auto_search(
         )
     ]
 
-    # Short-circuit: if the volume-level search already returned a broad/max
-    # result set with zero matches, individual issue queries against the same
-    # sources will very likely return equally irrelevant results.  Skip them
-    # to avoid hammering sources for hundreds of issues with no gain.
+    # Short-circuit only for genuinely expensive fallback storms. A library-card
+    # auto-search may be for a mostly complete volume with just a few missing
+    # issues; in that case the broad volume query can return hundreds of
+    # unmatched candidates while exact per-issue queries still find the wanted
+    # books. Skip only when both the volume result set and the uncovered issue
+    # count exceed the configured broad-result threshold.
     if (
         missing_issues
         and not chosen_downloads
         and len(all_results) >= Settings().sv.auto_search_broad_result_threshold
+        and len(missing_issues) >= Settings().sv.auto_search_broad_result_threshold
     ):
         LOGGER.info(
             'Auto search: skipping %d per-issue fallback(s) for volume %d '

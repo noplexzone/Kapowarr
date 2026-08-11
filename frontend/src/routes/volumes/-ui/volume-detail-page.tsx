@@ -989,6 +989,7 @@ export function VolumeDetailPage() {
     volume.title,
     selectedManualSearchIssue,
   );
+  const showSuwayomiBundleSearch = volume.section === 'manga';
   return (
     <div className={styles.page}>
       <VolumeHero volume={volume} actionMsg={actionMsg} progressPct={progressPct} progressTone={progressTone} refreshPending={refreshMutation.isPending} autoSearchPending={autoSearchMutation.isPending} manualSearchPending={volManualSearching} onRefresh={() => refreshMutation.mutate()} onAutoSearch={() => autoSearchMutation.mutate()} onManualSearch={handleVolumeManualSearch} onEdit={openEdit} onFixMatch={openFixMatch} onPreviewRename={handleOpenRename} onManageIssues={openManageIssues} />
@@ -1144,8 +1145,9 @@ export function VolumeDetailPage() {
           )}
 
           {/* ── Suwayomi Bundle section ─────────────────── */}
-          <div className={styles.bundleSection}>
-            <h4 className={styles.dialogSubhead}>Suwayomi Chapter Bundle</h4>
+          {showSuwayomiBundleSearch && (
+            <div className={styles.bundleSection}>
+              <h4 className={styles.dialogSubhead}>Suwayomi Chapter Bundle</h4>
             <p className={styles.bundleHelpText}>
               Enter chapters to bundle (e.g. <code>1-7</code> or <code>1,2,3,4,5,6,7</code>).
             </p>
@@ -1214,7 +1216,8 @@ export function VolumeDetailPage() {
                 </tbody>
               </table>
             )}
-          </div>
+            </div>
+          )}
         </DialogBody>
       </DialogFrame>
 

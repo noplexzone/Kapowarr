@@ -30,11 +30,12 @@ def _make_unmatched_results(n):
 
 
 class _FakeIssue:
-    id = 1
-    calculated_issue_number = 1.0
-    date = '2020-01-01'
-    issue_number = '1'
-    monitored = True
+    def __init__(self, issue_id=1, number=1.0):
+        self.id = issue_id
+        self.calculated_issue_number = number
+        self.date = '2020-01-01'
+        self.issue_number = str(int(number))
+        self.monitored = True
 
     def get_data(self):
         return self
@@ -55,23 +56,32 @@ class _FakeVolumeData:
 class _FakeVolume:
     vd = _FakeVolumeData()
 
+    def __init__(self, open_count=1):
+        self.issues = [
+            _FakeIssue(issue_id=i, number=float(i))
+            for i in range(1, open_count + 1)
+        ]
+
     def get_data(self):
         return _FakeVolumeData()
 
     def get_issues(self, _skip_files=False):
-        return [_FakeIssue()]
+        return self.issues
 
     def get_open_issues(self):
-        return [(1, 1.0)]
+        return [(issue.id, issue.calculated_issue_number) for issue in self.issues]
 
     def get_issue(self, issue_id):
-        return _FakeIssue()
+        for issue in self.issues:
+            if issue.id == issue_id:
+                return issue
+        return _FakeIssue(issue_id=issue_id, number=float(issue_id))
 
 
 class BroadResultSkipTests(unittest.TestCase):
     """auto_search skips per-issue fallbacks when volume-level search is too broad."""
 
-    def _run_auto_search_with_n_results(self, n_results):
+    def _run_auto_search_with_n_results(self, n_results, open_count=1):
         """Run auto_search(volume_id=1) mocking manual_search to return n_results."""
         original_manual_search = search_module.manual_search
         original_volume = search_module.Volume
@@ -91,7 +101,7 @@ class BroadResultSkipTests(unittest.TestCase):
 
         try:
             search_module.manual_search = fake_manual_search
-            search_module.Volume = lambda vid: _FakeVolume()
+            search_module.Volume = lambda vid: _FakeVolume(open_count)
             search_module.Settings = lambda: _FakeSettings()
             result = search_module.auto_search(1)
         finally:
@@ -103,13 +113,26 @@ class BroadResultSkipTests(unittest.TestCase):
 
     def test_broad_volume_results_skip_per_issue_fallback(self):
         """Volume search returning >= threshold unmatched results → no fallback."""
-        # 60 results >> threshold; per-issue fallback must be skipped
-        result, calls = self._run_auto_search_with_n_results(60)
+        # 60 results and 60 missing issues >= threshold; fallback must be skipped
+        result, calls = self._run_auto_search_with_n_results(60, open_count=60)
 
         self.assertEqual(result, [])
         # Only the volume-level call (issue_id=None) should have happened
         self.assertEqual(len(calls), 1)
         self.assertIsNone(calls[0][1], 'Expected volume-level call (issue_id=None)')
+
+
+    def test_broad_results_keep_per_issue_fallback_for_few_missing_issues(self):
+        """Mostly-complete volumes should still search their missing issues."""
+        result, calls = self._run_auto_search_with_n_results(60, open_count=4)
+
+        self.assertEqual(result, [])
+        issue_calls = [c for c in calls if c[1] is not None]
+        self.assertEqual(
+            len(issue_calls),
+            4,
+            'Expected per-issue fallback for each missing library-card issue',
+        )
 
     def test_small_result_set_keeps_per_issue_fallback(self):
         """Volume search with a small result set → per-issue fallback still runs."""

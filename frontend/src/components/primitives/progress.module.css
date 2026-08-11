@@ -11,7 +11,9 @@
   height: 100%;
   background: var(--accent);
   border-radius: 999px;
-  transition: width 0.3s ease, background 0.3s ease;
+  width: 100%;
+  transform-origin: left center;
+  transition: transform 0.3s ease, background 0.3s ease;
 }
 
 .success {

@@ -26,7 +26,7 @@ export const Progress = forwardRef<HTMLDivElement, ProgressProps>(
       >
         <div
           className={clsx(styles.fill, styles[tone])}
-          style={{ width: `${clampedValue}%` }}
+          style={{ transform: `scaleX(${clampedValue / 100})` }}
         />
       </div>
     );

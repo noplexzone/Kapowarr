@@ -69,8 +69,8 @@ test('canonical internal navigation preserves the application shell and browser 
   let documentRequests = 0;
   page.on('request', request => { if (request.resourceType() === 'document') documentRequests += 1; });
 
-  await page.getByRole('link', { name: 'Library', exact: true }).click();
-  await expect(page).toHaveURL(/\/library/);
+  await page.getByRole('link', { name: 'Comics', exact: true }).click();
+  await expect(page).toHaveURL(/\/comics/);
   await page.getByRole('link', { name: 'Discover', exact: true }).click();
   await expect(page).toHaveURL(/\/discover/);
   await page.getByRole('link', { name: 'Activity', exact: true }).click();
@@ -90,7 +90,7 @@ test('mobile shell exposes five safe primary destinations without root overflow'
   await boot(page, 390);
   const navigation = page.getByRole('navigation', { name: /primary/i });
   await expect(navigation).toBeVisible();
-  for (const label of ['Home', 'Library', 'Discover', 'Activity', 'Settings']) {
+  for (const label of ['Home', 'Comics', 'Manga', 'Discover', 'Activity']) {
     const link = navigation.getByRole('link', { name: label, exact: true });
     await expect(link).toBeVisible();
     const box = await link.boundingBox();
@@ -100,7 +100,7 @@ test('mobile shell exposes five safe primary destinations without root overflow'
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-for (const route of ['/home', '/library?section=comic', '/discover?section=comic&category=upcoming', '/activity/queue']) {
+for (const route of ['/home', '/comics', '/manga', '/discover?section=comic&category=upcoming', '/activity/queue']) {
   test(`canonical route ${route} exposes one current destination and no axe violations`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.route('**/*', injectProductionBase);
@@ -131,7 +131,7 @@ const workflowRoutes = [
 
 for (const { route, evidence } of workflowRoutes) {
   for (const width of [320, 390, 1280]) {
-    for (const theme of ['light', 'batman-mode'] as const) {
+    for (const theme of ['kapowarr-noir', 'light'] as const) {
       test(`${route} is accessible at ${width}px in ${theme}`, async ({ page }) => {
         await page.setViewportSize({ width, height: width < 800 ? 844 : 800 });
         await page.addInitScript((selectedTheme) => localStorage.setItem('kapowarr-theme', selectedTheme), theme);

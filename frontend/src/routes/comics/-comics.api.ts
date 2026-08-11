@@ -71,7 +71,10 @@ async function fetchVolumeList(params: VolumesSearch, section: SectionType): Pro
   sp.set('offset', String(params.offset ?? 0));
   sp.set('limit', String(VOLUME_PAGE_SIZE));
 
-  const response = await apiClient.get('volumes', { searchParams: sp });
+  const response = await apiClient.get('volumes', {
+    searchParams: sp,
+    timeout: 60_000,
+  });
   const data = await readJson(response, rawVolumeListSchema);
   if (
     !data

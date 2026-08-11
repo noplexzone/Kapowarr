@@ -249,6 +249,7 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
             {FILTER_OPTIONS.map((opt) => (
               <Button
                 key={opt || 'all'}
+                className={styles.filterChip}
                 variant={search.filter === opt ? 'primary' : 'ghost'}
                 aria-pressed={search.filter === opt}
                 onClick={() => updateSearch({ filter: opt })}

@@ -8,6 +8,8 @@ from io import BytesIO
 import os
 from os import makedirs, remove
 from secrets import token_hex
+from sqlite3 import OperationalError
+from time import sleep
 from os.path import basename, commonpath, dirname, exists, getsize, join, splitext
 from pathlib import Path
 from stat import S_ISREG
@@ -1299,29 +1301,40 @@ def api_volumes():
             'offset=%r limit=%r',
             query, sort, filter, section, offset, limit
         )
-        try:
-            if query:
-                matching = Library.search(
-                    query, sort or LibrarySorting.TITLE, filter, section
+        for attempt in range(3):
+            try:
+                if query:
+                    matching = Library.search(
+                        query, sort or LibrarySorting.TITLE, filter, section
+                    )
+                    total = len(matching)
+                    start = offset * limit
+                    volumes = matching[start:start + limit]
+                else:
+                    volumes, total = Library.get_public_volumes_page(
+                        sort or LibrarySorting.TITLE,
+                        filter,
+                        section,
+                        offset,
+                        limit
+                    )
+                LOGGER.debug(
+                    'api_volumes GET: returning %d of %d volumes',
+                    len(volumes), total
                 )
-                total = len(matching)
-                start = offset * limit
-                volumes = matching[start:start + limit]
-            else:
-                volumes, total = Library.get_public_volumes_page(
-                    sort or LibrarySorting.TITLE,
-                    filter,
-                    section,
-                    offset,
-                    limit
+                break
+            except OperationalError as e:
+                if 'database is locked' not in str(e).lower() or attempt == 2:
+                    LOGGER.exception('api_volumes GET: unexpected error: %s', e)
+                    raise
+                LOGGER.warning(
+                    'api_volumes GET: database locked; retrying library page query (%d/3)',
+                    attempt + 2
                 )
-            LOGGER.debug(
-                'api_volumes GET: returning %d of %d volumes',
-                len(volumes), total
-            )
-        except Exception as e:
-            LOGGER.exception('api_volumes GET: unexpected error: %s', e)
-            raise
+                sleep(1)
+            except Exception as e:
+                LOGGER.exception('api_volumes GET: unexpected error: %s', e)
+                raise
 
         return return_api({
             'items': volumes,

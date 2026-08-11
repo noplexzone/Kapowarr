@@ -1,4 +1,5 @@
 import unittest
+from sqlite3 import OperationalError
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from flask import Flask, request as flask_request
@@ -47,6 +48,20 @@ class PaginationApiDefaultsTests(unittest.TestCase):
         get_page.assert_called_once_with(
             api_mod.LibrarySorting.TITLE, None, 'comic', 0, 60
         )
+
+    def test_volumes_paginated_retries_transient_database_locks(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        with request_patch, settings_patch, timer_patch, patch.object(
+            api_mod.Library,
+            'get_public_volumes_page',
+            side_effect=[OperationalError('database is locked'), ([{'id': 9}], 1)]
+        ) as get_page, patch.object(api_mod, 'sleep') as sleep:
+            response = self._client().get('/api/volumes?paginated=true&filter=wanted')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['result']['items'], [{'id': 9}])
+        self.assertEqual(get_page.call_count, 2)
+        sleep.assert_called_once_with(1)
 
     def test_history_legacy_and_paginated_shapes(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()

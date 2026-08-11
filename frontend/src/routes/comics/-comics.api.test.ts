@@ -41,10 +41,27 @@ describe('volume list pagination', () => {
     expect(searchParams.get('offset')).toBe('2');
     expect(searchParams.get('limit')).toBe('60');
     expect(searchParams.get('paginated')).toBe('true');
+    expect(get.mock.calls[0]?.[1]?.timeout).toBe(60_000);
     expect(result).toMatchObject({ total: 1167, offset: 2, page_size: 60 });
     expect(result.volumes).toHaveLength(1);
     expect(result.volumes[0]?.progress).toEqual({ have: 2, total: 5 });
     expect(parse).toHaveBeenCalledWith(response, expect.anything());
+  });
+
+  it('passes selected library filters to the backend filter contract', async () => {
+    get.mockResolvedValue({} as never);
+    parse.mockResolvedValue({ items: [], total: 0, offset: 0, page_size: 60 });
+
+    const options = volumeListQueryOptions(1, {
+      sort: 'title', filter: 'unmonitored', view: 'posters', offset: 0,
+    }, 'comic');
+    await options.queryFn!({} as never);
+
+    const searchParams = get.mock.calls[0]?.[1]?.searchParams as URLSearchParams;
+    expect(searchParams.get('filter')).toBe('unmonitored');
+    expect(searchParams.get('section')).toBe('comic');
+    expect(searchParams.has('status')).toBe(false);
+    expect(searchParams.has('monitoring')).toBe(false);
   });
 
   it('fails closed when the response shape is not paginated', async () => {

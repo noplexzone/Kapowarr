@@ -73,6 +73,13 @@ describe('legacy route redirects', () => {
     });
   });
 
+  it('maps every canonical library filter to exactly one legacy backend filter', () => {
+    expect(toLegacyLibrarySearch(librarySearchSchema.parse({ status: 'upcoming' })).filter).toBe('upcoming');
+    expect(toLegacyLibrarySearch(librarySearchSchema.parse({ monitoring: 'monitored' })).filter).toBe('monitored');
+    expect(toLegacyLibrarySearch(librarySearchSchema.parse({ monitoring: 'unmonitored' })).filter).toBe('unmonitored');
+    expect(toLegacyLibrarySearch(librarySearchSchema.parse({ status: 'all', monitoring: 'all' })).filter).toBe('');
+  });
+
   it('preserves discovery section, category, and query', () => {
     expect(legacyDiscoveryToCanonical({ section: 'manga', type: 'new', q: '  Pluto ' })).toEqual({
       section: 'manga',

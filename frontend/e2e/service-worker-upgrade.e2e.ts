@@ -9,7 +9,13 @@ test('a new build activates and removes an older Kapowarr cache without clearing
     await navigator.serviceWorker.ready;
     await registration.update();
   });
-  await expect.poll(() => page.evaluate(async () => (await caches.keys()).includes('kapowarr-static-build-a'))).toBe(false);
+  await expect.poll(async () => {
+    try {
+      return await page.evaluate(async () => (await caches.keys()).includes('kapowarr-static-build-a'));
+    } catch {
+      return true;
+    }
+  }).toBe(false);
   const workerSource = await page.request.get('/sw.js').then((response) => response.text());
   expect(workerSource).not.toContain('__KAPOWARR_BUILD_VERSION__');
   expect(workerSource).toMatch(/kapowarr-static-[a-f0-9]{16}/);

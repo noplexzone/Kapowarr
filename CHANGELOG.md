@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Make PWA updates activate without leaving installed mobile clients on stale bundles, and make manual search results readable on tablet/mobile dialogs.
 - Remove the redundant Discover add-search label, retain stored Library sort/filter state through primary navigation, show the Issues tab by default on volume pages, and broaden comic Discovery refill/filtering for library-heavy collections.
 - Add Discover controls to hide already-library titles, search/add from a bottom bar, and exclude additional manga imprints from comic discovery.
 - Keep Discovery add settings in-page, isolate New and Upcoming card identity, preserve the chosen library sort across navigation, and remove the redundant Overview description panel.

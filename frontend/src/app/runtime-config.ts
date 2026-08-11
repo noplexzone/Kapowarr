@@ -56,10 +56,50 @@ export function applyRuntimeDocumentUrls(): void {
   if (appleIcon) appleIcon.href = runtimeConfig.icon192Url;
 }
 
+function requestWaitingWorkerActivation(registration: ServiceWorkerRegistration): void {
+  registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+}
+
+export function setupServiceWorkerUpdateHandling(registration: ServiceWorkerRegistration): void {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+
+  let reloadOnControllerChange = Boolean(navigator.serviceWorker.controller);
+  let reloaded = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!reloadOnControllerChange || reloaded) return;
+    reloaded = true;
+    window.location.reload();
+  });
+
+  requestWaitingWorkerActivation(registration);
+
+  registration.addEventListener('updatefound', () => {
+    const worker = registration.installing;
+    if (!worker) return;
+    worker.addEventListener('statechange', () => {
+      if (worker.state !== 'installed') return;
+      if (!navigator.serviceWorker.controller) return;
+      reloadOnControllerChange = true;
+      worker.postMessage({ type: 'SKIP_WAITING' });
+    });
+  });
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        void registration.update();
+      }
+    });
+  }
+}
+
 export async function registerServiceWorker(): Promise<void> {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
-  await navigator.serviceWorker.register(runtimeConfig.serviceWorkerUrl, {
+  const registration = await navigator.serviceWorker.register(runtimeConfig.serviceWorkerUrl, {
     scope: runtimeConfig.serviceWorkerScope,
     updateViaCache: 'none',
   });
+  setupServiceWorkerUpdateHandling(registration);
+  void registration.update();
 }

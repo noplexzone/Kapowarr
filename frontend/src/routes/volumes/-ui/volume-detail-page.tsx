@@ -1057,7 +1057,7 @@ export function VolumeDetailPage() {
             <p className={styles.dialogStatus}>No results found.</p>
           )}
           {!manualSearching && manualResults.length > 0 && (
-            <table className={styles.searchResultTable}>
+            <table className={`${styles.searchResultTable} ${styles.manualSearchResults}`}>
               <thead>
                 <tr>
                   <th className={styles.thMatch}>Match</th>
@@ -1176,7 +1176,7 @@ export function VolumeDetailPage() {
               <p className={styles.dialogStatus}>{swBundleError}</p>
             )}
             {!swBundleSearching && swBundleResults.length > 0 && (
-              <table className={styles.searchResultTable}>
+              <table className={`${styles.searchResultTable} ${styles.manualSearchResults} ${styles.bundleSearchResults}`}>
                 <thead>
                   <tr>
                     <th>Title</th>
@@ -1277,7 +1277,7 @@ export function VolumeDetailPage() {
             <p className={styles.dialogStatus}>No results found.</p>
           )}
           {!volManualSearching && volManualResults.length > 0 && (
-            <table className={styles.searchResultTable}>
+            <table className={`${styles.searchResultTable} ${styles.manualSearchResults}`}>
               <thead>
                 <tr>
                   <th className={styles.thMatch}>Match</th>

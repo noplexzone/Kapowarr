@@ -436,6 +436,7 @@
 .searchResultTable {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 0.8rem;
 }
 
@@ -455,21 +456,24 @@
 }
 
 .thMatch {
-  width: 5rem;
+  width: 13rem;
 }
 
 .thSource {
-  width: 7rem;
+  width: 7.5rem;
 }
 
 .thAction {
-  width: 7rem;
+  width: 18rem;
 }
 
 .resultTitle {
+  display: inline-block;
   color: var(--accent);
+  line-height: 1.35;
   text-decoration: none;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .resultTitle:hover {
@@ -482,11 +486,89 @@
 }
 
 .actionCell {
-  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: normal;
 }
 
-.actionCell > * + * {
-  margin-left: 0.25rem;
+
+@media (max-width: 900px) {
+  .manualSearchResults {
+    table-layout: auto;
+  }
+
+  .manualSearchResults thead {
+    display: none;
+  }
+
+  .manualSearchResults,
+  .manualSearchResults tbody,
+  .manualSearchResults tr,
+  .manualSearchResults td {
+    display: block;
+    width: 100%;
+  }
+
+  .manualSearchResults tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .manualSearchResults tr {
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 0.625rem);
+    background: var(--surface-raised);
+  }
+
+  .manualSearchResults td {
+    padding: 0.45rem 0;
+    border-bottom: 0;
+  }
+
+  .manualSearchResults td:nth-child(1) {
+    padding-top: 0;
+  }
+
+  .manualSearchResults td:nth-child(1)::before,
+  .manualSearchResults td:nth-child(2)::before,
+  .manualSearchResults td:nth-child(3)::before,
+  .manualSearchResults td:nth-child(4)::before {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .manualSearchResults td:nth-child(1)::before { content: 'Match'; }
+  .manualSearchResults td:nth-child(2)::before { content: 'Title'; }
+  .manualSearchResults td:nth-child(3)::before { content: 'Source'; }
+  .manualSearchResults td:nth-child(4)::before { content: 'Action'; }
+  .bundleSearchResults td:nth-child(1)::before { content: 'Title'; }
+  .bundleSearchResults td:nth-child(2)::before { content: 'Source'; }
+  .bundleSearchResults td:nth-child(3)::before { content: 'Action'; }
+
+  .resultTitle {
+    display: block;
+    font-size: 0.95rem;
+  }
+
+  .sourceCell {
+    font-size: 0.85rem;
+  }
+
+  .actionCell {
+    gap: 0.5rem;
+  }
+
+  .actionCell > * {
+    min-height: 2.75rem;
+  }
 }
 
 /* ── Issue history table ─────────────────────────── */

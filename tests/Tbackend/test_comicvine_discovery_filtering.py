@@ -25,7 +25,7 @@ def _load_discovery_filter_symbols():
             and node.name in names
         )
     ]
-    namespace = {'frozenset': frozenset, 'str': str, 'bool': bool, 'any': any}
+    namespace = {'frozenset': frozenset, 'FrozenSet': frozenset, 'str': str, 'bool': bool, 'any': any}
     exec(compile(ast.Module(body=selected, type_ignores=[]), str(source_path), 'exec'), namespace)
     return namespace
 

@@ -153,12 +153,14 @@ for (const { route, evidence } of workflowRoutes) {
 
 
 
-test('Discover exposes a direct Search/Add Comics path', async ({ page }) => {
+test('Discover exposes a bottom Search/Add Comics control', async ({ page }) => {
   await boot(page);
   await page.getByRole('link', { name: 'Discover', exact: true }).click();
-  await page.getByRole('button', { name: 'Search / Add Comics' }).click();
-  await expect(page).toHaveURL(/\/add\?section=comic/);
-  await expect(page.getByRole('searchbox', { name: 'Search Comics' })).toBeVisible();
+  const search = page.getByRole('searchbox', { name: 'Add comics' });
+  await expect(search).toBeVisible();
+  await search.fill('Acceptance');
+  await expect(page.getByRole('button', { name: /Acceptance Search Result/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/discover/);
 });
 
 test('Add review modal is keyboard-operable, labelled, and mobile-safe', async ({ page }) => {

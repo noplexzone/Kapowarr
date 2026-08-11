@@ -7,7 +7,7 @@ Search for volumes/issues and fetch metadata for them on ComicVine
 from asyncio import gather, run, sleep
 from json import JSONDecodeError
 from re import IGNORECASE, compile
-from typing import Any, AsyncGenerator, Dict, Iterable, List, Sequence, Union
+from typing import Any, AsyncGenerator, Dict, FrozenSet, Iterable, List, Sequence, Union
 
 from aiohttp import ContentTypeError
 from aiohttp.client_exceptions import ClientError
@@ -168,7 +168,7 @@ _ENGLISH_MANGA_PUBLISHERS = frozenset({
 })
 
 
-def _publisher_matches(pub: str, publishers: frozenset[str]) -> bool:
+def _publisher_matches(pub: str, publishers: FrozenSet[str]) -> bool:
     normalized = (pub or '').strip().lower()
     if not normalized:
         return False

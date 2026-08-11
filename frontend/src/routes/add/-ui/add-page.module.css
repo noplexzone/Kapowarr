@@ -218,3 +218,20 @@
   gap: 0.5rem;
   justify-content: flex-end;
 }
+
+@media (max-width: 480px) {
+  .modalGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modalCover {
+    width: min(8rem, 45vw);
+    justify-self: center;
+  }
+
+  .formSelect,
+  .formInput {
+    width: 100%;
+    min-width: 0;
+  }
+}

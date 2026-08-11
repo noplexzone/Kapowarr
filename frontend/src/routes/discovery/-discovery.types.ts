@@ -34,8 +34,8 @@ export type DiscoverySection = 'comic' | 'manga';
 
 export interface DiscoveryAddSearch {
   section: DiscoverySection;
-  metadata_source: 'comicvine' | 'mangadex';
-  metadata_id: string;
+  source: 'comicvine' | 'mangadex';
+  id: string;
   title: string;
   metadata_language?: string;
 }
@@ -44,9 +44,9 @@ export function getDiscoveryAddSearch(volume: DiscoveryVolume, section: Discover
   const source = volume.metadata_source ?? 'comicvine';
   return {
     section,
-    metadata_source: source,
-    metadata_id: volume.metadata_id ?? String(volume.comicvine_id),
+    source,
+    id: volume.metadata_id ?? String(volume.comicvine_id),
     title: volume.title,
-    ...(volume.metadata_language ? { metadata_language: volume.metadata_language } : {}),
+    ...(volume.metadata_language ? { language: volume.metadata_language } : {}),
   };
 }

@@ -15,6 +15,7 @@ const emptyStats = {
   import_problems: 0,
   files: 0,
   total_file_size: 0,
+  mismatches: 0,
 };
 
 function envelope(result: unknown) {
@@ -24,15 +25,23 @@ function envelope(result: unknown) {
 async function fulfillApi(route: Route) {
   const url = new URL(route.request().url());
   const path = url.pathname;
-  let result: unknown = {};
+  let result: unknown;
   if (path.endsWith('/api/public')) result = { authentication_method: 0 };
   else if (path.endsWith('/api/auth')) result = { api_key: 'browser-test-key' };
   else if (path.endsWith('/api/nav/badges')) {
     result = { volumes: 0, comics: 0, manga: 0, queue: 0, library_import: 0, mismatch: 0 };
   } else if (path.endsWith('/api/volumes/stats')) result = emptyStats;
-  else if (path.endsWith('/api/volumes')) result = [];
+  else if (path.endsWith('/api/volumes')) result = { items: [], total: 0, offset: 0, page_size: 60 };
   else if (path.endsWith('/api/activity/queue')) result = [];
   else if (path.endsWith('/api/activity/history')) result = [];
+  else {
+    await route.fulfill({
+      status: 501,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: `Unhandled production-smoke endpoint: ${path}`, result: null }),
+    });
+    return;
+  }
   await route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -62,6 +71,11 @@ for (const width of [1280, 390, 320]) {
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
     expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+
+    await expect(page.locator('#root')).toHaveScreenshot(`dashboard-${width}.png`, {
+      animations: 'disabled',
+      maxDiffPixelRatio: 0.005,
+    });
   });
 }
 

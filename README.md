@@ -37,9 +37,9 @@ Featured on [Noted](https://noted.lol/kapowarr/) and [Respectlytics](https://res
 
 ## Container writable paths
 
-The image runs as Unraid-compatible UID/GID `99:100` by default and supports a read-only root filesystem.
-Prepare bind mounts with ownership matching `PUID`/`PGID`; the hardened Compose example
-runs without capabilities and cannot change host ownership during startup. Only these paths
+The image runs as the fixed, Unraid-compatible UID/GID `99:100` and supports a read-only root filesystem.
+Prepare bind mounts with ownership and permissions that allow `99:100` to write. The hardened
+Compose example runs without capabilities and cannot change host ownership during startup. Only these paths
 should be writable:
 
 - `/app/db` — configuration and the SQLite database;
@@ -50,14 +50,17 @@ should be writable:
 
 Application source under `/app` remains read-only. Add each configured library root as an
 explicit read-write mount; file replacement can create temporary files beside the library
-artifact. To use different IDs, set `PUID` and `PGID` and set the Compose `user` to the same
-values before starting the container.
+artifact. The image and checked-in Compose file intentionally fix the runtime identity at
+non-root `99:100`, matching Unraid's standard `nobody:users` ownership. Runtime identity environment variables are not supported and do not change the process identity.
 
-> **Runtime identity note:** the image starts as non-root `99:100`, matching
-> Unraid's standard `nobody:users` ownership. Deployments using other IDs must
-> set both `PUID`/`PGID` and the Docker/Compose runtime `user` to the same values.
-> Startup fails explicitly when they disagree instead of silently running with
-> inaccessible mounts.
+## Cross-origin API access
+
+Browser clients are same-origin by default. To allow specific browser-extension or web origins
+to call the API and Socket.IO endpoint, set `KAPOWARR_CORS_ORIGINS` to a comma-separated list
+of exact origins, for example `https://reader.example,moz-extension://extension-id`. Wildcard
+and opaque `null` origins are rejected. CORS headers are never added to SPA/static responses,
+and passwordless API-key provisioning remains same-origin only. Cross-origin mutations must
+send the installation key in the `X-Api-Key` header.
 
 ## Screenshots
 

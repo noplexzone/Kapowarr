@@ -1,8 +1,9 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { DialogFrame, DialogHeader, DialogBody, DialogFooter } from '@/components/dialog';
 import { Button, Badge, Progress } from '@/components/primitives';
+import { AuthenticatedImage } from '@/components/authenticated-resource';
 import { volumeDetailQueryOptions } from '../-comics.api';
-import { getCoverUrl, getProgressLabel, getProgressPercent } from '../-comics.helpers';
+import { getProgressLabel, getProgressPercent } from '../-comics.helpers';
 import styles from './comic-detail-modal.module.css';
 
 interface ComicDetailModalProps {
@@ -26,9 +27,9 @@ export function ComicDetailModal({ volumeId, open, onClose }: ComicDetailModalPr
 
       <DialogBody>
         <div className={styles.detail}>
-          <img
+          <AuthenticatedImage
             className={styles.cover}
-            src={getCoverUrl(volume.id)}
+            endpoint={`volumes/${volume.id}/cover`}
             alt={`Cover for ${volume.title}`}
           />
 

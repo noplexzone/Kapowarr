@@ -32,8 +32,6 @@ RUN pip3 wheel --wheel-dir=/wheels -r requirements.txt
 FROM python:${PYTHON}-slim-${DISTRO} AS runtime
 WORKDIR /app
 
-COPY --from=tianon/gosu:1.17 /gosu /usr/local/bin/
-
 # Install Compiled Wheels
 COPY --from=builder /wheels /wheels
 RUN pip3 install --no-index --find-links=/wheels -r /wheels/requirements.txt && \
@@ -52,9 +50,7 @@ RUN chmod -R 755 /app && \
 # Copy built SPA from Node stage (overwrites source files with dist)
 COPY --from=node-builder /app/frontend/dist /app/frontend/dist
 
-ENV PUID=99 \
-    PGID=100 \
-    TZ=UTC \
+ENV TZ=UTC \
     PYTHONDONTWRITEBYTECODE=1
 
 EXPOSE 5656

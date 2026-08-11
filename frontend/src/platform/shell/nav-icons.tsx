@@ -185,9 +185,11 @@ function TasksIcon(p: SVGProps<SVGSVGElement>) {
 
 const ICON_MAP: Record<string, React.ComponentType<SVGProps<SVGSVGElement>>> = {
   Dashboard: DashboardIcon,
+  Home: DashboardIcon,
   Comics: ComicsIcon,
   Manga: MangaIcon,
   Discovery: DiscoveryIcon,
+  Discover: DiscoveryIcon,
   'Library Import': ImportIcon,
   Activity: ActivityIcon,
   Settings: SettingsIcon,

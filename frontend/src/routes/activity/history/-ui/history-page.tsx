@@ -28,14 +28,14 @@ export function HistoryPage({ offset, state }: HistoryPageProps) {
     onSuccess: () => {
       setConfirmClear(false);
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
-      navigate({ to: '/activity/history', search: { offset: 0, state } });
+      navigate({ to: '/activity/history', search: (prev: any) => ({ ...prev, page: 1, status: state === 'all' ? undefined : state }) });
     },
   });
 
   const goToPage = (page: number) => {
     navigate({
       to: '/activity/history',
-      search: { offset: page, state },
+      search: (prev: any) => ({ ...prev, page: page + 1, status: state === 'all' ? undefined : state }),
     });
   };
 

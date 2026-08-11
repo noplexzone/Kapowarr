@@ -11,6 +11,14 @@ export interface IssueDetail {
   filenames: string[];
 }
 
+export interface GeneralFileDetail {
+  id: number;
+  filename: string;
+  filepath: string;
+  size: number;
+  file_type: string;
+}
+
 export interface VolumeDetailFull {
   id: number;
   comicvine_id: number;
@@ -31,6 +39,7 @@ export interface VolumeDetailFull {
   issues_downloaded: number;
   cover?: string;
   issues: IssueDetail[];
+  general_files: GeneralFileDetail[];
 }
 
 export interface ManualSearchResult {

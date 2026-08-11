@@ -114,8 +114,10 @@ usingApiKey()
 	fillSettings(api_key);
 	document.querySelector('#save-button').onclick = e => saveSettings(api_key);
 	document.querySelector('#generate-api').onclick = e => generateApiKey(api_key);
-	document.querySelector('#download-logs-button').href =
-		`${url_base}/api/system/logs?api_key=${api_key}`;
+	document.querySelector('#download-logs-button').onclick = event => {
+		event.preventDefault();
+		downloadAuthenticated('/system/logs', api_key, 'Kapowarr.log');
+	};
 });
 
 document.querySelector('#theme-input').onchange = e => {

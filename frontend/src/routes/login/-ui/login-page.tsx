@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Button } from '@/components/primitives/button';
 import { Notice } from '@/components/primitives/notice';
 import { useAuthStore } from '@/platform/auth/auth-store';
+import { runtimeConfig } from '@/app/runtime-config';
 import styles from './login-page.module.css';
 
 export function LoginPage() {
@@ -39,7 +40,7 @@ export function LoginPage() {
     <div className={styles.page}>
       <div className={styles.container}>
         <div className={styles.brand}>
-          <img src="/static/img/favicon.svg" alt="Kapowarr" className={styles.brandIcon} />
+          <img src={runtimeConfig.assetUrl('static/img/favicon.svg')} alt="Kapowarr" className={styles.brandIcon} />
           <span className={styles.brandTitle}>Kapowarr</span>
         </div>
 

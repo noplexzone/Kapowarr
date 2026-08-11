@@ -45,7 +45,7 @@ Kapowarr needs a permanent place to put the database file. This can be a [Docker
 		mkdir "/path/to/directory"
 		```
 
-		The folder needs to offer read, write and execution permissions to the user that the container will run as. You can change the user that the container runs as using the PUID (user) and PGID (group) environment variables when launching the container later. The folder also needs to either be owned by that user, be owned by a group that the user is a part of or have sufficient permissions so that _any_ user can use the folder.
+		The folder needs to offer read, write and execution permissions to the fixed container identity `99:100`. It must be owned by that user or group, or otherwise grant that identity sufficient permissions.
 
 	=== "MacOS"
 		Following MacOS standards, we suggest the folder `/Applications/Kapowarr/db`. This is not mandatory however. You are allowed to create a folder anywhere you like.
@@ -56,7 +56,7 @@ Kapowarr needs a permanent place to put the database file. This can be a [Docker
 		mkdir "/path/to/directory"
 		```
 
-		The folder needs to offer read, write and execution permissions to the user that the container will run as. You can change the user that the container runs as using the PUID and PGID (for the group) environment variables when launching the container later. The folder also needs to either be owned by that user, be owned by a group that the user is a part of or have sufficient permissions so that _any_ user can use the folder.
+		The folder needs to offer read, write and execution permissions to the fixed container identity `99:100`, or otherwise grant that identity sufficient permissions.
 
 	=== "Windows"
 		There is no defined standard for Windows on where to put such a folder. We suggest a path like `C:\apps\Kapowarr\db` or `D:\Kapowarr\db`. This is not mandatory however. You are allowed to create a folder anywhere you like.
@@ -93,8 +93,6 @@ Now we can launch the container.
 			-v "/path/to/download_folder:/app/temp_downloads" \
 			-v "/path/to/root_folder:/comics" \
 			-p 5656:5656 \
-			-e PUID=0 \
-			-e PGID=0 \
 			-e TZ=Etc/UTC \
 			mrcas/kapowarr:latest
 		```
@@ -108,8 +106,6 @@ Now we can launch the container.
 			-v "/path/to/download_folder:/app/temp_downloads" \
 			-v "/path/to/root_folder:/comics" \
 			-p 5656:5656 \
-			-e PUID=0 \
-			-e PGID=0 \
 			-e TZ=Etc/UTC \
 			mrcas/kapowarr:latest
 		```
@@ -117,7 +113,7 @@ Now we can launch the container.
 	=== "Windows"
 
 		```powershell
-		docker run -d --name kapowarr -v "kapowarr-db:/app/db" -v "DRIVE:\with\download_folder:/app/temp_downloads" -v "DRIVE:\with\root_folder:/comics" -p 5656:5656 -e PUID=0 -e PGID=0 -e TZ=Etc/UTC mrcas/kapowarr:latest
+		docker run -d --name kapowarr -v "kapowarr-db:/app/db" -v "DRIVE:\with\download_folder:/app/temp_downloads" -v "DRIVE:\with\root_folder:/comics" -p 5656:5656 -e TZ=Etc/UTC mrcas/kapowarr:latest
 		```
 
 	A few notes about this command:
@@ -153,7 +149,7 @@ Now we can launch the container.
 		- `-p 443:5656` to be available on `443`
 		- `-p 5656:5656` to be available on `5656`
 
-	6. You can change the user and group that the application inside the container runs as using the PUID (user) and PGID (group) environment variables.
+	6. The application runs as fixed non-root UID/GID `99:100`; prepare bind mounts for that identity.
 	
 	7. Set the `TZ` environment variable to the [timezone database name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List) of your timezone (value of `TZ identifier` on webpage).
 
@@ -166,8 +162,6 @@ Now we can launch the container.
 			container_name: kapowarr
 			image: mrcas/kapowarr:latest
 			environment:
-				- PUID=0
-				- PGID=0
 				- TZ=Etc/UTC
 			volumes:
 				- "kapowarr-db:/app/db"
@@ -219,7 +213,7 @@ Now we can launch the container.
 		- `- 443:5656` to be available on `443`
 		- `- 5656:5656` to be available on `5656`
 
-	6. You can change the user and group that the application inside the container runs as using the PUID (user) and PGID (group) environment variables.
+	6. The application runs as fixed non-root UID/GID `99:100`; prepare bind mounts for that identity.
 	
 	7. Set the `TZ` environment variable to the [timezone database name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List) of your timezone (value of `TZ identifier` on webpage).
 
@@ -246,7 +240,7 @@ Now we can launch the container.
 
 	11. Under `Environment Variables`, set the `Variable` field to `TZ` and the `Value` field to the [timezone database name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List) of your timezone (value of `TZ identifier` on webpage).
 	
-	12. You can change the user and group that the application inside the container runs as using the PUID (user) and PGID (group) environment variables. If so, add another environment variable using the plus button on the right. Set the `Variable` field to `PUID` and the `Value` field to the ID of the desired user. Add yet another environment variable using the plus button on the right. Set the `Variable` field to `PGID` and the `Value` field to the ID of the desired group.
+	12. Kapowarr runs as fixed non-root UID/GID `99:100`; ensure every mapped folder grants that identity the required access.
 
 ### Example
 
@@ -261,8 +255,6 @@ Below you can find an example of launching the container.
 		-v "/home/cas/media/Comics:/comics" \
 		-v "/home/cas/other_media/Comics-2:/comics-2" \
 		-p 5656:5656 \
-		-e PUID=1000 \
-		-e PGID=1000 \
 		-e TZ=Europe/Amsterdam \
 		mrcas/kapowarr:latest
 	```
@@ -274,8 +266,6 @@ Below you can find an example of launching the container.
 			container_name: kapowarr
 			image: mrcas/kapowarr:latest
 			environment:
-				- PUID=1000
-				- PGID=1000
 				- TZ=Europe/Amsterdam
 			volumes:
 				- "kapowarr-db:/app/db"

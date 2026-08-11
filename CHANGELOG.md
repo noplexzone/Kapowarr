@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Report truthful monitored issue health and operational dashboard metrics with actionable filtered destinations.
 - Bound selected library mutations to four concurrent requests with partial-failure feedback and validate focused API responses at runtime with Zod.
 - Harden Settings with URL-addressable categories, label/help search, accessible fields, validated global Save/Discard controls, unsaved-navigation protection, and explicit restart confirmation.
-- Add production-build Playwright and axe accessibility gates at desktop, 390 px, and 320 px widths in both supported themes.
+- Add production-build Playwright, axe, and visual-regression gates at desktop, 390 px, and 320 px widths, with representative light and dark workflow coverage.
 - Decompose Settings and Volume Detail into focused category, service-editor, hero, issue, and management components.
 - Add truthful server-side library pagination with URL-backed page controls that cap rendered records at 60 per page.
 - Add poster-first library controls, responsive volume-detail issue cards, operational dashboard refresh/error states, and safer settings workflows.
@@ -32,8 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fix unmatched library-import deletion to send the backend-compatible folder list and keep confirmed paths visible when deletion fails.
 - Publish both `develop` and the current application-version container tags with OCI source, version, and revision labels.
 - Gate container publication behind the complete backend, frontend, and production-browser matrix, and use the reviewed image in Compose.
-- Default the image and Compose runtime to Unraid-compatible UID/GID `99:100` so existing `PUID=99`/`PGID=100` installations start after updating.
+- Fix the image and Compose runtime at non-root, Unraid-compatible UID/GID `99:100`, removing ineffective runtime identity environment handling.
 - Close directory- and inode-replacement races in unmatched-file deletion, use authoritative file IDs for matched deletion, and label destructive issue controls.
+- Fail closed with an explicit API error when safe descriptor-relative unmatched-file deletion is unavailable on the host platform.
+- Restrict configurable CORS to API and Socket.IO origins, and require API keys for passwordless state-changing requests while provisioning fresh same-origin SPA clients.
 - Parameterize dashboard section queries, bound Recently Added requests, and link mismatch counts to the records that compose them.
 - Protect top-level and service-editor Settings drafts across route changes, refreshes, and tab closure without blocking safe category changes.
 - Preserve every file during colliding mass renames, keep filesystem and database paths consistent on failures, and record post-processing failures instead of false download successes.

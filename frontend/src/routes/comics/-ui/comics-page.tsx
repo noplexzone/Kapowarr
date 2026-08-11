@@ -32,6 +32,7 @@ import styles from './comics-page.module.css';
 
 interface ComicsPageProps {
   section?: SectionType;
+  canonical?: boolean;
 }
 
 function setStorageVal(key: string, val: unknown) {
@@ -41,15 +42,23 @@ function setStorageVal(key: string, val: unknown) {
 }
 
 
-export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
+export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const search = useSearch({ strict: false }) as VolumesSearch;
+  const rawSearch = useSearch({ strict: false }) as any;
+  const search: VolumesSearch = canonical ? {
+    sort: rawSearch.sort,
+    filter: rawSearch.monitoring === 'unmonitored' ? 'unmonitored' : rawSearch.monitoring === 'monitored' ? 'monitored' : rawSearch.status === 'missing' ? 'wanted' : rawSearch.status === 'upcoming' ? 'upcoming' : '',
+    view: rawSearch.view === 'list' ? 'table' : 'posters',
+    search: rawSearch.q,
+    offset: Math.max(0, (rawSearch.page ?? 1) - 1),
+  } : rawSearch as VolumesSearch;
   const { data } = useSuspenseQuery(volumeListQueryOptions(1, search, section));
 
   const [view, setView] = useState<ViewOption>(search.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [manageMode, setManageMode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState('');
   const selectionScopeKey = getSelectionScopeKey(section, search);
@@ -64,6 +73,10 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
   }, [search.search]);
 
   useEffect(() => {
+    setView(search.view);
+  }, [search.view]);
+
+  useEffect(() => {
     setSelectedIds(new Set());
   }, [selectionScopeKey]);
 
@@ -76,12 +89,8 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
       if (trimmed !== current) {
         setStorageVal(STORAGE_KEY_SEARCH, trimmed || undefined);
         navigate({
-          to: section === 'comic' ? '/comics' : '/manga',
-          search: (prev: any) => ({
-            ...prev,
-            search: trimmed || undefined,
-            offset: 0,
-          }),
+          to: canonical ? '/library' : section === 'comic' ? '/comics' : '/manga',
+          search: (prev: any) => canonical ? ({ ...prev, section, q: trimmed || undefined, page: 1 }) : ({ ...prev, search: trimmed || undefined, offset: 0 }),
         });
       }
     }, 350);
@@ -100,16 +109,23 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
 
       const resetsPage = ('sort' in patch || 'filter' in patch || 'search' in patch)
         && !('offset' in patch);
-      navigate({
-        to: section === 'comic' ? '/comics' : '/manga',
-        search: (prev: any) => ({
-          ...prev,
-          ...patch,
-          ...(resetsPage ? { offset: 0 } : {}),
-        }),
-      });
+      if (canonical) {
+        const canonicalPatch: Record<string, unknown> = {};
+        if ('sort' in patch) canonicalPatch.sort = patch.sort;
+        if ('view' in patch) canonicalPatch.view = patch.view === 'table' ? 'list' : 'grid';
+        if ('search' in patch) canonicalPatch.q = patch.search;
+        if ('offset' in patch) canonicalPatch.page = Number(patch.offset) + 1;
+        if ('filter' in patch) {
+          canonicalPatch.status = patch.filter === 'wanted' ? 'missing' : patch.filter === 'upcoming' ? 'upcoming' : 'all';
+          canonicalPatch.monitoring = patch.filter === 'unmonitored' ? 'unmonitored' : patch.filter === 'monitored' ? 'monitored' : 'all';
+        }
+        if (resetsPage) canonicalPatch.page = 1;
+        navigate({ to: '/library', search: (prev: any) => ({ ...prev, section, ...canonicalPatch }) });
+      } else {
+        navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...patch, ...(resetsPage ? { offset: 0 } : {}) }) });
+      }
     },
-    [navigate, section],
+    [canonical, navigate, section],
   );
 
   const toggleSelect = useCallback((id: number) => {
@@ -163,6 +179,30 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
     <div className={styles.page}>
       <div className={styles.toolbar}>
         <div className={styles.toolbarLeft}>
+          {canonical && (
+            <div className={styles.filterChips} aria-label="Library section">
+              <Button
+                variant={section === 'comic' ? 'primary' : 'ghost'}
+                aria-pressed={section === 'comic'}
+                onClick={() => navigate({
+                  to: '/library',
+                  search: (previous: any) => ({ ...previous, section: 'comic', page: 1 }),
+                })}
+              >
+                Comics
+              </Button>
+              <Button
+                variant={section === 'manga' ? 'primary' : 'ghost'}
+                aria-pressed={section === 'manga'}
+                onClick={() => navigate({
+                  to: '/library',
+                  search: (previous: any) => ({ ...previous, section: 'manga', page: 1 }),
+                })}
+              >
+                Manga
+              </Button>
+            </div>
+          )}
           <div className={styles.searchBar}>
             <label className={styles.srOnly} htmlFor={`${section}-library-search`}>Search library</label>
             <input
@@ -206,6 +246,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
 
           <select
             className={styles.select}
+            aria-label="Sort library"
             value={search.sort}
             onChange={(e) => updateSearch({ sort: e.target.value })}
           >
@@ -218,6 +259,9 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
         </div>
 
         <div className={styles.toolbarRight}>
+          <Button variant={manageMode ? 'primary' : 'secondary'} aria-pressed={manageMode} onClick={() => { setManageMode((value) => { if (value) setSelectedIds(new Set()); return !value; }); }}>
+            {manageMode ? 'Done Managing' : 'Manage'}
+          </Button>
           <Button
             variant="secondary"
             disabled={pendingAction !== null}
@@ -245,9 +289,10 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
 
       {actionMessage && <StatusBanner>{actionMessage}</StatusBanner>}
 
-      {selectedIds.size > 0 && (
-        <div className={styles.massBar}>
+      {manageMode && (
+        <div className={styles.massBar} data-testid="bulk-toolbar">
           <span>{selectedIds.size} selected</span>
+          <Button variant="ghost" onClick={() => setSelectedIds(new Set())} disabled={selectedIds.size === 0}>Clear Selection</Button>
           <Button
             variant="ghost"
             disabled={pendingAction !== null}
@@ -316,6 +361,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
               key={v.id}
               volume={v}
               selected={selectedIds.has(v.id)}
+              selectionVisible={manageMode || selectedIds.size > 0}
               pending={pendingAction === `search-${v.id}` || pendingAction === `monitor-${v.id}`}
               onSelect={toggleSelect}
               onMonitor={(id, monitored) => performAction(
@@ -350,6 +396,7 @@ export function ComicsPage({ section = 'comic' }: ComicsPageProps) {
                   key={v.id}
                   volume={v}
                   selected={selectedIds.has(v.id)}
+                  selectionVisible={manageMode || selectedIds.size > 0}
                   onSelect={toggleSelect}
                 />
               ))}

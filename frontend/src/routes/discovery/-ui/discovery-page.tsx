@@ -15,9 +15,10 @@ import styles from './discovery-page.module.css';
 interface DiscoveryPageProps {
   section: DiscoverySection;
   type: DiscoveryType;
+  canonical?: boolean;
 }
 
-export function DiscoveryPage({ section, type }: DiscoveryPageProps) {
+export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -32,10 +33,16 @@ export function DiscoveryPage({ section, type }: DiscoveryPageProps) {
     setTimeout(() => setRefreshing(false), 600);
   }, [queryClient]);
 
-  const setSection = (s: DiscoverySection) =>
-    navigate({ to: '/discovery', search: (prev: Record<string, unknown>) => ({ ...prev, section: s }) });
-  const setType = (t: DiscoveryType) =>
-    navigate({ to: '/discovery', search: (prev: Record<string, unknown>) => ({ ...prev, type: t }) });
+  const setSection = (nextSection: DiscoverySection) => navigate({
+    to: canonical ? '/discover' : '/discovery',
+    search: (previous: Record<string, unknown>) => ({ ...previous, section: nextSection }),
+  });
+  const setType = (nextType: DiscoveryType) => navigate({
+    to: canonical ? '/discover' : '/discovery',
+    search: (previous: Record<string, unknown>) => canonical
+      ? ({ ...previous, category: nextType })
+      : ({ ...previous, type: nextType }),
+  });
 
   return (
     <div className={styles.page}>
@@ -114,7 +121,7 @@ function VolumeGridView({ type, section }: { type: 'upcoming' | 'new'; section: 
       navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
       return;
     }
-    navigate({ to: '/add', search: getDiscoveryAddSearch(vol, section) });
+    navigate({ to: '/add/review', search: getDiscoveryAddSearch(vol, section) });
   };
 
   if (isFetching && volumes.length === 0) {
@@ -190,6 +197,7 @@ function StoryArcsView({ section, query, rawQuery, onQueryChange, onSelectArc }:
       <input
         className={styles.searchInput}
         type="search"
+        aria-label="Search story arcs"
         placeholder="Search story arcs…"
         value={rawQuery}
         onChange={e => onQueryChange(e.target.value)}
@@ -211,7 +219,12 @@ function StoryArcsView({ section, query, rawQuery, onQueryChange, onSelectArc }:
               onClick={() => onSelectArc(arc.id)}
               role="button"
               tabIndex={0}
-              onKeyDown={e => e.key === 'Enter' && onSelectArc(arc.id)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectArc(arc.id);
+                }
+              }}
             >
               <span className={styles.arcName}>{arc.name}</span>
               {arc.issue_count != null && (
@@ -248,7 +261,7 @@ function ArcDetailModal({ id, section, onClose }: { id: number; section: Discove
                   if (vol.already_added != null) {
                     navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
                   } else {
-                    navigate({ to: '/add', search: getDiscoveryAddSearch(vol, section) });
+                    navigate({ to: '/add/review', search: getDiscoveryAddSearch(vol, section) });
                   }
                 }}
               />

@@ -37,10 +37,11 @@ function SettingsPageContent({ category = 'general', onCategoryChange }: { categ
   const childDirtyCount = dirtySources.filter(source => source.label !== 'settings').length;
   const dirtyCount = topLevelDirtyCount + childDirtyCount;
   const shouldBlockNavigation = useCallback<ShouldBlockFn>(({ current, next }) => {
-    const sameSettingsRoute = current.pathname === next.pathname && next.pathname.endsWith('/settings');
-    const nextCategory = (next.search as { category?: SettingsCategory }).category;
-    const sourcesAtRisk = sameSettingsRoute
-      ? dirtySources.filter(source => source.category && source.category !== nextCategory)
+    const staysInSettings = current.pathname.startsWith('/settings') && next.pathname.startsWith('/settings');
+    const categoryFromPath = next.pathname.split('/')[2];
+    const nextCategory = (categoryFromPath || (next.search as { category?: SettingsCategory }).category) as SettingsCategory | undefined;
+    const sourcesAtRisk = staysInSettings
+      ? dirtySources.filter((source) => source.category && source.category !== nextCategory)
       : dirtySources;
     if (sourcesAtRisk.length === 0) return false;
     const labels = [...new Set(sourcesAtRisk.map(source => source.label))].join(' and ');

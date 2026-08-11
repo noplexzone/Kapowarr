@@ -103,7 +103,7 @@
 
 .sectionActive {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
   font-weight: 600;
 }
 

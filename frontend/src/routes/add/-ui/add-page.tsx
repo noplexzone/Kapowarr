@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useQuery, useSuspenseQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Button, Badge } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody, DialogFooter } from '@/components/dialog';
@@ -15,19 +15,17 @@ import type { SearchResult } from '../-add.types';
 import { getUrlBase } from '@/app/api-client';
 import styles from './add-page.module.css';
 
-interface AddSelection { metadata_source: 'comicvine' | 'mangadex'; metadata_id: string; title: string; metadata_language?: string }
-interface AddPageProps { section: 'comic' | 'manga'; selection?: AddSelection }
+interface AddSelection { metadata_source: 'comicvine' | 'mangadex'; metadata_id: string; title?: string; metadata_language?: string }
+interface AddPageProps { section: 'comic' | 'manga'; initialQuery?: string }
 
-export function AddPage({ section, selection }: AddPageProps) {
+export function AddPage({ section, initialQuery = '' }: AddPageProps) {
   const navigate = useNavigate();
-  const [rawQuery, setRawQuery] = useState(selection?.title ?? '');
-  const [query, setQuery] = useState(selection?.title ?? '');
+  const [rawQuery, setRawQuery] = useState(initialQuery);
+  const [query, setQuery] = useState(initialQuery.length >= 2 ? initialQuery : '');
   const [modalResult, setModalResult] = useState<SearchResult | null>(null);
-  const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>(selection?.metadata_source ?? 'comicvine');
+  const [metadataSource, setMetadataSource] = useState<MetadataSourceFilter>('comicvine');
 
-  useEffect(() => {
-    setMetadataSource(selection?.metadata_source ?? 'comicvine');
-  }, [section, selection?.metadata_source]);
+  useEffect(() => { setMetadataSource('comicvine'); }, [section]);
 
   useEffect(() => {
     const trimmed = rawQuery.trim();
@@ -49,19 +47,7 @@ export function AddPage({ section, selection }: AddPageProps) {
     ...searchVolumesQueryOptions(query, section, metadataSource),
     enabled: query.length >= 2,
   });
-  const { data: exactSelection } = useQuery(
-    exactVolumeQueryOptions(selection, section),
-  );
-
   const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
-
-  useEffect(() => {
-    if (!exactSelection || modalResult) return;
-    setModalResult({
-      ...exactSelection,
-      metadata_language: selection?.metadata_language ?? exactSelection.metadata_language,
-    });
-  }, [selection?.metadata_language, exactSelection, modalResult]);
 
   const sectionLabel = section === 'manga' ? 'Manga' : 'Comics';
   const placeholder = `Search ${sectionLabel}…`;
@@ -83,6 +69,7 @@ export function AddPage({ section, selection }: AddPageProps) {
         <input
           className={styles.searchInput}
           type="search"
+          aria-label={placeholder.replace('…', '')}
           placeholder={placeholder}
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
@@ -183,7 +170,12 @@ function ResultCard({ result, onClick }: ResultCardProps) {
       onClick={() => onClick(result)}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onClick(result)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick(result);
+        }
+      }}
     >
       <div className={styles.coverWrap}>
         {coverSrc ? (
@@ -202,6 +194,31 @@ function ResultCard({ result, onClick }: ResultCardProps) {
       </div>
     </div>
   );
+}
+
+export function ExactAddReview({ section, selection }: { section: 'comic' | 'manga'; selection: AddSelection }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
+  const exact = useQuery(exactVolumeQueryOptions(selection, section));
+
+  if (exact.isPending) return <div className={styles.empty} role="status">Loading {selection.title ?? selection.metadata_id} from {selection.metadata_source}…</div>;
+  if (exact.isError) return <div className={styles.empty} role="alert">
+    <h1>Could not load {selection.title ?? 'selected item'}</h1>
+    <p>{selection.metadata_source}: {exact.error.message}</p>
+    <Button onClick={() => void exact.refetch()}>Retry</Button>
+    {selection.title && <Button variant="secondary" onClick={() => navigate({ to: '/add', search: { section, title: selection.title } })}>Search by title instead</Button>}
+  </div>;
+  const result = exact.data;
+  const existingId = result.id ?? result.already_added;
+  if (existingId != null) return <div className={styles.empty}><Badge tone="success">In Library</Badge><Button onClick={() => navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } })}>Open Volume</Button></div>;
+  return <div className={styles.page} data-testid="exact-add-review">
+    <AddModal result={{ ...result, metadata_language: selection.metadata_language ?? result.metadata_language }} rootFolders={rootFolders} section={section} onClose={() => history.back()} onAdded={(id) => {
+      void queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
+      void queryClient.invalidateQueries({ queryKey: ['discovery', section] });
+      navigate({ to: '/volumes/$volumeId', params: { volumeId: String(id) } });
+    }} />
+  </div>;
 }
 
 const MONITORING_SCHEMES = [
@@ -282,8 +299,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
           )}
           <div className={styles.modalForm}>
             <div className={styles.formField}>
-              <label className={styles.formLabel}>Root Folder</label>
+              <label className={styles.formLabel} htmlFor="add-root-folder">Root Folder</label>
               <select
+                id="add-root-folder"
                 className={styles.formSelect}
                 value={rootFolderId}
                 onChange={(e) => setRootFolderId(Number(e.target.value))}
@@ -295,8 +313,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
             </div>
 
             <div className={styles.formField}>
-              <label className={styles.formLabel}>Volume Folder</label>
+              <label className={styles.formLabel} htmlFor="add-volume-folder">Volume Folder</label>
               <input
+                id="add-volume-folder"
                 className={styles.formInput}
                 type="text"
                 value={volumeFolder}
@@ -305,8 +324,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
             </div>
 
             <div className={styles.formField}>
-              <label className={styles.formLabel}>Monitoring Scheme</label>
+              <label className={styles.formLabel} htmlFor="add-monitoring-scheme">Monitoring Scheme</label>
               <select
+                id="add-monitoring-scheme"
                 className={styles.formSelect}
                 value={monitoringScheme}
                 onChange={(e) => setMonitoringScheme(e.target.value)}
@@ -320,8 +340,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
 
             {result.metadata_source === 'mangadex' && result.available_languages?.length ? (
               <div className={styles.formField}>
-                <label className={styles.formLabel}>MangaDex Language</label>
+                <label className={styles.formLabel} htmlFor="add-metadata-language">MangaDex Language</label>
                 <select
+                id="add-metadata-language"
                   className={styles.formSelect}
                   value={metadataLanguage}
                   onChange={(e) => setMetadataLanguage(e.target.value)}
@@ -334,8 +355,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
             ) : null}
 
             <div className={styles.formField}>
-              <label className={styles.formLabel}>Special Version</label>
+              <label className={styles.formLabel} htmlFor="add-special-version">Special Version</label>
               <select
+                id="add-special-version"
                 className={styles.formSelect}
                 value={specialVersion}
                 onChange={(e) => setSpecialVersion(e.target.value)}
@@ -346,32 +368,32 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
               </select>
             </div>
 
-            <div className={styles.formRow}>
+            <label className={styles.formRow}>
               <span className={styles.formRowLabel}>Monitor Volume</span>
               <input
                 type="checkbox"
                 checked={monitorVolume}
                 onChange={(e) => setMonitorVolume(e.target.checked)}
               />
-            </div>
+            </label>
 
-            <div className={styles.formRow}>
+            <label className={styles.formRow}>
               <span className={styles.formRowLabel}>Monitor Issues</span>
               <input
                 type="checkbox"
                 checked={monitorIssues}
                 onChange={(e) => setMonitorIssues(e.target.checked)}
               />
-            </div>
+            </label>
 
-            <div className={styles.formRow}>
+            <label className={styles.formRow}>
               <span className={styles.formRowLabel}>Auto Search</span>
               <input
                 type="checkbox"
                 checked={autoSearch}
                 onChange={(e) => setAutoSearch(e.target.checked)}
               />
-            </div>
+            </label>
           </div>
         </div>
       </DialogBody>

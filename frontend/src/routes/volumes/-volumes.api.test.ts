@@ -11,6 +11,7 @@ import {
   downloadVolume,
   deleteRawFile,
   fetchIssueHistory,
+  fetchVolumeHistory,
   manualSearchIssue,
   manualSearchVolume,
 } from './-volumes.api';
@@ -101,6 +102,17 @@ describe('issue history compatibility', () => {
       searchParams: { issue_id: 7 },
     });
   });
+  it('requests all history records for a volume', async () => {
+    const entries = [{ web_title: 'Volume bundle', downloaded_at: 101 }];
+    get.mockResolvedValue({} as Response);
+    parse.mockResolvedValue(entries);
+
+    await expect(fetchVolumeHistory(3)).resolves.toEqual(entries);
+    expect(get).toHaveBeenCalledWith('activity/history', {
+      searchParams: { volume_id: 3 },
+    });
+  });
+
 });
 
 

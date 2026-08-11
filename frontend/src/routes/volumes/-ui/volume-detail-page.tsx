@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
 import { useSocketEvent } from '@/platform/socketio/socket';
 import type { QueueEntry } from '@/routes/activity/queue/-queue.types';
-import { useParams, useNavigate, Link } from '@tanstack/react-router';
+import { useParams, useNavigate, useLocation, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getApiKey, getUrlBase } from '@/app/api-client';
+import { AuthenticatedImage } from '@/components/authenticated-resource';
 import { Badge, Button } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
 import {
@@ -15,6 +15,7 @@ import {
   autoSearchIssue,
   manualSearchIssue,
   fetchIssueHistory,
+  volumeHistoryQueryOptions,
   downloadIssue,
   downloadVolume,
   addToBlocklist,
@@ -43,6 +44,7 @@ import type {
   FileMatch,
   CoverCandidate,
   AddCoverResult,
+  GeneralFileDetail,
 } from '../-volumes.types';
 import { VolumeHero } from './volume-hero';
 import { IssuesSection } from './issues-section';
@@ -50,11 +52,8 @@ import { IssueHistoryDialog } from './issue-history-dialog';
 import { ManageIssuesDialog, selectedIssueFileIds } from './manage-issues-dialog';
 import styles from './volume-detail-page.module.css';
 
-function getCoverPreviewSrc(candidate: CoverCandidate): string {
-  const params = new URLSearchParams({ url: candidate.thumbnail_url });
-  const apiKey = getApiKey();
-  if (apiKey) params.set('api_key', apiKey);
-  return `${getUrlBase()}/api/mangadex/cover-proxy?${params.toString()}`;
+function getCoverPreviewEndpoint(candidate: CoverCandidate): string {
+  return `mangadex/cover-proxy?url=${encodeURIComponent(candidate.thumbnail_url)}`;
 }
 
 
@@ -63,6 +62,55 @@ function formatIssueSearchTitle(volumeTitle: string, issue?: IssueDetail): strin
   const issueNumber = issue.issue_number ? ` #${issue.issue_number}` : '';
   const issueTitle = issue.title ? ` — ${issue.title}` : '';
   return `${volumeTitle}${issueNumber}${issueTitle}`;
+}
+
+function VolumeFilesPanel({ issues, generalFiles }: { issues: IssueDetail[]; generalFiles: GeneralFileDetail[] }) {
+  const issueFiles = issues.flatMap((issue) => issue.filenames.map((filename, index) => ({
+    id: `issue:${issue.file_ids[index] ?? `${issue.id}:${index}`}`,
+    filename,
+    association: `Issue #${issue.issue_number}${issue.title ? ` — ${issue.title}` : ''}`,
+  })));
+  const files = [
+    ...issueFiles,
+    ...generalFiles.map((file) => ({
+      id: `general:${file.id}`,
+      filename: file.filename,
+      association: `Volume file — ${file.file_type}`,
+    })),
+  ];
+  if (files.length === 0) return <p>No files are attached to this volume.</p>;
+  return <table className={styles.searchResultTable}>
+    <thead><tr><th>File</th><th>Association</th></tr></thead>
+    <tbody>{files.map((file) => <tr key={file.id}>
+      <td>{file.filename}</td>
+      <td>{file.association}</td>
+    </tr>)}</tbody>
+  </table>;
+}
+
+function VolumeHistoryPanel({ entries, issues, loading, error }: {
+  entries: IssueHistoryEntry[];
+  issues: IssueDetail[];
+  loading: boolean;
+  error: Error | null;
+}) {
+  if (loading) return <p role="status">Loading volume history…</p>;
+  if (error) return <p role="alert">Unable to load volume history.</p>;
+  if (entries.length === 0) return <p>No download history is recorded for this volume.</p>;
+  const issueById = new Map(issues.map((issue) => [issue.id, issue]));
+  return <table className={styles.searchResultTable}>
+    <thead><tr><th>Release</th><th>Issue</th><th>Source</th><th>Status</th></tr></thead>
+    <tbody>{entries.map((entry, index) => {
+      const issue = entry.issue_id == null ? undefined : issueById.get(entry.issue_id);
+      const status = entry.success === true ? 'Downloaded' : entry.success === false ? 'Failed' : 'Pending';
+      return <tr key={`${entry.web_link}:${entry.downloaded_at ?? index}`}>
+        <td>{entry.web_title || entry.file_title || 'Untitled release'}</td>
+        <td>{issue ? `#${issue.issue_number}${issue.title ? ` — ${issue.title}` : ''}` : 'Volume-wide'}</td>
+        <td>{entry.source_name || entry.source || 'Unknown'}</td>
+        <td>{status}</td>
+      </tr>;
+    })}</tbody>
+  </table>;
 }
 
 // ── Constants ───────────────────────────────────────────────────
@@ -88,6 +136,7 @@ export function VolumeDetailPage() {
   const { volumeId } = useParams({ strict: false }) as { volumeId: string };
   const id = parseInt(volumeId ?? '0', 10);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const queryClient = useQueryClient();
   const [actionMsg, setActionMsg] = useState('');
   const [queueEntries, setQueueEntries] = useState<Map<number, QueueEntry>>(new Map());
@@ -175,6 +224,11 @@ export function VolumeDetailPage() {
   const swBundleRequestSeq = useRef(0);
 
   const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
+  const historyTabActive = pathname.endsWith('/history');
+  const volumeHistoryQuery = useQuery({
+    ...volumeHistoryQueryOptions(id),
+    enabled: id > 0 && historyTabActive,
+  });
 
   // Track active downloads for this volume
   useSocketEvent<Partial<QueueEntry> & { id: number }>('queue_added', useCallback((data) => {
@@ -224,7 +278,10 @@ export function VolumeDetailPage() {
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: VOLUME_FULL_KEY(id) });
       queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
-      navigate({ to: volume?.section === 'manga' ? '/manga' : '/comics' });
+      navigate({
+        to: '/library',
+        search: { section: volume?.section === 'manga' ? 'manga' : 'comic' },
+      });
     },
   });
 
@@ -912,8 +969,8 @@ export function VolumeDetailPage() {
     return (
       <div className={styles.errorPage}>
         <p className={styles.errorMsg}>Volume not found or failed to load.</p>
-        <Link to="/comics" className={styles.backLink}>
-          ← Back to Comics
+        <Link to="/library" search={{ section: 'comic' }} className={styles.backLink}>
+          ← Back to Library
         </Link>
       </div>
     );
@@ -927,6 +984,7 @@ export function VolumeDetailPage() {
   const selectedManualSearchIssue = volume.issues.find(
     (issue) => issue.id === manualSearchIssueId,
   );
+  const tab = pathname.endsWith('/issues') ? 'issues' : pathname.endsWith('/files') ? 'files' : pathname.endsWith('/history') ? 'history' : 'overview';
   const manualSearchTitle = formatIssueSearchTitle(
     volume.title,
     selectedManualSearchIssue,
@@ -935,7 +993,12 @@ export function VolumeDetailPage() {
     <div className={styles.page}>
       <VolumeHero volume={volume} actionMsg={actionMsg} progressPct={progressPct} progressTone={progressTone} refreshPending={refreshMutation.isPending} autoSearchPending={autoSearchMutation.isPending} manualSearchPending={volManualSearching} onRefresh={() => refreshMutation.mutate()} onAutoSearch={() => autoSearchMutation.mutate()} onManualSearch={handleVolumeManualSearch} onEdit={openEdit} onFixMatch={openFixMatch} onPreviewRename={handleOpenRename} onManageIssues={openManageIssues} />
 
-      <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} />
+      <nav aria-label="Volume sections" className={styles.volumeTabs}>
+        {([['overview', 'Overview', '/volumes/$volumeId'], ['issues', 'Issues', '/volumes/$volumeId/issues'], ['files', 'Files', '/volumes/$volumeId/files'], ['history', 'History', '/volumes/$volumeId/history']] as const).map(([key, label, to]) => <Link key={key} to={to} params={{ volumeId: String(id) }} aria-current={tab === key ? 'page' : undefined}>{label}</Link>)}
+      </nav>
+      <section data-testid="volume-tab-panel">
+        {tab === 'issues' ? <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} /> : tab === 'files' ? <VolumeFilesPanel issues={volume.issues} generalFiles={volume.general_files} /> : tab === 'history' ? <VolumeHistoryPanel entries={volumeHistoryQuery.data ?? []} issues={volume.issues} loading={volumeHistoryQuery.isLoading} error={volumeHistoryQuery.error} /> : <p>{volume.description || 'No additional description is available.'}</p>}
+      </section>
 
       {/* ── Manual Search Dialog ────────────────────────────── */}
       <DialogFrame
@@ -1665,9 +1728,9 @@ export function VolumeDetailPage() {
               <div className={styles.coverGrid}>
                 {coverCandidates.map((candidate) => (
                   <div key={candidate.cover_id} className={styles.coverCard}>
-                    <img
+                    <AuthenticatedImage
                       className={styles.coverThumb}
-                      src={getCoverPreviewSrc(candidate)}
+                      endpoint={getCoverPreviewEndpoint(candidate)}
                       alt={`Cover for ${candidate.manga_title} vol. ${candidate.volume}`}
                       loading="lazy"
                     />

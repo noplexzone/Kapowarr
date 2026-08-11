@@ -67,7 +67,7 @@ function loadDashboard(api_key) {
 
 			const cover = document.createElement('img');
 			cover.className = 'dash-list-cover';
-			cover.src = `${url_base}/api/volumes/${v.id}/cover?api_key=${api_key}`;
+			setAuthenticatedImage(cover, `/volumes/${v.id}/cover`, api_key);
 			cover.alt = '';
 			cover.loading = 'lazy';
 			item.appendChild(cover);

@@ -90,6 +90,25 @@ class InvalidSettingModification(KapowarrException):
 
 
 # region Folders/Files
+class DeletionCapabilityUnavailable(KapowarrException):
+    "Descriptor-relative deletion is unavailable on this platform"
+
+    def __init__(self) -> None:
+        self.reason = (
+            'Safe descriptor-relative unmatched-file deletion is not '
+            'supported on this platform.'
+        )
+        LOGGER.error(self.reason)
+
+    @property
+    def api_response(self) -> ApiResponse:
+        return {
+            "code": 501,
+            "error": self.__class__.__name__,
+            "result": {"reason": self.reason}
+        }
+
+
 class FolderNotFound(KapowarrException):
     "Folder not found"
 

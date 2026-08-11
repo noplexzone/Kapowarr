@@ -9,3 +9,4 @@ export type { NoticeProps } from './notice';
 export { Progress } from './progress';
 export type { ProgressProps } from './progress';
 export { Show } from './show';
+export { BulkActionBar, SegmentedControl, SelectionControl, Skeleton } from './interaction';

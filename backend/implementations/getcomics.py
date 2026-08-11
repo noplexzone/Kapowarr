@@ -16,13 +16,15 @@ from aiohttp import ClientError
 from bencoding import bencode
 from bs4 import BeautifulSoup, Tag
 
-from backend.base.custom_exceptions import (DownloadLimitReached,
+from backend.base.custom_exceptions import (ClientNotWorking,
+                                            DownloadLimitReached,
                                             EnqueuingDownloadFailure,
+                                            ExternalClientNotFound,
                                             IssueNotFound, LinkBroken,
                                             LinkRateLimited)
 from backend.base.definitions import (GC_DOWNLOAD_SOURCE_TERMS,
                                       BlocklistReason, Constants, Download,
-                                      DownloadGroup,
+                                      DownloadGroup, DownloadType,
                                       EnqueuingDownloadFailureReason,
                                       GCDownloadSource, SearchResultData,
                                       SpecialVersion)
@@ -386,7 +388,10 @@ def _get_download_groups(
     """
     LOGGER.debug('Extracting download groups')
 
-    torrent_client_available = bool(ExternalClients.get_clients())
+    torrent_client_available = any(
+        c.get('download_type') == DownloadType.TORRENT.value
+        for c in ExternalClients.get_clients()
+    )
 
     body: Union[Tag, None] = soup.find(
         'section', {'class': 'post-contents'}
@@ -705,6 +710,13 @@ async def __purify_download_group(
                 # The group refers to issues that don't exist in the
                 # volume, and download is not forced.
                 return None, False
+
+            except (ClientNotWorking, ExternalClientNotFound):
+                # The link may require an unavailable or currently unusable
+                # external client (for example a torrent link when only Usenet
+                # is configured). Treat that candidate as unusable and keep
+                # trying the remaining links on the page.
+                continue
 
             except DownloadLimitReached:
                 # Link works but the download limit for the service is

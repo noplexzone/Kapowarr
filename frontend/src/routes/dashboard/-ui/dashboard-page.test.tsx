@@ -12,3 +12,15 @@ it('links section mismatch metrics to the records counted by stats', () => {
   expect(source).not.toContain('label="Unmatched files"');
   expect(source).not.toContain('to="/import"');
 });
+
+
+it('orders live operation sections before history on the dashboard', () => {
+  const activeSearches = source.indexOf('Active Searches');
+  const activeDownloads = source.indexOf('Active Downloads');
+  const recentActivity = source.indexOf('Recent Activity');
+  expect(activeSearches).toBeGreaterThan(-1);
+  expect(activeDownloads).toBeGreaterThan(activeSearches);
+  expect(recentActivity).toBeGreaterThan(activeDownloads);
+  expect(source).toContain('dashboardActiveSearchesQueryOptions');
+  expect(source).toContain('searchTaskMeta(entry)');
+});

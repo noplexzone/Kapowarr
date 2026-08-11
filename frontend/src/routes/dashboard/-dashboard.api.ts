@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { apiClient, readJson } from '@/app/api-client';
-import type { NavBadges, VolumeCard } from './-dashboard.types';
+import type { DashboardSearchTask, NavBadges, VolumeCard } from './-dashboard.types';
 
 const volumeStatsSchema = z.object({
   volumes: z.number().int().nonnegative(), monitored: z.number().int().nonnegative(), unmonitored: z.number().int().nonnegative(),
@@ -19,6 +19,35 @@ const volumePageSchema = z.object({
   page_size: z.number().int().positive(),
 });
 const queueEntrySchema = z.object({ id: z.number().int() }).passthrough();
+const searchProgressSchema = z.object({
+  processed_count: z.number().int().nonnegative().optional(),
+  total_count: z.number().int().nonnegative().nullable().optional(),
+  phase: z.string().nullable().optional(),
+  eta_seconds: z.number().int().nonnegative().nullable().optional(),
+  elapsed_seconds: z.number().int().nonnegative().nullable().optional(),
+  last_progress_at: z.number().nullable().optional(),
+  seconds_since_progress: z.number().int().nonnegative().nullable().optional(),
+}).passthrough();
+const activeSearchTaskSchema = z.object({
+  id: z.number().int(),
+  action: z.enum(['auto_search', 'auto_search_issue', 'search_all']),
+  display_title: z.string(),
+  status: z.string(),
+  message: z.string().nullable().optional(),
+  volume_id: z.number().int().nullable().optional(),
+  volume_title: z.string().nullable().optional(),
+  issue_id: z.number().int().nullable().optional(),
+  issue_number: z.number().nullable().optional(),
+  queued_at: z.number().nullable().optional(),
+  started_at: z.number().nullable().optional(),
+  progress: searchProgressSchema.optional(),
+});
+const systemTaskSchema = z.object({
+  id: z.number().int(),
+  action: z.string(),
+  display_title: z.string(),
+  status: z.string(),
+}).passthrough();
 
 interface RawHistoryEntry {
   web_title: string | null;
@@ -86,6 +115,20 @@ export function recentlyAddedQueryOptions(section: 'comic' | 'manga') {
         );
     },
     staleTime: 30_000,
+  });
+}
+
+export function dashboardActiveSearchesQueryOptions() {
+  return queryOptions({
+    queryKey: ['system', 'tasks', 'dashboard', 'active-searches'],
+    queryFn: async (): Promise<DashboardSearchTask[]> => {
+      const r = await apiClient.get('system/tasks', { timeout: 60_000 });
+      const tasks = await readJson(r, z.array(systemTaskSchema));
+      return tasks
+        .filter((task) => ['auto_search', 'auto_search_issue', 'search_all'].includes(task.action))
+        .map((task) => activeSearchTaskSchema.parse(task));
+    },
+    staleTime: 5_000,
   });
 }
 

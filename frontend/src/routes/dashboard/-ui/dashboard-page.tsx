@@ -7,6 +7,7 @@ import {
   comicStatsQueryOptions,
   mangaStatsQueryOptions,
   recentlyAddedQueryOptions,
+  dashboardActiveSearchesQueryOptions,
   dashboardQueueQueryOptions,
   dashboardHistoryQueryOptions,
 } from '../-dashboard.api';
@@ -18,19 +19,22 @@ export function DashboardPage() {
   const mangaStatsQuery = useQuery(mangaStatsQueryOptions());
   const comicRecentQuery = useQuery(recentlyAddedQueryOptions('comic'));
   const mangaRecentQuery = useQuery(recentlyAddedQueryOptions('manga'));
+  const activeSearchesQuery = useQuery(dashboardActiveSearchesQueryOptions());
   const queueQuery = useQuery(dashboardQueueQueryOptions());
   const historyQuery = useQuery(dashboardHistoryQueryOptions());
   const comicStats = comicStatsQuery.data;
   const mangaStats = mangaStatsQuery.data;
   const comicRecent = comicRecentQuery.data;
   const mangaRecent = mangaRecentQuery.data;
+  const activeSearchesData = activeSearchesQuery.data;
   const queueData = queueQuery.data;
   const historyData = historyQuery.data;
-  const hasError = [comicStatsQuery, mangaStatsQuery, comicRecentQuery, mangaRecentQuery, queueQuery, historyQuery]
+  const hasError = [comicStatsQuery, mangaStatsQuery, comicRecentQuery, mangaRecentQuery, activeSearchesQuery, queueQuery, historyQuery]
     .some((query) => query.isError);
-  const isRefreshing = [comicStatsQuery, mangaStatsQuery, comicRecentQuery, mangaRecentQuery, queueQuery, historyQuery]
+  const isRefreshing = [comicStatsQuery, mangaStatsQuery, comicRecentQuery, mangaRecentQuery, activeSearchesQuery, queueQuery, historyQuery]
     .some((query) => query.isFetching);
 
+  const activeSearches = Array.isArray(activeSearchesData) ? activeSearchesData : [];
   const queueItems = Array.isArray(queueData) ? queueData : [];
   const historyEntries = (historyData?.entries ?? []).slice(0, 6);
 
@@ -44,7 +48,7 @@ export function DashboardPage() {
           <Button
             variant="secondary"
             disabled={isRefreshing}
-            onClick={() => Promise.all([['volumes', 'stats'], ['volumes', 'recently-added'], ['activity', 'queue', 'dashboard'], ['activity', 'history', 'dashboard']].map(queryKey => queryClient.invalidateQueries({ queryKey })))}
+            onClick={() => Promise.all([['volumes', 'stats'], ['volumes', 'recently-added'], ['system', 'tasks', 'dashboard', 'active-searches'], ['activity', 'queue', 'dashboard'], ['activity', 'history', 'dashboard']].map(queryKey => queryClient.invalidateQueries({ queryKey })))}
           >
             {isRefreshing ? 'Refreshing…' : 'Refresh dashboard'}
           </Button>
@@ -69,8 +73,59 @@ export function DashboardPage() {
         <MetricCard label="Manga mismatches" value={mangaStats?.mismatches ?? null} to="/activity/mismatches" search={{ section: 'manga' }} />
       </div>
 
-      {/* ── Recent activity + Queue ── */}
-      <div className={styles.gridRow}>
+      {/* Active searches + Downloads + Recent activity */}
+      <div className={styles.activityGrid}>
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>Active Searches</h2>
+            <Link to="/system/tasks" className={styles.sectionLink}>
+              View all
+            </Link>
+          </div>
+          <Card className={styles.sectionCard}>
+            {activeSearches.length === 0 ? (
+              <div className={styles.empty}>No active searches</div>
+            ) : (
+              <div className={styles.listItems}>
+                {activeSearches.slice(0, 5).map((entry) => (
+                  <div key={entry.id} className={styles.listRow}>
+                    <div className={styles.rowMain}>
+                      <span className={styles.rowTitle}>{searchTaskTitle(entry)}</span>
+                      <span className={styles.rowMeta}>{searchTaskMeta(entry)}</span>
+                    </div>
+                    <Badge tone={entry.status === 'running' ? 'info' : 'neutral'}>{entry.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>Active Downloads</h2>
+            <Link to="/activity/queue" className={styles.sectionLink}>
+              View all
+            </Link>
+          </div>
+          <Card className={styles.sectionCard}>
+            {queueItems.length === 0 ? (
+              <div className={styles.empty}>Queue is empty</div>
+            ) : (
+              <div className={styles.listItems}>
+                {queueItems.slice(0, 5).map((entry: any) => (
+                  <div key={entry.id} className={styles.listRow}>
+                    <div className={styles.rowMain}>
+                      <span className={styles.rowTitle}>{entry.title}</span>
+                    </div>
+                    <Badge tone="info">{entry.status ?? 'downloading'}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </section>
+
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>Recent Activity</h2>
@@ -102,31 +157,6 @@ export function DashboardPage() {
                     >
                       {entry.state}
                     </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>Active Queue</h2>
-            <Link to="/activity/queue" className={styles.sectionLink}>
-              View all
-            </Link>
-          </div>
-          <Card className={styles.sectionCard}>
-            {queueItems.length === 0 ? (
-              <div className={styles.empty}>Queue is empty</div>
-            ) : (
-              <div className={styles.listItems}>
-                {queueItems.slice(0, 5).map((entry: any) => (
-                  <div key={entry.id} className={styles.listRow}>
-                    <div className={styles.rowMain}>
-                      <span className={styles.rowTitle}>{entry.title}</span>
-                    </div>
-                    <Badge tone="info">{entry.status ?? 'downloading'}</Badge>
                   </div>
                 ))}
               </div>
@@ -251,4 +281,16 @@ function MetricCard({ label, value, to, search }: { label: string; value: number
       </Card>
     </Link>
   );
+}
+
+function searchTaskTitle(entry: { display_title: string; volume_title?: string | null; issue_number?: number | null }) {
+  if (entry.volume_title && entry.issue_number != null) return `${entry.volume_title} #${entry.issue_number}`;
+  if (entry.volume_title) return entry.volume_title;
+  return entry.display_title;
+}
+
+function searchTaskMeta(entry: { message?: string | null; progress?: { processed_count?: number; total_count?: number | null } }) {
+  const progress = entry.progress;
+  if (progress?.total_count) return `${progress.processed_count ?? 0}/${progress.total_count} searched`;
+  return entry.message || 'Waiting to search';
 }

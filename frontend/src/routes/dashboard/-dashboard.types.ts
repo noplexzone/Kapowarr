@@ -32,3 +32,29 @@ export interface VolumeCard {
   issues_downloaded: number;
   section: 'comics' | 'manga';
 }
+
+
+export interface DashboardSearchProgress {
+  processed_count?: number;
+  total_count?: number | null;
+  phase?: string | null;
+  eta_seconds?: number | null;
+  elapsed_seconds?: number | null;
+  last_progress_at?: number | null;
+  seconds_since_progress?: number | null;
+}
+
+export interface DashboardSearchTask {
+  id: number;
+  action: 'auto_search' | 'auto_search_issue' | 'search_all';
+  display_title: string;
+  status: string;
+  message?: string | null;
+  volume_id?: number | null;
+  volume_title?: string | null;
+  issue_id?: number | null;
+  issue_number?: number | null;
+  queued_at?: number | null;
+  started_at?: number | null;
+  progress?: DashboardSearchProgress;
+}

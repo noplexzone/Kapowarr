@@ -38,6 +38,7 @@ export interface SystemTaskProgress {
   phase?: string | null;
   eta_seconds?: number | null;
   elapsed_seconds?: number | null;
+  current_file?: string | null;
 }
 
 export interface SystemTask {

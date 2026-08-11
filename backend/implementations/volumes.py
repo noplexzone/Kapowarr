@@ -1789,6 +1789,7 @@ def _refresh_mangadex_metadata_row(
     row: Mapping[str, Any],
     current_time: datetime,
     update_websocket: bool = False,
+    on_file_progress: Optional[Callable[[int, int, str], None]] = None,
 ) -> None:
     """Refresh one MangaDex-backed manga from MangaDex metadata."""
     mangadex_id = row.get('metadata_id')
@@ -1799,7 +1800,7 @@ def _refresh_mangadex_metadata_row(
             'Skipping MangaDex refresh for volume %s: missing metadata_id',
             volume_id,
         )
-        scan_files(volume_id, update_websocket=update_websocket)
+        scan_files(volume_id, update_websocket=update_websocket, on_file_progress=on_file_progress)
         return
 
     client = MangaDexClient()
@@ -1932,7 +1933,7 @@ def _refresh_mangadex_metadata_row(
         )
 
     commit()
-    scan_files(volume_id, update_websocket=update_websocket)
+    scan_files(volume_id, update_websocket=update_websocket, on_file_progress=on_file_progress)
 
 
 def refresh_and_scan(
@@ -1941,6 +1942,7 @@ def refresh_and_scan(
     allow_skipping: bool = True,
     on_progress: Optional[Callable[[int, int, str], None]] = None,
     stop_fn: Optional[Callable[[], bool]] = None,
+    on_file_progress: Optional[Callable[[int, int, str], None]] = None,
 ) -> None:
     """Refresh and scan one or more volumes, which means to pull metadata from
     the online database and to scan for files.
@@ -1964,6 +1966,11 @@ def refresh_and_scan(
             Called with (processed_count, total_count, phase) at progress
             checkpoints when processing multiple volumes. Phase is one of
             'fetching_metadata' or 'scanning_files'.
+            Defaults to None.
+
+        on_file_progress (Optional[Callable[[int, int, str], None]], optional):
+            Called during a single-volume file scan with the 1-based file index,
+            total file count, and filepath. Used for live scan status messages.
             Defaults to None.
     """
     def cancelled() -> bool:
@@ -1996,6 +2003,7 @@ def refresh_and_scan(
                 volume_row,
                 current_time,
                 update_websocket=update_websocket,
+                on_file_progress=on_file_progress,
             )
             return
 
@@ -2056,7 +2064,7 @@ def refresh_and_scan(
     }
     if not cv_to_id_fetch:
         if volume_id:
-            scan_files(volume_id, update_websocket)
+            scan_files(volume_id, update_websocket=update_websocket, on_file_progress=on_file_progress)
         return
 
     if on_progress and not volume_id:
@@ -2244,7 +2252,7 @@ def refresh_and_scan(
     if cancelled():
         return
     if volume_id:
-        scan_files(volume_id, update_websocket=update_websocket)
+        scan_files(volume_id, update_websocket=update_websocket, on_file_progress=on_file_progress)
 
     else:
         v_ids = [

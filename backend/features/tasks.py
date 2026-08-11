@@ -379,6 +379,13 @@ class RefreshAndScanVolume(Task):
     display_title = 'Refresh And Scan'
     category = ''
 
+    # In-progress observability (readable while task is running)
+    processed_count: int = 0
+    total_count: Union[int, None] = None
+    phase: Union[str, None] = None
+    current_file: Union[str, None] = None
+    last_progress_at: Union[float, None] = None
+
     @property
     def volume_id(self) -> int:
         return self._volume_id
@@ -402,11 +409,29 @@ class RefreshAndScanVolume(Task):
 
     def run(self) -> None:
         volume_title = self._new_title or Volume(self._volume_id).vd.title
+        self.processed_count = 0
+        self.total_count = None
+        self.phase = 'refreshing_metadata'
+        self.current_file = None
+        self.last_progress_at = time()
         self.message = f'Updating info on {volume_title}'
         _emit_task_event(TaskStatusEvent(self.message))
 
+        def _on_file_progress(index: int, total: int, filepath: str) -> None:
+            self.processed_count = index
+            self.total_count = total
+            self.phase = 'scanning_files'
+            self.current_file = basename(filepath)
+            self.last_progress_at = time()
+            self.message = f'Scanning {index}/{total} {volume_title}'
+            _emit_task_event(TaskStatusEvent(self.message))
+
         try:
-            refresh_and_scan(self._volume_id, update_websocket=True)
+            refresh_and_scan(
+                self._volume_id,
+                update_websocket=True,
+                on_file_progress=_on_file_progress,
+            )
         except InvalidComicVineApiKey:
             pass
 
@@ -1490,6 +1515,19 @@ class TaskHandler(metaclass=Singleton):
             result['progress'] = {
                 'processed_count': getattr(t, 'processed_count', 0),
                 'total_count': getattr(t, 'total_count', None),
+                'last_progress_at': last_progress_at,
+                'seconds_since_progress': (
+                    round(time() - last_progress_at)
+                    if last_progress_at is not None else None
+                ),
+            }
+        elif isinstance(t, RefreshAndScanVolume):
+            last_progress_at = getattr(t, 'last_progress_at', None)
+            result['progress'] = {
+                'processed_count': getattr(t, 'processed_count', 0),
+                'total_count': getattr(t, 'total_count', None),
+                'phase': getattr(t, 'phase', None),
+                'current_file': getattr(t, 'current_file', None),
                 'last_progress_at': last_progress_at,
                 'seconds_since_progress': (
                     round(time() - last_progress_at)

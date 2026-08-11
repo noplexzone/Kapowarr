@@ -6,7 +6,7 @@ The matching of files to issues in a volume
 
 from collections import Counter
 from os.path import basename, isdir
-from typing import Dict, List, Set, Tuple, Union
+from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 from backend.base.definitions import (FileConstants, FileMatch,
                                       GeneralFileType, SpecialVersion)
@@ -39,7 +39,8 @@ def scan_files(
     volume_id: int,
     filepath_filter: List[str] = [],
     del_unmatched_files: bool = True,
-    update_websocket: bool = False
+    update_websocket: bool = False,
+    on_file_progress: Optional[Callable[[int, int, str], None]] = None,
 ) -> None:
     """Scan inside the volume folder for files and map them to issues.
 
@@ -57,6 +58,11 @@ def scan_files(
         update_websocket (bool, optional): Send websocket messages on changes
             about the download status of the issues.
             Defaults to False.
+
+        on_file_progress (Optional[Callable[[int, int, str], None]], optional):
+            Called before each candidate file is parsed with the 1-based file
+            index, total candidate count, and filepath. This is for live task
+            observability only; matching state is still committed at the end.
     """
     from backend.implementations.volumes import Volume
 
@@ -118,7 +124,12 @@ def scan_files(
         folder=volume_data.folder,
         ext=FileConstants.SCANNABLE_EXTENSIONS
     )
-    for file in filtered_iter(folder_contents, set(filepath_filter)):
+    files_to_scan = list(filtered_iter(folder_contents, set(filepath_filter)))
+    total_files = len(files_to_scan)
+    for file_index, file in enumerate(files_to_scan, start=1):
+        if on_file_progress:
+            on_file_progress(file_index, total_files, file)
+
         if file in manually_matched_files:
             # File already manually matched to issue(s)
             manually_matched_files_found.add(

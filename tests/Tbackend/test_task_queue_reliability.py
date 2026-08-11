@@ -153,6 +153,74 @@ class TaskQueueReliabilityTests(unittest.TestCase):
 
         self.assertEqual(calls, [1])
 
+
+    def test_refresh_and_scan_volume_exposes_file_scan_progress(self):
+        captured = {}
+
+        def fake_refresh_and_scan(volume_id, **kwargs):
+            captured['volume_id'] = volume_id
+            captured.update(kwargs)
+            kwargs['on_file_progress'](4, 168, '/content/Strange Tales (1951)/Strange Tales 004.cbz')
+
+        class FakeVolumeData:
+            title = 'Strange Tales'
+
+        class FakeVolume:
+            def __init__(self, volume_id):
+                self.vd = FakeVolumeData()
+
+        with patch.object(tasks, 'refresh_and_scan', fake_refresh_and_scan), \
+                patch.object(tasks, 'Volume', FakeVolume):
+            task = tasks.RefreshAndScanVolume(1141)
+            task.run()
+
+        self.assertEqual(captured['volume_id'], 1141)
+        self.assertTrue(captured['update_websocket'])
+        self.assertEqual(task.processed_count, 4)
+        self.assertEqual(task.total_count, 168)
+        self.assertEqual(task.phase, 'scanning_files')
+        self.assertEqual(task.current_file, 'Strange Tales 004.cbz')
+        self.assertEqual(task.message, 'Scanning 4/168 Strange Tales')
+
+    def test_format_entry_exposes_refresh_and_scan_progress(self):
+        class FakeThread:
+            def is_alive(self):
+                return True
+
+        task = tasks.RefreshAndScanVolume(1141, new_title='Strange Tales')
+        task.processed_count = 7
+        task.total_count = 168
+        task.phase = 'scanning_files'
+        task.current_file = 'Strange Tales 007.cbz'
+        task.last_progress_at = 1000
+        entry = {
+            'task': task,
+            'id': 9,
+            'status': 'running',
+            'queued_at': 900,
+            'started_at': 950,
+            'thread': FakeThread(),
+        }
+
+        class FakeCursor:
+            def execute(self, *args, **kwargs):
+                return self
+
+            def fetchone(self):
+                return {'title': 'Strange Tales'}
+
+        with patch.object(tasks, 'get_db', lambda **kwargs: FakeCursor()), \
+                patch.object(tasks, 'time', lambda: 1012):
+            formatted = self.handler._TaskHandler__format_entry(entry)
+
+        self.assertEqual(formatted['message'], '')
+        self.assertEqual(formatted['volume_title'], 'Strange Tales')
+        self.assertEqual(formatted['progress']['processed_count'], 7)
+        self.assertEqual(formatted['progress']['total_count'], 168)
+        self.assertEqual(formatted['progress']['phase'], 'scanning_files')
+        self.assertEqual(formatted['progress']['current_file'], 'Strange Tales 007.cbz')
+        self.assertEqual(formatted['progress']['seconds_since_progress'], 12)
+
     def test_bulk_scan_disables_per_volume_unmatched_cleanup(self):
         from backend.implementations import volumes
 

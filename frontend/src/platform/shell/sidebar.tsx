@@ -1,7 +1,10 @@
 import { runtimeConfig } from '@/app/runtime-config';
+import { useCallback } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { systemAboutQueryOptions } from '@/routes/system/-system.api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { systemAboutQueryOptions, systemTasksQueryOptions, SYSTEM_TASKS_KEY } from '@/routes/system/-system.api';
+import type { SystemTask } from '@/routes/system/-system.types';
+import { useSocketEvent } from '@/platform/socketio/socket';
 import { NavIcon } from './nav-icons';
 import { getActivePrimary, getStoredLibrarySearch, PRIMARY_NAV } from './navigation';
 import styles from './sidebar.module.css';
@@ -93,9 +96,67 @@ export function Sidebar() {
         })}
       </nav>
       <footer className={styles.footer}>
+        <LiveTaskStatus />
         <span className={styles.footerVersion}>Kapowarr {about?.version ?? '…'}</span>
         <Link to="/system/status">System status</Link>
       </footer>
     </aside>
   );
+}
+
+function LiveTaskStatus() {
+  const queryClient = useQueryClient();
+  const { data: tasks } = useQuery({
+    ...systemTasksQueryOptions(),
+    refetchInterval: 5000,
+  });
+  const refreshTasks = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: SYSTEM_TASKS_KEY });
+  }, [queryClient]);
+
+  useSocketEvent('task_added', refreshTasks);
+  useSocketEvent('task_status', refreshTasks);
+  useSocketEvent('task_ended', refreshTasks);
+
+  const activeTask = tasks?.find((task) => task.status === 'running') ?? tasks?.[0];
+  if (!activeTask) return null;
+
+  const statusText = formatTaskStatus(activeTask);
+  const progress = activeTask.progress;
+  const total = progress?.total_count ?? null;
+  const processed = progress?.processed_count ?? null;
+  const percent = total && processed !== null
+    ? Math.max(0, Math.min(100, Math.round((processed / total) * 100)))
+    : null;
+
+  return (
+    <Link
+      to="/system/status"
+      className={styles.liveTask}
+      aria-label={`Current task: ${statusText}`}
+      title={activeTask.progress?.current_file ?? activeTask.message ?? statusText}
+    >
+      <span className={styles.liveTaskLabel}>Now</span>
+      <span className={styles.liveTaskText}>{statusText}</span>
+      {percent !== null && (
+        <span className={styles.liveTaskTrack} aria-hidden="true">
+          <span className={styles.liveTaskBar} style={{ width: `${percent}%` }} />
+        </span>
+      )}
+    </Link>
+  );
+}
+
+function formatTaskStatus(task: SystemTask): string {
+  if (task.action === 'refresh_and_scan' && task.progress?.phase === 'scanning_files') {
+    const current = task.progress.processed_count;
+    const total = task.progress.total_count;
+    const title = task.volume_title ?? 'volume';
+    if (total) return `Scanning ${current}/${total} ${title}`;
+    return `Scanning ${title}`;
+  }
+
+  if (task.message) return task.message;
+  if (task.volume_title) return `${task.display_title} — ${task.volume_title}`;
+  return task.display_title;
 }

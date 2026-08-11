@@ -5,21 +5,11 @@ import { Badge, Button } from '@/components/primitives';
 import {
   systemTasksQueryOptions,
   SYSTEM_TASKS_KEY,
-  systemTaskHistoryQueryOptions,
   systemTaskPlanningQueryOptions,
-  SYSTEM_TASKS_HISTORY_KEY,
   cancelTask,
-  clearTaskHistory,
   runTask,
 } from '../-system.api';
-import type {
-  SystemTask,
-  TaskHistoryEntry,
-  TaskDetails,
-  PerIssueEntry,
-  DownloadEntry,
-  DownloadResultEntry,
-} from '../-system.types';
+import type { SystemTask } from '../-system.types';
 import styles from './system-tasks-page.module.css';
 
 // ── Helpers ──
@@ -31,19 +21,6 @@ function formatUnixTime(ts: number | null | undefined): string {
   } catch {
     return '—';
   }
-}
-
-function normalizeIssueNumber(n: number | [number, number] | null | undefined): string {
-  if (n == null) return '—';
-  if (Array.isArray(n)) return `#${String(n[0])}–${String(n[1])}`;
-  const s = String(n);
-  return `#${s.endsWith('.0') ? s.slice(0, -2) : s}`;
-}
-
-function issueSortValue(n: number | [number, number] | null | undefined): number {
-  if (n == null) return Infinity;
-  if (Array.isArray(n)) return n[0];
-  return n;
 }
 
 function formatEta(etaSeconds: number | null | undefined): string {
@@ -89,144 +66,9 @@ function statusClass(status: string): string {
   }
 }
 
-function hasDetails(details: TaskDetails | undefined | null): boolean {
-  if (!details) return false;
-  if ('results' in details && Array.isArray(details.results)) return details.results.length > 0;
-  if ('per_issue' in details && Array.isArray(details.per_issue))
-    return details.per_issue.length > 0;
-  if ('downloads' in details && Array.isArray(details.downloads))
-    return details.downloads.length > 0;
-  return false;
-}
-
-// ── Detail sub-components ──
-
-function PerIssueTable({ entries }: { entries: PerIssueEntry[] }) {
-  const sorted = [...entries].sort(
-    (a, b) => issueSortValue(a.issue_number) - issueSortValue(b.issue_number),
-  );
-  const anyMatched = sorted.some(e => e.matched);
-
-  if (sorted.length === 0) return null;
-
-  return (
-    <>
-      <div className={styles.detailSectionHeading}>Per-Issue Results</div>
-      <table className={styles.detailTable}>
-        <thead>
-          <tr>
-            <th>Issue</th>
-            <th>Matched</th>
-            {anyMatched && <th>Title</th>}
-            {anyMatched && <th>Source</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((e, i) => (
-            <tr key={i}>
-              <td>{normalizeIssueNumber(e.issue_number)}</td>
-              <td className={e.matched ? styles.matched : styles.unmatched}>
-                {e.matched ? '✓' : '✗'}
-              </td>
-              {anyMatched && <td>{e.matched ? e.display_title ?? '' : ''}</td>}
-              {anyMatched && <td>{e.matched ? e.source ?? '' : ''}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
-}
-
-function DownloadTable({ entries }: { entries: DownloadEntry[] }) {
-  if (entries.length === 0) return null;
-  return (
-    <>
-      <div className={styles.detailSectionHeading}>Downloads</div>
-      <table className={styles.detailTable}>
-        <thead>
-          <tr>
-            <th>Title</th>
-            <th>Source</th>
-            <th>Issue</th>
-            <th>Filename</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((e, i) => (
-            <tr key={i}>
-              <td>{e.display_title}</td>
-              <td>{e.source}</td>
-              <td>{normalizeIssueNumber(e.issue_number)}</td>
-              <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{e.filename}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
-}
-
-function DownloadResultTable({ results }: { results: DownloadResultEntry[] }) {
-  if (results.length === 0) return null;
-  const anyFailed = results.some(r => !r.success);
-  return (
-    <>
-      <div className={styles.detailSectionHeading}>Results</div>
-      <table className={styles.detailTable}>
-        <thead>
-          <tr>
-            <th>Title</th>
-            <th>Status</th>
-            {anyFailed && <th>Reason</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((r, i) => (
-            <tr key={i}>
-              <td>{r.title}</td>
-              <td className={r.success ? styles.matched : styles.unmatched}>
-                {r.success ? '✓' : '✗'}
-              </td>
-              {anyFailed && <td>{r.failure_reason ?? ''}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
-}
-
-function TaskDetailsView({ details }: { details: TaskDetails }) {
-  // Download result entries have a 'results' array
-  if ('results' in details) {
-    return <DownloadResultTable results={details.results} />;
-  }
-  // Search task entries
-  const perIssue = details.per_issue ?? [];
-  const downloads = details.downloads ?? [];
-  // Also include downloads as matched entries in the per-issue table for backward compat
-  const mergedPerIssue: PerIssueEntry[] = [
-    ...perIssue,
-    ...downloads.map(d => ({
-      issue_number: d.issue_number,
-      matched: true,
-      display_title: d.display_title,
-      source: d.source,
-    })),
-  ];
-
-  return (
-    <>
-      {mergedPerIssue.length > 0 && <PerIssueTable entries={mergedPerIssue} />}
-      {downloads.length > 0 && <DownloadTable entries={downloads} />}
-    </>
-  );
-}
-
 // ── Expandable details renderer ──
 
-function DetailRowContent({ item }: { item: SystemTask | TaskHistoryEntry }) {
+function DetailRowContent({ item }: { item: SystemTask }) {
   // Use a discriminated check based on 'id' (SystemTask has it, TaskHistoryEntry doesn't)
   if ('id' in item) {
     const task = item as SystemTask;
@@ -259,16 +101,6 @@ function DetailRowContent({ item }: { item: SystemTask | TaskHistoryEntry }) {
             )}
           </div>
         )}
-      </div>
-    );
-  }
-
-  // History entries: show details
-  const history = item as TaskHistoryEntry;
-  if (history.details && hasDetails(history.details)) {
-    return (
-      <div className={styles.detailWrap}>
-        <TaskDetailsView details={history.details} />
       </div>
     );
   }
@@ -433,168 +265,6 @@ function ActiveTasksSection({
   );
 }
 
-// ── Section B: Task History ──
-
-const PAGE_SIZE = 15;
-
-function HistorySection() {
-  const [page, setPage] = useState(0);
-  const queryClient = useQueryClient();
-
-  const { data: history = [] } = useQuery({
-    ...systemTaskHistoryQueryOptions(page),
-    refetchInterval: 30_000,
-  });
-
-  const clearMutation = useMutation({
-    mutationFn: clearTaskHistory,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: SYSTEM_TASKS_HISTORY_KEY });
-      setPage(0);
-    },
-  });
-
-  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
-
-  if (history.length === 0 && page === 0) {
-    return null; // Don't show the section if there's no history
-  }
-
-  return (
-    <section>
-      <div className={styles.sectionHeader}>
-        <span>Task History</span>
-        <div className={styles.sectionHeaderActions}>
-          <Button
-            variant="ghost"
-            onClick={() => clearMutation.mutate()}
-            disabled={clearMutation.isPending}
-          >
-            Clear History
-          </Button>
-        </div>
-      </div>
-
-      {history.length === 0 ? (
-        <div className={styles.empty}>No history entries</div>
-      ) : (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th style={{ width: '2rem' }}></th>
-                <th>Task</th>
-                <th>Volume / Issue</th>
-                <th>Run At</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                // Flatten rows: main + optional detail row
-                const histRows: Array<{
-                  type: 'main' | 'detail';
-                  entry: TaskHistoryEntry;
-                  key: string;
-                }> = [];
-                for (let i = 0; i < history.length; i++) {
-                  const entry = history[i];
-                  const key = `${entry.task_name}-${entry.run_at}-${i}`;
-                  histRows.push({ type: 'main', entry, key });
-                  if (
-                    expandedHistoryId === key &&
-                    hasDetails(entry.details)
-                  ) {
-                    histRows.push({ type: 'detail', entry, key: `detail-${key}` });
-                  }
-                }
-                return histRows.map((row) => {
-                  const { entry, key } = row;
-
-                  if (row.type === 'main') {
-                    const isExpanded = expandedHistoryId === key;
-                    return (
-                      <tr key={key}>
-                        <td>
-                          {hasDetails(entry.details) && (
-                            <button
-                              className={`${styles.expandBtn} ${isExpanded ? styles.expanded : ''}`}
-                              onClick={() =>
-                                setExpandedHistoryId(isExpanded ? null : key)
-                              }
-                              title="Show details"
-                            >
-                              ▶
-                            </button>
-                          )}
-                        </td>
-                        <td>{entry.display_title}</td>
-                        <td>
-                          {entry.volume_title && entry.volume_id != null ? (
-                            <Link
-                              to="/volumes/$volumeId"
-                              params={{ volumeId: String(entry.volume_id) }}
-                              className={styles.volLink}
-                            >
-                              {entry.volume_title}
-                            </Link>
-                          ) : entry.volume_title ? (
-                            <span className={styles.volLink}>
-                              {entry.volume_title}
-                            </span>
-                          ) : null}
-                          {entry.issue_number != null && (
-                            <span className={styles.issueNum}>
-                              {' '}#{entry.issue_number}
-                            </span>
-                          )}
-                          {!entry.volume_title &&
-                            entry.issue_number == null && (
-                              <span style={{ color: 'var(--text-dim)' }}>
-                                —
-                              </span>
-                            )}
-                        </td>
-                        <td
-                          className={`${styles.timeCell} ${styles.timeCellDim}`}
-                        >
-                          {formatUnixTime(entry.run_at)}
-                        </td>
-                        <td></td>
-                      </tr>
-                    );
-                  }
-
-                  return (
-                    <tr key={key} className={styles.detailRow}>
-                      <td colSpan={5}>
-                        <DetailRowContent item={entry} />
-                      </td>
-                    </tr>
-                  );
-                });
-              })()}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <div className={styles.pagination}>
-        <button disabled={page === 0} onClick={() => setPage(p => Math.max(0, p - 1))}>
-          ← Prev
-        </button>
-        <span className={styles.pageIndicator}>Page {page + 1}</span>
-        <button
-          disabled={history.length < PAGE_SIZE}
-          onClick={() => setPage(p => p + 1)}
-        >
-          Next →
-        </button>
-      </div>
-    </section>
-  );
-}
-
 // ── Section C: Scheduled Tasks ──
 
 function ScheduledSection() {
@@ -698,7 +368,6 @@ export function SystemTasksPage() {
           cancelMutation.isPending ? cancelMutation.variables ?? null : null
         }
       />
-      <HistorySection />
       <ScheduledSection />
     </div>
   );

@@ -779,6 +779,7 @@ def manual_search(
     issue_id: Union[int, None] = None,
     custom_query: Union[str, None] = None,
     _retain_suwayomi_chapters: bool = False,
+    _stats: Union[dict, None] = None,
 ) -> List[MatchedSearchResultData]:
     """Do a manual search for a volume or issue.
 
@@ -862,6 +863,12 @@ def manual_search(
                 )
                 for format in formats
             )
+
+        if _stats is not None:
+            searched_queries = _stats.setdefault('queries', [])
+            for query in queries:
+                if query and query not in searched_queries:
+                    searched_queries.append(query)
 
         search_results = run(search_multiple_queries(
             *queries,
@@ -1188,6 +1195,7 @@ def auto_search(
         volume_id,
         issue_id,
         _retain_suwayomi_chapters=True,
+        _stats=_stats,
     )
     search_results = [r for r in all_results if r['match']]
     if _stats is not None:

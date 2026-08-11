@@ -18,6 +18,7 @@ const detailsSchema = z.object({
   error: z.string().optional(),
   message: z.string().optional(),
   total_found: z.number().int().nonnegative().optional(),
+  queries: z.array(z.string()).optional(),
   per_issue: z.array(issueOutcomeSchema).optional(),
   downloads: z.array(z.unknown()).optional(),
   results: z.array(z.object({ success: z.boolean().optional() }).passthrough()).optional(),
@@ -25,6 +26,7 @@ const detailsSchema = z.object({
     success: z.boolean().optional(),
     volume_title: z.string().nullable().optional(),
     total_found: z.number().int().nonnegative().optional(),
+    queries: z.array(z.string()).optional(),
     download_count: z.number().int().nonnegative().optional(),
     per_issue: z.array(issueOutcomeSchema).optional(),
     message: z.string().nullable().optional(),
@@ -90,6 +92,7 @@ function toSearchHistoryEntry(raw: RawTaskHistoryEntry): SearchHistoryEntry {
   const totalFound = details.total_found
     ?? perVolume.reduce((count, volume) => count + (volume.total_found ?? 0), 0)
     ?? 0;
+  const queries = collectQueries(details.queries, perVolume.map((volume) => volume.queries));
   const failedVolume = perVolume.find((volume) => volume.success === false);
   const failed = details.success === false || Boolean(details.error) || Boolean(failedVolume);
   const outcome = getOutcome(failed, downloadsCount, matchedCount, totalFound);
@@ -106,6 +109,7 @@ function toSearchHistoryEntry(raw: RawTaskHistoryEntry): SearchHistoryEntry {
     issue_count: issueCount,
     downloads_count: downloadsCount,
     message: details.message || failedVolume?.message || summaryText(outcome, totalFound, matchedCount, downloadsCount, issueCount),
+    queries,
     issues: issues.slice(0, 6).map((issue) => ({
       issue_number: String(issue.issue_number ?? '—'),
       matched: Boolean(issue.matched),
@@ -149,4 +153,18 @@ function summaryText(outcome: SearchOutcome, totalFound: number, matches: number
   if (outcome === 'failed') return 'Search failed before completion';
   if (issues > 0) return `${issues} issue${issues === 1 ? '' : 's'} checked; no results found`;
   return 'No results found';
+}
+
+
+function collectQueries(primary: string[] | undefined, nested: Array<string[] | undefined>): string[] {
+  const seen = new Set<string>();
+  const queries: string[] = [];
+  for (const query of [...(primary ?? []), ...nested.flatMap((items) => items ?? [])]) {
+    const trimmed = query.trim();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      queries.push(trimmed);
+    }
+  }
+  return queries;
 }

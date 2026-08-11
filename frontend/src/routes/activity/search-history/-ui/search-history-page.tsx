@@ -48,6 +48,19 @@ export function SearchHistoryPage({ offset }: SearchHistoryPageProps) {
                 <Badge tone={outcomeTone(entry.outcome)}>{entry.outcome_label}</Badge>
               </div>
               <p className={styles.summary}>{entry.message}</p>
+              {entry.queries.length > 0 && (
+                <div className={styles.queryBlock}>
+                  <span className={styles.queryLabel}>Query</span>
+                  <div className={styles.queryList}>
+                    {entry.queries.slice(0, 4).map((query) => (
+                      <code key={query} className={styles.queryChip}>{query}</code>
+                    ))}
+                    {entry.queries.length > 4 && (
+                      <span className={styles.moreQueries}>+{entry.queries.length - 4} more</span>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className={styles.stats}>
                 <span><strong>{entry.total_found}</strong> found</span>
                 <span><strong>{entry.matched_count}</strong> matched</span>

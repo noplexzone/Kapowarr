@@ -78,7 +78,7 @@ export function DashboardPage() {
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>Active Searches</h2>
-            <Link to="/system/tasks" className={styles.sectionLink}>
+            <Link to="/activity/search-history" search={{ page: 1 }} className={styles.sectionLink}>
               View all
             </Link>
           </div>

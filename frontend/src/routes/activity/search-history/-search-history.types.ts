@@ -20,6 +20,7 @@ export interface SearchHistoryEntry {
   issue_count: number;
   downloads_count: number;
   message: string;
+  queries: string[];
   issues: SearchHistoryIssueOutcome[];
 }
 

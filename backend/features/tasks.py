@@ -121,13 +121,14 @@ class AutoSearchIssue(Task):
         self.message = f'Searching for {volume_title} #{issue_number}'
         _emit_task_event(TaskStatusEvent(self.message, notification=True))
 
-        stats: dict = {'total_found': 0, 'per_issue': []}
+        stats: dict = {'total_found': 0, 'per_issue': [], 'queries': []}
         results = auto_search(self._volume_id, self._issue_id, _stats=stats)
         # Per-issue search: download info is embedded in per_issue entries; no downloads array needed
         self.details = {
             'per_issue': stats['per_issue'],
             'downloads': [],
             'total_found': stats.get('total_found', 0),
+            'queries': stats.get('queries', []),
         }
         if results:
             _emit_task_event(TaskStatusEvent(
@@ -304,7 +305,7 @@ class AutoSearchVolume(Task):
             self.message = f'Searching issue {idx + 1}/{total} for {volume_title}'
             _emit_task_event(TaskStatusEvent(self.message))
 
-        stats: dict = {'total_found': 0, 'per_issue': []}
+        stats: dict = {'total_found': 0, 'per_issue': [], 'queries': []}
         results = auto_search(self._volume_id, _stats=stats, _status_cb=_progress)
         # Volume-level (pack) downloads have no per_issue entry; per-issue ones do.
         matched_per_issue = sum(1 for e in stats['per_issue'] if e.get('matched'))
@@ -332,6 +333,7 @@ class AutoSearchVolume(Task):
             'per_issue': stats['per_issue'],
             'downloads': [_dl_entry(r) for r in results[:n_volume_level]],
             'total_found': stats.get('total_found', 0),
+            'queries': stats.get('queries', []),
         }
         if results:
             n = len(results)
@@ -717,7 +719,7 @@ class SearchAll(Task):
                 f'({self.processed_count + 1}/{self.total_count})'
             )
             _emit_task_event(TaskStatusEvent(self.message))
-            stats: dict = {'total_found': 0, 'per_issue': []}
+            stats: dict = {'total_found': 0, 'per_issue': [], 'queries': []}
             try:
                 # Get search results and download them. Keep going when one
                 # volume fails so a single bad source/query cannot abort the
@@ -737,6 +739,7 @@ class SearchAll(Task):
                     'error': type(exc).__name__,
                     'message': str(exc),
                     'total_found': stats.get('total_found', 0),
+                    'queries': stats.get('queries', []),
                     'per_issue': stats.get('per_issue', []),
                 })
                 self.processed_count += 1
@@ -748,6 +751,7 @@ class SearchAll(Task):
                 'volume_title': volume_title,
                 'success': True,
                 'total_found': stats.get('total_found', 0),
+                'queries': stats.get('queries', []),
                 'download_count': len(results or []),
                 'per_issue': stats.get('per_issue', []),
             })

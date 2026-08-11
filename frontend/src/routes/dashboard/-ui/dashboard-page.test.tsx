@@ -24,3 +24,12 @@ it('orders live operation sections before history on the dashboard', () => {
   expect(source).toContain('dashboardActiveSearchesQueryOptions');
   expect(source).toContain('searchTaskMeta(entry)');
 });
+
+
+it('links active searches view-all to search history outcomes', () => {
+  const activeSearches = source.indexOf('Active Searches');
+  const activeDownloads = source.indexOf('Active Downloads');
+  const activeSearchSection = source.slice(activeSearches, activeDownloads);
+  expect(activeSearchSection).toContain('to="/activity/search-history"');
+  expect(activeSearchSection).not.toContain('to="/system/tasks"');
+});

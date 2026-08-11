@@ -78,6 +78,44 @@
   margin: 0;
 }
 
+
+.queryBlock {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.queryLabel {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.queryList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.queryChip {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.82rem;
+  padding: 0.2rem 0.45rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.moreQueries {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
 .stats {
   display: flex;
   flex-wrap: wrap;

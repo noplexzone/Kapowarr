@@ -68,13 +68,17 @@ class ManualSearchCustomQueryTest(unittest.TestCase):
                  'backend.features.search.check_search_result_match',
                  return_value={'match': False, 'match_issue': 'volume mismatch'},
              ):
-            results = manual_search(1, custom_query='  Teen Titans 2003  ')
+            stats = {'total_found': 0, 'per_issue': [], 'queries': []}
+            results = manual_search(
+                1, custom_query='  Teen Titans 2003  ', _stats=stats
+            )
 
         self.assertEqual(
             searched_queries,
             [(('Teen Titans 2003',), volume_data, True)],
         )
         self.assertEqual(results[0]['link'], raw_result['link'])
+        self.assertEqual(stats['queries'], ['Teen Titans 2003'])
 
 
     def test_whitespace_query_retains_generated_search_behavior(self):

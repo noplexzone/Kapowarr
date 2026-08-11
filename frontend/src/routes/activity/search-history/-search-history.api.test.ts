@@ -42,6 +42,7 @@ it('classifies found-but-unmatched searches as no matches', async () => {
       issue_number: null,
       details: {
         total_found: 8,
+        queries: ['Saga (2012)', 'Saga Volume 1'],
         per_issue: [{ issue_number: '1', matched: false, display_title: 'Bad candidate', source: 'GetComics' }],
         downloads: [],
       },
@@ -56,4 +57,34 @@ it('classifies found-but-unmatched searches as no matches', async () => {
   expect(result.entries[0]?.outcome).toBe('no_match');
   expect(result.entries[0]?.outcome_label).toBe('No matches');
   expect(result.entries[0]?.message).toBe('8 results found, but none matched');
+  expect(result.entries[0]?.queries).toEqual(['Saga (2012)', 'Saga Volume 1']);
+});
+
+
+it('deduplicates query strings from search-all volume details', async () => {
+  vi.mocked(apiClient.get).mockResolvedValue({} as never);
+  vi.mocked(readJson).mockResolvedValue({
+    entries: [{
+      task_name: 'search_all',
+      display_title: 'Search All',
+      run_at: 100,
+      volume_id: null,
+      volume_title: null,
+      issue_id: null,
+      issue_number: null,
+      details: {
+        per_volume: [
+          { success: true, volume_title: 'A', total_found: 0, download_count: 0, queries: ['A (2024)', 'A'] },
+          { success: true, volume_title: 'B', total_found: 0, download_count: 0, queries: ['A', 'B'] },
+        ],
+      },
+    }],
+    total: 1,
+    offset: 0,
+    page_size: 15,
+  });
+
+  const result = await searchHistoryQueryOptions(0).queryFn!({} as never);
+
+  expect(result.entries[0]?.queries).toEqual(['A (2024)', 'A', 'B']);
 });

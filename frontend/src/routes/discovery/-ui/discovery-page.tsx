@@ -4,14 +4,15 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
 import { AddModal } from '@/routes/add/-ui/add-page';
-import { exactVolumeQueryOptions, rootFoldersQueryOptions } from '@/routes/add/-add.api';
+import { exactVolumeQueryOptions, rootFoldersQueryOptions, searchVolumesQueryOptions } from '@/routes/add/-add.api';
 import { VOLUMES_KEY } from '@/routes/comics/-comics.api';
 import {
   discoveryVolumeQueryOptions,
   storyArcsQueryOptions,
   storyArcDetailQueryOptions,
 } from '../-discovery.api';
-import { getDiscoveryAddSelection } from '../-discovery.types';
+import { filterDiscoveryVolumes, getDiscoveryAddSelection } from '../-discovery.types';
+import type { SearchResult } from '@/routes/add/-add.types';
 import type { DiscoveryVolume, StoryArc, DiscoveryType, DiscoverySection } from '../-discovery.types';
 import styles from './discovery-page.module.css';
 
@@ -27,8 +28,12 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
   const [refreshing, setRefreshing] = useState(false);
   const [arcId, setArcId] = useState<number | null>(null);
   const [addSelection, setAddSelection] = useState<DiscoveryVolume | null>(null);
+  const [searchSelection, setSearchSelection] = useState<SearchResult | null>(null);
+  const [hideAlreadyAdded, setHideAlreadyAdded] = useState(false);
   const [rawArcSearch, setRawArcSearch] = useState('');
+  const [rawAddSearch, setRawAddSearch] = useState('');
   const arcSearch = useDeferredValue(rawArcSearch);
+  const addSearch = useDeferredValue(rawAddSearch.trim());
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -47,6 +52,15 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
       ? ({ ...previous, category: nextType })
       : ({ ...previous, type: nextType }),
   });
+
+  const handleSearchSelect = (result: SearchResult) => {
+    const existingId = result.id ?? result.already_added;
+    if (existingId != null) {
+      navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } });
+      return;
+    }
+    setSearchSelection(result);
+  };
 
   return (
     <div className={styles.page}>
@@ -72,12 +86,16 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
           </button>
         </div>
         <div className={styles.toolbarRight}>
-          <button
-            className={styles.searchAddBtn}
-            onClick={() => navigate({ to: '/add', search: { section } })}
-          >
-            Search / Add {section === 'manga' ? 'Manga' : 'Comics'}
-          </button>
+          {type !== 'story-arcs' && (
+            <label className={styles.hideAddedToggle}>
+              <input
+                type="checkbox"
+                checked={hideAlreadyAdded}
+                onChange={(event) => setHideAlreadyAdded(event.target.checked)}
+              />
+              <span>Hide in library</span>
+            </label>
+          )}
           <div className={styles.sectionToggle}>
             <button
               className={`${styles.sectionBtn}${section === 'comic' ? ` ${styles.sectionActive}` : ''}`}
@@ -112,7 +130,7 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
           onSelectArc={setArcId}
         />
       ) : (
-        <VolumeGridView type={type} section={section} onAddVolume={setAddSelection} />
+        <VolumeGridView type={type} section={section} hideAlreadyAdded={hideAlreadyAdded} onAddVolume={setAddSelection} />
       )}
 
       {arcId != null && (
@@ -126,13 +144,30 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
           onClose={() => setAddSelection(null)}
         />
       )}
+
+      {searchSelection != null && (
+        <SearchResultAddModal
+          result={searchSelection}
+          section={section}
+          onClose={() => setSearchSelection(null)}
+        />
+      )}
+
+      <FloatingAddSearch
+        section={section}
+        query={addSearch}
+        rawQuery={rawAddSearch}
+        onQueryChange={setRawAddSearch}
+        onSelect={handleSearchSelect}
+      />
     </div>
   );
 }
 
-function VolumeGridView({ type, section, onAddVolume }: { type: 'upcoming' | 'new'; section: DiscoverySection; onAddVolume: (volume: DiscoveryVolume) => void }) {
+function VolumeGridView({ type, section, hideAlreadyAdded, onAddVolume }: { type: 'upcoming' | 'new'; section: DiscoverySection; hideAlreadyAdded: boolean; onAddVolume: (volume: DiscoveryVolume) => void }) {
   const navigate = useNavigate();
-  const { data: volumes = [], isFetching } = useQuery(discoveryVolumeQueryOptions(type, section));
+  const { data: allVolumes = [], isFetching } = useQuery(discoveryVolumeQueryOptions(type, section));
+  const volumes = filterDiscoveryVolumes(allVolumes, hideAlreadyAdded);
 
   const handleClick = (vol: DiscoveryVolume) => {
     if (vol.already_added != null) {
@@ -147,7 +182,7 @@ function VolumeGridView({ type, section, onAddVolume }: { type: 'upcoming' | 'ne
   }
 
   if (volumes.length === 0) {
-    return <div className={styles.empty}>No {type} titles found</div>;
+    return <div className={styles.empty}>{allVolumes.length > 0 ? 'All visible titles are already in your library.' : `No ${type} titles found`}</div>;
   }
 
   return (
@@ -284,7 +319,6 @@ function ArcDetailModal({ id, onClose, onAddVolume }: { id: number; onClose: () 
                 key={vol.comicvine_id}
                 volume={vol}
                 onClick={() => {
-                  onClose();
                   if (vol.already_added != null) {
                     navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
                   } else {
@@ -298,6 +332,74 @@ function ArcDetailModal({ id, onClose, onAddVolume }: { id: number; onClose: () 
         )}
       </DialogBody>
     </DialogFrame>
+  );
+}
+
+function FloatingAddSearch({ section, query, rawQuery, onQueryChange, onSelect }: {
+  section: DiscoverySection;
+  query: string;
+  rawQuery: string;
+  onQueryChange: (query: string) => void;
+  onSelect: (result: SearchResult) => void;
+}) {
+  const { data: results = [], isFetching } = useQuery({
+    ...searchVolumesQueryOptions(query, section, 'comicvine'),
+    enabled: query.length >= 2,
+  });
+  const visibleResults = results.slice(0, 6);
+
+  return (
+    <div className={styles.floatingSearchWrap}>
+      {query.length >= 2 && (
+        <div className={styles.floatingResults} role="listbox" aria-label={`Add ${section === 'manga' ? 'manga' : 'comics'} search results`}>
+          {isFetching && visibleResults.length === 0 ? (
+            <div className={styles.floatingResultStatus}>Searching…</div>
+          ) : visibleResults.length === 0 ? (
+            <div className={styles.floatingResultStatus}>No matches found</div>
+          ) : visibleResults.map((result) => (
+            <button
+              key={`${result.metadata_source ?? 'comicvine'}:${result.metadata_id ?? result.comicvine_id}`}
+              type="button"
+              className={styles.floatingResult}
+              onClick={() => onSelect(result)}
+            >
+              <span className={styles.floatingResultTitle}>{result.title}</span>
+              <span className={styles.floatingResultMeta}>{[result.year, result.publisher].filter(Boolean).join(' · ')}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <label className={styles.floatingSearchLabel} htmlFor="discover-add-search">
+        Add {section === 'manga' ? 'manga' : 'comics'}
+      </label>
+      <input
+        id="discover-add-search"
+        className={styles.floatingSearchInput}
+        type="search"
+        value={rawQuery}
+        onChange={(event) => onQueryChange(event.target.value)}
+        placeholder={`Search to add ${section === 'manga' ? 'manga' : 'comics'}…`}
+      />
+    </div>
+  );
+}
+
+function SearchResultAddModal({ result, section, onClose }: { result: SearchResult; section: DiscoverySection; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const { data: rootFolders = [] } = useQuery(rootFoldersQueryOptions());
+
+  return (
+    <AddModal
+      result={result}
+      rootFolders={rootFolders}
+      section={section}
+      onClose={onClose}
+      onAdded={() => {
+        void queryClient.invalidateQueries({ queryKey: ['discovery'] });
+        void queryClient.invalidateQueries({ queryKey: VOLUMES_KEY });
+        onClose();
+      }}
+    />
   );
 }
 

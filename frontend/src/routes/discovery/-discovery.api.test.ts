@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeDiscoveryItem } from './-discovery.api';
-import { getDiscoveryAddSearch, getDiscoveryAddSelection } from './-discovery.types';
+import { filterDiscoveryVolumes, getDiscoveryAddSearch, getDiscoveryAddSelection } from './-discovery.types';
 
 
 describe('Discovery to Add identity', () => {
@@ -37,6 +37,17 @@ describe('Discovery to Add identity', () => {
       title: 'Saga',
       metadata_language: 'en',
     });
+  });
+
+  it('can hide volumes that are already in the library', () => {
+    const volumes = [
+      { comicvine_id: 1, title: 'Keep', already_added: null },
+      { comicvine_id: 2, title: 'Hide', already_added: 9 },
+      { comicvine_id: 3, title: 'Also Keep' },
+    ];
+
+    expect(filterDiscoveryVolumes(volumes, true).map((v) => v.title)).toEqual(['Keep', 'Also Keep']);
+    expect(filterDiscoveryVolumes(volumes, false)).toEqual(volumes);
   });
 
   it('accepts valid nullable metadata from the backend', () => {

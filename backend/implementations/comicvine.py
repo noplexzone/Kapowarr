@@ -53,6 +53,9 @@ _NON_ENGLISH_PUBLISHERS = frozenset({
     'j-novel club', 'cross infinite world', 'one peace books',
     'manga planet', 'ghost ship', 'fakku books',
     'irodori comics', 'denpa', 'ablaze manga', 'cmx', 'bandai entertainment',
+    'ize press', 'yen on', 'netcomics', 'kuma', 'steamship', 'airship',
+    'manga classics', 'manga university', 'star fruit books',
+    'glacier bay books', 'drawn and quarterly manga',
     # The shorter alias so substring check catches "Seven Seas" without "Entertainment"
     'seven seas',
     # French/European manga publishers
@@ -157,7 +160,32 @@ _ENGLISH_MANGA_PUBLISHERS = frozenset({
     'ablaze manga',
     'cmx',
     'bandai entertainment',
+    'ize press', 'yen on',
+    'netcomics', 'kuma', 'steamship', 'airship',
+    'manga classics', 'manga university',
+    'star fruit books', 'glacier bay books',
+    'drawn and quarterly manga',
 })
+
+
+def _publisher_matches(pub: str, publishers: frozenset[str]) -> bool:
+    normalized = (pub or '').strip().lower()
+    if not normalized:
+        return False
+    return any(
+        normalized == publisher
+        or publisher in normalized
+        or normalized in publisher
+        for publisher in publishers
+    )
+
+
+def _is_comic_discovery_excluded_publisher(pub: str) -> bool:
+    return (
+        _publisher_matches(pub, _NON_ENGLISH_PUBLISHERS)
+        or _publisher_matches(pub, _ENGLISH_MANGA_PUBLISHERS)
+    )
+
 
 translation_regex = compile(
     r'^<p>\s*\w+(?<!English) publication(\.?</p>$|,\s| \(in the \w+(?<!English) language\)|, translates )|' +
@@ -934,10 +962,7 @@ class ComicVine:
                 for vol_page in vol_pages:
                     for v in (vol_page.get('results') or []):
                         pub = ((v.get('publisher') or {}).get('name') or '').lower()
-                        if (pub in _NON_ENGLISH_PUBLISHERS
-                                or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
-                                or pub in _ENGLISH_MANGA_PUBLISHERS
-                                or any(p in pub for p in _ENGLISH_MANGA_PUBLISHERS)):
+                        if _is_comic_discovery_excluded_publisher(pub):
                             non_english_vol_ids.add(int(v['id']))
 
         vol_ids_int = tuple(
@@ -1021,13 +1046,9 @@ class ComicVine:
             except (TypeError, ValueError):
                 return 0
 
-        def _is_non_english(v: Dict[str, Any]) -> bool:
-            pub = ((v.get('publisher') or {}).get('name') or '').lower()
-            return pub in _NON_ENGLISH_PUBLISHERS or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
-
-        def _is_english_manga_pub(v: Dict[str, Any]) -> bool:
-            pub = ((v.get('publisher') or {}).get('name') or '').lower()
-            return pub in _ENGLISH_MANGA_PUBLISHERS or any(p in pub for p in _ENGLISH_MANGA_PUBLISHERS)
+        def _is_comic_discovery_excluded(v: Dict[str, Any]) -> bool:
+            pub = ((v.get('publisher') or {}).get('name') or '')
+            return _is_comic_discovery_excluded_publisher(pub)
 
         def _has_non_ascii_title(v: Dict[str, Any]) -> bool:
             return any(ord(c) > 127 for c in (v.get('name') or ''))
@@ -1035,8 +1056,7 @@ class ComicVine:
         pre_filtered = [
             v for v in all_results
             if _year(v) >= cutoff
-            and not _is_non_english(v)
-            and not _is_english_manga_pub(v)
+            and not _is_comic_discovery_excluded(v)
             and not _has_non_ascii_title(v)
         ]
         formatted = [self.__format_volume_output(v) for v in pre_filtered]

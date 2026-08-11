@@ -32,6 +32,10 @@ export type StoryArcDetail = z.infer<typeof storyArcDetailSchema>;
 export type DiscoveryType = 'upcoming' | 'new' | 'story-arcs';
 export type DiscoverySection = 'comic' | 'manga';
 
+export function filterDiscoveryVolumes<T extends { already_added?: number | null }>(volumes: T[], hideAlreadyAdded: boolean): T[] {
+  return hideAlreadyAdded ? volumes.filter((volume) => volume.already_added == null) : volumes;
+}
+
 export interface DiscoveryAddSelection {
   metadata_source: 'comicvine' | 'mangadex';
   metadata_id: string;

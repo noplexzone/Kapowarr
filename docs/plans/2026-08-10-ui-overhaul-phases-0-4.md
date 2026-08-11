@@ -21,7 +21,7 @@
 - Validate TypeScript with `npx tsc -b --noEmit`; run the repository's unittest-discovery CI gate.
 - Update `CHANGELOG.md` under `Unreleased`.
 - Do not restart/modify the live Kapowarr container without Caleb's permission.
-- Publish only `noplexzone/kapowarr:develop`, never `latest` or a stable version tag.
+- Publish `noplexzone/kapowarr:develop` plus the current application-version tag; reserve `latest` for stable releases.
 
 ## Ownership/gates
 

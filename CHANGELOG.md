@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Report truthful monitored issue health and operational dashboard metrics with actionable filtered destinations.
 - Bound selected library mutations to four concurrent requests with partial-failure feedback and validate focused API responses at runtime with Zod.
 - Harden Settings with URL-addressable categories, label/help search, accessible fields, validated global Save/Discard controls, unsaved-navigation protection, and explicit restart confirmation.
-- Add production-build Playwright and axe accessibility gates at desktop, 390 px, and 320 px widths in both supported themes.
+- Add production-build Playwright, axe, and visual-regression gates at desktop, 390 px, and 320 px widths, with representative light and dark workflow coverage.
 - Decompose Settings and Volume Detail into focused category, service-editor, hero, issue, and management components.
 - Add truthful server-side library pagination with URL-backed page controls that cap rendered records at 60 per page.
 - Add poster-first library controls, responsive volume-detail issue cards, operational dashboard refresh/error states, and safer settings workflows.

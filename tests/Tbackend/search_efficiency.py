@@ -176,5 +176,106 @@ class BroadResultSkipTests(unittest.TestCase):
         )
 
 
+class _FakeRangeIssue:
+    def __init__(self, number):
+        self.id = int(number)
+        self.calculated_issue_number = float(number)
+        self.date = '2026-01-01'
+        self.issue_number = str(int(number))
+        self.monitored = True
+
+    def get_data(self):
+        return self
+
+    def get_files(self):
+        return []
+
+
+class _FakeRangeVolumeData:
+    monitored = True
+    special_version = SpecialVersion.NORMAL
+    publisher = 'Marvel'
+    year = 2026
+    volume_number = 1
+    title = 'X-Men Infinity Comic'
+    alt_title = None
+
+
+class _FakeRangeVolume:
+    def __init__(self):
+        self.issues = [_FakeRangeIssue(n) for n in range(15, 21)]
+
+    def get_data(self):
+        return _FakeRangeVolumeData()
+
+    def get_issues(self, _skip_files=False):
+        return self.issues
+
+    def get_open_issues(self):
+        return [(issue.id, issue.calculated_issue_number) for issue in self.issues]
+
+    def get_issue(self, issue_id):
+        for issue in self.issues:
+            if issue.id == issue_id:
+                return issue
+        raise KeyError(issue_id)
+
+
+class PartialPackAutoSearchTests(unittest.TestCase):
+    def test_grouped_issue_ranges_cover_missing_issues_without_duplicate_fallbacks(self):
+        original_manual_search = search_module.manual_search
+        original_volume = search_module.Volume
+        calls = []
+
+        packs = [
+            {
+                'link': 'https://getcomics.org/x-men-infinity-comic-15-17/',
+                'display_title': 'X-Men – Infinity Comic #15 – 17 (2026)',
+                'source': 'GetComics',
+                'series': 'X Men Infinity Comic',
+                'year': 2026,
+                'volume_number': 1,
+                'special_version': None,
+                'issue_number': (15.0, 17.0),
+                'annual': False,
+                'match': True,
+                'match_issue': None,
+            },
+            {
+                'link': 'https://getcomics.org/x-men-infinity-comic-18-20/',
+                'display_title': 'X-Men – Infinity Comic #18 – 20 (2026)',
+                'source': 'GetComics',
+                'series': 'X Men Infinity Comic',
+                'year': 2026,
+                'volume_number': 1,
+                'special_version': None,
+                'issue_number': (18.0, 20.0),
+                'annual': False,
+                'match': True,
+                'match_issue': None,
+            },
+        ]
+
+        def fake_manual_search(volume_id, issue_id=None, **kwargs):
+            calls.append((volume_id, issue_id, kwargs))
+            return list(packs) if issue_id is None else []
+
+        try:
+            search_module.manual_search = fake_manual_search
+            search_module.Volume = lambda vid: _FakeRangeVolume()
+            result = search_module.auto_search(1)
+        finally:
+            search_module.manual_search = original_manual_search
+            search_module.Volume = original_volume
+
+        self.assertEqual([r['issue_number'] for r in result], [(15.0, 17.0), (18.0, 20.0)])
+        self.assertEqual(
+            [call[1] for call in calls],
+            [None],
+            'Grouped packs should cover all open issues without per-issue fallback',
+        )
+        self.assertTrue(calls[0][2].get('_allow_partial_pack'))
+
+
 if __name__ == '__main__':
     unittest.main()

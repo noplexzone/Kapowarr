@@ -410,7 +410,8 @@ def check_search_result_match(
     volume_data: VolumeData,
     volume_issues: List[IssueData],
     number_to_year: Mapping[float, Union[int, None]],
-    calculated_issue_number: Union[float, None] = None
+    calculated_issue_number: Union[float, None] = None,
+    allow_partial_pack: bool = False
 ) -> SearchResultMatchData:
     """Filter for whether a search result matches with what is searched for.
 
@@ -427,6 +428,11 @@ def check_search_result_match(
         calculated_issue_number (Union[float, None], optional): The calculated
             issue number of the issue, if the search was for an issue.
             Defaults to None.
+
+        allow_partial_pack (bool, optional): For auto-search volume passes,
+            allow a normal result that covers only part of the volume. The
+            caller is responsible for ensuring the covered range is wanted and
+            non-overlapping with already-selected downloads. Defaults to False.
 
     Returns:
         SearchResultMatchData: Whether the search result passes the filter.
@@ -502,22 +508,39 @@ def check_search_result_match(
         SpecialVersion.VOLUME_AS_ISSUE
     ):
         if calculated_issue_number is None:
-            # Volume search — result must cover the full volume range
             volume_issue_nums = [n for n in number_to_year.keys()]
             if volume_issue_nums:
                 vol_start = min(volume_issue_nums)
                 vol_end = max(volume_issue_nums)
                 result_range = force_range(issue_number)
-                if result_range[0] > vol_start or result_range[1] < vol_end:
+                if allow_partial_pack and isinstance(issue_number, tuple):
+                    # Auto-search can compose multiple grouped releases, such
+                    # as Infinity Comic #15-17 plus #18-20, as long as each
+                    # result intersects the volume's issue range. The auto
+                    # selector filters already-downloaded/overlapping issues.
+                    if result_range[1] < vol_start or result_range[0] > vol_end:
+                        return {
+                            'match': False,
+                            'match_issue': "Issue numbers don't match"
+                        }
+                elif result_range[0] > vol_start or result_range[1] < vol_end:
+                    # Manual/full volume search — result must cover the full
+                    # volume range.
                     return {
                         'match': False,
                         'match_issue': "Doesn't cover all volume issues"
                     }
 
-        elif issue_number != calculated_issue_number:
-            # Issue search, but
-            # extracted issue number(s) don't match number of searched issue
-            return {'match': False, 'match_issue': "Issue numbers don't match"}
+        else:
+            result_range = force_range(issue_number)
+            if not (
+                result_range[0]
+                <= calculated_issue_number
+                <= result_range[1]
+            ):
+                # Issue search: exact issue releases and grouped/ranged
+                # releases both match when they cover the searched issue.
+                return {'match': False, 'match_issue': "Issue numbers don't match"}
 
     return {'match': True, 'match_issue': None}
 

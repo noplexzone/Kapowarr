@@ -1,3 +1,4 @@
+import unittest
 from typing import cast
 from unittest.mock import patch
 
@@ -216,3 +217,146 @@ def test_issue_search_rejects_wrong_issue():
         )
 
     assert match == {'match': False, 'match_issue': "Issue numbers don't match"}
+
+
+
+def test_issue_search_accepts_range_covering_issue():
+    """Issue search: a grouped release should match each issue it covers."""
+    result = cast(SearchResultData, {
+        'series': 'Jujutsu Kaisen',
+        'year': 2020,
+        'volume_number': 1,
+        'special_version': SpecialVersion.NORMAL,
+        'issue_number': (15.0, 17.0),
+        'annual': False,
+        'link': 'https://example.invalid/jjk-015-017',
+        'display_title': 'Jujutsu Kaisen 015-017 (2020)',
+        'source': 'test',
+    })
+
+    with patch('backend.implementations.matching.blocklist_contains', return_value=False):
+        match = check_search_result_match(
+            result,
+            _volume(),
+            [
+                _issue(15.0, 'Issue 15'),
+                _issue(16.0, 'Issue 16'),
+                _issue(17.0, 'Issue 17'),
+            ],
+            {15.0: 2020, 16.0: 2020, 17.0: 2020},
+            calculated_issue_number=16.0,
+        )
+
+    assert match == {'match': True, 'match_issue': None}
+
+
+def test_issue_search_rejects_range_not_covering_issue():
+    """Issue search: a grouped release must not match outside its range."""
+    result = cast(SearchResultData, {
+        'series': 'Jujutsu Kaisen',
+        'year': 2020,
+        'volume_number': 1,
+        'special_version': SpecialVersion.NORMAL,
+        'issue_number': (15.0, 17.0),
+        'annual': False,
+        'link': 'https://example.invalid/jjk-015-017',
+        'display_title': 'Jujutsu Kaisen 015-017 (2020)',
+        'source': 'test',
+    })
+
+    with patch('backend.implementations.matching.blocklist_contains', return_value=False):
+        match = check_search_result_match(
+            result,
+            _volume(),
+            [
+                _issue(15.0, 'Issue 15'),
+                _issue(16.0, 'Issue 16'),
+                _issue(17.0, 'Issue 17'),
+                _issue(18.0, 'Issue 18'),
+            ],
+            {15.0: 2020, 16.0: 2020, 17.0: 2020, 18.0: 2020},
+            calculated_issue_number=18.0,
+        )
+
+    assert match == {'match': False, 'match_issue': "Issue numbers don't match"}
+
+
+
+
+def test_auto_partial_pack_volume_search_still_rejects_single_issue_result():
+    """Auto partial-pack mode should not turn broad volume searches into singles."""
+    result = cast(SearchResultData, {
+        'series': 'Jujutsu Kaisen',
+        'year': 2020,
+        'volume_number': 1,
+        'special_version': SpecialVersion.NORMAL,
+        'issue_number': 15.0,
+        'annual': False,
+        'link': 'https://example.invalid/jjk-015',
+        'display_title': 'Jujutsu Kaisen 015 (2020)',
+        'source': 'test',
+    })
+
+    with patch('backend.implementations.matching.blocklist_contains', return_value=False):
+        match = check_search_result_match(
+            result,
+            _volume(),
+            [
+                _issue(15.0, 'Issue 15'),
+                _issue(16.0, 'Issue 16'),
+                _issue(17.0, 'Issue 17'),
+            ],
+            {15.0: 2020, 16.0: 2020, 17.0: 2020},
+            calculated_issue_number=None,
+            allow_partial_pack=True,
+        )
+
+    assert match == {'match': False, 'match_issue': "Doesn't cover all volume issues"}
+
+def test_auto_partial_pack_volume_search_accepts_intersecting_range():
+    """Auto volume search can accept partial grouped releases for later packing."""
+    result = cast(SearchResultData, {
+        'series': 'Jujutsu Kaisen',
+        'year': 2020,
+        'volume_number': 1,
+        'special_version': SpecialVersion.NORMAL,
+        'issue_number': (15.0, 17.0),
+        'annual': False,
+        'link': 'https://example.invalid/jjk-015-017',
+        'display_title': 'Jujutsu Kaisen 015-017 (2020)',
+        'source': 'test',
+    })
+
+    with patch('backend.implementations.matching.blocklist_contains', return_value=False):
+        match = check_search_result_match(
+            result,
+            _volume(),
+            [
+                _issue(15.0, 'Issue 15'),
+                _issue(16.0, 'Issue 16'),
+                _issue(17.0, 'Issue 17'),
+                _issue(18.0, 'Issue 18'),
+            ],
+            {15.0: 2020, 16.0: 2020, 17.0: 2020, 18.0: 2020},
+            calculated_issue_number=None,
+            allow_partial_pack=True,
+        )
+
+    assert match == {'match': True, 'match_issue': None}
+
+
+
+class RangeMatchingUnittest(unittest.TestCase):
+    """unittest-discovery coverage for range matching regressions."""
+
+    def test_issue_range_covers_searched_issue(self):
+        test_issue_search_accepts_range_covering_issue()
+
+    def test_issue_range_rejects_outside_issue(self):
+        test_issue_search_rejects_range_not_covering_issue()
+
+    def test_auto_partial_pack_accepts_grouped_range(self):
+        test_auto_partial_pack_volume_search_accepts_intersecting_range()
+
+    def test_auto_partial_pack_rejects_single_issue_result(self):
+        test_auto_partial_pack_volume_search_still_rejects_single_issue_result()

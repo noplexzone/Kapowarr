@@ -780,6 +780,7 @@ def manual_search(
     custom_query: Union[str, None] = None,
     _retain_suwayomi_chapters: bool = False,
     _stats: Union[dict, None] = None,
+    _allow_partial_pack: bool = False,
 ) -> List[MatchedSearchResultData]:
     """Do a manual search for a volume or issue.
 
@@ -791,6 +792,10 @@ def manual_search(
         custom_query (Union[str, None], optional): Exact user-supplied source
         query. When set, metadata-derived query formats and alternate-title
         retries are skipped. Defaults to None.
+
+        _allow_partial_pack (bool, optional): Internal auto-search mode that
+        allows grouped releases covering part of the volume to match so the
+        selector can combine non-overlapping packs. Defaults to False.
 
     Returns:
         List[MatchedSearchResultData]: List with search results.
@@ -949,7 +954,12 @@ def manual_search(
                 **result,
                 **check_search_result_match(
                     result, volume_data, volume_issues,
-                    number_to_year, calculated_issue_number
+                    number_to_year, calculated_issue_number,
+                    allow_partial_pack=(
+                        _allow_partial_pack
+                        and issue_id is None
+                        and custom_query is None
+                    )
                 ),
             }
             for result in search_results
@@ -1196,6 +1206,7 @@ def auto_search(
         issue_id,
         _retain_suwayomi_chapters=True,
         _stats=_stats,
+        _allow_partial_pack=(issue_id is None),
     )
     search_results = [r for r in all_results if r['match']]
     if _stats is not None:

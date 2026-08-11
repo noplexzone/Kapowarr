@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { getSelectionScopeKey, runBounded } from './-comics.helpers';
+import { getSelectionScopeKey, getStoredSortPreference, runBounded } from './-comics.helpers';
 
 it('changes the selection scope for every library navigation dimension', () => {
   const base = { sort: 'title', filter: '', view: 'posters', search: '', offset: 0 } as const;
@@ -13,6 +13,12 @@ it('changes the selection scope for every library navigation dimension', () => {
   expect(getSelectionScopeKey('manga', base)).not.toBe(key);
 });
 
+it('restores only valid stored library sort preferences', () => {
+  expect(getStoredSortPreference({ getItem: () => JSON.stringify('year') }, 'sort')).toBe('year');
+  expect(getStoredSortPreference({ getItem: () => JSON.stringify('not-a-sort') }, 'sort')).toBeNull();
+  expect(getStoredSortPreference({ getItem: () => 'not-json' }, 'sort')).toBeNull();
+  expect(getStoredSortPreference({ getItem: () => null }, 'sort')).toBeNull();
+});
 
 it("bounds selected mutations to four and reports each partial failure", async () => {
   let active = 0;

@@ -15,7 +15,7 @@ import type { SearchResult } from '../-add.types';
 import { getUrlBase } from '@/app/api-client';
 import styles from './add-page.module.css';
 
-interface AddSelection { metadata_source: 'comicvine' | 'mangadex'; metadata_id: string; title?: string; metadata_language?: string }
+export interface AddSelection { metadata_source: 'comicvine' | 'mangadex'; metadata_id: string; title?: string; metadata_language?: string }
 interface AddPageProps { section: 'comic' | 'manga'; initialQuery?: string }
 
 export function AddPage({ section, initialQuery = '' }: AddPageProps) {
@@ -248,7 +248,7 @@ interface AddModalProps {
   onAdded: (id: number) => void;
 }
 
-function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalProps) {
+export function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalProps) {
   const sectionRootFolders = rootFolders.filter((rf) => rf.section === section);
   const defaultFolder = sectionRootFolders[0]?.id ?? 0;
 

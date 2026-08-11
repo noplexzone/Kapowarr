@@ -996,9 +996,11 @@ export function VolumeDetailPage() {
       <nav aria-label="Volume sections" className={styles.volumeTabs}>
         {([['overview', 'Overview', '/volumes/$volumeId'], ['issues', 'Issues', '/volumes/$volumeId/issues'], ['files', 'Files', '/volumes/$volumeId/files'], ['history', 'History', '/volumes/$volumeId/history']] as const).map(([key, label, to]) => <Link key={key} to={to} params={{ volumeId: String(id) }} aria-current={tab === key ? 'page' : undefined}>{label}</Link>)}
       </nav>
-      <section data-testid="volume-tab-panel">
-        {tab === 'issues' ? <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} /> : tab === 'files' ? <VolumeFilesPanel issues={volume.issues} generalFiles={volume.general_files} /> : tab === 'history' ? <VolumeHistoryPanel entries={volumeHistoryQuery.data ?? []} issues={volume.issues} loading={volumeHistoryQuery.isLoading} error={volumeHistoryQuery.error} /> : <p>{volume.description || 'No additional description is available.'}</p>}
-      </section>
+      {tab !== 'overview' && (
+        <section data-testid="volume-tab-panel">
+          {tab === 'issues' ? <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} /> : tab === 'files' ? <VolumeFilesPanel issues={volume.issues} generalFiles={volume.general_files} /> : <VolumeHistoryPanel entries={volumeHistoryQuery.data ?? []} issues={volume.issues} loading={volumeHistoryQuery.isLoading} error={volumeHistoryQuery.error} />}
+        </section>
+      )}
 
       {/* ── Manual Search Dialog ────────────────────────────── */}
       <DialogFrame

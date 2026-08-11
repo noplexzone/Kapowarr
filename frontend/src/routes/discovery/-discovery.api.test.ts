@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeDiscoveryItem } from './-discovery.api';
-import { getDiscoveryAddSearch } from './-discovery.types';
+import { getDiscoveryAddSearch, getDiscoveryAddSelection } from './-discovery.types';
 
 
 describe('Discovery to Add identity', () => {
@@ -19,6 +19,23 @@ describe('Discovery to Add identity', () => {
       source: 'comicvine',
       id: '4050',
       title: 'Saga',
+    });
+  });
+
+  it('hydrates an in-place add selection without route-only search keys', () => {
+    const volume = normalizeDiscoveryItem({
+      comicvine_id: 4050,
+      metadata_id: '4050',
+      metadata_source: 'comicvine',
+      title: 'Saga',
+      metadata_language: 'en',
+    }, 'new');
+
+    expect(getDiscoveryAddSelection(volume)).toEqual({
+      metadata_source: 'comicvine',
+      metadata_id: '4050',
+      title: 'Saga',
+      metadata_language: 'en',
     });
   });
 

@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep Discovery add settings in-page, isolate New and Upcoming card identity, preserve the chosen library sort across navigation, and remove the redundant Overview description panel.
 - Serve the SPA and PWA safely from the configured reverse-proxy base path, with static-only service-worker caching.
 - Replace regex HTML sanitization with DOMPurify, apply restrictive browser security headers, and harden the non-root container runtime.
 - Preserve JSON 404 behavior for unknown API paths, retain query strings during legacy UI migration, and return numeric dashboard metrics for empty sections.

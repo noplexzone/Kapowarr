@@ -27,7 +27,7 @@ import {
 } from '../-comics.types';
 import { ComicCard } from './comic-card';
 import { ComicTableRow } from './comic-table-row';
-import { getSelectionScopeKey, runBounded } from '../-comics.helpers';
+import { getSelectionScopeKey, getStoredSortPreference, runBounded } from '../-comics.helpers';
 import styles from './comics-page.module.css';
 
 interface ComicsPageProps {
@@ -79,6 +79,20 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
   useEffect(() => {
     setSelectedIds(new Set());
   }, [selectionScopeKey]);
+
+  useEffect(() => {
+    if (!canonical || typeof window === 'undefined') return;
+    const hasSortParam = new URLSearchParams(window.location.search).has('sort');
+    if (hasSortParam) return;
+    const storedSort = getStoredSortPreference(window.localStorage, STORAGE_KEY_SORT);
+    if (storedSort && storedSort !== search.sort) {
+      navigate({
+        to: '/library',
+        search: (previous: any) => ({ ...previous, section, sort: storedSort, page: 1 }),
+        replace: true,
+      });
+    }
+  }, [canonical, navigate, search.sort, section]);
 
   // Debounced: flush local text to URL after 350ms of inactivity
   useEffect(() => {

@@ -32,6 +32,22 @@ export type StoryArcDetail = z.infer<typeof storyArcDetailSchema>;
 export type DiscoveryType = 'upcoming' | 'new' | 'story-arcs';
 export type DiscoverySection = 'comic' | 'manga';
 
+export interface DiscoveryAddSelection {
+  metadata_source: 'comicvine' | 'mangadex';
+  metadata_id: string;
+  title?: string;
+  metadata_language?: string;
+}
+
+export function getDiscoveryAddSelection(volume: DiscoveryVolume): DiscoveryAddSelection {
+  return {
+    metadata_source: volume.metadata_source ?? 'comicvine',
+    metadata_id: volume.metadata_id ?? String(volume.comicvine_id),
+    title: volume.title,
+    ...(volume.metadata_language ? { metadata_language: volume.metadata_language } : {}),
+  };
+}
+
 export interface DiscoveryAddSearch {
   section: DiscoverySection;
   source: 'comicvine' | 'mangadex';

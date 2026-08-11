@@ -3,12 +3,15 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
+import { AddModal } from '@/routes/add/-ui/add-page';
+import { exactVolumeQueryOptions, rootFoldersQueryOptions } from '@/routes/add/-add.api';
+import { VOLUMES_KEY } from '@/routes/comics/-comics.api';
 import {
   discoveryVolumeQueryOptions,
   storyArcsQueryOptions,
   storyArcDetailQueryOptions,
 } from '../-discovery.api';
-import { getDiscoveryAddSearch } from '../-discovery.types';
+import { getDiscoveryAddSelection } from '../-discovery.types';
 import type { DiscoveryVolume, StoryArc, DiscoveryType, DiscoverySection } from '../-discovery.types';
 import styles from './discovery-page.module.css';
 
@@ -23,6 +26,7 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const [arcId, setArcId] = useState<number | null>(null);
+  const [addSelection, setAddSelection] = useState<DiscoveryVolume | null>(null);
   const [rawArcSearch, setRawArcSearch] = useState('');
   const arcSearch = useDeferredValue(rawArcSearch);
 
@@ -108,17 +112,25 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
           onSelectArc={setArcId}
         />
       ) : (
-        <VolumeGridView type={type} section={section} />
+        <VolumeGridView type={type} section={section} onAddVolume={setAddSelection} />
       )}
 
       {arcId != null && (
-        <ArcDetailModal id={arcId} section={section} onClose={() => setArcId(null)} />
+        <ArcDetailModal id={arcId} onClose={() => setArcId(null)} onAddVolume={setAddSelection} />
+      )}
+
+      {addSelection != null && (
+        <DiscoveryAddModal
+          volume={addSelection}
+          section={section}
+          onClose={() => setAddSelection(null)}
+        />
       )}
     </div>
   );
 }
 
-function VolumeGridView({ type, section }: { type: 'upcoming' | 'new'; section: DiscoverySection }) {
+function VolumeGridView({ type, section, onAddVolume }: { type: 'upcoming' | 'new'; section: DiscoverySection; onAddVolume: (volume: DiscoveryVolume) => void }) {
   const navigate = useNavigate();
   const { data: volumes = [], isFetching } = useQuery(discoveryVolumeQueryOptions(type, section));
 
@@ -127,7 +139,7 @@ function VolumeGridView({ type, section }: { type: 'upcoming' | 'new'; section: 
       navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
       return;
     }
-    navigate({ to: '/add/review', search: getDiscoveryAddSearch(vol, section) });
+    onAddVolume(vol);
   };
 
   if (isFetching && volumes.length === 0) {
@@ -141,10 +153,19 @@ function VolumeGridView({ type, section }: { type: 'upcoming' | 'new'; section: 
   return (
     <div className={styles.grid}>
       {volumes.map((vol) => (
-        <VolumeCard key={vol.comicvine_id} volume={vol} onClick={handleClick} />
+        <VolumeCard key={getDiscoveryCardKey(type, vol)} volume={vol} onClick={handleClick} />
       ))}
     </div>
   );
+}
+
+function getDiscoveryCardKey(type: 'upcoming' | 'new', volume: DiscoveryVolume): string {
+  return [
+    type,
+    volume.metadata_source ?? 'comicvine',
+    volume.metadata_id ?? volume.comicvine_id,
+    volume.id ?? volume.issue_number ?? volume.cover_date ?? 'volume',
+  ].join(':');
 }
 
 function VolumeCard({ volume, onClick }: { volume: DiscoveryVolume; onClick: (v: DiscoveryVolume) => void }) {
@@ -244,7 +265,7 @@ function StoryArcsView({ section, query, rawQuery, onQueryChange, onSelectArc }:
   );
 }
 
-function ArcDetailModal({ id, section, onClose }: { id: number; section: DiscoverySection; onClose: () => void }) {
+function ArcDetailModal({ id, onClose, onAddVolume }: { id: number; onClose: () => void; onAddVolume: (volume: DiscoveryVolume) => void }) {
   const navigate = useNavigate();
   const { data, isLoading } = useQuery(storyArcDetailQueryOptions(id));
 
@@ -267,7 +288,8 @@ function ArcDetailModal({ id, section, onClose }: { id: number; section: Discove
                   if (vol.already_added != null) {
                     navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
                   } else {
-                    navigate({ to: '/add/review', search: getDiscoveryAddSearch(vol, section) });
+                    onClose();
+                    onAddVolume(vol);
                   }
                 }}
               />
@@ -276,5 +298,44 @@ function ArcDetailModal({ id, section, onClose }: { id: number; section: Discove
         )}
       </DialogBody>
     </DialogFrame>
+  );
+}
+
+function DiscoveryAddModal({ volume, section, onClose }: { volume: DiscoveryVolume; section: DiscoverySection; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const selection = getDiscoveryAddSelection(volume);
+  const exact = useQuery(exactVolumeQueryOptions(selection, section));
+  const { data: rootFolders = [] } = useQuery(rootFoldersQueryOptions());
+
+  if (exact.isPending) {
+    return (
+      <DialogFrame open onOpenChange={(open) => !open && onClose()}>
+        <DialogHeader title={`Add ${volume.title}`} onClose={onClose} />
+        <DialogBody><div className={styles.empty}>Loading add settings…</div></DialogBody>
+      </DialogFrame>
+    );
+  }
+
+  if (exact.isError) {
+    return (
+      <DialogFrame open onOpenChange={(open) => !open && onClose()}>
+        <DialogHeader title={`Add ${volume.title}`} onClose={onClose} />
+        <DialogBody><div className={styles.empty}>Could not load add settings: {exact.error.message}</div></DialogBody>
+      </DialogFrame>
+    );
+  }
+
+  return (
+    <AddModal
+      result={exact.data}
+      rootFolders={rootFolders}
+      section={section}
+      onClose={onClose}
+      onAdded={() => {
+        void queryClient.invalidateQueries({ queryKey: ['discovery'] });
+        void queryClient.invalidateQueries({ queryKey: VOLUMES_KEY });
+        onClose();
+      }}
+    />
   );
 }

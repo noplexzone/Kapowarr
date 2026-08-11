@@ -1,4 +1,5 @@
-import type { SectionType, VolumesSearch, VolumeSummary } from './-comics.types';
+import type { SectionType, SortOption, VolumesSearch, VolumeSummary } from './-comics.types';
+import { SORT_OPTIONS } from './-comics.types';
 import { getUrlBase } from '@/app/api-client';
 
 export interface BoundedResult<T> { id: number; status: 'fulfilled' | 'rejected'; value?: T; reason?: unknown }
@@ -32,6 +33,17 @@ export function getSelectionScopeKey(section: SectionType, search: VolumesSearch
     search.offset ?? 0,
     search.view ?? '',
   ].join('|');
+}
+
+export function getStoredSortPreference(storage: Pick<Storage, 'getItem'>, key: string): SortOption | null {
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return null;
+    const value = JSON.parse(raw);
+    return typeof value === 'string' && SORT_OPTIONS.includes(value as SortOption) ? value as SortOption : null;
+  } catch {
+    return null;
+  }
 }
 
 export function formatVolumeSubtitle(volume: VolumeSummary): string {

@@ -246,6 +246,7 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
 
           <select
             className={styles.select}
+            aria-label="Sort library"
             value={search.sort}
             onChange={(e) => updateSearch({ sort: e.target.value })}
           >

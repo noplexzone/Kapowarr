@@ -15,8 +15,10 @@ export function MobileNavigation() {
           <Link
             key={item.label}
             to={item.to as never}
+            activeOptions={item.parent ? { exact: true } : undefined}
             className={styles.link}
             data-active={isActive || undefined}
+            activeProps={{ 'aria-current': item.parent ? false : 'page' }}
             aria-current={isActive && !item.parent ? 'page' : undefined}
           >
             <NavIcon name={item.label} className={styles.icon} />

@@ -16,6 +16,7 @@
   --text-dim: #808080;
   --accent: #ebc700;
   --accent-rgb: 235, 199, 0;
+  --accent-text: #000000;
   --border: #dde6e9;
   --nav-width: clamp(160px, 20vw, 210px);
   --success: #54db68;

@@ -6,6 +6,30 @@ import { NavIcon } from './nav-icons';
 import { getActivePrimary, PRIMARY_NAV } from './navigation';
 import styles from './sidebar.module.css';
 
+interface ActiveNavItem {
+  to: string;
+  search?: Record<string, unknown>;
+  children?: ActiveNavItem[];
+}
+
+export function isSubActive(
+  item: ActiveNavItem,
+  pathname: string,
+  search: Record<string, unknown>,
+): boolean {
+  if (pathname !== item.to) return false;
+  return Object.entries(item.search ?? {}).every(([key, value]) => search[key] === value);
+}
+
+export function isNavActive(
+  item: ActiveNavItem,
+  pathname: string,
+  search: Record<string, unknown>,
+): boolean {
+  return isSubActive(item, pathname, search)
+    || (item.children?.some((child) => isSubActive(child, pathname, search)) ?? false);
+}
+
 export function SidebarSearch({
   collapsed,
   query,
@@ -55,8 +79,10 @@ export function Sidebar() {
             <Link
               key={item.label}
               to={item.to as never}
+              activeOptions={item.parent ? { exact: true } : undefined}
               className={styles.navItem}
               data-active={isActive || undefined}
+              activeProps={{ 'aria-current': item.parent ? false : 'page' }}
               aria-current={isActive && !item.parent ? 'page' : undefined}
             >
               <NavIcon name={item.label} className={styles.navIcon} />

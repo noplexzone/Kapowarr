@@ -69,6 +69,7 @@ export function AddPage({ section, initialQuery = '' }: AddPageProps) {
         <input
           className={styles.searchInput}
           type="search"
+          aria-label={placeholder.replace('…', '')}
           placeholder={placeholder}
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
@@ -169,7 +170,12 @@ function ResultCard({ result, onClick }: ResultCardProps) {
       onClick={() => onClick(result)}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onClick(result)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick(result);
+        }
+      }}
     >
       <div className={styles.coverWrap}>
         {coverSrc ? (
@@ -293,8 +299,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
           )}
           <div className={styles.modalForm}>
             <div className={styles.formField}>
-              <label className={styles.formLabel}>Root Folder</label>
+              <label className={styles.formLabel} htmlFor="add-root-folder">Root Folder</label>
               <select
+                id="add-root-folder"
                 className={styles.formSelect}
                 value={rootFolderId}
                 onChange={(e) => setRootFolderId(Number(e.target.value))}
@@ -306,8 +313,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
             </div>
 
             <div className={styles.formField}>
-              <label className={styles.formLabel}>Volume Folder</label>
+              <label className={styles.formLabel} htmlFor="add-volume-folder">Volume Folder</label>
               <input
+                id="add-volume-folder"
                 className={styles.formInput}
                 type="text"
                 value={volumeFolder}
@@ -316,8 +324,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
             </div>
 
             <div className={styles.formField}>
-              <label className={styles.formLabel}>Monitoring Scheme</label>
+              <label className={styles.formLabel} htmlFor="add-monitoring-scheme">Monitoring Scheme</label>
               <select
+                id="add-monitoring-scheme"
                 className={styles.formSelect}
                 value={monitoringScheme}
                 onChange={(e) => setMonitoringScheme(e.target.value)}
@@ -331,8 +340,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
 
             {result.metadata_source === 'mangadex' && result.available_languages?.length ? (
               <div className={styles.formField}>
-                <label className={styles.formLabel}>MangaDex Language</label>
+                <label className={styles.formLabel} htmlFor="add-metadata-language">MangaDex Language</label>
                 <select
+                id="add-metadata-language"
                   className={styles.formSelect}
                   value={metadataLanguage}
                   onChange={(e) => setMetadataLanguage(e.target.value)}
@@ -345,8 +355,9 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
             ) : null}
 
             <div className={styles.formField}>
-              <label className={styles.formLabel}>Special Version</label>
+              <label className={styles.formLabel} htmlFor="add-special-version">Special Version</label>
               <select
+                id="add-special-version"
                 className={styles.formSelect}
                 value={specialVersion}
                 onChange={(e) => setSpecialVersion(e.target.value)}
@@ -357,32 +368,32 @@ function AddModal({ result, rootFolders, section, onClose, onAdded }: AddModalPr
               </select>
             </div>
 
-            <div className={styles.formRow}>
+            <label className={styles.formRow}>
               <span className={styles.formRowLabel}>Monitor Volume</span>
               <input
                 type="checkbox"
                 checked={monitorVolume}
                 onChange={(e) => setMonitorVolume(e.target.checked)}
               />
-            </div>
+            </label>
 
-            <div className={styles.formRow}>
+            <label className={styles.formRow}>
               <span className={styles.formRowLabel}>Monitor Issues</span>
               <input
                 type="checkbox"
                 checked={monitorIssues}
                 onChange={(e) => setMonitorIssues(e.target.checked)}
               />
-            </div>
+            </label>
 
-            <div className={styles.formRow}>
+            <label className={styles.formRow}>
               <span className={styles.formRowLabel}>Auto Search</span>
               <input
                 type="checkbox"
                 checked={autoSearch}
                 onChange={(e) => setAutoSearch(e.target.checked)}
               />
-            </div>
+            </label>
           </div>
         </div>
       </DialogBody>

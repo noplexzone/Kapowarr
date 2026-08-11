@@ -197,6 +197,7 @@ function StoryArcsView({ section, query, rawQuery, onQueryChange, onSelectArc }:
       <input
         className={styles.searchInput}
         type="search"
+        aria-label="Search story arcs"
         placeholder="Search story arcs…"
         value={rawQuery}
         onChange={e => onQueryChange(e.target.value)}
@@ -218,7 +219,12 @@ function StoryArcsView({ section, query, rawQuery, onQueryChange, onSelectArc }:
               onClick={() => onSelectArc(arc.id)}
               role="button"
               tabIndex={0}
-              onKeyDown={e => e.key === 'Enter' && onSelectArc(arc.id)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectArc(arc.id);
+                }
+              }}
             >
               <span className={styles.arcName}>{arc.name}</span>
               {arc.issue_count != null && (

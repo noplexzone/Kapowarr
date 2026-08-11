@@ -343,15 +343,15 @@ const addRoute = createRoute({
   },
   component: () => {
     const search = addRoute.useSearch();
-    const selection = search.metadata_source && search.metadata_id && search.title
-      ? {
-          metadata_source: search.metadata_source,
-          metadata_id: search.metadata_id,
-          title: search.title,
-          metadata_language: search.metadata_language,
-        }
-      : undefined;
-    return <AddPage section={search.section} selection={selection} />;
+    if (search.metadata_source && search.metadata_id) {
+      return <ExactAddReview section={search.section} selection={{
+        metadata_source: search.metadata_source,
+        metadata_id: search.metadata_id,
+        title: search.title,
+        metadata_language: search.metadata_language,
+      }} />;
+    }
+    return <AddPage section={search.section} initialQuery={search.title} />;
   },
 });
 
@@ -376,6 +376,22 @@ const addReviewRoute = createRoute({
 const volumeRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'volumes/$volumeId',
+  component: VolumeDetailPage,
+});
+
+const volumeIssuesRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'volumes/$volumeId/issues',
+  component: VolumeDetailPage,
+});
+const volumeFilesRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'volumes/$volumeId/files',
+  component: VolumeDetailPage,
+});
+const volumeHistoryRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'volumes/$volumeId/history',
   component: VolumeDetailPage,
 });
 
@@ -437,6 +453,9 @@ export const routeTree = rootRoute.addChildren([
     addRoute,
     addReviewRoute,
     volumeRoute,
+    volumeIssuesRoute,
+    volumeFilesRoute,
+    volumeHistoryRoute,
     readerRoute,
     systemRedirectRoute,
     systemStatusRoute,

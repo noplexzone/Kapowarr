@@ -10,7 +10,7 @@ export const PRIMARY_NAV: PrimaryNavItem[] = [
   { label: 'Home', to: '/home' },
   { label: 'Library', to: '/library' },
   { label: 'Discover', to: '/discover' },
-  { label: 'Activity', to: '/activity/queue', parent: true },
+  { label: 'Activity', to: '/activity', parent: true },
   { label: 'Settings', to: '/settings/general' },
 ];
 

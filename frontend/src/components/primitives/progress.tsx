@@ -21,6 +21,7 @@ export const Progress = forwardRef<HTMLDivElement, ProgressProps>(
         aria-valuenow={clampedValue}
         aria-valuemin={0}
         aria-valuemax={100}
+        aria-label={`${clampedValue}% complete`}
         {...props}
       >
         <div

@@ -80,6 +80,18 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
             : [],
         }))
       : [],
+    general_files: Array.isArray(raw.general_files)
+      ? raw.general_files.map((file: Record<string, any>) => {
+          const filepath = String(file.filepath ?? '');
+          return {
+            id: Number(file.id),
+            filename: filepath.split(/[/\\]/).pop() || filepath,
+            filepath,
+            size: Number(file.size ?? 0),
+            file_type: String(file.file_type ?? 'other'),
+          };
+        })
+      : [],
   };
 }
 
@@ -175,6 +187,27 @@ export async function forceMatchIssue(
     timeout: 60000,
   });
   return readJson<{ id: number }>(response);
+}
+
+export const VOLUME_HISTORY_KEY = (volumeId: number) =>
+  ['volumes', 'history', volumeId] as const;
+
+export function volumeHistoryQueryOptions(volumeId: number) {
+  return queryOptions({
+    queryKey: VOLUME_HISTORY_KEY(volumeId),
+    queryFn: () => fetchVolumeHistory(volumeId),
+    staleTime: 30_000,
+    enabled: volumeId > 0,
+  });
+}
+
+export async function fetchVolumeHistory(
+  volumeId: number,
+): Promise<IssueHistoryEntry[]> {
+  const response = await apiClient.get('activity/history', {
+    searchParams: { volume_id: volumeId },
+  });
+  return readJson<IssueHistoryEntry[]>(response);
 }
 
 export async function fetchIssueHistory(

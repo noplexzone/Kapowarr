@@ -29,21 +29,21 @@ describe('direct-download request budgets', () => {
     parse.mockResolvedValue({ result: 1, fail_reason: null });
   });
 
-  it('allows issue download admission to wait up to 60 seconds', async () => {
+  it('allows issue download admission to wait up to five minutes', async () => {
     await downloadIssue(2, 'https://example.invalid/file', false, 'Issue');
 
     expect(post).toHaveBeenCalledWith(
       'issues/2/download',
-      expect.objectContaining({ timeout: 60000 }),
+      expect.objectContaining({ timeout: 300000 }),
     );
   });
 
-  it('allows volume download admission to wait up to 60 seconds', async () => {
+  it('allows volume download admission to wait up to five minutes', async () => {
     await downloadVolume(3, 'https://example.invalid/file', 'Volume');
 
     expect(post).toHaveBeenCalledWith(
       'volumes/3/download',
-      expect.objectContaining({ timeout: 60000 }),
+      expect.objectContaining({ timeout: 300000 }),
     );
   });
 
@@ -73,7 +73,7 @@ describe('manual search query overrides', () => {
       'volumes/3/manualsearch',
       expect.objectContaining({
         searchParams: { query: 'Teen Titans 2003' },
-        timeout: 60000,
+        timeout: 300000,
       }),
     );
   });
@@ -85,7 +85,7 @@ describe('manual search query overrides', () => {
       'issues/7/manualsearch',
       expect.objectContaining({
         searchParams: undefined,
-        timeout: 60000,
+        timeout: 300000,
       }),
     );
   });

@@ -110,7 +110,7 @@ export async function autoSearchVolume(
 ): Promise<{ id: number }> {
   const response = await apiClient.post('system/tasks', {
     json: { cmd: 'auto_search', volume_id: id },
-    timeout: 60000,
+    timeout: 300000,
   });
   return readJson<{ id: number }>(response);
 }
@@ -122,7 +122,7 @@ export async function manualSearchVolume(
   const customQuery = query?.trim();
   const response = await apiClient.get(`volumes/${id}/manualsearch`, {
     searchParams: customQuery ? { query: customQuery } : undefined,
-    timeout: 60000,
+    timeout: 300000,
   });
   return readJson<ManualSearchResult[]>(response);
 }
@@ -139,7 +139,7 @@ export async function autoSearchIssue(
       volume_id: volumeId,
       issue_id: issueId,
     },
-    timeout: 60000,
+    timeout: 300000,
   });
   return readJson<{ id: number }>(response);
 }
@@ -151,7 +151,7 @@ export async function manualSearchIssue(
   const customQuery = query?.trim();
   const response = await apiClient.get(`issues/${issueId}/manualsearch`, {
     searchParams: customQuery ? { query: customQuery } : undefined,
-    timeout: 60000,
+    timeout: 300000,
   });
   return readJson<ManualSearchResult[]>(response);
 }
@@ -164,7 +164,7 @@ export async function manualSuwayomiBundleSearch(
     `issues/${issueId}/suwayomi/manual-bundle/search`,
     {
       json: { chapters },
-      timeout: 60000,
+      timeout: 300000,
     },
   );
   return readJson<ManualSearchResult[]>(response);
@@ -184,7 +184,7 @@ export async function forceMatchIssue(
       volume_id: volumeId,
       issue_id: issueId,
     },
-    timeout: 60000,
+    timeout: 300000,
   });
   return readJson<{ id: number }>(response);
 }
@@ -227,7 +227,7 @@ export async function downloadIssue(
 ): Promise<{ result: number | null; fail_reason: string | null }> {
   const response = await apiClient.post(`issues/${issueId}/download`, {
     json: { link, force_match: forceMatch, display_title: displayTitle },
-    timeout: 60000,
+    timeout: 300000,
   });
   return readJson<{ result: number | null; fail_reason: string | null }>(
     response,
@@ -242,7 +242,7 @@ export async function downloadVolume(
 ): Promise<{ result: number | null; fail_reason: string | null }> {
   const response = await apiClient.post(`volumes/${volumeId}/download`, {
     json: { link, force_match: forceMatch, display_title: displayTitle },
-    timeout: 60000,
+    timeout: 300000,
   });
   return readJson<{ result: number | null; fail_reason: string | null }>(
     response,
@@ -385,7 +385,7 @@ export async function addCoverPage(
 ): Promise<AddCoverResult> {
   const response = await apiClient.post(`files/${fileId}/cover-page`, {
     json: { cover_url: coverUrl, position },
-    timeout: 60000,
+    timeout: 300000,
   });
   return readJson<AddCoverResult>(response);
 }

@@ -14,6 +14,7 @@ class FakeResponse:
         self.body = body
         self.status_code = status_code
         self.headers = headers or {}
+        self.url = 'https://example.test/file.zip'
         self.closed = False
         self.raw = MagicMock()
 
@@ -87,6 +88,35 @@ class SegmentedDirectDownloadTest(unittest.TestCase):
             WeTransferDownload,
         ):
             self.assertIs(download_class.run, BaseDirectDownload.run)
+
+
+    def test_mediafire_folder_403_is_service_failure_not_broken_link(self):
+        from backend.base.custom_exceptions import ClientNotWorking
+        from backend.implementations import download_clients
+
+        settings = MagicMock()
+        settings.sv.download_folder = tempfile.gettempdir()
+        response = FakeResponse(status_code=403)
+        response.url = 'https://www.mediafire.com/api/1.5/file/zip.php'
+        session = MagicMock()
+        session.post.return_value = response
+
+        with patch.object(download_clients, 'Session', return_value=session), \
+                patch.object(download_clients, 'Settings', return_value=settings), \
+                patch.object(download_clients, 'Volume'):
+            with self.assertRaises(ClientNotWorking):
+                download_clients.MediaFireFolderDownload(
+                    'https://www.mediafire.com/folder/abc123/Test',
+                    volume_id=1,
+                    covered_issues=None,
+                    source_type=MagicMock(),
+                    source_name='MediaFire',
+                    web_link='https://getcomics.org/example',
+                    web_title='Example',
+                    web_sub_title='Example group',
+                )
+
+        session.post.assert_called_once()
 
     def test_range_requests_use_bounded_network_timeout(self):
         from backend.base.definitions import Constants

@@ -291,6 +291,17 @@ class BaseDirectDownload(Download):
                 # Pixeldrain rate limit because of hotlinking
                 raise DownloadLimitReached(DownloadSource.PIXELDRAIN)
 
+            if (
+                self.identifier == MediaFireFolderDownload.identifier
+                and e.response is not None
+                and e.response.status_code in (401, 403)
+            ):
+                # MediaFire may allow a browser to open a folder while refusing
+                # Kapowarr's ZIP endpoint request. That's a temporary service
+                # access failure, not evidence that the shared folder link is
+                # dead, so don't permanently blocklist the link as broken.
+                raise ClientNotWorking(BrokenClientReason.CONNECTION_ERROR)
+
             raise LinkBroken(download_link)
 
         self._size = int(response.headers.get('Content-Length', -1))

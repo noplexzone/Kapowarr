@@ -79,7 +79,7 @@ export function Sidebar() {
             <Link
               key={item.label}
               to={item.to as never}
-              search={item.label === 'Library' ? getStoredLibrarySearch() as never : undefined}
+              search={(item.label === 'Comics' || item.label === 'Manga') ? getStoredLibrarySearch() as never : undefined}
               activeOptions={item.parent ? { exact: true } : undefined}
               className={styles.navItem}
               data-active={isActive || undefined}

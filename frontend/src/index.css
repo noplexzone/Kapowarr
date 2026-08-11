@@ -47,6 +47,28 @@
   --shadow-raised: 0 8px 24px rgb(0 0 0 / 0.16);
 }
 
+
+/* ── Kapowarr Noir (premium default) ─────────── */
+[data-theme='kapowarr-noir'] {
+  --surface: #0d1117;
+  --surface-raised: #151b23;
+  --surface-muted: #1f2630;
+  --text-strong: #f1f5f9;
+  --overlay: rgb(0 0 0 / 0.68);
+  --text: #cbd5e1;
+  --text-dim: #8b98a8;
+  --accent: #e2b84b;
+  --accent-rgb: 226, 184, 75;
+  --accent-text: #111827;
+  --border: #2b3440;
+  --nav-width: clamp(170px, 18vw, 220px);
+  --success: #4ade80;
+  --info: #60a5fa;
+  --warning: #f59e0b;
+  --danger: #f87171;
+  --shadow-raised: 0 14px 36px rgb(0 0 0 / 0.34);
+}
+
 /* ── Dark mode ───────────────────────────────── */
 [data-theme='dark-mode'] {
   --surface: #202020;

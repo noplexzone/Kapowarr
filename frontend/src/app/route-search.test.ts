@@ -6,11 +6,13 @@ import {
   legacyDiscoveryToCanonical,
   legacyLibraryToCanonical,
   librarySearchSchema,
+  mediaLibrarySearchSchema,
+  mediaLibraryToLegacySearch,
   toLegacyLibrarySearch,
 } from './route-search';
 
 describe('canonical route search', () => {
-  it('normalizes invalid library state to safe shareable defaults', () => {
+  it('normalizes invalid legacy library state to safe shareable defaults', () => {
     expect(librarySearchSchema.parse({ section: 'other', view: 'huge', page: '-2' })).toMatchObject({
       section: 'comic',
       view: 'grid',
@@ -18,6 +20,17 @@ describe('canonical route search', () => {
       sort: 'title',
       status: 'all',
       monitoring: 'all',
+    });
+  });
+
+  it('normalizes separated comics and manga library state without a section parameter', () => {
+    expect(mediaLibrarySearchSchema.parse({ view: 'huge', page: '-2', q: '  batman  ' })).toMatchObject({
+      view: 'grid',
+      page: 1,
+      sort: 'title',
+      status: 'all',
+      monitoring: 'all',
+      q: 'batman',
     });
   });
 
@@ -50,7 +63,7 @@ describe('legacy route redirects', () => {
       view: 'table',
       search: '  Dorohedoro  ',
       offset: '2',
-    })).toEqual({
+    })).toMatchObject({
       section: 'manga',
       sort: 'recently_added',
       status: 'all',
@@ -58,6 +71,17 @@ describe('legacy route redirects', () => {
       view: 'list',
       q: 'Dorohedoro',
       page: 3,
+    });
+  });
+
+  it('maps separated media library state to the supported library API contract', () => {
+    expect(mediaLibraryToLegacySearch(mediaLibrarySearchSchema.parse({
+      status: 'missing',
+      page: 2,
+    }))).toMatchObject({
+      filter: 'wanted',
+      view: 'posters',
+      offset: 1,
     });
   });
 
@@ -78,6 +102,21 @@ describe('legacy route redirects', () => {
     expect(toLegacyLibrarySearch(librarySearchSchema.parse({ monitoring: 'monitored' })).filter).toBe('monitored');
     expect(toLegacyLibrarySearch(librarySearchSchema.parse({ monitoring: 'unmonitored' })).filter).toBe('unmonitored');
     expect(toLegacyLibrarySearch(librarySearchSchema.parse({ status: 'all', monitoring: 'all' })).filter).toBe('');
+  });
+
+  it('preserves legacy query keys on separated media routes', () => {
+    expect(mediaLibrarySearchSchema.parse({
+      search: '  Saga  ',
+      filter: 'wanted',
+      view: 'posters',
+      offset: '1',
+    })).toMatchObject({
+      q: 'Saga',
+      status: 'missing',
+      monitoring: 'all',
+      view: 'grid',
+      page: 2,
+    });
   });
 
   it('preserves discovery section, category, and query', () => {

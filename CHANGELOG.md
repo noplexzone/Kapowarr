@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Begin the premium media-manager redesign with separated Comics and Manga primary navigation, a new Kapowarr Noir default theme, and updated product/design direction.
 - Show top-right live task notifications with file-scan progress, completion history, and dismiss controls, including per-file counts such as `Scanning 1/168 Strange Tales`.
 - Preserve Discovery and story-arc metadata identity through Add review, with exact volume redirects for existing and newly added titles.
 - Report truthful monitored issue health and operational dashboard metrics with actionable filtered destinations.

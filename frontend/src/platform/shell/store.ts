@@ -7,14 +7,16 @@ interface ShellState {
   toggleSidebar: () => void;
 }
 
+export const DEFAULT_THEME = 'kapowarr-noir';
 const THEME_KEY = 'hero_theme';
+const LEGACY_THEME_KEY = 'kapowarr-theme';
 const SIDEBAR_KEY = 'sidebar_collapsed';
 
 function loadTheme(): string {
   try {
-    return localStorage.getItem(THEME_KEY) || 'batman-mode';
+    return localStorage.getItem(THEME_KEY) || localStorage.getItem(LEGACY_THEME_KEY) || DEFAULT_THEME;
   } catch {
-    return 'batman-mode';
+    return DEFAULT_THEME;
   }
 }
 
@@ -31,6 +33,7 @@ export const useShellStore = create<ShellState>((set) => ({
   sidebarCollapsed: loadSidebarCollapsed(),
   setTheme: (theme) => {
     localStorage.setItem(THEME_KEY, theme);
+    localStorage.setItem(LEGACY_THEME_KEY, theme);
     set({ theme });
   },
   toggleSidebar: () =>

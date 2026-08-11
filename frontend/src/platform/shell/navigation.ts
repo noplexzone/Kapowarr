@@ -1,4 +1,4 @@
-export type PrimaryNavLabel = 'Home' | 'Library' | 'Discover' | 'Activity' | 'Settings';
+export type PrimaryNavLabel = 'Home' | 'Comics' | 'Manga' | 'Discover' | 'Activity' | 'Settings';
 
 export interface PrimaryNavItem {
   label: PrimaryNavLabel;
@@ -8,7 +8,8 @@ export interface PrimaryNavItem {
 
 export const PRIMARY_NAV: PrimaryNavItem[] = [
   { label: 'Home', to: '/home' },
-  { label: 'Library', to: '/library' },
+  { label: 'Comics', to: '/comics' },
+  { label: 'Manga', to: '/manga' },
   { label: 'Discover', to: '/discover' },
   { label: 'Activity', to: '/activity', parent: true },
   { label: 'Settings', to: '/settings/general' },
@@ -25,7 +26,8 @@ export const ACTIVITY_NAV = [
 
 export function getActivePrimary(pathname: string): PrimaryNavLabel | undefined {
   if (pathname === '/' || pathname === '/home') return 'Home';
-  if (pathname === '/library' || pathname.startsWith('/volumes/') || pathname.startsWith('/read/')) return 'Library';
+  if (pathname === '/comics' || pathname === '/library' || pathname.startsWith('/volumes/') || pathname.startsWith('/read/')) return 'Comics';
+  if (pathname === '/manga') return 'Manga';
   if (pathname === '/discover' || pathname.startsWith('/add')) return 'Discover';
   if (pathname === '/activity' || pathname.startsWith('/activity/')) return 'Activity';
   if (pathname === '/settings' || pathname.startsWith('/settings/')) return 'Settings';
@@ -56,7 +58,6 @@ export function getStoredLibrarySearch() {
   const q = readStoredString('kapowarr_search');
   const validFilter = filter && FILTER_OPTIONS.has(filter) ? filter : '';
   return {
-    section: 'comic',
     sort: sort && SORT_OPTIONS.has(sort) ? sort : 'title',
     view: view && VIEW_OPTIONS.has(view) ? (view === 'table' ? 'list' : 'grid') : 'grid',
     status: validFilter === 'wanted' ? 'missing' : validFilter === 'upcoming' ? 'upcoming' : 'all',

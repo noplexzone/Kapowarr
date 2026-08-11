@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tansta
 import { useBlocker } from '@tanstack/react-router';
 import type { ShouldBlockFn } from '@tanstack/react-router';
 import { Button, Notice } from '@/components/primitives';
-import { useShellStore } from '@/platform/shell/store';
+import { DEFAULT_THEME, useShellStore } from '@/platform/shell/store';
 import { settingsQueryOptions, updateSettings, SETTINGS_KEY, suwayomiSourcesQueryOptions } from '../-settings.api';
 import type { AllSettings } from '../-settings.types';
 import { getChangedSettings, requiresRestart } from '../-settings-change';
@@ -28,7 +28,7 @@ function SettingsPageContent({ category = 'general', onCategoryChange }: { categ
   const [errors, setErrors] = useState<Partial<Record<keyof AllSettings, string>>>({});
   const [savedMsg, setSavedMsg] = useState('');
   const [restartWarning, setRestartWarning] = useState(false);
-  const [theme, setThemeState] = useState(() => document.documentElement.dataset.theme || 'batman-mode');
+  const [theme, setThemeState] = useState(() => document.documentElement.dataset.theme || DEFAULT_THEME);
   const { data: suwayomiSourcesData, isFetching: suwayomiSourcesFetching } = useQuery({ ...suwayomiSourcesQueryOptions(), enabled: Boolean(form.suwayomi_base_url) });
   const changedSettings = useMemo(() => getChangedSettings(form, baseline), [form, baseline]);
   const topLevelDirtyCount = Object.keys(changedSettings).length;

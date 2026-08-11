@@ -35,11 +35,11 @@ import {
   searchHistorySearchSchema,
   legacyDiscoverySearchSchema,
   legacyDiscoveryToCanonical,
-  legacyLibrarySearchSchema,
   legacyLibraryToCanonical,
   librarySearchSchema,
+  mediaLibrarySearchSchema,
+  mediaLibraryToLegacySearch,
   scopedActivitySearchSchema,
-  toLegacyLibrarySearch,
 } from './route-search';
 
 export interface RouterContext {
@@ -99,35 +99,41 @@ const libraryRoute = createRoute({
   path: 'library',
   validateSearch: librarySearchSchema,
   loaderDeps: ({ search }) => search,
-  loader: async ({ context, deps }) => {
-    await context.queryClient.ensureQueryData(
-      volumeListQueryOptions(1, toLegacyLibrarySearch(deps), deps.section),
-    );
-  },
-  component: () => {
-    const search = libraryRoute.useSearch();
-    return <ComicsPage section={search.section} canonical />;
+  loader: ({ deps }) => {
+    const { section: _section, ...search } = legacyLibraryToCanonical(deps.section, deps);
+    throw redirect({
+      to: deps.section === 'manga' ? '/manga' : '/comics',
+      search,
+      replace: true,
+    });
   },
 });
 
-function createLegacyLibraryRoute(path: 'comics' | 'manga', section: 'comic' | 'manga') {
-  return createRoute({
-    getParentRoute: () => layoutRoute,
-    path,
-    validateSearch: legacyLibrarySearchSchema,
-    loaderDeps: ({ search }) => search,
-    loader: ({ deps }) => {
-      throw redirect({
-        to: '/library',
-        search: legacyLibraryToCanonical(section, deps),
-        replace: true,
-      });
-    },
-  });
-}
+const comicsRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'comics',
+  validateSearch: mediaLibrarySearchSchema,
+  loaderDeps: ({ search }) => search,
+  loader: async ({ context, deps }) => {
+    await context.queryClient.ensureQueryData(
+      volumeListQueryOptions(1, mediaLibraryToLegacySearch(deps), 'comic'),
+    );
+  },
+  component: () => <ComicsPage section="comic" canonical />,
+});
 
-const comicsRedirectRoute = createLegacyLibraryRoute('comics', 'comic');
-const mangaRedirectRoute = createLegacyLibraryRoute('manga', 'manga');
+const mangaRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'manga',
+  validateSearch: mediaLibrarySearchSchema,
+  loaderDeps: ({ search }) => search,
+  loader: async ({ context, deps }) => {
+    await context.queryClient.ensureQueryData(
+      volumeListQueryOptions(1, mediaLibraryToLegacySearch(deps), 'manga'),
+    );
+  },
+  component: () => <ComicsPage section="manga" canonical />,
+});
 const comicsAddRedirectRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'comics/add',
@@ -442,8 +448,8 @@ export const routeTree = rootRoute.addChildren([
     libraryRoute,
     comicsAddRedirectRoute,
     mangaAddRedirectRoute,
-    comicsRedirectRoute,
-    mangaRedirectRoute,
+    comicsRoute,
+    mangaRoute,
     discoverRoute,
     discoveryRedirectRoute,
     activityRedirectRoute,

@@ -16,10 +16,11 @@ beforeEach(() => {
 });
 
 describe('canonical navigation model', () => {
-  it('contains exactly the five product destinations', () => {
+  it('contains the separated premium media-manager destinations', () => {
     expect(PRIMARY_NAV.map((item) => item.label)).toEqual([
       'Home',
-      'Library',
+      'Comics',
+      'Manga',
       'Discover',
       'Activity',
       'Settings',
@@ -28,8 +29,10 @@ describe('canonical navigation model', () => {
 
   it.each([
     ['/home', 'Home'],
-    ['/library', 'Library'],
-    ['/volumes/42', 'Library'],
+    ['/library', 'Comics'],
+    ['/comics', 'Comics'],
+    ['/manga', 'Manga'],
+    ['/volumes/42', 'Comics'],
     ['/discover', 'Discover'],
     ['/activity/mismatches', 'Activity'],
     ['/settings/proxy', 'Settings'],
@@ -48,14 +51,13 @@ describe('canonical navigation model', () => {
 });
 
 
-it('hydrates the Library nav target from stored preferences', () => {
+it('hydrates media nav targets from stored preferences', () => {
   window.localStorage.setItem('kapowarr_sort', JSON.stringify('recently_added'));
   window.localStorage.setItem('kapowarr_view', JSON.stringify('table'));
   window.localStorage.setItem('kapowarr_filter', JSON.stringify('wanted'));
   window.localStorage.setItem('kapowarr_search', JSON.stringify('batman'));
 
   expect(getStoredLibrarySearch()).toEqual({
-    section: 'comic',
     sort: 'recently_added',
     view: 'list',
     status: 'missing',
@@ -65,7 +67,7 @@ it('hydrates the Library nav target from stored preferences', () => {
   });
 });
 
-it('ignores invalid stored Library nav preferences', () => {
+it('ignores invalid stored media nav preferences', () => {
   window.localStorage.setItem('kapowarr_sort', JSON.stringify('bogus'));
   window.localStorage.setItem('kapowarr_view', JSON.stringify('huge'));
   window.localStorage.setItem('kapowarr_filter', JSON.stringify('bad'));

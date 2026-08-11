@@ -132,6 +132,29 @@ const MONITORING_SCHEMES = [
   { value: 'none', label: 'None' },
 ] as const;
 
+export function volumeFolderInputValue(folder: string, rootFolderPath: string): string {
+  const root = rootFolderPath.replace(/\/+$/, '');
+  if (root && (folder === root || folder.startsWith(`${root}/`))) {
+    return folder.slice(root.length).replace(/^\/+/, '');
+  }
+  return folder.replace(/^\/+/, '');
+}
+
+export function normalizeVolumeFolderInput(input: string, rootFolderPath: string): string {
+  let folder = input.trim().replace(/^\/+/, '');
+  const rootName = rootFolderPath
+    .replace(/\/+$/, '')
+    .split('/')
+    .filter(Boolean)
+    .pop();
+
+  while (rootName && (folder === rootName || folder.startsWith(`${rootName}/`))) {
+    folder = folder.slice(rootName.length).replace(/^\/+/, '');
+  }
+
+  return folder;
+}
+
 export function VolumeDetailPage() {
   const { volumeId } = useParams({ strict: false }) as { volumeId: string };
   const id = parseInt(volumeId ?? '0', 10);
@@ -884,7 +907,7 @@ export function VolumeDetailPage() {
     setEditMonitorNew(volume.monitor_new_issues);
     setEditScheme('');
     setEditRootFolder(volume.root_folder);
-    setEditVolumeFolder(volume.folder.replace(volume.root_folder_path, '').replace(/^\//, ''));
+    setEditVolumeFolder(volumeFolderInputValue(volume.folder, volume.root_folder_path));
     setEditSpecialVersion(volume.special_version || 'auto');
     setEditOpen(true);
   }, [volume]);
@@ -898,9 +921,10 @@ export function VolumeDetailPage() {
       data.monitoring_scheme = editScheme;
     }
     data.root_folder = editRootFolder;
-    if (editVolumeFolder) {
-      data.volume_folder = editVolumeFolder;
-    }
+    const selectedRootFolderPath = rootFoldersQuery.data?.find((rf) => rf.id === editRootFolder)?.folder
+      ?? volume?.root_folder_path
+      ?? '';
+    data.volume_folder = normalizeVolumeFolderInput(editVolumeFolder, selectedRootFolderPath) || null;
     data.special_version = editSpecialVersion;
     updateMutation.mutate(data);
   }, [
@@ -910,7 +934,9 @@ export function VolumeDetailPage() {
     editRootFolder,
     editVolumeFolder,
     editSpecialVersion,
+    rootFoldersQuery.data,
     updateMutation,
+    volume?.root_folder_path,
   ]);
 
   const openFixMatch = useCallback(() => {

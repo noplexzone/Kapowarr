@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/app/api-client', () => ({
-  apiClient: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
+  apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
   readJson: vi.fn(),
 }));
 
@@ -14,12 +14,44 @@ import {
   fetchVolumeHistory,
   manualSearchIssue,
   manualSearchVolume,
+  updateVolume,
 } from './-volumes.api';
 
 const get = vi.mocked(apiClient.get);
 const post = vi.mocked(apiClient.post);
+const put = vi.mocked(apiClient.put);
 const del = vi.mocked(apiClient.delete);
 const parse = vi.mocked(readJson);
+
+
+describe('volume edit updates', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    put.mockResolvedValue({} as Response);
+    parse.mockResolvedValue({});
+  });
+
+  it('does not send the UI-only automatic special-version token to the backend', async () => {
+    await updateVolume(1264, {
+      monitored: true,
+      monitor_new_issues: true,
+      root_folder: 1,
+      volume_folder: 'X-Men Annual (1992)',
+      special_version: 'auto',
+    });
+
+    expect(put).toHaveBeenCalledWith('volumes/1264', {
+      json: {
+        monitored: true,
+        monitor_new_issues: true,
+        root_folder: 1,
+        volume_folder: 'X-Men Annual (1992)',
+        special_version_locked: false,
+      },
+    });
+    expect(parse).toHaveBeenCalled();
+  });
+});
 
 describe('direct-download request budgets', () => {
   beforeEach(() => {

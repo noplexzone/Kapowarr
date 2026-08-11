@@ -271,7 +271,17 @@ export async function updateVolume(
   id: number,
   data: Record<string, unknown>,
 ): Promise<void> {
-  await apiClient.put(`volumes/${id}`, { json: data });
+  const payload = { ...data };
+
+  if (payload.special_version === 'auto') {
+    delete payload.special_version;
+    payload.special_version_locked = false;
+  } else if (typeof payload.special_version === 'string') {
+    payload.special_version_locked = true;
+  }
+
+  const response = await apiClient.put(`volumes/${id}`, { json: payload });
+  await readJson<Record<string, never>>(response);
 }
 
 export async function fetchRootFolders(): Promise<RootFolder[]> {

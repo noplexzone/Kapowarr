@@ -34,6 +34,7 @@ async function fulfillApi(route: Route) {
   else if (path.endsWith('/api/volumes')) result = { items: [], total: 0, offset: 0, page_size: 60 };
   else if (path.endsWith('/api/activity/queue')) result = [];
   else if (path.endsWith('/api/activity/history')) result = [];
+  else if (path.endsWith('/api/system/tasks')) result = [];
   else {
     await route.fulfill({
       status: 501,

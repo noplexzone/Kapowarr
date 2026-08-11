@@ -55,7 +55,7 @@ async function openDashboard(page: Page, width: number) {
   await page.route('**/api/**', fulfillApi);
   await page.goto('/');
   await expect(page.locator('#root')).not.toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
 }
 
 for (const width of [1280, 390, 320]) {

@@ -44,3 +44,30 @@ it('refreshes dashboard data from live operation events', () => {
   expect(source).toContain("useSocketEvent('queue_ended'");
   expect(source).toContain("useSocketEvent('downloaded_status'");
 });
+
+
+it('presents Home as a hybrid command center before shelf rows', () => {
+  const hero = source.indexOf('Kapowarr command center');
+  const triage = source.indexOf('Wanted / Missing Triage');
+  const liveOps = source.indexOf('Live Operations');
+  const shelves = source.indexOf('Recently Added');
+  expect(source).toContain('title="Home"');
+  expect(hero).toBeGreaterThan(-1);
+  expect(triage).toBeGreaterThan(hero);
+  expect(liveOps).toBeGreaterThan(triage);
+  expect(shelves).toBeGreaterThan(liveOps);
+});
+
+it('routes command-center triage into separated Comics and Manga libraries', () => {
+  expect(source).toContain('to="/comics"');
+  expect(source).toContain('to="/manga"');
+  expect(source).toContain('Comics missing');
+  expect(source).toContain('Manga missing');
+  expect(source).not.toContain('to="/library"');
+});
+
+it('keeps partial-data resilience and live refresh affordances visible', () => {
+  expect(source).toContain('Some Home data could not be loaded');
+  expect(source).toContain('Refresh Home');
+  expect(source).toContain('Preserve successful sections');
+});

@@ -167,7 +167,37 @@ class extract_filename_data(unittest.TestCase):
                 {'series': 'Absolute Moebius', 'year': 2012, 'volume_number': 1, 'special_version': None, 'issue_number': 7.0, 'annual': False},
 
             'L\'Uomo Ragno 219 - Il demone devastatore (Corno 1978-09-18) [c2c Jedi-Italia] 1.0.cbr':
-                {'series': "L'Uomo Ragno", 'year': 1978, 'volume_number': 1, 'special_version': None, 'issue_number': 219.0, 'annual': False}
+                {'series': "L'Uomo Ragno", 'year': 1978, 'volume_number': 1, 'special_version': None, 'issue_number': 219.0, 'annual': False},
+
+            '/content/Convergence (2015)/Convergence_001_2015_4_covers_digital_Minutemen-Mollylvr.cbr':
+                {'series': 'Convergence', 'year': 2015, 'volume_number': 1, 'special_version': None, 'issue_number': 1.0, 'annual': False},
+
+            '/content/Convergence (2015)/Convergence_08_2015_Webrip_The_Last_Kryptonian-DCP.cbr':
+                {'series': 'Convergence', 'year': 2015, 'volume_number': 1, 'special_version': None, 'issue_number': 8.0, 'annual': False},
+
+            '/content/Detective Comics (1937)/Detective Comics 001f (1937).cbz':
+                {'series': 'Detective Comics', 'year': 1937, 'volume_number': 1, 'special_version': None, 'issue_number': 1.0, 'annual': False},
+
+            '/content/Detective Comics (1937)/Detective Comics 064 (1942) (1st and 2nd stories ONLY) (digital) (Shadowcat-Empire).cbz':
+                {'series': 'Detective Comics', 'year': 1942, 'volume_number': 1, 'special_version': None, 'issue_number': 64.0, 'annual': False},
+
+            '/content/Batman (1940)/Batman 026 (12-01 1945).cbr':
+                {'series': 'Batman', 'year': 1940, 'volume_number': 1, 'special_version': None, 'issue_number': 26.0, 'annual': False},
+
+            '/content/Batman (1940)/Batman 103-1st Silver Age Issue (10-1956).cbr':
+                {'series': 'Batman', 'year': 1940, 'volume_number': 1, 'special_version': None, 'issue_number': 103.0, 'annual': False},
+
+            '/content/Batman (1940)/Batman 501 (digital-TPB).cbr':
+                {'series': 'Batman', 'year': 1940, 'volume_number': 1, 'special_version': None, 'issue_number': 501.0, 'annual': False},
+
+            '/content/Batman (1940)/Batman 074 44p ctc (12-01 1952).cbr':
+                {'series': 'Batman', 'year': 1940, 'volume_number': 1, 'special_version': None, 'issue_number': 74.0, 'annual': False},
+
+            '/content/Batman (1940)/Batman 218 68p ctc G-67 (01-02 1970).cbr':
+                {'series': 'Batman', 'year': 1940, 'volume_number': 1, 'special_version': None, 'issue_number': 218.0, 'annual': False},
+
+            '/content/Batman (1940)/Batman 176-80 PG Giant 68p (12-1965).cbz':
+                {'series': 'Batman', 'year': 1940, 'volume_number': 1, 'special_version': None, 'issue_number': 176.0, 'annual': False}
         }
         self.run_cases(cases)
 

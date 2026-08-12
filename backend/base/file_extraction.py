@@ -6,7 +6,7 @@ generalising it. The string can be a filepath, filename, search result title, et
 """
 
 from os.path import basename, dirname, splitext
-from re import IGNORECASE, Pattern, compile
+from re import IGNORECASE, Pattern, compile, sub
 from typing import Collection, Dict, Tuple, TypeVar, Union
 
 from backend.base.definitions import (CharConstants, FileConstants,
@@ -62,6 +62,17 @@ revision_regex = compile(r'[1-3]\.\d')
 # Detects issue strings that are actually a year+alpha suffix from dotted scene-release names.
 # E.g. '2020.Hybrid' should be treated as year=2020, not issue 2020.08...
 _dotted_year_in_issue_re = compile(r'^(\d{4})\.[a-zA-Z]')
+_issue_then_year_scene_re = compile(
+    r'^(?P<series>.+?)[\s._-]+(?P<issue>\d{1,4})(?P<suffix>[a-f])?'
+    r'[._-]+(?P<year>19\d{2}|20\d{2})(?=$|\D)',
+    IGNORECASE
+)
+_issue_before_cover_date_re = compile(
+    r'^(?P<series>.+?)[\s_]+(?P<issue>\d{1,4})(?:-(?=\d+\s(?:pg|p|ctc|g|giant))\d+)?(?P<suffix>[a-f])?'
+    r'(?:[\s_-]+(?:\d+p|ctc|g-?\d+|pg|giant|silver|age|issue))*'
+    r'(?=[\s_-]*(?:\((?:19|20)\d{2}\)|\(\d{1,2}-\d{1,2}[\s-]+(?:19|20)\d{2}\)|\(\d{1,2}-(?:19|20)\d{2}\)|-\d+(?:st|nd|rd|th)\b|\((?:digital-)?tpb\)))',
+    IGNORECASE
+)
 # autopep8: on
 
 
@@ -273,6 +284,18 @@ def _extensionless_filename(filepath: str) -> str:
     return filename
 
 
+def _normalise_embedded_issue_hint(issue_number: str) -> str:
+    """Return a scanner-safe issue token from common archival filename hints."""
+    return issue_number.lstrip('0') or '0'
+
+
+def _file_title_from_embedded_issue_match(match) -> str:
+    """Clean a title captured before an embedded issue number."""
+    series = sub(r'[\s_-]+', ' ', match.group('series')).strip()
+    series = sub(r'\b(?:issues?|books?|no)\.?$', '', series, flags=IGNORECASE)
+    return series.strip()
+
+
 def _find_issue_numbers(
     pos_options: Collection[Tuple[str, Dict[str, int], Tuple[Pattern, ...]]],
     is_annual: bool
@@ -384,6 +407,7 @@ def extract_filename_data(
     # at a certain position is the issue number, then it can't be the year.
     all_year_pos = [(10_000, 0)]
     all_year_folderpos = [(10_000, 0)]
+    folder_volume_year = None
     volume_pos, volume_end = 10_000, 0
     volume_folderpos, volume_folderend = 10_000, 0
     issue_pos, issue_folderpos = 10_000, 10_000
@@ -449,6 +473,11 @@ def extract_filename_data(
                 (r.start(0), r.end(0))
                 for r in year_result
             ]
+            folder_volume_year = next(
+                y
+                for y in year_result[0].groups()
+                if y
+            )
 
     # Find volume number
     volume_result = None
@@ -502,8 +531,55 @@ def extract_filename_data(
                 ][0].replace('_', '-')
                 special_pos = special_result.start(0)
 
+    embedded_issue_match = None
+    embedded_issue_year = None
+    for issue_hint_regex in (
+        _issue_then_year_scene_re,
+        _issue_before_cover_date_re
+    ):
+        if issue_hint_regex is _issue_then_year_scene_re and '--' in filename:
+            continue
+        if issue_hint_regex is _issue_before_cover_date_re and issue_regex_2.search(filename):
+            continue
+        embedded_issue_match = issue_hint_regex.search(filename)
+        if embedded_issue_match:
+            embedded_issue_range = (
+                embedded_issue_match.start('issue'),
+                embedded_issue_match.end('issue')
+            )
+            if check_overlapping_pos(
+                all_year_pos + [(volume_pos, volume_end)],
+                embedded_issue_range
+            ):
+                embedded_issue_match = None
+                continue
+            issue_number = _normalise_embedded_issue_hint(
+                embedded_issue_match.group('issue')
+            )
+            issue_pos = embedded_issue_match.start('issue')
+            simple_issue_year = filename[
+                embedded_issue_match.end('issue'):
+            ].lstrip().startswith('(') and filename[
+                embedded_issue_match.end('issue'):
+            ].lstrip()[1:5].isdigit()
+            if (
+                folder_volume_year is not None
+                and issue_hint_regex is _issue_before_cover_date_re
+                and not simple_issue_year
+                and filepath.startswith('/')
+                and dirname(filepath).count('/') <= 2
+            ):
+                embedded_issue_year = folder_volume_year
+            elif embedded_issue_match.groupdict().get('year'):
+                embedded_issue_year = embedded_issue_match.group('year')
+            special_version = None
+            break
+
     # Find issue number
-    if special_version not in (
+    if issue_number is not None:
+        pass
+
+    elif special_version not in (
         None,
         SpecialVersion.COVER,
         SpecialVersion.METADATA
@@ -583,7 +659,9 @@ def extract_filename_data(
         special_pos,
         issue_pos
     )
-    if series_pos and not is_image_file:
+    if embedded_issue_match is not None:
+        series = _file_title_from_embedded_issue_match(embedded_issue_match)
+    elif series_pos and not is_image_file:
         # Series name is assumed to be in the filename,
         # left of all other information
         series = clean_filename[:series_pos - 1]
@@ -608,6 +686,9 @@ def extract_filename_data(
         calculated_issue_number = extract_issue_number(issue_number)
     else:
         calculated_issue_number = None
+
+    if embedded_issue_year is not None:
+        year = embedded_issue_year
 
     year = int(year) if year else None
     if fix_year and year is not None:

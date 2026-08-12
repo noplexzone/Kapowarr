@@ -4,6 +4,7 @@ export interface HistoryEntry {
   source: string;
   downloaded_at: number;
   state: string;
+  failure_reason?: string | null;
 }
 
 export interface HistoryResponse {

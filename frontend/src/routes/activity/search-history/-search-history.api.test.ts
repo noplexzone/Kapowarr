@@ -58,6 +58,7 @@ it('classifies found-but-unmatched searches as no matches', async () => {
   expect(result.entries[0]?.outcome_label).toBe('No matches');
   expect(result.entries[0]?.message).toBe('8 results found, but none matched');
   expect(result.entries[0]?.queries).toEqual(['Saga (2012)', 'Saga Volume 1']);
+  expect(result.entries[0]?.volume_id).toBe(1);
 });
 
 

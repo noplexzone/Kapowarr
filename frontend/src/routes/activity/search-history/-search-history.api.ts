@@ -102,6 +102,7 @@ function toSearchHistoryEntry(raw: RawTaskHistoryEntry): SearchHistoryEntry {
     task_name: raw.task_name,
     title: searchTitle(raw),
     scope: searchScope(raw),
+    volume_id: raw.volume_id ?? null,
     run_at: raw.run_at * 1000,
     outcome,
     outcome_label: outcomeLabel(outcome),

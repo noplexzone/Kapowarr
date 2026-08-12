@@ -16,6 +16,7 @@ interface RawHistoryEntry {
   source_name: string | null;
   downloaded_at: number;
   success: boolean | null;
+  failure_reason?: string | null;
 }
 
 function toHistoryEntry(raw: RawHistoryEntry, idx: number): HistoryEntry {
@@ -25,6 +26,7 @@ function toHistoryEntry(raw: RawHistoryEntry, idx: number): HistoryEntry {
     source: raw.source_name || raw.source || '',
     downloaded_at: raw.downloaded_at * 1000,
     state: raw.success === true ? 'downloaded' : raw.success === false ? 'failed' : 'cancelled',
+    failure_reason: raw.failure_reason ?? null,
   };
 }
 
@@ -39,7 +41,7 @@ export function historyQueryOptions(offset: number, state: HistoryState = 'all')
   });
 }
 
-export const rawHistoryEntrySchema = z.object({ web_link: z.string().nullable(), web_title: z.string().nullable(), web_sub_title: z.string().nullable(), file_title: z.string().nullable(), volume_id: z.number().int().nullable(), issue_id: z.number().int().nullable(), source: z.string().nullable(), source_name: z.string().nullable(), downloaded_at: z.number(), success: z.boolean().nullable() });
+export const rawHistoryEntrySchema = z.object({ web_link: z.string().nullable(), web_title: z.string().nullable(), web_sub_title: z.string().nullable(), file_title: z.string().nullable(), volume_id: z.number().int().nullable(), issue_id: z.number().int().nullable(), source: z.string().nullable(), source_name: z.string().nullable(), downloaded_at: z.number(), success: z.boolean().nullable(), failure_reason: z.string().nullable().optional() });
 const rawHistoryResponseSchema = z.object({ entries: z.array(rawHistoryEntrySchema), total: z.number().int().nonnegative(), offset: z.number().int().nonnegative(), page_size: z.number().int().positive() });
 const emptyObjectSchema = z.object({}).strict();
 

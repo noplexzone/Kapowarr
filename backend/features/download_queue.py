@@ -1199,7 +1199,7 @@ def get_download_history(
                 web_link, web_title, web_sub_title,
                 file_title,
                 volume_id, issue_id,
-                source, source_name, downloaded_at, success
+                source, source_name, downloaded_at, success, failure_reason
             FROM download_history
             WHERE issue_id = :issue_id
             ORDER BY downloaded_at DESC, rowid DESC
@@ -1213,7 +1213,7 @@ def get_download_history(
                 web_link, web_title, web_sub_title,
                 file_title,
                 volume_id, issue_id,
-                source, source_name, downloaded_at, success
+                source, source_name, downloaded_at, success, failure_reason
             FROM download_history
             WHERE volume_id = :volume_id
             ORDER BY downloaded_at DESC, rowid DESC
@@ -1227,7 +1227,7 @@ def get_download_history(
                 web_link, web_title, web_sub_title,
                 file_title,
                 volume_id, issue_id,
-                source, source_name, downloaded_at, success
+                source, source_name, downloaded_at, success, failure_reason
             FROM download_history
             ORDER BY downloaded_at DESC, rowid DESC
             LIMIT 50

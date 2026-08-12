@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { Badge } from '@/components/primitives';
 import { useSocketEvent } from '@/platform/socketio/socket';
 import { Pagination } from '@/components/pagination/pagination';
@@ -38,10 +38,11 @@ export function SearchHistoryPage({ offset }: SearchHistoryPageProps) {
     <div className={styles.page}>
       <div className={styles.toolbar}>
         <div>
+          <p className={styles.kicker}>Search Diagnostics</p>
           <h1 className={styles.title}>Search History</h1>
-          <p className={styles.subtitle}>Completed auto-search outcomes, including searches that found results but rejected every candidate.</p>
+          <p className={styles.subtitle}>Completed auto-search outcomes, rejected candidates, failed searches, and queued download evidence.</p>
         </div>
-        <span className={styles.toolbarCount}>{total} search{total !== 1 ? 'es' : ''}</span>
+        <span className={styles.toolbarCount}><strong>{total}</strong> search{total !== 1 ? 'es' : ''}</span>
       </div>
 
       {entries.length === 0 ? (
@@ -56,6 +57,13 @@ export function SearchHistoryPage({ offset }: SearchHistoryPageProps) {
                   <span className={styles.cardMeta}>{entry.scope} · {new Date(entry.run_at).toLocaleString()}</span>
                 </div>
                 <Badge tone={outcomeTone(entry.outcome)}>{entry.outcome_label}</Badge>
+              </div>
+              <div className={styles.actionRow}>
+                {entry.volume_id != null && (
+                  <Link to="/volumes/$volumeId" params={{ volumeId: String(entry.volume_id) }} className={styles.actionLink}>
+                    View volume
+                  </Link>
+                )}
               </div>
               <p className={styles.summary}>{entry.message}</p>
               {entry.queries.length > 0 && (

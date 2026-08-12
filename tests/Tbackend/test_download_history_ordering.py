@@ -14,6 +14,7 @@ class DownloadHistoryOrderingTests(unittest.TestCase):
 
             query = db.execute.call_args.args[0]
             self.assertIn('ORDER BY downloaded_at DESC, rowid DESC', query)
+            self.assertIn('failure_reason', query)
 
 
 if __name__ == '__main__':

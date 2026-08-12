@@ -12,6 +12,7 @@ export interface SearchHistoryEntry {
   task_name: string;
   title: string;
   scope: string;
+  volume_id?: number | null;
   run_at: number;
   outcome: SearchOutcome;
   outcome_label: string;

@@ -31,7 +31,7 @@ import {
 } from '../-comics.types';
 import { ComicCard } from './comic-card';
 import { ComicTableRow } from './comic-table-row';
-import { getSelectionScopeKey, getStoredSortPreference, runBounded } from '../-comics.helpers';
+import { getMissingCount, getSelectionScopeKey, getStoredSortPreference, hasMissingIssues, runBounded } from '../-comics.helpers';
 import styles from './comics-page.module.css';
 
 interface ComicsPageProps {
@@ -235,9 +235,16 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
 
   const volumes = data?.volumes ?? [];
   const total = data?.total ?? 0;
+  const visibleMissingVolumes = volumes.filter(hasMissingIssues);
+  const visibleMissingIssues = visibleMissingVolumes.reduce((sum, volume) => sum + getMissingCount(volume), 0);
+  const selectedVolumes = volumes.filter((volume) => selectedIds.has(volume.id));
+  const selectedMissingVolumes = selectedVolumes.filter(hasMissingIssues);
+  const selectedMissingIds = selectedMissingVolumes.map((volume) => volume.id);
+  const selectedMissingIssues = selectedMissingVolumes.reduce((sum, volume) => sum + getMissingCount(volume), 0);
   const hasSelection = selectedIds.size > 0;
   const selectedLabel = `${selectedIds.size} selected`;
   const bulkActionDisabled = pendingAction !== null || !hasSelection;
+  const missingBulkDisabled = pendingAction !== null || selectedMissingIds.length === 0;
 
   return (
     <div className={styles.page}>
@@ -386,6 +393,39 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
         )}
       </section>
 
+      <section className={styles.triagePanel} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} wanted and missing triage`}>
+        <div className={styles.triageCopy}>
+          <span className={styles.smartEyebrow}>Wanted / Missing</span>
+          <strong>{visibleMissingVolumes.length} visible volume{visibleMissingVolumes.length === 1 ? '' : 's'} need attention</strong>
+          <span>{visibleMissingIssues} missing issue{visibleMissingIssues === 1 ? '' : 's'} in the current result set.</span>
+        </div>
+        <div className={styles.triageActions}>
+          <Button
+            variant={search.filter === 'wanted' ? 'primary' : 'secondary'}
+            aria-pressed={search.filter === 'wanted'}
+            onClick={() => updateSearch({ filter: 'wanted' })}
+          >
+            Show Missing
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={pendingAction !== null || visibleMissingVolumes.length === 0}
+            onClick={() => void performAction(
+              'search-visible-missing',
+              async () => {
+                const ids = visibleMissingVolumes.map((volume) => volume.id);
+                const results = await runBounded(ids, 4, (volumeId) => runVolumeTask(volumeId, 'auto_search'));
+                const failures = results.filter((result) => result.status === 'rejected');
+                if (failures.length) throw new Error(`${failures.length} of ${ids.length} visible missing volumes failed to queue.`);
+              },
+              `Queued missing search for ${visibleMissingVolumes.length} visible volume${visibleMissingVolumes.length === 1 ? '' : 's'}.`,
+            )}
+          >
+            {pendingAction === 'search-visible-missing' ? 'Queuing…' : 'Search Visible Missing'}
+          </Button>
+        </div>
+      </section>
+
       {actionMessage && <StatusBanner>{actionMessage}</StatusBanner>}
 
       {manageMode && (
@@ -440,13 +480,21 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
           >Refresh &amp; Scan Selected</Button>
           <Button
             variant="secondary"
-            disabled={bulkActionDisabled}
-            onClick={() => runSelected(
-              'search-selected',
-              (id) => runVolumeTask(id, 'auto_search'),
-              'Queued search for',
+            disabled={missingBulkDisabled}
+            title={selectedMissingIds.length > 0 ? `${selectedMissingIssues} missing issue${selectedMissingIssues === 1 ? '' : 's'} across selected volumes` : 'Select volumes with missing issues'}
+            onClick={() => performAction(
+              'search-selected-missing',
+              async () => {
+                const results = await runBounded(selectedMissingIds, 4, (id) => runVolumeTask(id, 'auto_search'));
+                const failures = results.filter((result) => result.status === 'rejected');
+                if (failures.length) {
+                  throw new Error(`${failures.length} of ${selectedMissingIds.length} selected missing volumes failed to queue.`);
+                }
+                setSelectedIds(new Set());
+              },
+              `Queued missing search for ${selectedMissingIds.length} selected volume${selectedMissingIds.length === 1 ? '' : 's'}.`,
             )}
-          >Auto Search Selected</Button>
+          >Search Missing Selected</Button>
         </div>
       )}
 
@@ -475,7 +523,7 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
               onSearch={(id) => performAction(
                 `search-${id}`,
                 () => runVolumeTask(id, 'auto_search'),
-                `Search queued for ${v.title}.`,
+                `Missing search queued for ${v.title}.`,
               )}
             />
           ))}

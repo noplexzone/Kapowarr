@@ -116,7 +116,7 @@ describe('ComicsPage poster-first manage mode', () => {
     expect(screen.getByTestId('bulk-toolbar').textContent).toContain('0 selected');
     expect(screen.getByRole('button', { name: 'Delete Selected' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Monitor Selected' })).toHaveProperty('disabled', true);
-    expect(screen.getByRole('button', { name: 'Auto Search Selected' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Search Missing Selected' })).toHaveProperty('disabled', true);
   });
 
   it('runs visible poster actions with text labels, then clears selected cards after success', async () => {
@@ -124,11 +124,11 @@ describe('ComicsPage poster-first manage mode', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Saga' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Auto Search Selected' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search Missing Selected' }));
 
     await waitFor(() => expect(runVolumeTask).toHaveBeenCalledWith(1, 'auto_search'));
     expect(screen.getByTestId('bulk-toolbar').textContent).toContain('0 selected');
-    expect(screen.getByText('Queued search for 1 selected volume.')).toBeTruthy();
+    expect(screen.getByText('Queued missing search for 1 selected volume.')).toBeTruthy();
   });
 
   it('clears selection when the exact visible result scope changes', () => {
@@ -145,6 +145,45 @@ describe('ComicsPage poster-first manage mode', () => {
   });
 
 
+
+
+  it('surfaces wanted triage for the current result set and queues visible missing searches', async () => {
+    renderPage();
+
+    expect(screen.getByText('2 visible volumes need attention')).toBeTruthy();
+    expect(screen.getByText('15 missing issues in the current result set.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show Missing' }));
+    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
+      to: '/comics',
+      search: expect.any(Function),
+    }));
+    const patchSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
+    expect(patchSearch({})).toMatchObject({ filter: 'wanted', offset: 0 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search Visible Missing' }));
+    await waitFor(() => {
+      expect(runVolumeTask).toHaveBeenCalledWith(1, 'auto_search');
+      expect(runVolumeTask).toHaveBeenCalledWith(2, 'auto_search');
+    });
+    expect(screen.getByText('Queued missing search for 2 visible volumes.')).toBeTruthy();
+  });
+
+  it('only queues selected missing volumes from the manage toolbar', async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Saga' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Berserk' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search Missing Selected' }));
+
+    await waitFor(() => {
+      expect(runVolumeTask).toHaveBeenCalledWith(1, 'auto_search');
+      expect(runVolumeTask).toHaveBeenCalledWith(2, 'auto_search');
+    });
+    expect(screen.getByText('Queued missing search for 2 selected volumes.')).toBeTruthy();
+    expect(screen.getByTestId('bulk-toolbar').textContent).toContain('0 selected');
+  });
 
   it('applies and manages persisted smart filters for the active section', async () => {
     vi.spyOn(window, 'prompt').mockReturnValue('Night reads');

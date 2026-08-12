@@ -50,4 +50,22 @@ describe('ComicCard actions', () => {
     expect(getComputedStyle(target).width).toBe('44px');
     expect(getComputedStyle(target).height).toBe('44px');
   });
+
+  it('disables missing search when the volume is complete', () => {
+    const onSearch = vi.fn();
+    render(
+      <ComicCard
+        volume={{ ...volume, progress: { have: 10, total: 10 } }}
+        selected={false}
+        onSelect={vi.fn()}
+        onMonitor={vi.fn()}
+        onSearch={onSearch}
+      />,
+    );
+
+    const searchButton = screen.getByRole('button', { name: 'Search missing issues for Saga' });
+    expect(searchButton).toHaveProperty('disabled', true);
+    expect(screen.getByText('Complete')).toBeTruthy();
+  });
+
 });

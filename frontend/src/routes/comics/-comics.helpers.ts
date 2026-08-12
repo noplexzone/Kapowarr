@@ -61,6 +61,14 @@ export function getProgressLabel(progress: { have: number; total: number }): str
   return `${progress.have} of ${progress.total}`;
 }
 
+export function getMissingCount(volume: VolumeSummary): number {
+  return Math.max(0, volume.progress.total - volume.progress.have);
+}
+
+export function hasMissingIssues(volume: VolumeSummary): boolean {
+  return getMissingCount(volume) > 0;
+}
+
 export function getProgressPercent(progress: { have: number; total: number }): number {
   if (progress.total <= 0) return 0;
   return Math.round((progress.have / progress.total) * 100);

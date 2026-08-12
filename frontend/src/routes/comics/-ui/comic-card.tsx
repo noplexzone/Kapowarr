@@ -5,6 +5,7 @@ import {
   formatVolumeSubtitle,
   getProgressLabel,
   getProgressPercent,
+  getMissingCount,
 } from '../-comics.helpers';
 import type { VolumeSummary } from '../-comics.types';
 import styles from './comic-card.module.css';
@@ -22,7 +23,7 @@ interface ComicCardProps {
 export function ComicCard({ volume, selected, selectionVisible = false, pending = false, onSelect, onSearch, onMonitor }: ComicCardProps) {
   const progressPct = getProgressPercent(volume.progress);
   const progressTone = progressPct >= 100 ? 'success' : 'danger';
-  const missingCount = Math.max(0, volume.progress.total - volume.progress.have);
+  const missingCount = getMissingCount(volume);
   const isComplete = missingCount === 0 && volume.progress.total > 0;
 
   return (

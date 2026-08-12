@@ -183,6 +183,40 @@
   font-size: 0.85rem;
 }
 
+.triagePanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 0.75rem);
+  padding: 0.85rem;
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--danger) 6%);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, var(--danger));
+  border-radius: 12px;
+}
+
+.triageCopy {
+  display: flex;
+  flex: 1 1 20rem;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: min(100%, 18rem);
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.triageCopy strong {
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.triageActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2, 0.5rem);
+  flex-wrap: wrap;
+}
+
 .posterGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -316,6 +350,28 @@
   .massSummary {
     grid-column: 1 / -1;
     min-width: 0;
+  }
+
+  .massBar {
+    position: static;
+  }
+
+  .triagePanel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .triageCopy {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .triageActions {
+    justify-content: stretch;
+  }
+
+  .triageActions button {
+    flex: 1 1 9rem;
   }
 
   .posterGrid {

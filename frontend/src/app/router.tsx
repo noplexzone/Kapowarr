@@ -413,6 +413,11 @@ const volumeHistoryRoute = createRoute({
   path: 'volumes/$volumeId/history',
   component: VolumeDetailPage,
 });
+const volumeSettingsRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'volumes/$volumeId/settings',
+  component: VolumeDetailPage,
+});
 
 const readerRoute = createRoute({
   getParentRoute: () => layoutRoute,
@@ -471,6 +476,7 @@ export const routeTree = rootRoute.addChildren([
     volumeIssuesRoute,
     volumeFilesRoute,
     volumeHistoryRoute,
+    volumeSettingsRoute,
     readerRoute,
     systemRedirectRoute,
     systemStatusRoute,

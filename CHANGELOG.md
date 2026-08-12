@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add a Plex-style volume detail hero with completion stats, contextual primary actions, and a URL-backed Settings tab.
 - Add Comics/Manga wanted triage controls for visible missing volumes and selected missing-volume searches.
 - Add persisted Comics/Manga smart filters so saved library views survive across browsers and devices.
 - Add poster-first Comics/Manga manage mode hardening with visible card actions, missing indicators, and scoped bulk controls.

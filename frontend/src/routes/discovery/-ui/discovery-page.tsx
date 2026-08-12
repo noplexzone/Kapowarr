@@ -62,8 +62,23 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
     setSearchSelection(result);
   };
 
+  const heading = getDiscoveryHeading(section, type);
+  const subheading = getDiscoverySubheading(section, type);
+
   return (
     <div className={styles.page}>
+      <section className={styles.hero} aria-labelledby="discover-heading">
+        <div>
+          <p className={styles.kicker}>Discover</p>
+          <h1 id="discover-heading">{heading}</h1>
+          <p>{subheading}</p>
+        </div>
+        <div className={styles.heroRail} aria-label="Discovery mode">
+          <span>{section === 'manga' ? 'Manga' : 'Comics'}</span>
+          <strong>{type === 'story-arcs' ? 'Story arcs' : type === 'upcoming' ? 'Upcoming' : 'New'}</strong>
+        </div>
+      </section>
+
       <div className={styles.toolbar}>
         <div className={styles.tabs}>
           <button
@@ -116,7 +131,7 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
             disabled={refreshing}
             title="Refresh from ComicVine"
           >
-            ↻
+            {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -221,7 +236,7 @@ function VolumeCard({ volume, onClick }: { volume: DiscoveryVolume; onClick: (v:
         )}
         <div className={styles.overlayActions}>
           <button className={isAdded ? styles.overlayInLibrary : styles.overlayAddBtn} onClick={() => onClick(volume)}>
-            {isAdded ? '✓ Open in Library' : '+ Add'}
+            {isAdded ? 'Open volume' : 'Add volume'}
           </button>
         </div>
       </div>
@@ -485,4 +500,19 @@ function DiscoveryAddModal({ volume, section, onClose }: { volume: DiscoveryVolu
       }}
     />
   );
+}
+
+
+export function getDiscoveryHeading(section: DiscoverySection, type: DiscoveryType): string {
+  const media = section === 'manga' ? 'Manga' : 'Comics';
+  if (type === 'story-arcs') return `${media} Story Arcs`;
+  if (type === 'new') return `New ${media}`;
+  return `Upcoming ${media}`;
+}
+
+export function getDiscoverySubheading(section: DiscoverySection, type: DiscoveryType): string {
+  const media = section === 'manga' ? 'manga' : 'comics';
+  if (type === 'story-arcs') return `Find curated ${media} reading arcs and add missing volumes without leaving Discover.`;
+  if (type === 'new') return `Browse newly indexed ${media}, keep library-owned titles visible, and add from verified metadata.`;
+  return `Review upcoming ${media} releases with poster-first actions and direct add/open controls.`;
 }

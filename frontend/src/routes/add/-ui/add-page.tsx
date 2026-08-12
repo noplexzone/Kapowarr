@@ -68,9 +68,26 @@ export function AddPage({ section, initialQuery = '' }: AddPageProps) {
     setModalResult(result);
   }, [navigate, section]);
 
+  const resultSummary = query.length >= 2
+    ? isFetching ? 'Searching metadata sources…' : `${results.length} result${results.length !== 1 ? 's' : ''} for “${query}”`
+    : 'Type at least 2 characters to search by title.';
+
   return (
     <div className={styles.page}>
-      <div className={styles.searchRow}>
+      <section className={styles.hero} aria-labelledby="add-heading">
+        <div>
+          <p className={styles.kicker}>Add Library Item</p>
+          <h1 id="add-heading">Add {sectionLabel}</h1>
+          <p>Search verified metadata, choose the correct root folder, then add and optionally start monitoring/searching immediately.</p>
+        </div>
+        <div className={styles.heroRail} aria-label="Add source">
+          <span>Primary source</span>
+          <strong>{section === 'manga' ? 'ComicVine / MangaDex' : 'ComicVine'}</strong>
+        </div>
+      </section>
+
+      <div className={styles.searchPanel}>
+        <div className={styles.searchRow}>
         <input
           className={styles.searchInput}
           type="search"
@@ -103,6 +120,8 @@ export function AddPage({ section, initialQuery = '' }: AddPageProps) {
             <Badge tone="info">ComicVine</Badge>
           )}
         </div>
+        </div>
+        <p className={styles.resultSummary}>{resultSummary}</p>
       </div>
 
       {results.length === 0 && query.length >= 2 && !isFetching ? (
@@ -189,6 +208,7 @@ function ResultCard({ result, onClick }: ResultCardProps) {
           <div className={styles.coverPlaceholder}>📚</div>
         )}
         {isAdded && <div className={styles.addedBadge}>✓</div>}
+        <div className={styles.cardAction}>{isAdded ? 'Open volume' : 'Review add'}</div>
       </div>
       <div className={styles.cardBody}>
         <div className={styles.cardTitle}>{result.title}</div>

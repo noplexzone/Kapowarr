@@ -2,13 +2,20 @@ import { expect, test } from '@playwright/test';
 
 test('a new build activates and removes an older Kapowarr cache without clearing site data', async ({ page }) => {
   await page.goto('/');
-  await page.evaluate(async () => {
-    for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
-    await caches.open('kapowarr-static-build-a');
-    const registration = await navigator.serviceWorker.register('/sw.js?upgrade=build-b', { updateViaCache: 'none' });
-    await navigator.serviceWorker.ready;
-    await registration.update();
-  });
+  await expect.poll(async () => {
+    try {
+      await page.evaluate(async () => {
+        for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
+        await caches.open('kapowarr-static-build-a');
+        const registration = await navigator.serviceWorker.register('/sw.js?upgrade=build-b', { updateViaCache: 'none' });
+        await navigator.serviceWorker.ready;
+        await registration.update();
+      });
+      return 'ready';
+    } catch (error) {
+      return String(error).includes('Execution context was destroyed') ? 'reloading' : 'failed';
+    }
+  }).toBe('ready');
   await expect.poll(async () => {
     try {
       return await page.evaluate(async () => (await caches.keys()).includes('kapowarr-static-build-a'));

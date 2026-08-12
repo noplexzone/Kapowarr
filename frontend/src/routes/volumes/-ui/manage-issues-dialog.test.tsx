@@ -8,6 +8,7 @@ const source = readFileSync('src/routes/volumes/-ui/manage-issues-dialog.tsx', '
 function issue(id: number, fileIds: number[], filenames: string[]): IssueDetail {
   return {
     id,
+    comicvine_id: 1000 + id,
     issue_number: String(id),
     monitored: true,
     downloaded: fileIds.length > 0,

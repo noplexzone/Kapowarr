@@ -37,8 +37,8 @@ const baseVolume: VolumeDetailFull = {
   cover: '',
   general_files: [],
   issues: [
-    { id: 1, issue_number: '1', title: 'One', monitored: true, downloaded: true, size: 1024, file_ids: [88], filenames: ['Saga 001.cbz'] },
-    { id: 2, issue_number: '2', title: 'Two', monitored: true, downloaded: false, size: 0, file_ids: [], filenames: [] },
+    { id: 1, comicvine_id: 1001, issue_number: '1', title: 'One', monitored: true, downloaded: true, size: 1024, file_ids: [88], filenames: ['Saga 001.cbz'] },
+    { id: 2, comicvine_id: 1002, issue_number: '2', title: 'Two', monitored: true, downloaded: false, size: 0, file_ids: [], filenames: [] },
   ],
 };
 

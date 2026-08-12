@@ -5,6 +5,8 @@ import type { IssueDetail } from '../-volumes.types';
 import { BookOpenIcon, CoverPageIcon, HistoryIcon, PersonIcon, SearchIcon } from './volume-detail-icons';
 import styles from './volume-detail-page.module.css';
 function formatFileSize(bytes: number): string { if (bytes === 0) return '0 B'; const units = ['B', 'KB', 'MB', 'GB', 'TB']; const i = Math.floor(Math.log(bytes) / Math.log(1024)); const size = bytes / Math.pow(1024, i); return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`; }
+function getComicVineIssueUrl(issue: IssueDetail): string | null { return issue.comicvine_id > 0 ? `https://comicvine.gamespot.com/issue/4000-${issue.comicvine_id}/` : null; }
+function getComicVineIssueLabel(issue: IssueDetail): string { const title = issue.title ? ` — ${issue.title}` : ''; return `Open ComicVine page for issue #${issue.issue_number}${title}`; }
 export interface IssueRowProps {
   issue: IssueDetail;
   volumeId: number;
@@ -30,11 +32,43 @@ export function IssueRow({
     .find(({ filename, fileId }) =>
       fileId != null && filename.toLowerCase().endsWith('.pdf'),
     );
+  const comicVineIssueUrl = getComicVineIssueUrl(issue);
+  const comicVineLabel = getComicVineIssueLabel(issue);
 
   return (
     <tr className={styles.issueRow}>
-      <td data-label="Issue" className={styles.issueNum}>#{issue.issue_number}</td>
-      <td data-label="Title" className={styles.issueTitle}>{issue.title || '—'}</td>
+      <td data-label="Issue" className={styles.issueNum}>
+        {comicVineIssueUrl ? (
+          <a
+            href={comicVineIssueUrl}
+            className={styles.issueComicVineLink}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={comicVineLabel}
+            title="Open this issue on ComicVine"
+          >
+            #{issue.issue_number}
+          </a>
+        ) : (
+          `#${issue.issue_number}`
+        )}
+      </td>
+      <td data-label="Title" className={styles.issueTitle}>
+        {comicVineIssueUrl ? (
+          <a
+            href={comicVineIssueUrl}
+            className={styles.issueComicVineTitleLink}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={comicVineLabel}
+            title="Open this issue on ComicVine"
+          >
+            {issue.title || '—'}
+          </a>
+        ) : (
+          issue.title || '—'
+        )}
+      </td>
       <td data-label="Filename" className={styles.issueFilename}>
         {issue.filenames.length > 0
           ? issue.filenames.map((f, i) => (

@@ -1,5 +1,6 @@
 export interface IssueDetail {
   id: number;
+  comicvine_id: number;
   issue_number: string;
   title?: string;
   release_date?: string;

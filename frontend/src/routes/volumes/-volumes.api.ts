@@ -55,6 +55,7 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
     issues: Array.isArray(raw.issues)
       ? raw.issues.map((i: Record<string, any>) => ({
           id: i.id,
+          comicvine_id: Number(i.comicvine_id ?? 0),
           issue_number: String(i.issue_number ?? ''),
           title: i.title ?? undefined,
           release_date: i.date ?? i.release_date ?? undefined,

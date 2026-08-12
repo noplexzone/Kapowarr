@@ -15,6 +15,7 @@ import {
   manualSearchIssue,
   manualSearchVolume,
   updateVolume,
+  volumeDetailFullQueryOptions,
 } from './-volumes.api';
 
 const get = vi.mocked(apiClient.get);
@@ -23,6 +24,43 @@ const put = vi.mocked(apiClient.put);
 const del = vi.mocked(apiClient.delete);
 const parse = vi.mocked(readJson);
 
+
+
+describe('volume detail issue mapping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    get.mockResolvedValue({} as Response);
+  });
+
+  it('preserves issue ComicVine ids for external issue links', async () => {
+    parse.mockResolvedValue({
+      id: 10,
+      comicvine_id: 4050,
+      title: 'Batman',
+      year: 1940,
+      publisher: 'DC',
+      volume_number: 1,
+      monitored: true,
+      monitor_new_issues: true,
+      root_folder: 1,
+      issues: [
+        {
+          id: 7,
+          comicvine_id: 12345,
+          issue_number: '12',
+          monitored: true,
+          files: [],
+        },
+      ],
+    });
+
+    const options = volumeDetailFullQueryOptions(10);
+    const volume = await options.queryFn!({ queryKey: options.queryKey } as never);
+
+    expect(get).toHaveBeenCalledWith('volumes/10');
+    expect(volume.issues[0].comicvine_id).toBe(12345);
+  });
+});
 
 describe('volume edit updates', () => {
   beforeEach(() => {

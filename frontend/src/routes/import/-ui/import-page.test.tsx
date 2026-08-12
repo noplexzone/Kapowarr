@@ -74,6 +74,17 @@ async function renderScannedPage() {
 }
 
 describe('unmatched folder deletion', () => {
+
+  it('renders diagnostic summary and labelled mobile-card cells after a scan', async () => {
+    await renderScannedPage();
+    expect(screen.getByRole('heading', { name: 'Library Import' })).toBeTruthy();
+    expect(screen.getByLabelText('Import scan summary').textContent).toContain('Matched');
+    expect(screen.getByText(/2 unmatched · 0 selected/)).toBeTruthy();
+    expect(screen.getByText('/library/Matched').closest('td')?.getAttribute('data-label')).toBe('Folder');
+    const matchedRow = screen.getByText('/library/Matched').closest('tr') as HTMLTableRowElement;
+    expect(matchedRow.querySelector('td[data-label="Title"]')?.textContent).toBe('Matched');
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     readyScan();

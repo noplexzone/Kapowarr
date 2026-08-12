@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Redesign Import and Mismatch review into diagnostic operational surfaces with mobile-safe cards and clearer scan summaries.
 - Polish Discover and Add flows with premium command surfaces, clearer metadata context, and mobile-safe add/search actions.
 - Extend Activity diagnostics across History, Search History, and Blocklist with mobile-safe cards, source context, failure details, and visible recovery actions.
 - Redesign Activity Queue into a diagnostic operations surface with mobile cards, clearer progress, and visible action labels.

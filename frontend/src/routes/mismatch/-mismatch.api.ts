@@ -1,4 +1,4 @@
-import { apiClient } from '@/app/api-client';
+import { apiClient, readJson } from '@/app/api-client';
 import type { MismatchItem, MismatchSelection } from './-mismatch.types';
 
 export interface BackendVolume {
@@ -68,9 +68,11 @@ export async function* scanMismatch(
 }
 
 export async function matchItems(items: MismatchSelection[]): Promise<void> {
-  await apiClient.post('libraryimport/bulk', { json: items });
+  const response = await apiClient.post('libraryimport/bulk', { json: items });
+  await readJson<unknown>(response);
 }
 
 export async function deleteFolders(folders: string[]): Promise<void> {
-  await apiClient.post('libraryimport/delete', { json: { folders } });
+  const response = await apiClient.post('libraryimport/delete', { json: { folders } });
+  await readJson<unknown>(response);
 }

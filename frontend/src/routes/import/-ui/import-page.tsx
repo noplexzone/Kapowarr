@@ -116,15 +116,23 @@ export function ImportPage({ section }: ImportPageProps) {
 
   const unmatchedCount = unmatchedFolders.length;
   const matchedCount = items.filter(i => i.matched).length;
+  const selectedMatchedCount = items.filter(i => selected.has(i.folder) && i.matched).length;
+  const scanState = scanning ? 'Scanning' : scanComplete ? 'Scan complete' : 'Ready to scan';
 
   return (
     <div className={styles.page}>
-      <div className={styles.toolbar}>
-        <h1 className={styles.pageTitle}>Library Import</h1>
-        <Badge tone={section === 'comic' ? 'info' : 'neutral'}>
-          {section === 'comic' ? 'Comics' : 'Manga'}
-        </Badge>
-      </div>
+      <section className={styles.hero} aria-labelledby="import-heading">
+        <div>
+          <p className={styles.kicker}>Activity Diagnostics</p>
+          <h1 id="import-heading">Library Import</h1>
+          <p>Scan staged folders, verify metadata matches, and import only confirmed {section === 'comic' ? 'comic' : 'manga'} volumes.</p>
+        </div>
+        <div className={styles.heroStats} aria-label="Import scan summary">
+          <div><span>State</span><strong>{scanState}</strong></div>
+          <div><span>Matched</span><strong>{matchedCount}</strong></div>
+          <div><span>Unmatched</span><strong>{unmatchedCount}</strong></div>
+        </div>
+      </section>
 
       <div className={styles.scanForm}>
         <div className={styles.formRow}>
@@ -167,7 +175,7 @@ export function ImportPage({ section }: ImportPageProps) {
         <>
           <div className={styles.resultToolbar}>
             <span className={styles.resultCount}>
-              {items.length} folders found · {matchedCount} matched · {unmatchedCount} unmatched
+              {items.length} folders found · {matchedCount} matched · {unmatchedCount} unmatched · {selectedMatchedCount} selected
             </span>
             <div className={styles.resultActions}>
               {matchedCount > 0 && (
@@ -204,7 +212,7 @@ export function ImportPage({ section }: ImportPageProps) {
               <tbody>
                 {items.map((item) => (
                   <tr key={item.folder}>
-                    <td>
+                    <td data-label="Select">
                       {item.matched && (
                         <input
                           type="checkbox"
@@ -213,10 +221,10 @@ export function ImportPage({ section }: ImportPageProps) {
                         />
                       )}
                     </td>
-                    <td className={styles.folderCell}>{item.folder}</td>
-                    <td>{item.file_title}</td>
-                    <td>{item.match_title ?? '—'}</td>
-                    <td>
+                    <td data-label="Folder" className={styles.folderCell}>{item.folder}</td>
+                    <td data-label="Title">{item.file_title}</td>
+                    <td data-label="Matched Title">{item.match_title ?? '—'}</td>
+                    <td data-label="Status">
                       <Badge tone={item.matched ? 'success' : 'danger'}>
                         {item.matched ? 'Matched' : 'Unmatched'}
                       </Badge>

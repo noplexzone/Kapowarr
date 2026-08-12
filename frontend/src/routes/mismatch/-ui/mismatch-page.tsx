@@ -77,18 +77,31 @@ export function MismatchPage({ section }: MismatchPageProps) {
     }
   };
 
+  const issueTotal = items.reduce((sum, item) => sum + (item.issue_count ?? 0), 0);
+  const unmatchedCount = items.filter(item => item.status === 'unmatched').length;
+
   return (
     <div className={styles.page}>
-      <div className={styles.toolbar}>
-        <h1 className={styles.pageTitle}>Mismatch Review</h1>
-        <div className={styles.toolbarRight}>
-          <Badge tone={section === 'comic' ? 'info' : 'neutral'}>
-            {section === 'comic' ? 'Comics' : 'Manga'}
-          </Badge>
-          <Button variant="secondary" onClick={startScan} disabled={scanning}>
-            {scanning ? 'Scanning…' : 'Rescan'}
-          </Button>
+      <section className={styles.hero} aria-labelledby="mismatch-heading">
+        <div>
+          <p className={styles.kicker}>Activity Diagnostics</p>
+          <h1 id="mismatch-heading">Mismatch Review</h1>
+          <p>Audit folders whose disk names or publisher signals do not line up cleanly with the monitored {section === 'comic' ? 'comics' : 'manga'} library.</p>
         </div>
+        <div className={styles.heroStats} aria-label="Mismatch scan summary">
+          <div><span>State</span><strong>{scanning ? 'Scanning' : 'Ready'}</strong></div>
+          <div><span>Folders</span><strong>{items.length}</strong></div>
+          <div><span>Issues</span><strong>{issueTotal}</strong></div>
+        </div>
+      </section>
+
+      <div className={styles.toolbar}>
+        <Badge tone={section === 'comic' ? 'info' : 'neutral'}>
+          {section === 'comic' ? 'Comics' : 'Manga'}
+        </Badge>
+        <Button variant="secondary" onClick={startScan} disabled={scanning}>
+          {scanning ? 'Scanning…' : 'Rescan'}
+        </Button>
       </div>
 
       {error && <Notice tone="danger">{error}</Notice>}
@@ -103,7 +116,7 @@ export function MismatchPage({ section }: MismatchPageProps) {
       ) : (
         <>
           <div className={styles.resultToolbar}>
-            <span className={styles.resultCount}>{items.length} folders</span>
+            <span className={styles.resultCount}>{items.length} folders · {unmatchedCount} naming mismatches · {selected.size} selected</span>
             <div className={styles.resultActions}>
               <Button variant="ghost" onClick={selectAll} disabled={scanning}>
                 Select All
@@ -133,17 +146,17 @@ export function MismatchPage({ section }: MismatchPageProps) {
               <tbody>
                 {items.map((item) => (
                   <tr key={item.folder}>
-                    <td className={styles.checkCell}>
+                    <td data-label="Select" className={styles.checkCell}>
                       <input
                         type="checkbox"
                         checked={selected.has(item.folder)}
                         onChange={() => toggleSelect(item.folder)}
                       />
                     </td>
-                    <td className={styles.folderCell}>{item.folder}</td>
-                    <td className={styles.titleCell}>{item.file_title || '—'}</td>
-                    <td className={styles.countCell}>{item.issue_count ?? '—'}</td>
-                    <td>
+                    <td data-label="Folder" className={styles.folderCell}>{item.folder}</td>
+                    <td data-label="Suggested Match" className={styles.titleCell}>{item.file_title || '—'}</td>
+                    <td data-label="Issues" className={styles.countCell}>{item.issue_count ?? '—'}</td>
+                    <td data-label="Status">
                       <Badge
                         tone={
                           item.status === 'matched'
@@ -156,7 +169,7 @@ export function MismatchPage({ section }: MismatchPageProps) {
                         {item.status}
                       </Badge>
                     </td>
-                    <td>
+                    <td data-label="Actions">
                       <div className={styles.rowActions}>
                         {item.cv_id && (
                           <Button

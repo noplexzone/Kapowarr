@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { IssueDetail } from '../-volumes.types';
-import { selectedIssueFileIds } from './manage-issues-dialog';
+import { selectedIssueFileIds, selectedUnmatchedManualMatches } from './manage-issues-dialog';
 
 const source = readFileSync('src/routes/volumes/-ui/manage-issues-dialog.tsx', 'utf8');
 
@@ -37,5 +37,33 @@ describe('Manage Issues accessible controls', () => {
     expect(source).toContain('aria-label="Select all unmatched files"');
     expect(source).toContain('aria-label={`Select unmatched file ${fn}`}');
     expect(source).toContain('aria-label={`Force match ${fn} to issue`}');
+  });
+});
+
+
+describe('Manage Issues bulk unmatched force match', () => {
+  it('builds bulk manual-match payloads only for selected files with targets', () => {
+    const result = selectedUnmatchedManualMatches(
+      new Set(['/library/Saga 001.cbz', '/library/Saga 003.cbz']),
+      {
+        '/library/Saga 001.cbz': 101,
+        '/library/Saga 002.cbz': 102,
+      },
+    );
+
+    expect(result).toEqual([
+      {
+        filepath: '/library/Saga 001.cbz',
+        issue_ids: [101],
+        general_file: false,
+        forced_match: true,
+      },
+    ]);
+  });
+
+  it('exposes a selected unmatched bulk match action with a disabled state', () => {
+    expect(source).toContain('Bulk Match Selected');
+    expect(source).toContain('selectedUnmatchedMissingTargets');
+    expect(source).toContain('onForceMatchUnmatchedSelected');
   });
 });

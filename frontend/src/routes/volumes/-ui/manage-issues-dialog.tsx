@@ -3,7 +3,7 @@ import { Badge, Button } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
 import type { FileMatch, IssueDetail, VolumeDetailFull } from '../-volumes.types';
 import styles from './volume-detail-page.module.css';
-interface ManageIssuesDialogProps { open: boolean; volume: VolumeDetailFull; loading: boolean; checked: Set<number>; deleting: boolean; forceMatching: boolean; manualMatches: FileMatch[]; unmatchedFiles: FileMatch[]; unmatchedChecked: Set<string>; unmatchedDeleting: boolean; forceMatchTargets: Record<string, number>; setForceMatchTargets: Dispatch<SetStateAction<Record<string, number>>>; onClose: () => void; onToggleIssue: (issueId: number) => void; onToggleAllIssues: (checked: boolean, issueIds: number[]) => void; onToggleUnmatched: (filepath: string) => void; onToggleAllUnmatched: (checked: boolean, filepaths: string[]) => void; onForceMatchFile: (filepath: string) => void; onDeleteUnmatchedSelected: () => void; onDeleteAllUnmatched: () => void; onDeleteSelected: () => void; onForceMatchSelected: () => void; }
+interface ManageIssuesDialogProps { open: boolean; volume: VolumeDetailFull; loading: boolean; checked: Set<number>; deleting: boolean; forceMatching: boolean; manualMatches: FileMatch[]; unmatchedFiles: FileMatch[]; unmatchedChecked: Set<string>; unmatchedDeleting: boolean; unmatchedForceMatching: boolean; forceMatchTargets: Record<string, number>; setForceMatchTargets: Dispatch<SetStateAction<Record<string, number>>>; onClose: () => void; onToggleIssue: (issueId: number) => void; onToggleAllIssues: (checked: boolean, issueIds: number[]) => void; onToggleUnmatched: (filepath: string) => void; onToggleAllUnmatched: (checked: boolean, filepaths: string[]) => void; onForceMatchFile: (filepath: string) => void; onForceMatchUnmatchedSelected: () => void; onDeleteUnmatchedSelected: () => void; onDeleteAllUnmatched: () => void; onDeleteSelected: () => void; onForceMatchSelected: () => void; }
 
 export function selectedIssueFileIds(
   issues: IssueDetail[],
@@ -18,7 +18,22 @@ export function selectedIssueFileIds(
   ];
 }
 
-export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: manageLoading, checked: manageChecked, deleting: manageDeleting, forceMatching: manageForceMatching, manualMatches, unmatchedFiles, unmatchedChecked, unmatchedDeleting, forceMatchTargets, setForceMatchTargets, onClose: closeManageIssues, onToggleIssue: toggleManageCheck, onToggleAllIssues: toggleAllManage, onToggleUnmatched: toggleUnmatchedCheck, onToggleAllUnmatched: toggleAllUnmatched, onForceMatchFile: handleForceMatchFile, onDeleteUnmatchedSelected: handleDeleteUnmatchedSelected, onDeleteAllUnmatched: handleDeleteAllUnmatched, onDeleteSelected: handleDeleteSelected, onForceMatchSelected: handleForceMatchSelected }: ManageIssuesDialogProps) { return (
+
+export function selectedUnmatchedManualMatches(
+  selectedFilepaths: ReadonlySet<string>,
+  forceMatchTargets: Record<string, number>,
+): FileMatch[] {
+  return [...selectedFilepaths]
+    .filter(filepath => Boolean(forceMatchTargets[filepath]))
+    .map(filepath => ({
+      filepath,
+      issue_ids: [forceMatchTargets[filepath]],
+      general_file: false,
+      forced_match: true,
+    }));
+}
+
+export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: manageLoading, checked: manageChecked, deleting: manageDeleting, forceMatching: manageForceMatching, manualMatches, unmatchedFiles, unmatchedChecked, unmatchedDeleting, unmatchedForceMatching, forceMatchTargets, setForceMatchTargets, onClose: closeManageIssues, onToggleIssue: toggleManageCheck, onToggleAllIssues: toggleAllManage, onToggleUnmatched: toggleUnmatchedCheck, onToggleAllUnmatched: toggleAllUnmatched, onForceMatchFile: handleForceMatchFile, onForceMatchUnmatchedSelected: handleForceMatchUnmatchedSelected, onDeleteUnmatchedSelected: handleDeleteUnmatchedSelected, onDeleteAllUnmatched: handleDeleteAllUnmatched, onDeleteSelected: handleDeleteSelected, onForceMatchSelected: handleForceMatchSelected }: ManageIssuesDialogProps) { const selectedUnmatchedMissingTargets = [...unmatchedChecked].some(filepath => !forceMatchTargets[filepath]); return (
       <DialogFrame
         open={manageIssuesOpen}
         onOpenChange={(open) => {
@@ -228,7 +243,23 @@ export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: ma
                     <Button
                       variant="primary"
                       disabled={
-                        unmatchedChecked.size === 0 || unmatchedDeleting
+                        unmatchedChecked.size === 0 ||
+                        selectedUnmatchedMissingTargets ||
+                        unmatchedDeleting ||
+                        unmatchedForceMatching
+                      }
+                      onClick={handleForceMatchUnmatchedSelected}
+                    >
+                      {unmatchedForceMatching
+                        ? 'Matching…'
+                        : 'Bulk Match Selected'}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={
+                        unmatchedChecked.size === 0 ||
+                        unmatchedDeleting ||
+                        unmatchedForceMatching
                       }
                       onClick={handleDeleteUnmatchedSelected}
                     >
@@ -238,7 +269,7 @@ export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: ma
                     </Button>
                     <Button
                       variant="ghost"
-                      disabled={unmatchedDeleting}
+                      disabled={unmatchedDeleting || unmatchedForceMatching}
                       onClick={handleDeleteAllUnmatched}
                     >
                       Delete All

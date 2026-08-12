@@ -50,7 +50,7 @@ import type {
 import { VolumeHero } from './volume-hero';
 import { IssuesSection } from './issues-section';
 import { IssueHistoryDialog } from './issue-history-dialog';
-import { ManageIssuesDialog, selectedIssueFileIds } from './manage-issues-dialog';
+import { ManageIssuesDialog, selectedIssueFileIds, selectedUnmatchedManualMatches } from './manage-issues-dialog';
 import { VolumeFilesPanel } from './volume-files-panel';
 import { VolumeHistoryPanel } from './volume-history-panel';
 import { VolumeSettingsPanel } from './volume-settings-panel';
@@ -199,6 +199,7 @@ export function VolumeDetailPage() {
   const [manageLoading, setManageLoading] = useState(false);
   const [unmatchedChecked, setUnmatchedChecked] = useState<Set<string>>(new Set());
   const [unmatchedDeleting, setUnmatchedDeleting] = useState(false);
+  const [unmatchedForceMatching, setUnmatchedForceMatching] = useState(false);
 
   // Import files dialog
   const [importOpen, setImportOpen] = useState(false);
@@ -695,6 +696,7 @@ export function VolumeDetailPage() {
     setForceMatchTargets({});
     setUnmatchedChecked(new Set());
     setUnmatchedDeleting(false);
+    setUnmatchedForceMatching(false);
     setManageIssuesOpen(true);
     setManageLoading(true);
     try {
@@ -823,6 +825,36 @@ export function VolumeDetailPage() {
     },
     [id, forceMatchTargets, queryClient],
   );
+
+
+  const handleForceMatchUnmatchedSelected = useCallback(async () => {
+    const matchesToSubmit = selectedUnmatchedManualMatches(
+      unmatchedChecked,
+      forceMatchTargets,
+    );
+    if (matchesToSubmit.length === 0) return;
+    if (matchesToSubmit.length !== unmatchedChecked.size) {
+      setActionMsg('Choose an issue target for every selected unmatched file.');
+      return;
+    }
+    setUnmatchedForceMatching(true);
+    try {
+      await submitManualMatch(id, matchesToSubmit);
+      setActionMsg(`Bulk match submitted for ${matchesToSubmit.length} unmatched file(s). Refresh & Scan to apply.`);
+      queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+      const matches = await fetchManualMatch(id);
+      setManualMatches(matches);
+      setUnmatchedFiles(
+        matches.filter((m) => m.issue_ids.length === 0 && !m.general_file),
+      );
+      setUnmatchedChecked(new Set());
+      setForceMatchTargets({});
+    } catch (err) {
+      setActionMsg('Bulk match failed: ' + (err as Error).message);
+    } finally {
+      setUnmatchedForceMatching(false);
+    }
+  }, [forceMatchTargets, id, queryClient, unmatchedChecked]);
 
   const toggleUnmatchedCheck = useCallback((filepath: string) => {
     setUnmatchedChecked(prev => {
@@ -1924,6 +1956,7 @@ export function VolumeDetailPage() {
         unmatchedFiles={unmatchedFiles}
         unmatchedChecked={unmatchedChecked}
         unmatchedDeleting={unmatchedDeleting}
+        unmatchedForceMatching={unmatchedForceMatching}
         forceMatchTargets={forceMatchTargets}
         setForceMatchTargets={setForceMatchTargets}
         onClose={closeManageIssues}
@@ -1932,6 +1965,7 @@ export function VolumeDetailPage() {
         onToggleUnmatched={toggleUnmatchedCheck}
         onToggleAllUnmatched={toggleAllUnmatched}
         onForceMatchFile={handleForceMatchFile}
+        onForceMatchUnmatchedSelected={handleForceMatchUnmatchedSelected}
         onDeleteUnmatchedSelected={handleDeleteUnmatchedSelected}
         onDeleteAllUnmatched={handleDeleteAllUnmatched}
         onDeleteSelected={handleDeleteSelected}

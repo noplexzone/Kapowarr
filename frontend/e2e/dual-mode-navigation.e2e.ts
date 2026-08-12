@@ -7,6 +7,8 @@ const comicVolumes = [
   { id: 1, title: 'Acceptance Volume', year: 2026, volume_number: 1, publisher: 'Test Publisher', monitored: true, root_folder: '/comics', folder: '/comics/Acceptance Volume', special_version: '', issue_count: 10, issues_downloaded: 4 },
   { id: 2, title: 'Second Acceptance', year: 2025, volume_number: 2, publisher: 'Test Publisher', monitored: false, root_folder: '/comics', folder: '/comics/Second Acceptance', special_version: '', issue_count: 8, issues_downloaded: 3 },
 ];
+let lastManualMatchPayload: unknown = null;
+
 const mangaVolumes = [
   { id: 3, title: 'Acceptance Manga', year: 2024, volume_number: 1, publisher: 'Manga Publisher', monitored: true, root_folder: '/manga', folder: '/manga/Acceptance Manga', special_version: '', issue_count: 12, issues_downloaded: 2 },
 ];
@@ -24,6 +26,17 @@ async function mockApi(route: Route) {
     return;
   }
   else if (pathname.endsWith('/api/volumes/1/import')) result = { task_id: 42 };
+  else if (pathname.endsWith('/api/volumes/1/manualmatch')) {
+    if (route.request().method() === 'PUT') {
+      lastManualMatchPayload = route.request().postDataJSON();
+      result = {};
+    } else {
+      result = [
+        { filepath: '/comics/Acceptance Volume/Orphan 001.cbz', issue_ids: [], general_file: false, forced_match: false, unmatched_file_id: 'u1' },
+        { filepath: '/comics/Acceptance Volume/Orphan 002.cbz', issue_ids: [], general_file: false, forced_match: false, unmatched_file_id: 'u2' },
+      ];
+    }
+  }
   else if (pathname.endsWith('/api/volumes/search')) result = [{
     comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result',
     year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null,
@@ -33,9 +46,12 @@ async function mockApi(route: Route) {
     id: 1, comicvine_id: 101, title: 'Acceptance Volume', year: 2026,
     publisher: 'Test Publisher', volume_number: 1, section: 'comic', monitored: true,
     monitor_new_issues: true, folder: '/comics/Acceptance Volume', root_folder: 1,
-    root_folder_path: '/comics', issue_count: 1, issues_downloaded: 1,
-    issues: [{ id: 11, issue_number: '1', title: 'Pilot', monitored: true,
-      files: [{ id: 21, filepath: '/comics/Acceptance Volume/Issue 1.cbz', size: 1024 }] }],
+    root_folder_path: '/comics', issue_count: 2, issues_downloaded: 1,
+    issues: [
+      { id: 11, issue_number: '1', title: 'Pilot', monitored: true,
+        files: [{ id: 21, filepath: '/comics/Acceptance Volume/Issue 1.cbz', size: 1024 }] },
+      { id: 12, issue_number: '2', title: 'Second', monitored: true, files: [] },
+    ],
     general_files: [{ id: 31, filepath: '/comics/Acceptance Volume/Volume Notes.pdf', size: 2048, file_type: 'metadata' }],
   };
   else if (pathname.endsWith('/api/volumes')) {
@@ -223,7 +239,7 @@ test('volume issue history dialog consumes the issue-history array contract', as
   await page.route('**/*', injectProductionBase);
   await page.route('**/api/**', mockApi);
   await page.goto('/volumes/1/issues');
-  await page.getByRole('button', { name: 'History' }).click();
+  await page.getByRole('row', { name: /#1 Pilot/ }).getByRole('button', { name: 'View history for this issue' }).click();
   await expect(page.getByRole('dialog')).toContainText('Pilot issue release');
 });
 
@@ -243,6 +259,28 @@ test('volume detail imports multiple local files directly into the selected volu
   await page.getByRole('button', { name: 'Import 2 Files' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText('Volume task completed.')).toBeVisible();
+});
+
+
+test('manage issues bulk matches selected unmatched files', async ({ page }) => {
+  lastManualMatchPayload = null;
+  await page.route('**/*', injectProductionBase);
+  await page.route('**/api/**', mockApi);
+  await page.goto('/volumes/1/issues');
+
+  await page.getByRole('button', { name: 'Manage Issues' }).click();
+  await expect(page.getByText('Unmatched Files (2)')).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Select all unmatched files' }).check();
+  await expect(page.getByRole('button', { name: 'Bulk Match Selected' })).toBeDisabled();
+  await page.getByLabel('Force match Orphan 001.cbz to issue').selectOption({ label: '#1 — Pilot' });
+  await page.getByLabel('Force match Orphan 002.cbz to issue').selectOption({ label: '#2 — Second' });
+  await page.getByRole('button', { name: 'Bulk Match Selected' }).click();
+
+  await expect(page.getByText('Bulk match submitted for 2 unmatched file(s). Refresh & Scan to apply.')).toBeVisible();
+  expect(lastManualMatchPayload).toEqual([
+    { filepath: '/comics/Acceptance Volume/Orphan 001.cbz', issue_ids: [11], general_file: false, forced_match: true },
+    { filepath: '/comics/Acceptance Volume/Orphan 002.cbz', issue_ids: [12], general_file: false, forced_match: true },
+  ]);
 });
 
 test('volume detail defaults to Issues without an Overview tab', async ({ page }) => {

@@ -92,8 +92,8 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
     const storedSort = getStoredSortPreference(window.localStorage, STORAGE_KEY_SORT);
     if (storedSort && storedSort !== search.sort) {
       navigate({
-        to: '/library',
-        search: (previous: any) => ({ ...previous, section, sort: storedSort, page: 1 }),
+        to: section === 'comic' ? '/comics' : '/manga',
+        search: (previous: any) => ({ ...previous, sort: storedSort, page: 1 }),
         replace: true,
       });
     }
@@ -108,8 +108,8 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
       if (trimmed !== current) {
         setStorageVal(STORAGE_KEY_SEARCH, trimmed || undefined);
         navigate({
-          to: canonical ? '/library' : section === 'comic' ? '/comics' : '/manga',
-          search: (prev: any) => canonical ? ({ ...prev, section, q: trimmed || undefined, page: 1 }) : ({ ...prev, search: trimmed || undefined, offset: 0 }),
+          to: section === 'comic' ? '/comics' : '/manga',
+          search: (prev: any) => canonical ? ({ ...prev, q: trimmed || undefined, page: 1 }) : ({ ...prev, search: trimmed || undefined, offset: 0 }),
         });
       }
     }, 350);
@@ -139,7 +139,7 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
           canonicalPatch.monitoring = patch.filter === 'unmonitored' ? 'unmonitored' : patch.filter === 'monitored' ? 'monitored' : 'all';
         }
         if (resetsPage) canonicalPatch.page = 1;
-        navigate({ to: '/library', search: (prev: any) => ({ ...prev, section, ...canonicalPatch }) });
+        navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...canonicalPatch }) });
       } else {
         navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...patch, ...(resetsPage ? { offset: 0 } : {}) }) });
       }
@@ -236,7 +236,6 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
   const volumes = data?.volumes ?? [];
   const total = data?.total ?? 0;
   const visibleMissingVolumes = volumes.filter(hasMissingIssues);
-  const visibleMissingIssues = visibleMissingVolumes.reduce((sum, volume) => sum + getMissingCount(volume), 0);
   const selectedVolumes = volumes.filter((volume) => selectedIds.has(volume.id));
   const selectedMissingVolumes = selectedVolumes.filter(hasMissingIssues);
   const selectedMissingIds = selectedMissingVolumes.map((volume) => volume.id);
@@ -248,32 +247,8 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
 
   return (
     <div className={styles.page}>
-      <div className={styles.toolbar}>
-        <div className={styles.toolbarLeft}>
-          {canonical && (
-            <div className={styles.filterChips} aria-label="Library section">
-              <Button
-                variant={section === 'comic' ? 'primary' : 'ghost'}
-                aria-pressed={section === 'comic'}
-                onClick={() => navigate({
-                  to: '/library',
-                  search: (previous: any) => ({ ...previous, section: 'comic', page: 1 }),
-                })}
-              >
-                Comics
-              </Button>
-              <Button
-                variant={section === 'manga' ? 'primary' : 'ghost'}
-                aria-pressed={section === 'manga'}
-                onClick={() => navigate({
-                  to: '/library',
-                  search: (previous: any) => ({ ...previous, section: 'manga', page: 1 }),
-                })}
-              >
-                Manga
-              </Button>
-            </div>
-          )}
+      <div className={styles.libraryHeader}>
+        <div className={styles.primaryControls}>
           <div className={styles.searchBar}>
             <label className={styles.srOnly} htmlFor={`${section}-library-search`}>Search library</label>
             <input
@@ -287,7 +262,37 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
             {search.search && <span className={styles.searchCount}>{total} results</span>}
           </div>
 
-          <div className={styles.viewToggle}>
+          <div className={styles.toolbarRight}>
+            <Button variant={manageMode ? 'primary' : 'secondary'} aria-pressed={manageMode} onClick={() => { setManageMode((value) => { if (value) setSelectedIds(new Set()); return !value; }); }}>
+              {manageMode ? 'Done' : 'Manage'}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={pendingAction !== null}
+              onClick={() => performAction(
+                'update-all',
+                () => runLibraryTask('update_all'),
+                'Library update queued.',
+              )}
+            >
+              {pendingAction === 'update-all' ? 'Queuing…' : 'Update All'}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={pendingAction !== null}
+              onClick={() => performAction(
+                'search-all',
+                () => runLibraryTask('search_all'),
+                'Library search queued.',
+              )}
+            >
+              {pendingAction === 'search-all' ? 'Queuing…' : 'Search All'}
+            </Button>
+          </div>
+        </div>
+
+        <div className={styles.secondaryControls}>
+          <div className={styles.viewToggle} aria-label="Library view">
             {VIEW_OPTIONS.map((opt) => (
               <Button
                 key={opt}
@@ -330,101 +335,47 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
           </select>
         </div>
 
-        <div className={styles.toolbarRight}>
-          <Button variant={manageMode ? 'primary' : 'secondary'} aria-pressed={manageMode} onClick={() => { setManageMode((value) => { if (value) setSelectedIds(new Set()); return !value; }); }}>
-            {manageMode ? 'Done Managing' : 'Manage'}
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={pendingAction !== null}
-            onClick={() => performAction(
-              'update-all',
-              () => runLibraryTask('update_all'),
-              'Library update queued.',
-            )}
-          >
-            {pendingAction === 'update-all' ? 'Queuing…' : 'Update All'}
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={pendingAction !== null}
-            onClick={() => performAction(
-              'search-all',
-              () => runLibraryTask('search_all'),
-              'Library search queued.',
-            )}
-          >
-            {pendingAction === 'search-all' ? 'Queuing…' : 'Search All'}
-          </Button>
-        </div>
-      </div>
-
-
-      <section className={styles.smartFilters} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} smart filters`}>
-        <div className={styles.smartFiltersHeader}>
-          <div>
-            <span className={styles.smartEyebrow}>Smart filters</span>
-            <strong>Saved library views</strong>
-          </div>
-          <Button variant="secondary" disabled={pendingAction !== null} onClick={saveCurrentView}>
-            {pendingAction === 'save-filter' ? 'Saving…' : 'Save Current View'}
+        <div className={styles.savedViewsRow} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} saved views`}>
+          <span className={styles.smartEyebrow}>Saved views</span>
+          {savedFilters.length > 0 ? (
+            <div className={styles.smartFilterChips}>
+              {savedFilters.map((filter) => (
+                <span key={filter.id} className={styles.smartFilterChip}>
+                  <button type="button" onClick={() => applySavedFilter(filter.query)}>
+                    {filter.name}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete smart filter ${filter.name}`}
+                    disabled={pendingAction !== null}
+                    onClick={() => void removeSavedFilter(filter.id, filter.name)}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className={styles.smartFilterEmpty}>No saved views yet.</span>
+          )}
+          <Button className={styles.saveViewButton} variant="secondary" disabled={pendingAction !== null} onClick={saveCurrentView}>
+            {pendingAction === 'save-filter' ? 'Saving…' : 'Save View'}
           </Button>
         </div>
-        {savedFilters.length > 0 ? (
-          <div className={styles.smartFilterChips}>
-            {savedFilters.map((filter) => (
-              <span key={filter.id} className={styles.smartFilterChip}>
-                <button type="button" onClick={() => applySavedFilter(filter.query)}>
-                  {filter.name}
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Delete smart filter ${filter.name}`}
-                  disabled={pendingAction !== null}
-                  onClick={() => void removeSavedFilter(filter.id, filter.name)}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
+
+        {visibleMissingVolumes.length > 0 && (
+          <div className={styles.missingSummary} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} wanted and missing triage`}>
+            <span><strong>{visibleMissingVolumes.length}</strong> visible volume{visibleMissingVolumes.length === 1 ? '' : 's'} need attention.</span>
+            <Button
+              variant={search.filter === 'wanted' ? 'primary' : 'secondary'}
+              aria-pressed={search.filter === 'wanted'}
+              onClick={() => updateSearch({ filter: 'wanted' })}
+            >
+              Show Missing
+            </Button>
           </div>
-        ) : (
-          <p className={styles.smartFilterEmpty}>Save the current search, filter, sort, and view as a reusable shortcut.</p>
         )}
-      </section>
-
-      <section className={styles.triagePanel} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} wanted and missing triage`}>
-        <div className={styles.triageCopy}>
-          <span className={styles.smartEyebrow}>Wanted / Missing</span>
-          <strong>{visibleMissingVolumes.length} visible volume{visibleMissingVolumes.length === 1 ? '' : 's'} need attention</strong>
-          <span>{visibleMissingIssues} missing issue{visibleMissingIssues === 1 ? '' : 's'} in the current result set.</span>
-        </div>
-        <div className={styles.triageActions}>
-          <Button
-            variant={search.filter === 'wanted' ? 'primary' : 'secondary'}
-            aria-pressed={search.filter === 'wanted'}
-            onClick={() => updateSearch({ filter: 'wanted' })}
-          >
-            Show Missing
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={pendingAction !== null || visibleMissingVolumes.length === 0}
-            onClick={() => void performAction(
-              'search-visible-missing',
-              async () => {
-                const ids = visibleMissingVolumes.map((volume) => volume.id);
-                const results = await runBounded(ids, 4, (volumeId) => runVolumeTask(volumeId, 'auto_search'));
-                const failures = results.filter((result) => result.status === 'rejected');
-                if (failures.length) throw new Error(`${failures.length} of ${ids.length} visible missing volumes failed to queue.`);
-              },
-              `Queued missing search for ${visibleMissingVolumes.length} visible volume${visibleMissingVolumes.length === 1 ? '' : 's'}.`,
-            )}
-          >
-            {pendingAction === 'search-visible-missing' ? 'Queuing…' : 'Search Visible Missing'}
-          </Button>
-        </div>
-      </section>
+      </div>
 
       {actionMessage && <StatusBanner>{actionMessage}</StatusBanner>}
 
@@ -513,13 +464,8 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
               volume={v}
               selected={selectedIds.has(v.id)}
               selectionVisible={manageMode || selectedIds.size > 0}
-              pending={pendingAction === `search-${v.id}` || pendingAction === `monitor-${v.id}`}
+              pending={pendingAction === `search-${v.id}`}
               onSelect={toggleSelect}
-              onMonitor={(id, monitored) => performAction(
-                `monitor-${id}`,
-                () => setVolumeMonitored(id, monitored),
-                `${v.title} is now ${monitored ? 'monitored' : 'unmonitored'}.`,
-              )}
               onSearch={(id) => performAction(
                 `search-${id}`,
                 () => runVolumeTask(id, 'auto_search'),

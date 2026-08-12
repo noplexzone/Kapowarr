@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/primitives';
@@ -46,6 +46,7 @@ export function ReaderPage() {
 
   const [currentPage, setCurrentPage] = useState(0);
   const [showHints, setShowHints] = useState(true);
+  const [fitMode, setFitMode] = useState<'page' | 'width'>('page');
 
   const { data: fileInfo, isLoading, error } = useQuery(
     fileInfoQueryOptions(fileId),
@@ -55,7 +56,7 @@ export function ReaderPage() {
     if (window.history.length > 1) {
       window.history.back();
     } else {
-      navigate({ to: '/library', search: { section: 'comic' } });
+      navigate({ to: '/comics' });
     }
   }, [navigate]);
 
@@ -91,20 +92,30 @@ export function ReaderPage() {
   const filename = fileInfo ? basename(fileInfo.filepath) : '';
   const isPdf = fileInfo?.is_pdf ?? false;
   const pageCount = fileInfo?.page_count ?? 0;
+  const pageLabel = useMemo(() => {
+    if (!fileInfo) return '';
+    return isPdf ? 'PDF document' : `Page ${currentPage + 1} of ${pageCount}`;
+  }, [currentPage, fileInfo, isPdf, pageCount]);
   const pageSrc = useAuthenticatedObjectUrl(fileInfo && !isPdf && pageCount > 0 ? `files/${fileId}/page/${currentPage}` : null);
   const pdfSrc = useAuthenticatedObjectUrl(fileInfo && isPdf ? `files/${fileId}/raw` : null);
 
   return (
     <div className={styles.overlay}>
       <div className={styles.topBar}>
-        <span className={styles.pageIndicator}>
-          {fileInfo
-            ? isPdf
-              ? 'PDF Document'
-              : `Page ${currentPage + 1} / ${pageCount}`
-            : ''}
-        </span>
-        <span className={styles.filename}>{filename}</span>
+        <div className={styles.titleBlock}>
+          <span className={styles.filename}>{filename}</span>
+          <span className={styles.pageIndicator}>{pageLabel}</span>
+        </div>
+        {!isPdf && fileInfo && pageCount > 0 && (
+          <button
+            type="button"
+            className={styles.fitBtn}
+            aria-pressed={fitMode === 'width'}
+            onClick={() => setFitMode((mode) => (mode === 'page' ? 'width' : 'page'))}
+          >
+            {fitMode === 'page' ? 'Fit Width' : 'Fit Page'}
+          </button>
+        )}
         <button
           type="button"
           className={styles.closeBtn}
@@ -125,7 +136,7 @@ export function ReaderPage() {
       {!isLoading && (error || !fileInfo) && (
         <div className={styles.centered}>
           <p>File not found or failed to load.</p>
-          <Link to="/library" search={{ section: 'comic' }} className={styles.backLink}>
+          <Link to="/comics" className={styles.backLink}>
             ← Back to Library
           </Link>
         </div>
@@ -166,7 +177,7 @@ export function ReaderPage() {
 
             <img
               key={currentPage}
-              className={styles.pageImage}
+              className={`${styles.pageImage} ${fitMode === 'width' ? styles.fitWidth : styles.fitPage}`}
               src={pageSrc ?? undefined}
               alt={`Page ${currentPage + 1}`}
               onClick={handleNext}
@@ -188,7 +199,7 @@ export function ReaderPage() {
 
             {showHints && (
               <div className={styles.hints}>
-                ← → to navigate · Esc to close
+Tap page or use ← → · Esc closes
               </div>
             )}
           </div>
@@ -201,9 +212,20 @@ export function ReaderPage() {
             >
               Prev
             </Button>
-            <span className={styles.pageCounter}>
-              {currentPage + 1} / {pageCount}
-            </span>
+            <div className={styles.scrubberWrap}>
+              <span className={styles.pageCounter}>
+                {currentPage + 1} / {pageCount}
+              </span>
+              <input
+                className={styles.scrubber}
+                type="range"
+                aria-label="Reader page"
+                min={1}
+                max={pageCount}
+                value={currentPage + 1}
+                onChange={(event) => setCurrentPage(Number(event.target.value) - 1)}
+              />
+            </div>
             <Button
               variant="secondary"
               onClick={handleNext}

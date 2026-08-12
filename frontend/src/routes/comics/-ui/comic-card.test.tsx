@@ -25,24 +25,22 @@ const volume = {
 };
 
 describe('ComicCard actions', () => {
-  it('provides direct named select, monitoring, and search controls', () => {
+  it('provides direct named select and poster search controls', () => {
     const onSelect = vi.fn();
-    const onMonitor = vi.fn();
     const onSearch = vi.fn();
     render(
-      <ComicCard volume={volume} selected={false} onSelect={onSelect} onMonitor={onMonitor} onSearch={onSearch} />,
+      <ComicCard volume={volume} selected={false} onSelect={onSelect} onSearch={onSearch} />,
     );
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Saga' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Unmonitor Saga' }));
+    expect(screen.queryByRole('button', { name: 'Unmonitor Saga' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Search missing issues for Saga' }));
     expect(onSelect).toHaveBeenCalledWith(7);
-    expect(onMonitor).toHaveBeenCalledWith(7, false);
     expect(onSearch).toHaveBeenCalledWith(7);
   });
 
   it('keeps a compact indicator inside an accessible hit target', () => {
-    render(<ComicCard volume={volume} selected selectionVisible onSelect={vi.fn()} onMonitor={vi.fn()} onSearch={vi.fn()} />);
+    render(<ComicCard volume={volume} selected selectionVisible onSelect={vi.fn()} onSearch={vi.fn()} />);
     const checkbox = screen.getByRole('checkbox', { name: 'Select Saga' });
     const target = screen.getByTestId('selection-hit-target');
     expect(getComputedStyle(checkbox).width).toBe('22px');
@@ -51,20 +49,17 @@ describe('ComicCard actions', () => {
     expect(getComputedStyle(target).height).toBe('44px');
   });
 
-  it('disables missing search when the volume is complete', () => {
-    const onSearch = vi.fn();
+  it('hides the poster search affordance when the volume is complete', () => {
     render(
       <ComicCard
         volume={{ ...volume, progress: { have: 10, total: 10 } }}
         selected={false}
         onSelect={vi.fn()}
-        onMonitor={vi.fn()}
-        onSearch={onSearch}
+        onSearch={vi.fn()}
       />,
     );
 
-    const searchButton = screen.getByRole('button', { name: 'Search missing issues for Saga' });
-    expect(searchButton).toHaveProperty('disabled', true);
+    expect(screen.queryByRole('button', { name: 'Search missing issues for Saga' })).toBeNull();
     expect(screen.getByText('Complete')).toBeTruthy();
   });
 

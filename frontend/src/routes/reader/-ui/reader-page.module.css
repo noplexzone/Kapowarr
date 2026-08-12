@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: #000;
+  background: #030303;
   color: #fff;
   display: flex;
   flex-direction: column;
@@ -11,45 +11,72 @@
 .topBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.6rem 1rem;
-  background: rgba(20, 20, 20, 0.9);
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: max(0.55rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) 0.55rem max(0.75rem, env(safe-area-inset-left));
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.62));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
   flex-shrink: 0;
 }
 
+.titleBlock {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
 .pageIndicator {
-  font-size: 0.85rem;
-  color: #ccc;
+  font-size: 0.75rem;
+  color: #aaa;
   white-space: nowrap;
 }
 
 .filename {
-  flex: 1;
+  max-width: 100%;
   text-align: center;
-  font-size: 0.85rem;
+  font-size: 0.86rem;
+  font-weight: 600;
   color: #fff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 0 1rem;
 }
 
+.fitBtn,
 .closeBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0 0.65rem;
   background: transparent;
   color: #ccc;
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   transition: background 0.15s, color 0.15s;
 }
 
-.closeBtn:hover {
+.fitBtn:hover,
+.fitBtn:focus-visible,
+.closeBtn:hover,
+.closeBtn:focus-visible {
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
+}
+
+.fitBtn {
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.fitBtn[aria-pressed='true'] {
+  color: #000;
+  background: var(--accent);
 }
 
 .content {
@@ -64,11 +91,19 @@
 .pageImage {
   width: auto;
   height: auto;
-  max-width: 100%;
-  max-height: 100%;
   object-fit: contain;
   cursor: pointer;
   user-select: none;
+}
+
+.fitPage {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.fitWidth {
+  width: min(100%, 980px);
+  max-height: none;
 }
 
 .pdfEmbed {
@@ -137,8 +172,16 @@
   justify-content: center;
   gap: 1rem;
   padding: 0.6rem 1rem;
-  background: rgba(20, 20, 20, 0.9);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.62));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
   flex-shrink: 0;
+}
+
+.scrubberWrap {
+  display: grid;
+  gap: 0.25rem;
+  min-width: min(16rem, 44vw);
 }
 
 .pageCounter {
@@ -146,6 +189,11 @@
   color: #ccc;
   min-width: 4rem;
   text-align: center;
+}
+
+.scrubber {
+  width: 100%;
+  accent-color: var(--accent);
 }
 
 .centered {
@@ -161,4 +209,33 @@
 .backLink {
   color: var(--accent);
   font-size: 0.9rem;
+}
+
+@media (max-width: 520px) {
+  .topBar {
+    gap: 0.5rem;
+  }
+
+  .fitBtn {
+    display: none;
+  }
+
+  .filename {
+    font-size: 0.8rem;
+  }
+
+  .bottomBar {
+    gap: 0.5rem;
+    padding: 0.55rem max(0.65rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.65rem, env(safe-area-inset-left));
+  }
+
+  .scrubberWrap {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .navArrowLeft,
+  .navArrowRight {
+    width: 26%;
+  }
 }

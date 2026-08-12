@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Card, Progress, Badge, Button } from '@/components/primitives';
+import { Card, Progress, Button } from '@/components/primitives';
 import { AuthenticatedImage } from '@/components/authenticated-resource';
 import {
   formatVolumeSubtitle,
@@ -17,10 +17,9 @@ interface ComicCardProps {
   pending?: boolean;
   onSelect: (id: number) => void;
   onSearch: (id: number) => void;
-  onMonitor: (id: number, monitored: boolean) => void;
 }
 
-export function ComicCard({ volume, selected, selectionVisible = false, pending = false, onSelect, onSearch, onMonitor }: ComicCardProps) {
+export function ComicCard({ volume, selected, selectionVisible = false, pending = false, onSelect, onSearch }: ComicCardProps) {
   const progressPct = getProgressPercent(volume.progress);
   const progressTone = progressPct >= 100 ? 'success' : 'danger';
   const missingCount = getMissingCount(volume);
@@ -51,6 +50,19 @@ export function ComicCard({ volume, selected, selectionVisible = false, pending 
         />
       </Link>
 
+      {missingCount > 0 && (
+        <Button
+          className={styles.searchOverlayButton}
+          variant="secondary"
+          disabled={pending}
+          onClick={() => onSearch(volume.id)}
+          title="Search missing issues"
+          aria-label={`Search missing issues for ${volume.title}`}
+        >
+          <span aria-hidden="true">⌕</span>
+        </Button>
+      )}
+
       <div className={styles.meta}>
         <Link
           to="/volumes/$volumeId"
@@ -62,9 +74,7 @@ export function ComicCard({ volume, selected, selectionVisible = false, pending 
         <p className={styles.subtitle}>{formatVolumeSubtitle(volume)}</p>
 
         <div className={styles.statusStrip} aria-label={`Status for ${volume.title}`}>
-          <span className={isComplete ? styles.completePill : styles.missingPill}>
-            {isComplete ? 'Complete' : `${missingCount} missing`}
-          </span>
+          <span>{isComplete ? 'Complete' : 'Missing issues'}</span>
           {volume.publisher && <span>{volume.publisher}</span>}
         </div>
 
@@ -73,34 +83,6 @@ export function ComicCard({ volume, selected, selectionVisible = false, pending 
           <span className={styles.progressLabel}>
             {getProgressLabel(volume.progress)}
           </span>
-        </div>
-
-        <div className={styles.footer}>
-          <Badge tone={volume.monitored ? 'success' : 'neutral'}>
-            {volume.monitored ? 'Monitored' : 'Unmonitored'}
-          </Badge>
-        </div>
-        <div className={styles.cardActions}>
-          <Button
-            className={styles.cardActionButton}
-            variant="ghost"
-            disabled={pending}
-            onClick={() => onMonitor(volume.id, !volume.monitored)}
-            title={volume.monitored ? 'Unmonitor volume' : 'Monitor volume'}
-            aria-label={`${volume.monitored ? 'Unmonitor' : 'Monitor'} ${volume.title}`}
-          >
-            {volume.monitored ? 'Unmonitor' : 'Monitor'}
-          </Button>
-          <Button
-            className={styles.cardActionButton}
-            variant="secondary"
-            disabled={pending || missingCount === 0}
-            onClick={() => onSearch(volume.id)}
-            title={missingCount > 0 ? 'Search missing issues' : 'No missing issues to search'}
-            aria-label={`Search missing issues for ${volume.title}`}
-          >
-            Search Missing
-          </Button>
         </div>
       </div>
     </Card>

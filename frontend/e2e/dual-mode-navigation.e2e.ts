@@ -275,7 +275,7 @@ test('reader route still opens while reader polish remains deferred', async ({ p
   await page.route('**/*', injectProductionBase);
   await page.route('**/api/**', mockApi);
   await page.goto('/read/21');
-  await expect(page.getByText('Page 1 / 2')).toBeVisible();
+  await expect(page.getByText('Page 1 of 2')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.getByText('2 / 2', { exact: true })).toBeVisible();

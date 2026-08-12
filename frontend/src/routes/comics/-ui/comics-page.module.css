@@ -4,33 +4,70 @@
   gap: 1rem;
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.libraryHeader {
+  display: grid;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-3, 0.75rem);
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
-.toolbarLeft {
+.primaryControls,
+.secondaryControls,
+.toolbarRight,
+.filterChips,
+.viewToggle,
+.savedViewsRow,
+.missingSummary {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex: 1 1 42rem;
+}
+
+.primaryControls {
+  gap: var(--space-3, 0.75rem);
+}
+
+.secondaryControls {
+  gap: var(--space-2, 0.5rem);
   flex-wrap: wrap;
 }
 
 .toolbarRight {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2, 0.5rem);
+  flex-wrap: wrap;
 }
 
 .filterChips {
-  display: flex;
-  align-items: center;
   gap: var(--space-1, 0.25rem);
   flex-wrap: wrap;
+}
+
+.viewToggle {
+  gap: 0.25rem;
+}
+
+.savedViewsRow {
+  gap: var(--space-2, 0.5rem);
+  flex-wrap: wrap;
+  padding-top: var(--space-2, 0.5rem);
+  border-top: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+}
+
+.missingSummary {
+  justify-content: space-between;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
+  border-radius: 10px;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+}
+
+.missingSummary strong {
+  color: var(--text);
 }
 
 .filterChip {
@@ -56,11 +93,6 @@
   outline-offset: 2px;
 }
 
-.viewToggle {
-  display: flex;
-  gap: 0.25rem;
-}
-
 .select {
   padding: 0.35em 0.6em;
   font-size: 0.85rem;
@@ -68,6 +100,10 @@
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+.saveViewButton {
+  margin-left: auto;
 }
 
 .actionMessage {
@@ -110,29 +146,6 @@
 }
 
 
-.smartFilters {
-  display: grid;
-  gap: var(--space-2, 0.5rem);
-  padding: 0.85rem;
-  background: color-mix(in srgb, var(--surface-raised) 86%, var(--accent) 6%);
-  border: 1px solid color-mix(in srgb, var(--border) 74%, var(--accent));
-  border-radius: 12px;
-}
-
-.smartFiltersHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2, 0.5rem);
-  flex-wrap: wrap;
-}
-
-.smartFiltersHeader > div {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
 .smartEyebrow {
   color: var(--text-dim);
   font-size: 0.72rem;
@@ -150,7 +163,7 @@
 
 .smartFilterChip {
   display: inline-flex;
-  min-height: var(--touch-target, 2.75rem);
+  min-height: 2rem;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -158,8 +171,8 @@
 }
 
 .smartFilterChip button {
-  min-height: var(--touch-target, 2.75rem);
-  padding: 0 0.7rem;
+  min-height: 2rem;
+  padding: 0 0.65rem;
   color: var(--text);
   background: transparent;
   border: 0;
@@ -172,54 +185,19 @@
 }
 
 .smartFilterChip button + button {
-  min-width: var(--touch-target, 2.75rem);
-  padding-inline: 0.5rem;
+  min-width: 2rem;
+  padding-inline: 0.45rem;
   border-left: 1px solid var(--border);
 }
 
 .smartFilterEmpty {
-  margin: 0;
   color: var(--text-dim);
   font-size: 0.85rem;
-}
-
-.triagePanel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3, 0.75rem);
-  padding: 0.85rem;
-  background: color-mix(in srgb, var(--surface-raised) 88%, var(--danger) 6%);
-  border: 1px solid color-mix(in srgb, var(--border) 70%, var(--danger));
-  border-radius: 12px;
-}
-
-.triageCopy {
-  display: flex;
-  flex: 1 1 20rem;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: min(100%, 18rem);
-  color: var(--text-dim);
-  font-size: 0.85rem;
-}
-
-.triageCopy strong {
-  color: var(--text);
-  font-size: 0.98rem;
-}
-
-.triageActions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2, 0.5rem);
-  flex-wrap: wrap;
 }
 
 .posterGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 1rem;
 }
 
@@ -260,7 +238,7 @@
 .searchBar {
   display: flex;
   align-items: center;
-  flex: 1 1 20rem;
+  flex: 1 1 24rem;
   min-width: min(100%, 18rem);
   gap: var(--space-2, 0.5rem);
 }
@@ -356,27 +334,34 @@
     position: static;
   }
 
-  .triagePanel {
+  .primaryControls,
+  .secondaryControls,
+  .toolbarRight,
+  .savedViewsRow,
+  .missingSummary {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .triageCopy {
-    flex: 0 1 auto;
-    min-width: 0;
+  .toolbarRight {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .triageActions {
-    justify-content: stretch;
+  .toolbarRight button,
+  .missingSummary button,
+  .saveViewButton,
+  .select {
+    width: 100%;
   }
 
-  .triageActions button {
-    flex: 1 1 9rem;
+  .saveViewButton {
+    margin-left: 0;
   }
 
   .posterGrid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+    gap: 0.75rem;
   }
 
   .searchBar {
@@ -394,7 +379,8 @@
     padding: 0.5rem 0.75rem;
   }
 
-  .toolbar {
-    gap: 0.35rem;
+  .libraryHeader {
+    gap: var(--space-2, 0.5rem);
+    padding: var(--space-2, 0.5rem);
   }
 }

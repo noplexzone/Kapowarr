@@ -89,11 +89,11 @@ vi.mock('../-comics.api', async () => {
   };
 });
 
-import { createSavedFilter, deleteSavedFilter, runVolumeTask, setVolumeMonitored } from '../-comics.api';
+import { createSavedFilter, deleteSavedFilter, runVolumeTask } from '../-comics.api';
 import { ComicsPage } from './comics-page';
 
-function renderPage(section: 'comic' | 'manga' = 'comic') {
-  return render(<ComicsPage section={section} />);
+function renderPage(section: 'comic' | 'manga' = 'comic', canonical = false) {
+  return render(<ComicsPage section={section} canonical={canonical} />);
 }
 
 beforeEach(() => {
@@ -147,11 +147,32 @@ describe('ComicsPage poster-first manage mode', () => {
 
 
 
-  it('surfaces wanted triage for the current result set and queues visible missing searches', async () => {
+
+  it('keeps canonical filters on the active comics or manga route', () => {
+    searchState = {
+      sort: 'title',
+      status: 'all',
+      monitoring: 'all',
+      view: 'grid',
+      q: undefined,
+      page: 1,
+    };
+    renderPage('comic', true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Missing' }));
+    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
+      to: '/comics',
+      search: expect.any(Function),
+    }));
+    const patchSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
+    expect(patchSearch({})).toMatchObject({ status: 'missing', monitoring: 'all', page: 1 });
+  });
+
+  it('surfaces compact wanted triage for the current result set', () => {
     renderPage();
 
-    expect(screen.getByText('2 visible volumes need attention')).toBeTruthy();
-    expect(screen.getByText('15 missing issues in the current result set.')).toBeTruthy();
+    expect(screen.getByText(/visible volumes need attention/)).toBeTruthy();
+    expect(screen.queryByText('15 missing issues in the current result set.')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show Missing' }));
     expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -160,13 +181,7 @@ describe('ComicsPage poster-first manage mode', () => {
     }));
     const patchSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
     expect(patchSearch({})).toMatchObject({ filter: 'wanted', offset: 0 });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Search Visible Missing' }));
-    await waitFor(() => {
-      expect(runVolumeTask).toHaveBeenCalledWith(1, 'auto_search');
-      expect(runVolumeTask).toHaveBeenCalledWith(2, 'auto_search');
-    });
-    expect(screen.getByText('Queued missing search for 2 visible volumes.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Search Visible Missing' })).toBeNull();
   });
 
   it('only queues selected missing volumes from the manage toolbar', async () => {
@@ -197,7 +212,7 @@ describe('ComicsPage poster-first manage mode', () => {
     const lastSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
     expect(lastSearch({})).toMatchObject({ filter: 'wanted', sort: 'wanted', view: 'posters', offset: 0 });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save Current View' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save View' }));
     await waitFor(() => expect(createSavedFilter).toHaveBeenCalledWith('comic', 'Night reads', {
       sort: 'title',
       filter: '',
@@ -209,12 +224,10 @@ describe('ComicsPage poster-first manage mode', () => {
     await waitFor(() => expect(deleteSavedFilter).toHaveBeenCalledWith(8));
   });
 
-  it('offers direct visible card controls for monitoring and missing searches', async () => {
+  it('offers a poster overlay control for missing searches only', async () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Monitor Berserk' }));
-    await waitFor(() => expect(setVolumeMonitored).toHaveBeenCalledWith(2, true));
-
+    expect(screen.queryByRole('button', { name: 'Monitor Berserk' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Search missing issues for Saga' }));
     await waitFor(() => expect(runVolumeTask).toHaveBeenCalledWith(1, 'auto_search'));
   });

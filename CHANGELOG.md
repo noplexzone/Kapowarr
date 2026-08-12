@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Move Home operations into the main dashboard column so shelves no longer create dead space under metric cards.
+- Limit Home recently-added shelves to one row per section and tighten the desktop fit for Caleb-sized browser viewports.
 - Compact the desktop Home dashboard so command metrics, operations, and recent shelves fit above the fold.
 - Add authenticated artwork-banner treatment to the Volume Detail hero header.
 - Finish the redesign implementation cleanup with extracted Volume Detail file/history/settings panels and shared premium section/action patterns.

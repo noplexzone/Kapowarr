@@ -139,14 +139,16 @@ export function DashboardPage() {
         </Card>
       </section>
 
-      <div className={styles.commandGrid}>
-        <MetricCard label="Missing monitored" value={missingTotal} meta="Issues ready for wanted triage" tone="danger" to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
-        <MetricCard label="Upcoming monitored" value={upcomingTotal} meta="Recently released or expected soon" tone="info" to="/comics" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
-        <MetricCard label="Active downloads" value={activeDownloads} meta="Queue items moving now" tone="success" to="/activity/queue" />
-        <MetricCard label="Failed downloads" value={failedDownloads} meta="History entries needing recovery" tone="warning" to="/activity/history" search={{ page: 1, status: 'failed', section: 'all' }} />
-      </div>
+      <div className={styles.dashboardBody}>
+        <div className={styles.mainColumn}>
+          <div className={styles.commandGrid}>
+            <MetricCard label="Missing monitored" value={missingTotal} meta="Issues ready for wanted triage" tone="danger" to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
+            <MetricCard label="Upcoming monitored" value={upcomingTotal} meta="Recently released or expected soon" tone="info" to="/comics" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
+            <MetricCard label="Active downloads" value={activeDownloads} meta="Queue items moving now" tone="success" to="/activity/queue" />
+            <MetricCard label="Failed downloads" value={failedDownloads} meta="History entries needing recovery" tone="warning" to="/activity/history" search={{ page: 1, status: 'failed', section: 'all' }} />
+          </div>
 
-      <div className={styles.operationalGrid}>
+          <div className={styles.operationalGrid}>
         <section className={styles.section} aria-labelledby="wanted-triage-heading">
           <div className={styles.sectionHeader}>
             <div>
@@ -240,11 +242,13 @@ export function DashboardPage() {
             )}
           </Card>
         </section>
-      </div>
+          </div>
+        </div>
 
-      <div className={styles.shelfGrid}>
-        <CoverShelf title="Comics Recently Added" badge="Comics" empty="No comics yet" volumes={comicRecent ?? []} to="/comics" />
-        <CoverShelf title="Manga Recently Added" badge="Manga" empty="No manga yet" volumes={mangaRecent ?? []} to="/manga" />
+        <div className={styles.shelfGrid}>
+          <CoverShelf title="Comics Recently Added" badge="Comics" empty="No comics yet" volumes={(comicRecent ?? []).slice(0, 3)} to="/comics" />
+          <CoverShelf title="Manga Recently Added" badge="Manga" empty="No manga yet" volumes={(mangaRecent ?? []).slice(0, 3)} to="/manga" />
+        </div>
       </div>
     </div>
   );

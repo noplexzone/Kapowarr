@@ -63,12 +63,12 @@ revision_regex = compile(r'[1-3]\.\d')
 # E.g. '2020.Hybrid' should be treated as year=2020, not issue 2020.08...
 _dotted_year_in_issue_re = compile(r'^(\d{4})\.[a-zA-Z]')
 _issue_then_year_scene_re = compile(
-    r'^(?P<series>.+?)[\s._-]+(?P<issue>\d{1,4})(?P<suffix>[a-f])?'
+    r'^(?P<series>.+?)[\s._-]+(?P<issue>\d{1,4})(?P<suffix>f)?'
     r'[._-]+(?P<year>19\d{2}|20\d{2})(?=$|\D)',
     IGNORECASE
 )
 _issue_before_cover_date_re = compile(
-    r'^(?P<series>.+?)[\s_]+(?P<issue>\d{1,4})(?:-(?=\d+\s(?:pg|p|ctc|g|giant))\d+)?(?P<suffix>[a-f])?'
+    r'^(?P<series>.+?)[\s_]+(?P<issue>\d{1,4})(?:-(?=\d+\s(?:pg|p|ctc|g|giant))\d+)?(?P<suffix>f)?'
     r'(?:[\s_-]+(?:\d+p|ctc|g-?\d+|pg|giant|silver|age|issue))*'
     r'(?=[\s_-]*(?:\((?:19|20)\d{2}\)|\(\d{1,2}-\d{1,2}[\s-]+(?:19|20)\d{2}\)|\(\d{1,2}-(?:19|20)\d{2}\)|-\d+(?:st|nd|rd|th)\b|\((?:digital-)?tpb\)))',
     IGNORECASE

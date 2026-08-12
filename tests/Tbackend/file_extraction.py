@@ -190,6 +190,9 @@ class extract_filename_data(unittest.TestCase):
             '/content/Batman (1940)/Batman 501 (digital-TPB).cbr':
                 {'series': 'Batman', 'year': 1940, 'volume_number': 1, 'special_version': None, 'issue_number': 501.0, 'annual': False},
 
+            '/content/Batman (1940)/Batman 616a (1940).cbz':
+                {'series': 'Batman', 'year': 1940, 'volume_number': 1, 'special_version': None, 'issue_number': 616.01, 'annual': False},
+
             '/content/Batman (1940)/Batman 074 44p ctc (12-01 1952).cbr':
                 {'series': 'Batman', 'year': 1940, 'volume_number': 1, 'special_version': None, 'issue_number': 74.0, 'annual': False},
 

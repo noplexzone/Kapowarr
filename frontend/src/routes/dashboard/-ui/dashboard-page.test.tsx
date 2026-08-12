@@ -71,3 +71,17 @@ it('keeps partial-data resilience and live refresh affordances visible', () => {
   expect(source).toContain('Refresh Home');
   expect(source).toContain('Preserve successful sections');
 });
+
+
+it('keeps the desktop dashboard in a compact fit-to-screen layout', () => {
+  const styles = readFileSync('src/routes/dashboard/-ui/dashboard-page.module.css', 'utf8');
+  expect(styles).toContain('grid-template-areas:');
+  expect(styles).toContain('"metrics shelves"');
+  expect(styles).toContain('"operations shelves"');
+  expect(styles).toContain('.triageCard {\n    grid-template-columns: repeat(2, minmax(0, 1fr));');
+  expect(styles).toContain('@media (min-width: 1181px) and (max-height: 860px)');
+  expect(styles).toContain('.heroCopy p {\n    display: none;');
+  expect(styles).toContain('.operationBlock .listRow:nth-of-type(n + 4)');
+  expect(styles).not.toContain('.triageRow:nth-last-child(-n + 2)');
+  expect(styles).not.toContain('.coverGrid .coverCard:nth-child(n + 4)');
+});

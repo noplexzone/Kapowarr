@@ -1,15 +1,15 @@
 .page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.35rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
 }
 
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(18rem, 0.8fr);
-  gap: 1rem;
+  gap: 0.85rem;
   align-items: stretch;
-  padding: clamp(1.25rem, 3vw, 2rem);
+  padding: clamp(0.9rem, 2vw, 1.35rem);
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
   border-radius: var(--radius-lg);
   background:
@@ -40,18 +40,18 @@
 .heroCopy h1 {
   margin: 0;
   color: var(--text);
-  font-size: clamp(2rem, 5vw, 4rem);
-  line-height: 0.95;
-  letter-spacing: -0.065em;
-  max-width: 11ch;
+  font-size: clamp(1.55rem, 3.4vw, 2.9rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  max-width: 18ch;
 }
 
 .heroCopy p {
   margin: 0;
   max-width: 58rem;
   color: var(--text-muted);
-  font-size: 1rem;
-  line-height: 1.65;
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .heroActions {
@@ -67,7 +67,7 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
-  padding: 0.65rem 1rem;
+  padding: 0.5rem 0.85rem;
   color: var(--text);
   font-size: 0.9rem;
   font-weight: 800;
@@ -102,15 +102,15 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 0.85rem;
-  padding: 1rem;
+  gap: 0.55rem;
+  padding: 0.75rem;
   background: color-mix(in srgb, var(--surface-raised) 88%, var(--accent));
   border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
 }
 
 .completionValue {
   color: var(--text);
-  font-size: clamp(2.35rem, 7vw, 4.5rem);
+  font-size: clamp(2rem, 5vw, 3.2rem);
   font-weight: 900;
   line-height: 0.95;
   letter-spacing: -0.06em;
@@ -124,7 +124,7 @@
 }
 
 .heroStats div {
-  padding: 0.65rem;
+  padding: 0.45rem 0.55rem;
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface) 74%, transparent);
   border: 1px solid var(--border-subtle);
@@ -163,9 +163,9 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  min-height: 8.75rem;
-  padding: 1rem;
+  gap: 0.22rem;
+  min-height: 5.75rem;
+  padding: 0.75rem 0.85rem;
   overflow: hidden;
   border-top: 3px solid var(--accent);
   transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
@@ -195,7 +195,7 @@
 
 .metricValue {
   color: var(--text);
-  font-size: clamp(1.7rem, 4vw, 2.65rem);
+  font-size: clamp(1.45rem, 3vw, 2.2rem);
   font-weight: 900;
   line-height: 1;
   letter-spacing: -0.055em;
@@ -215,8 +215,8 @@
 
 .operationalGrid {
   display: grid;
-  grid-template-columns: minmax(16rem, 0.9fr) minmax(22rem, 1.3fr) minmax(18rem, 1fr);
-  gap: 0.9rem;
+  grid-template-columns: minmax(14rem, 0.9fr) minmax(19rem, 1.2fr) minmax(16rem, 1fr);
+  gap: 0.75rem;
   align-items: start;
 }
 
@@ -289,12 +289,12 @@
 }
 
 .triageRow {
-  min-height: 3.35rem;
+  min-height: 2.45rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.8rem 0.95rem;
+  padding: 0.5rem 0.7rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -343,7 +343,7 @@
 
 .operationBlock h3 {
   margin: 0;
-  padding: 0.75rem 0.9rem 0.2rem;
+  padding: 0.5rem 0.7rem 0.1rem;
   color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 850;
@@ -357,12 +357,12 @@
 }
 
 .listRow {
-  min-height: 3.25rem;
+  min-height: 2.55rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.65rem 0.9rem;
+  padding: 0.45rem 0.7rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -405,7 +405,7 @@
 .coverGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
+  gap: 0.45rem;
 }
 
 .coverCard {
@@ -438,7 +438,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  padding: 0.5rem 0.55rem 0.6rem;
+  padding: 0.35rem 0.45rem 0.45rem;
 }
 
 .coverTitle {
@@ -469,6 +469,99 @@
   min-height: 8rem;
   display: grid;
   place-items: center;
+}
+
+@media (min-width: 1181px) {
+  .page {
+    grid-template-columns: minmax(0, 1.45fr) minmax(20rem, 0.75fr);
+    grid-template-areas:
+      "header header"
+      "hero hero"
+      "metrics shelves"
+      "operations shelves";
+    align-items: start;
+    gap: 0.75rem;
+  }
+
+  .page > :first-child {
+    grid-area: header;
+  }
+
+  .hero {
+    grid-area: hero;
+    min-height: 0;
+  }
+
+  .commandGrid {
+    grid-area: metrics;
+  }
+
+  .operationalGrid {
+    grid-area: operations;
+  }
+
+  .shelfGrid {
+    grid-area: shelves;
+    grid-template-columns: 1fr;
+    align-content: start;
+  }
+
+  .heroCopy p {
+    max-width: 72ch;
+  }
+
+  .coverGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .triageCard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .triageRow:nth-child(odd) {
+    border-right: 1px solid var(--border-subtle);
+  }
+
+  .triageRow:nth-last-child(2) {
+    border-bottom: none;
+  }
+
+  .coverLink {
+    aspect-ratio: 2 / 2.72;
+  }
+
+  .operationBlock h3,
+  .rowMeta,
+  .metricMeta,
+  .coverMeta {
+    font-size: 0.68rem;
+  }
+}
+
+@media (min-width: 1181px) and (max-height: 860px) {
+  .heroCopy p {
+    display: none;
+  }
+
+  .hero {
+    padding: 0.85rem 1rem;
+  }
+
+  .heroPanel {
+    gap: 0.45rem;
+  }
+
+  .heroStats div {
+    padding: 0.35rem 0.45rem;
+  }
+
+  .sectionTitle {
+    font-size: 0.9rem;
+  }
+
+  .operationBlock .listRow:nth-of-type(n + 4) {
+    display: none;
+  }
 }
 
 @media (max-width: 1180px) {

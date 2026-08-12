@@ -63,6 +63,10 @@ for (const width of [1280, 390, 320]) {
     await openDashboard(page, width);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(1);
+    if (width === 1280) {
+      const verticalOverflow = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+      expect(verticalOverflow).toBeLessThanOrEqual(1);
+    }
 
     await page.keyboard.press('Tab');
     const focusIsVisible = await page.evaluate(() => document.activeElement !== document.body);

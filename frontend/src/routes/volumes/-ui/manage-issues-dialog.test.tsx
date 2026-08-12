@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { IssueDetail } from '../-volumes.types';
-import { selectedIssueFileIds, selectedUnmatchedManualMatches } from './manage-issues-dialog';
+import { nextForceMatchTargetSelection, selectedIssueFileIds, selectedUnmatchedManualMatches } from './manage-issues-dialog';
 
 const source = readFileSync('src/routes/volumes/-ui/manage-issues-dialog.tsx', 'utf8');
 
@@ -43,6 +43,36 @@ describe('Manage Issues accessible controls', () => {
 
 
 describe('Manage Issues bulk unmatched force match', () => {
+  it('checks an unmatched file when a force-match target is selected', () => {
+    const result = nextForceMatchTargetSelection(
+      new Set(['/library/Saga 001.cbz']),
+      { '/library/Saga 001.cbz': 101 },
+      '/library/Saga 002.cbz',
+      102,
+    );
+
+    expect([...result.checkedFilepaths].sort()).toEqual([
+      '/library/Saga 001.cbz',
+      '/library/Saga 002.cbz',
+    ]);
+    expect(result.forceMatchTargets).toEqual({
+      '/library/Saga 001.cbz': 101,
+      '/library/Saga 002.cbz': 102,
+    });
+  });
+
+  it('clears a force-match target without unchecking the file', () => {
+    const result = nextForceMatchTargetSelection(
+      new Set(['/library/Saga 001.cbz']),
+      { '/library/Saga 001.cbz': 101 },
+      '/library/Saga 001.cbz',
+      null,
+    );
+
+    expect([...result.checkedFilepaths]).toEqual(['/library/Saga 001.cbz']);
+    expect(result.forceMatchTargets).toEqual({});
+  });
+
   it('builds bulk manual-match payloads only for selected files with targets', () => {
     const result = selectedUnmatchedManualMatches(
       new Set(['/library/Saga 001.cbz', '/library/Saga 003.cbz']),

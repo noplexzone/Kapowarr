@@ -50,7 +50,7 @@ import type {
 import { VolumeHero } from './volume-hero';
 import { IssuesSection } from './issues-section';
 import { IssueHistoryDialog } from './issue-history-dialog';
-import { ManageIssuesDialog, selectedIssueFileIds, selectedUnmatchedManualMatches } from './manage-issues-dialog';
+import { ManageIssuesDialog, nextForceMatchTargetSelection, selectedIssueFileIds, selectedUnmatchedManualMatches } from './manage-issues-dialog';
 import { VolumeFilesPanel } from './volume-files-panel';
 import { VolumeHistoryPanel } from './volume-history-panel';
 import { VolumeSettingsPanel } from './volume-settings-panel';
@@ -855,6 +855,23 @@ export function VolumeDetailPage() {
       setUnmatchedForceMatching(false);
     }
   }, [forceMatchTargets, id, queryClient, unmatchedChecked]);
+
+  const handleForceMatchTargetChange = useCallback((filepath: string, issueId: number | null) => {
+    setForceMatchTargets(prev => nextForceMatchTargetSelection(
+      unmatchedChecked,
+      prev,
+      filepath,
+      issueId,
+    ).forceMatchTargets);
+    if (issueId) {
+      setUnmatchedChecked(prev => nextForceMatchTargetSelection(
+        prev,
+        forceMatchTargets,
+        filepath,
+        issueId,
+      ).checkedFilepaths);
+    }
+  }, [forceMatchTargets, unmatchedChecked]);
 
   const toggleUnmatchedCheck = useCallback((filepath: string) => {
     setUnmatchedChecked(prev => {
@@ -1958,7 +1975,7 @@ export function VolumeDetailPage() {
         unmatchedDeleting={unmatchedDeleting}
         unmatchedForceMatching={unmatchedForceMatching}
         forceMatchTargets={forceMatchTargets}
-        setForceMatchTargets={setForceMatchTargets}
+        onForceMatchTargetChange={handleForceMatchTargetChange}
         onClose={closeManageIssues}
         onToggleIssue={toggleManageCheck}
         onToggleAllIssues={toggleAllManage}

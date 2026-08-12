@@ -5,7 +5,7 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, ...props }: any) => <a href="#volume" {...props}>{children}</a>,
 }));
 vi.mock('@/components/authenticated-resource', () => ({
-  AuthenticatedImage: ({ alt }: { alt: string }) => <img alt={alt} />,
+  AuthenticatedImage: ({ alt }: { alt: string }) => <img alt={alt} src="/cover-test.jpg" />,
 }));
 
 import { ComicCard } from './comic-card';
@@ -35,7 +35,7 @@ describe('ComicCard actions', () => {
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Saga' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unmonitor Saga' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Auto search Saga' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search missing issues for Saga' }));
     expect(onSelect).toHaveBeenCalledWith(7);
     expect(onMonitor).toHaveBeenCalledWith(7, false);
     expect(onSearch).toHaveBeenCalledWith(7);

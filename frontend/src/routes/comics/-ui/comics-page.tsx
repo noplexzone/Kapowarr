@@ -188,6 +188,9 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
 
   const volumes = data?.volumes ?? [];
   const total = data?.total ?? 0;
+  const hasSelection = selectedIds.size > 0;
+  const selectedLabel = `${selectedIds.size} selected`;
+  const bulkActionDisabled = pendingAction !== null || !hasSelection;
 
   return (
     <div className={styles.page}>
@@ -305,13 +308,17 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
       {actionMessage && <StatusBanner>{actionMessage}</StatusBanner>}
 
       {manageMode && (
-        <div className={styles.massBar} data-testid="bulk-toolbar">
-          <span>{selectedIds.size} selected</span>
-          <Button variant="ghost" onClick={() => setSelectedIds(new Set())} disabled={selectedIds.size === 0}>Clear Selection</Button>
+        <div className={styles.massBar} data-testid="bulk-toolbar" aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} bulk actions`}>
+          <div className={styles.massSummary}>
+            <strong>{selectedLabel}</strong>
+            <span>Scope: current {section === 'comic' ? 'Comics' : 'Manga'} results</span>
+          </div>
+          <Button variant="ghost" onClick={() => setSelectedIds(new Set())} disabled={!hasSelection}>Clear Selection</Button>
           <Button
-            variant="ghost"
-            disabled={pendingAction !== null}
+            variant="secondary"
+            disabled={bulkActionDisabled}
             onClick={() => {
+              if (!hasSelection) return;
               const selectedNames = volumes
                 .filter((volume) => selectedIds.has(volume.id))
                 .map((volume) => volume.title)
@@ -322,43 +329,43 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
                 void runSelected('delete-selected', deleteLibraryVolume, 'Removed');
               }
             }}
-          >Delete</Button>
+          >Delete Selected</Button>
           <Button
-            variant="ghost"
-            disabled={pendingAction !== null}
+            variant="secondary"
+            disabled={bulkActionDisabled}
             onClick={() => runSelected(
               'monitor-selected',
               (id) => setVolumeMonitored(id, true),
               'Monitored',
             )}
-          >Monitor</Button>
+          >Monitor Selected</Button>
           <Button
-            variant="ghost"
-            disabled={pendingAction !== null}
+            variant="secondary"
+            disabled={bulkActionDisabled}
             onClick={() => runSelected(
               'unmonitor-selected',
               (id) => setVolumeMonitored(id, false),
               'Unmonitored',
             )}
-          >Unmonitor</Button>
+          >Unmonitor Selected</Button>
           <Button
-            variant="ghost"
-            disabled={pendingAction !== null}
+            variant="secondary"
+            disabled={bulkActionDisabled}
             onClick={() => runSelected(
               'scan-selected',
               (id) => runVolumeTask(id, 'refresh_and_scan'),
               'Queued refresh and scan for',
             )}
-          >Refresh &amp; Scan</Button>
+          >Refresh &amp; Scan Selected</Button>
           <Button
-            variant="ghost"
-            disabled={pendingAction !== null}
+            variant="secondary"
+            disabled={bulkActionDisabled}
             onClick={() => runSelected(
               'search-selected',
               (id) => runVolumeTask(id, 'auto_search'),
               'Queued search for',
             )}
-          >Auto Search</Button>
+          >Auto Search Selected</Button>
         </div>
       )}
 

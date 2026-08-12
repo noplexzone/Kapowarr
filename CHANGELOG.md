@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add poster-first Comics/Manga manage mode hardening with visible card actions, missing indicators, and scoped bulk controls.
 - Redesign Home into a premium command center with wanted triage, live operations, failure recovery links, and recent Comics/Manga shelves.
 - Begin the premium media-manager redesign with separated Comics and Manga primary navigation, a new Kapowarr Noir default theme, and updated product/design direction.
 - Show top-right live task notifications with file-scan progress, completion history, and dismiss controls, including per-file counts such as `Scanning 1/168 Strange Tales`.

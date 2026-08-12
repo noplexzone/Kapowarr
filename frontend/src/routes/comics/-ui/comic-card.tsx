@@ -22,6 +22,8 @@ interface ComicCardProps {
 export function ComicCard({ volume, selected, selectionVisible = false, pending = false, onSelect, onSearch, onMonitor }: ComicCardProps) {
   const progressPct = getProgressPercent(volume.progress);
   const progressTone = progressPct >= 100 ? 'success' : 'danger';
+  const missingCount = Math.max(0, volume.progress.total - volume.progress.have);
+  const isComplete = missingCount === 0 && volume.progress.total > 0;
 
   return (
     <Card className={`${styles.card}${selected ? ` ${styles.selected}` : ''}${selectionVisible ? ` ${styles.selectionVisible}` : ''}`}>
@@ -57,6 +59,13 @@ export function ComicCard({ volume, selected, selectionVisible = false, pending 
         </Link>
         <p className={styles.subtitle}>{formatVolumeSubtitle(volume)}</p>
 
+        <div className={styles.statusStrip} aria-label={`Status for ${volume.title}`}>
+          <span className={isComplete ? styles.completePill : styles.missingPill}>
+            {isComplete ? 'Complete' : `${missingCount} missing`}
+          </span>
+          {volume.publisher && <span>{volume.publisher}</span>}
+        </div>
+
         <div className={styles.progressRow}>
           <Progress value={progressPct} tone={progressTone} />
           <span className={styles.progressLabel}>
@@ -68,26 +77,28 @@ export function ComicCard({ volume, selected, selectionVisible = false, pending 
           <Badge tone={volume.monitored ? 'success' : 'neutral'}>
             {volume.monitored ? 'Monitored' : 'Unmonitored'}
           </Badge>
-          <div className={styles.cardActions}>
-            <Button
-              variant="icon"
-              disabled={pending}
-              onClick={() => onMonitor(volume.id, !volume.monitored)}
-              title={volume.monitored ? 'Unmonitor volume' : 'Monitor volume'}
-              aria-label={`${volume.monitored ? 'Unmonitor' : 'Monitor'} ${volume.title}`}
-            >
-              {volume.monitored ? '◉' : '○'}
-            </Button>
-            <Button
-              variant="icon"
-              disabled={pending}
-              onClick={() => onSearch(volume.id)}
-              title="Auto Search"
-              aria-label={`Auto search ${volume.title}`}
-            >
-              🔍
-            </Button>
-          </div>
+        </div>
+        <div className={styles.cardActions}>
+          <Button
+            className={styles.cardActionButton}
+            variant="ghost"
+            disabled={pending}
+            onClick={() => onMonitor(volume.id, !volume.monitored)}
+            title={volume.monitored ? 'Unmonitor volume' : 'Monitor volume'}
+            aria-label={`${volume.monitored ? 'Unmonitor' : 'Monitor'} ${volume.title}`}
+          >
+            {volume.monitored ? 'Unmonitor' : 'Monitor'}
+          </Button>
+          <Button
+            className={styles.cardActionButton}
+            variant="secondary"
+            disabled={pending || missingCount === 0}
+            onClick={() => onSearch(volume.id)}
+            title={missingCount > 0 ? 'Search missing issues' : 'No missing issues to search'}
+            aria-label={`Search missing issues for ${volume.title}`}
+          >
+            Search Missing
+          </Button>
         </div>
       </div>
     </Card>

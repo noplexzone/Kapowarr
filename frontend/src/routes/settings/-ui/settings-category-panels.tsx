@@ -3,16 +3,16 @@ import { SettingsField as Field, SettingsSection as Section, ToggleField } from 
 import styles from './settings-page.module.css';
 
 export type SettingsCategory = 'general' | 'media-management' | 'root-folders' | 'download' | 'metadata' | 'indexers' | 'download-clients' | 'remote-mappings' | 'proxy';
-export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: string; searchText: string }[] = [
-  { id: 'general', label: 'General', searchText: 'host port url base username password timezone theme log level flaresolverr proxy ignored addresses hosting restart network interface' },
-  { id: 'media-management', label: 'Media Management', searchText: 'volume folder naming file naming padding regex rename downloaded illegal characters empty folders chmod chown convert format date issue' },
-  { id: 'root-folders', label: 'Root Folders', searchText: 'root folders library path comics manga storage' },
-  { id: 'download', label: 'Download', searchText: 'source priority service preference download folder concurrent timeout seeding completed suwayomi username password source' },
-  { id: 'metadata', label: 'Metadata', searchText: 'comicvine api key metadata provider' },
-  { id: 'indexers', label: 'Indexers', searchText: 'nzb indexers usenet api key categories' },
-  { id: 'download-clients', label: 'Download Clients', searchText: 'torrent usenet external download clients credentials category' },
-  { id: 'remote-mappings', label: 'Remote Path Mappings', searchText: 'remote local path mapping download client' },
-  { id: 'proxy', label: 'Proxy', searchText: 'proxy type host port username password socks http hosting restart' },
+export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: string; description: string; searchText: string }[] = [
+  { id: 'general', label: 'General', description: 'Hosting, authentication, theme, logs, and local browser identity.', searchText: 'host port url base username password timezone theme log level flaresolverr proxy ignored addresses hosting restart network interface' },
+  { id: 'media-management', label: 'Media Management', description: 'Naming, file operations, conversion, issue ranges, and library cleanup defaults.', searchText: 'volume folder naming file naming padding regex rename downloaded illegal characters empty folders chmod chown convert format date issue' },
+  { id: 'root-folders', label: 'Root Folders', description: 'Storage locations for Comics and Manga libraries.', searchText: 'root folders library path comics manga storage' },
+  { id: 'download', label: 'Download', description: 'Download folders, source priority, concurrency, seeding, and Suwayomi preferences.', searchText: 'source priority service preference download folder concurrent timeout seeding completed suwayomi username password source' },
+  { id: 'metadata', label: 'Metadata', description: 'ComicVine and metadata-provider credentials.', searchText: 'comicvine api key metadata provider' },
+  { id: 'indexers', label: 'Indexers', description: 'NZB indexer services, API keys, categories, and connection tests.', searchText: 'nzb indexers usenet api key categories' },
+  { id: 'download-clients', label: 'Download Clients', description: 'Torrent and Usenet clients with credential test/save flows.', searchText: 'torrent usenet external download clients credentials category' },
+  { id: 'remote-mappings', label: 'Remote Path Mappings', description: 'Client path translations from remote download paths to local library paths.', searchText: 'remote local path mapping download client' },
+  { id: 'proxy', label: 'Proxy', description: 'Proxy host, authentication, and protocol settings for outbound requests.', searchText: 'proxy type host port username password socks http hosting restart' },
 ];
 
 type Props = { form: AllSettings; set: <K extends keyof AllSettings>(key: K, value: AllSettings[K]) => void; errors: Partial<Record<keyof AllSettings, string>>; theme: string; setTheme: (value: string) => void; suwayomiSources: SuwayomiSource[]; suwayomiSourcesLoading: boolean };

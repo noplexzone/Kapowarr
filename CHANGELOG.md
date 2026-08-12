@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Redesign Settings as premium service-card configuration with active-category summaries, descriptive category cards, dirty draft markers, and mobile-safe action wrapping.
+- Add a SPA action census documenting mutating actions, confirmations, cache updates, and mobile placement expectations.
 - Polish mobile/PWA shell identity with a six-destination safe-area bottom nav and Kapowarr Noir install colors.
 - Redesign Import and Mismatch review into diagnostic operational surfaces with mobile-safe cards and clearer scan summaries.
 - Polish Discover and Add flows with premium command surfaces, clearer metadata context, and mobile-safe add/search actions.

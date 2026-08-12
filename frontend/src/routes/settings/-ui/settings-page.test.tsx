@@ -44,9 +44,16 @@ describe('SettingsPage', () => {
   it('filters categories by user-facing labels and help without navigating away from a draft', async () => {
     const onCategoryChange = vi.fn(); renderPage({ onCategoryChange });
     fireEvent.change(await screen.findByLabelText('Search settings'), { target: { value: 'API key' } });
-    expect(screen.getByRole('button', { name: 'Metadata' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'General' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Metadata/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /General/ })).toBeNull();
     expect(onCategoryChange).not.toHaveBeenCalled();
+  });
+  it('renders settings categories as descriptive service cards with the active category summary', async () => {
+    renderPage();
+    expect(await screen.findByText('Service configuration')).toBeTruthy();
+    expect(screen.getAllByText('Hosting, authentication, theme, logs, and local browser identity.').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /Root Folders Storage locations/ })).toBeTruthy();
+    expect(screen.getByText('Active category')).toBeTruthy();
   });
   it('associates labels and help descriptions with controls', async () => {
     renderPage(); const host = await screen.findByLabelText('Host');
@@ -93,6 +100,11 @@ describe('SettingsPage', () => {
     })).toBe(false);
     expect(confirm).not.toHaveBeenCalled();
     confirm.mockRestore();
+  });
+  it('marks category cards that contain child drafts', async () => {
+    renderPage({ category: 'root-folders' });
+    fireEvent.change(await screen.findByLabelText('Path'), { target: { value: '/library/comics' } });
+    await waitFor(() => expect(screen.getByText('Unsaved root folder')).toBeTruthy());
   });
   it('protects a root-folder editor draft that category navigation would unmount', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);

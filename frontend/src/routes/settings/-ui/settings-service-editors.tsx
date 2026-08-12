@@ -118,7 +118,7 @@ export function NZBIndexersSection() {
             <input className={styles.input} value={formData.base_url} onChange={e => setFormData(prev => ({ ...prev, base_url: e.target.value }))} />
           </Field>
           <Field label="API Key">
-            <div style={{display:'flex', gap:'0.25rem', alignItems:'center'}}>
+            <div className={styles.secretControl}>
               <input className={styles.input} type={showSecret ? 'text' : 'password'}
                 value={formData.api_key}
                 onChange={e => setFormData(prev => ({ ...prev, api_key: e.target.value }))} />
@@ -332,7 +332,7 @@ export function ExternalClientsSection() {
             <input className={styles.input} value={formData.username} onChange={e => setFormData(prev => ({ ...prev, username: e.target.value }))} />
           </Field>
           <Field label="Password">
-            <div style={{display:'flex', gap:'0.25rem', alignItems:'center'}}>
+            <div className={styles.secretControl}>
               <input className={styles.input} type={showSecret ? 'text' : 'password'}
                 value={formData.password}
                 onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))} />
@@ -341,7 +341,7 @@ export function ExternalClientsSection() {
             </div>
           </Field>
           <Field label="API Token">
-            <div style={{display:'flex', gap:'0.25rem', alignItems:'center'}}>
+            <div className={styles.secretControl}>
               <input className={styles.input} type={showSecret ? 'text' : 'password'}
                 value={formData.api_token}
                 onChange={e => setFormData(prev => ({ ...prev, api_token: e.target.value }))} />

@@ -22,6 +22,7 @@ interface VolumeHeroProps {
   onFixMatch: () => void;
   onPreviewRename: () => void;
   onManageIssues: () => void;
+  onImportFiles: () => void;
 }
 
 export function getMissingIssueCount(volume: VolumeDetailFull): number {
@@ -53,6 +54,7 @@ export function VolumeHero({
   onFixMatch,
   onPreviewRename,
   onManageIssues,
+  onImportFiles,
 }: VolumeHeroProps) {
   const missingCount = getMissingIssueCount(volume);
   const readableIssue = getReadableIssue(volume);
@@ -153,6 +155,7 @@ export function VolumeHero({
           <Button variant="secondary" onClick={onManualSearch} disabled={manualSearchPending} title={manualSearchPending ? 'Searching…' : 'Manual Search'}>
             <PersonIcon /> Manual Search
           </Button>
+          <Button variant="secondary" onClick={onImportFiles}>Import Files</Button>
           <Button variant="secondary" onClick={onManageIssues}>Manage Issues</Button>
         </div>
 

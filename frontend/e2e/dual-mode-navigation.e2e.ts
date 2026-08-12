@@ -19,6 +19,11 @@ async function mockApi(route: Route) {
   else if (pathname.endsWith('/api/auth')) result = { api_key: 'browser-test-key' };
   else if (pathname.endsWith('/api/nav/badges')) result = { volumes: 3, comics: 2, manga: 1, queue: 1, library_import: 0, mismatch: 1 };
   else if (pathname.endsWith('/api/volumes/stats')) result = stats;
+  else if (pathname.endsWith('/api/system/tasks/42')) {
+    await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'TaskNotFound', result: null }) });
+    return;
+  }
+  else if (pathname.endsWith('/api/volumes/1/import')) result = { task_id: 42 };
   else if (pathname.endsWith('/api/volumes/search')) result = [{
     comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result',
     year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null,
@@ -220,6 +225,24 @@ test('volume issue history dialog consumes the issue-history array contract', as
   await page.goto('/volumes/1/issues');
   await page.getByRole('button', { name: 'History' }).click();
   await expect(page.getByRole('dialog')).toContainText('Pilot issue release');
+});
+
+
+test('volume detail imports multiple local files directly into the selected volume', async ({ page }) => {
+  await page.route('**/*', injectProductionBase);
+  await page.route('**/api/**', mockApi);
+  await page.goto('/volumes/1/issues');
+
+  await page.getByRole('button', { name: 'Import Files' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Upload comic archives directly into this volume folder');
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: 'Acceptance 001.cbz', mimeType: 'application/vnd.comicbook+zip', buffer: Buffer.from('one') },
+    { name: 'Acceptance 002.cbz', mimeType: 'application/vnd.comicbook+zip', buffer: Buffer.from('two') },
+  ]);
+  await expect(page.getByText('2 file(s) selected')).toBeVisible();
+  await page.getByRole('button', { name: 'Import 2 Files' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText('Volume task completed.')).toBeVisible();
 });
 
 test('volume detail defaults to Issues without an Overview tab', async ({ page }) => {

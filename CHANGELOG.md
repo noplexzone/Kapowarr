@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add direct multi-file import from Volume Detail pages.
 - Move Home operations into the main dashboard column so shelves no longer create dead space under metric cards.
 - Limit Home recently-added shelves to one row per section and tighten the desktop fit for Caleb-sized browser viewports.
 - Compact the desktop Home dashboard so command metrics, operations, and recent shelves fit above the fold.
@@ -43,7 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Speed up large direct downloads with validated four-part HTTP range transfers, per-part retries, and automatic single-stream fallback.
 
 ### Fixed
-- Refresh Volume Detail data automatically when a volume refresh-and-scan task completes.
+- Refresh Volume Detail from task completion, downloaded-status events, and task polling fallbacks after refresh/import work completes.
 - Fix Volume Detail edits so custom volume-folder saves stay relative to the selected root folder and the Automatic special-version option no longer sends an invalid backend value.
 - Make the Discover page search-bar add flow hydrate exact metadata, clear stale search results after success, and show add failures instead of appearing inert.
 

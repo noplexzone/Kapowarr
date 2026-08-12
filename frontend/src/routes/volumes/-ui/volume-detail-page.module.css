@@ -760,6 +760,62 @@
   color: var(--text-dim);
 }
 
+
+/* ── Import files dialog ─────────────────────────── */
+.importDialog {
+  display: grid;
+  gap: 1rem;
+}
+
+.importDropZone {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px dashed var(--border-strong, var(--border));
+  border-radius: var(--radius-lg, 0.75rem);
+  background: rgba(var(--accent-rgb), 0.06);
+  cursor: pointer;
+}
+
+.importDropZone:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.importDropZone input {
+  margin-top: 0.5rem;
+}
+
+.importDropTitle {
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.importDropHint,
+.importMore {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.importFileSummary {
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 0.625rem);
+  background: var(--surface-raised);
+}
+
+.importFileSummary ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+.importFileSummary li {
+  overflow-wrap: anywhere;
+}
+
 /* ── Edit Volume Form ─────────────────────────────── */
 .editForm {
   display: flex;

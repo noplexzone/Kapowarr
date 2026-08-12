@@ -58,6 +58,7 @@ function renderHero(volume: VolumeDetailFull, overrides: Partial<React.Component
     onFixMatch: vi.fn(),
     onPreviewRename: vi.fn(),
     onManageIssues: vi.fn(),
+    onImportFiles: vi.fn(),
     ...overrides,
   };
   render(<VolumeHero {...props} />);
@@ -74,6 +75,7 @@ describe('VolumeHero media detail actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search Missing' }));
     expect(onAutoSearch).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Refresh & Scan' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Import Files' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Manage Issues' })).toBeTruthy();
   });
 

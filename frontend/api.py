@@ -24,7 +24,7 @@ from backend.base.custom_exceptions import (DeletionCapabilityUnavailable,
                                             TaskNotFound)
 from backend.base.definitions import (BlocklistReason, BlocklistReasonID,
                                       Constants, CredentialData, CredentialSource,
-                                      DownloadSource, FileMatch,
+                                      DownloadSource, FileConstants, FileMatch,
                                       KapowarrException, LibraryFilter,
                                       LibrarySorting, MonitorScheme,
                                       SpecialVersion, StartType, VolumeData)
@@ -1716,6 +1716,13 @@ def api_volume_import(id: int):
     if not uploads or all(not f.filename for f in uploads):
         raise KeyNotFound('files')
 
+    allowed_extensions = tuple(
+        sorted(
+            {ext.lower() for ext in FileConstants.SCANNABLE_EXTENSIONS},
+            key=len,
+            reverse=True,
+        )
+    )
     saved_paths = []
     for upload in uploads:
         if not upload.filename:
@@ -1723,7 +1730,20 @@ def api_volume_import(id: int):
         filename = secure_filename(upload.filename)
         if not filename:
             continue
+        filename_lower = filename.lower()
+        matched_ext = next(
+            (ext for ext in allowed_extensions if filename_lower.endswith(ext)),
+            None,
+        )
+        if matched_ext is None:
+            raise InvalidKeyValue('files', upload.filename)
+        stem = filename[:-len(matched_ext)]
+        ext = filename[-len(matched_ext):]
         filepath = join(folder, filename)
+        suffix = 1
+        while exists(filepath):
+            filepath = join(folder, f'{stem} ({suffix}){ext}')
+            suffix += 1
         upload.save(filepath)
         saved_paths.append(filepath)
 

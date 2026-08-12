@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSocketEvent } from '@/platform/socketio/socket';
 import type { QueueEntry } from '@/routes/activity/queue/-queue.types';
 import { useParams, useNavigate, useLocation, Link } from '@tanstack/react-router';
@@ -24,6 +24,8 @@ import {
   searchVolumes,
   rematchVolume,
   refreshVolume,
+  importVolumeFiles,
+  isSystemTaskActive,
   fetchRenamePreview,
   submitRename,
   forceMatchIssue,
@@ -85,6 +87,15 @@ interface TaskEndedPayload {
   message?: string | null;
 }
 
+interface DownloadedStatusPayload {
+  volume_id?: number | null;
+  downloaded_issues?: number[];
+  not_downloaded_issues?: number[];
+}
+
+const VOLUME_REFRESH_ACTIONS = new Set(['refresh_and_scan', 'import_files_volume', 'mass_rename', 'mass_convert']);
+const IMPORT_FILE_ACCEPT = '.cbz,.cbr,.cb7,.cbt,.cba,.zip,.rar,.7z,.7zip,.tar.gz,.epub,.pdf,.mobi';
+
 const MONITORING_SCHEMES = [
   { value: '', label: "-- Don't apply --" },
   { value: 'all', label: 'All' },
@@ -123,6 +134,8 @@ export function VolumeDetailPage() {
   const queryClient = useQueryClient();
   const [actionMsg, setActionMsg] = useState('');
   const [queueEntries, setQueueEntries] = useState<Map<number, QueueEntry>>(new Map());
+  const [refreshTaskId, setRefreshTaskId] = useState<number | null>(null);
+
 
   // Issue manual search dialog
   const [manualSearchIssueId, setManualSearchIssueId] = useState<number | null>(null);
@@ -187,6 +200,12 @@ export function VolumeDetailPage() {
   const [unmatchedChecked, setUnmatchedChecked] = useState<Set<string>>(new Set());
   const [unmatchedDeleting, setUnmatchedDeleting] = useState(false);
 
+  // Import files dialog
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFiles, setImportFiles] = useState<File[]>([]);
+  const [importSubmitting, setImportSubmitting] = useState(false);
+  const [importError, setImportError] = useState('');
+
   // Add Cover dialog
   const [coverDialog, setCoverDialog] = useState<{
     fileId: number;
@@ -206,8 +225,8 @@ export function VolumeDetailPage() {
   const [swBundleError, setSwBundleError] = useState('');
   const swBundleRequestSeq = useRef(0);
 
-  const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
   const historyTabActive = pathname.endsWith('/history');
+  const { data: volume, isLoading, error } = useQuery(volumeDetailFullQueryOptions(id));
   const volumeHistoryQuery = useQuery({
     ...volumeHistoryQueryOptions(id),
     enabled: id > 0 && historyTabActive,
@@ -250,13 +269,26 @@ export function VolumeDetailPage() {
     });
   }, []));
 
-  useSocketEvent<TaskEndedPayload>('task_ended', useCallback((payload) => {
-    if (payload.action !== 'refresh_and_scan' || payload.volume_id !== id) return;
+  const refreshVolumeData = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
     void queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
     void queryClient.invalidateQueries({ queryKey: ['volumes', 'stats'] });
-    setActionMsg(payload.message || 'Refresh & Scan completed.');
-  }, [id, queryClient]));
+    if (historyTabActive) {
+      void queryClient.invalidateQueries({ queryKey: ['volumes', 'history', id] });
+    }
+  }, [historyTabActive, id, queryClient]);
+
+  useSocketEvent<TaskEndedPayload>('task_ended', useCallback((payload) => {
+    if (payload.volume_id !== id || !VOLUME_REFRESH_ACTIONS.has(payload.action ?? '')) return;
+    setRefreshTaskId(null);
+    refreshVolumeData();
+    setActionMsg(payload.message || 'Volume task completed.');
+  }, [id, refreshVolumeData]));
+
+  useSocketEvent<DownloadedStatusPayload>('downloaded_status', useCallback((payload) => {
+    if (payload.volume_id !== id) return;
+    refreshVolumeData();
+  }, [id, refreshVolumeData]));
 
   const rootFoldersQuery = useQuery({
     queryKey: ['rootFolders'],
@@ -392,12 +424,69 @@ export function VolumeDetailPage() {
 
   const refreshMutation = useMutation({
     mutationFn: () => refreshVolume(id),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setRefreshTaskId(data.id);
       setActionMsg('Refresh & Scan started.');
-      void queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+      refreshVolumeData();
     },
     onError: (err) => setActionMsg('Refresh failed: ' + (err as Error).message),
   });
+
+  useEffect(() => {
+    if (refreshTaskId === null) return;
+    let cancelled = false;
+    const pollTask = async () => {
+      try {
+        const active = await isSystemTaskActive(refreshTaskId);
+        if (!active && !cancelled) {
+          setRefreshTaskId(null);
+          refreshVolumeData();
+          setActionMsg('Volume task completed.');
+        }
+      } catch {
+        // Socket events remain the primary path; polling is only a fallback.
+      }
+    };
+    const interval = window.setInterval(pollTask, 2500);
+    void pollTask();
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [refreshTaskId, refreshVolumeData]);
+
+  const closeImportDialog = useCallback(() => {
+    if (importSubmitting) return;
+    setImportOpen(false);
+    setImportFiles([]);
+    setImportError('');
+  }, [importSubmitting]);
+
+  const handleImportFileSelection = useCallback((files: FileList | null) => {
+    setImportError('');
+    setImportFiles(Array.from(files ?? []));
+  }, []);
+
+  const handleSubmitImport = useCallback(async () => {
+    if (importFiles.length === 0) {
+      setImportError('Choose one or more CBZ/CBR/PDF files to import.');
+      return;
+    }
+    setImportSubmitting(true);
+    setImportError('');
+    try {
+      const result = await importVolumeFiles(id, importFiles);
+      setRefreshTaskId(result.task_id);
+      setActionMsg(`Import queued for ${importFiles.length} file(s).`);
+      setImportOpen(false);
+      setImportFiles([]);
+      refreshVolumeData();
+    } catch (err) {
+      setImportError('Import failed: ' + (err as Error).message);
+    } finally {
+      setImportSubmitting(false);
+    }
+  }, [id, importFiles, refreshVolumeData]);
 
   const rematchMutation = useMutation({
     mutationFn: ({
@@ -989,7 +1078,7 @@ export function VolumeDetailPage() {
   const showSuwayomiBundleSearch = volume.section === 'manga';
   return (
     <div className={styles.page}>
-      <VolumeHero volume={volume} actionMsg={actionMsg} progressPct={progressPct} progressTone={progressTone} refreshPending={refreshMutation.isPending} autoSearchPending={autoSearchMutation.isPending} manualSearchPending={volManualSearching} onRefresh={() => refreshMutation.mutate()} onAutoSearch={() => autoSearchMutation.mutate()} onManualSearch={handleVolumeManualSearch} onEdit={openEdit} onFixMatch={openFixMatch} onPreviewRename={handleOpenRename} onManageIssues={openManageIssues} />
+      <VolumeHero volume={volume} actionMsg={actionMsg} progressPct={progressPct} progressTone={progressTone} refreshPending={refreshMutation.isPending} autoSearchPending={autoSearchMutation.isPending} manualSearchPending={volManualSearching} onRefresh={() => refreshMutation.mutate()} onAutoSearch={() => autoSearchMutation.mutate()} onManualSearch={handleVolumeManualSearch} onEdit={openEdit} onFixMatch={openFixMatch} onPreviewRename={handleOpenRename} onManageIssues={openManageIssues} onImportFiles={() => setImportOpen(true)} />
 
       <nav aria-label="Volume sections" className={styles.volumeTabs}>
         {([['issues', 'Issues', '/volumes/$volumeId/issues'], ['files', 'Files', '/volumes/$volumeId/files'], ['history', 'History', '/volumes/$volumeId/history'], ['settings', 'Settings', '/volumes/$volumeId/settings']] as const).map(([key, label, to]) => <Link key={key} to={to} params={{ volumeId: String(id) }} aria-current={tab === key ? 'page' : undefined}>{label}</Link>)}
@@ -1360,6 +1449,60 @@ export function VolumeDetailPage() {
               </tbody>
             </table>
           )}
+        </DialogBody>
+      </DialogFrame>
+
+      {/* ── Import Files Dialog ─────────────────────────────── */}
+      <DialogFrame
+        open={importOpen}
+        onOpenChange={(open) => {
+          if (!open) closeImportDialog();
+        }}
+      >
+        <DialogHeader title={`Import Files — ${volume.title}`} onClose={closeImportDialog} />
+        <DialogBody>
+          <div className={styles.importDialog}>
+            <p className={styles.manualQueryHelp}>
+              Upload comic archives directly into this volume folder. Kapowarr will scan, convert when needed, rename, and update the issue progress when the import task completes.
+            </p>
+            <label className={styles.importDropZone}>
+              <span className={styles.importDropTitle}>Choose CBZ/CBR/PDF files</span>
+              <span className={styles.importDropHint}>Multiple files are supported; about 40 CBZ files is fine.</span>
+              <input
+                type="file"
+                multiple
+                accept={IMPORT_FILE_ACCEPT}
+                onChange={(event) => handleImportFileSelection(event.target.files)}
+                disabled={importSubmitting}
+              />
+            </label>
+            {importFiles.length > 0 && (
+              <div className={styles.importFileSummary}>
+                <strong>{importFiles.length} file(s) selected</strong>
+                <ul>
+                  {importFiles.slice(0, 8).map((file) => (
+                    <li key={`${file.name}-${file.size}`}>{file.name}</li>
+                  ))}
+                </ul>
+                {importFiles.length > 8 && (
+                  <span className={styles.importMore}>+{importFiles.length - 8} more</span>
+                )}
+              </div>
+            )}
+            {importError && <p className={styles.dialogError}>{importError}</p>}
+            <div className={styles.editActions}>
+              <Button
+                variant="primary"
+                onClick={handleSubmitImport}
+                disabled={importSubmitting || importFiles.length === 0}
+              >
+                {importSubmitting ? 'Uploading…' : `Import ${importFiles.length || ''} File${importFiles.length === 1 ? '' : 's'}`.trim()}
+              </Button>
+              <Button variant="secondary" onClick={closeImportDialog} disabled={importSubmitting}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         </DialogBody>
       </DialogFrame>
 

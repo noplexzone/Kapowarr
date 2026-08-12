@@ -311,6 +311,16 @@ export async function rematchVolume(
   return readJson<{ task_id: number }>(response);
 }
 
+export async function isSystemTaskActive(taskId: number): Promise<boolean> {
+  try {
+    await apiClient.get(`system/tasks/${taskId}`);
+    return true;
+  } catch (err: any) {
+    if (err?.response?.status === 404) return false;
+    throw err;
+  }
+}
+
 // ── Volume tasks ─────────────────────────────────────────────────
 
 export async function refreshVolume(volumeId: number): Promise<{ id: number }> {
@@ -340,6 +350,19 @@ export async function submitRename(
     },
   });
   return readJson<{ id: number }>(response);
+}
+
+export async function importVolumeFiles(
+  volumeId: number,
+  files: File[],
+): Promise<{ task_id: number }> {
+  const formData = new FormData();
+  files.forEach((file) => formData.append('files', file));
+  const response = await apiClient.post(`volumes/${volumeId}/import`, {
+    body: formData,
+    timeout: false,
+  });
+  return readJson<{ task_id: number }>(response);
 }
 
 // ── Issue management ──────────────────────────────────────────

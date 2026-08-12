@@ -41,6 +41,7 @@ export function ComicCard({ volume, selected, selectionVisible = false, pending 
         to="/volumes/$volumeId"
         params={{ volumeId: String(volume.id) }}
         className={styles.coverArea}
+        aria-label={`Open ${volume.title}`}
       >
         <AuthenticatedImage
           className={styles.cover}

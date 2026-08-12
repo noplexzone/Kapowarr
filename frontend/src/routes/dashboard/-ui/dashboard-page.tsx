@@ -312,7 +312,7 @@ function CoverShelf({ title, badge, empty, volumes, to }: { title: string; badge
         <div className={styles.coverGrid}>
           {volumes.map((v) => (
             <Card key={v.id} className={styles.coverCard}>
-              <Link to="/volumes/$volumeId" params={{ volumeId: String(v.id) }} className={styles.coverLink}>
+              <Link to="/volumes/$volumeId" params={{ volumeId: String(v.id) }} className={styles.coverLink} aria-label={`Open ${v.title}`}>
                 <AuthenticatedImage endpoint={`volumes/${v.id}/cover`} alt={`Cover for ${v.title}`} className={styles.coverImg} loading="lazy" />
               </Link>
               <div className={styles.coverInfo}>

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add Phase 10 principal-flow browser coverage for Home, Comics/Manga separation, poster manage mode, volume detail/files, Activity, Settings, and the deferred Reader route.
 - Redesign Settings as premium service-card configuration with active-category summaries, descriptive category cards, dirty draft markers, and mobile-safe action wrapping.
 - Add a SPA action census documenting mutating actions, confirmations, cache updates, and mobile placement expectations.
 - Polish mobile/PWA shell identity with a six-destination safe-area bottom nav and Kapowarr Noir install colors.

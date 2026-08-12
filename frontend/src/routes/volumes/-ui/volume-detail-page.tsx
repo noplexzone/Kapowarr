@@ -44,12 +44,14 @@ import type {
   FileMatch,
   CoverCandidate,
   AddCoverResult,
-  GeneralFileDetail,
 } from '../-volumes.types';
 import { VolumeHero } from './volume-hero';
 import { IssuesSection } from './issues-section';
 import { IssueHistoryDialog } from './issue-history-dialog';
 import { ManageIssuesDialog, selectedIssueFileIds } from './manage-issues-dialog';
+import { VolumeFilesPanel } from './volume-files-panel';
+import { VolumeHistoryPanel } from './volume-history-panel';
+import { VolumeSettingsPanel } from './volume-settings-panel';
 import styles from './volume-detail-page.module.css';
 
 function getCoverPreviewEndpoint(candidate: CoverCandidate): string {
@@ -62,55 +64,6 @@ function formatIssueSearchTitle(volumeTitle: string, issue?: IssueDetail): strin
   const issueNumber = issue.issue_number ? ` #${issue.issue_number}` : '';
   const issueTitle = issue.title ? ` — ${issue.title}` : '';
   return `${volumeTitle}${issueNumber}${issueTitle}`;
-}
-
-function VolumeFilesPanel({ issues, generalFiles }: { issues: IssueDetail[]; generalFiles: GeneralFileDetail[] }) {
-  const issueFiles = issues.flatMap((issue) => issue.filenames.map((filename, index) => ({
-    id: `issue:${issue.file_ids[index] ?? `${issue.id}:${index}`}`,
-    filename,
-    association: `Issue #${issue.issue_number}${issue.title ? ` — ${issue.title}` : ''}`,
-  })));
-  const files = [
-    ...issueFiles,
-    ...generalFiles.map((file) => ({
-      id: `general:${file.id}`,
-      filename: file.filename,
-      association: `Volume file — ${file.file_type}`,
-    })),
-  ];
-  if (files.length === 0) return <p>No files are attached to this volume.</p>;
-  return <table className={styles.searchResultTable}>
-    <thead><tr><th>File</th><th>Association</th></tr></thead>
-    <tbody>{files.map((file) => <tr key={file.id}>
-      <td>{file.filename}</td>
-      <td>{file.association}</td>
-    </tr>)}</tbody>
-  </table>;
-}
-
-function VolumeHistoryPanel({ entries, issues, loading, error }: {
-  entries: IssueHistoryEntry[];
-  issues: IssueDetail[];
-  loading: boolean;
-  error: Error | null;
-}) {
-  if (loading) return <p role="status">Loading volume history…</p>;
-  if (error) return <p role="alert">Unable to load volume history.</p>;
-  if (entries.length === 0) return <p>No download history is recorded for this volume.</p>;
-  const issueById = new Map(issues.map((issue) => [issue.id, issue]));
-  return <table className={styles.searchResultTable}>
-    <thead><tr><th>Release</th><th>Issue</th><th>Source</th><th>Status</th></tr></thead>
-    <tbody>{entries.map((entry, index) => {
-      const issue = entry.issue_id == null ? undefined : issueById.get(entry.issue_id);
-      const status = entry.success === true ? 'Downloaded' : entry.success === false ? 'Failed' : 'Pending';
-      return <tr key={`${entry.web_link}:${entry.downloaded_at ?? index}`}>
-        <td>{entry.web_title || entry.file_title || 'Untitled release'}</td>
-        <td>{issue ? `#${issue.issue_number}${issue.title ? ` — ${issue.title}` : ''}` : 'Volume-wide'}</td>
-        <td>{entry.source_name || entry.source || 'Unknown'}</td>
-        <td>{status}</td>
-      </tr>;
-    })}</tbody>
-  </table>;
 }
 
 // ── Constants ───────────────────────────────────────────────────
@@ -1024,7 +977,7 @@ export function VolumeDetailPage() {
         {([['issues', 'Issues', '/volumes/$volumeId/issues'], ['files', 'Files', '/volumes/$volumeId/files'], ['history', 'History', '/volumes/$volumeId/history'], ['settings', 'Settings', '/volumes/$volumeId/settings']] as const).map(([key, label, to]) => <Link key={key} to={to} params={{ volumeId: String(id) }} aria-current={tab === key ? 'page' : undefined}>{label}</Link>)}
       </nav>
       <section data-testid="volume-tab-panel">
-        {tab === 'issues' ? <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} /> : tab === 'files' ? <VolumeFilesPanel issues={volume.issues} generalFiles={volume.general_files} /> : tab === 'history' ? <VolumeHistoryPanel entries={volumeHistoryQuery.data ?? []} issues={volume.issues} loading={volumeHistoryQuery.isLoading} error={volumeHistoryQuery.error} /> : <div className={styles.tabActionList}><div className={styles.tabActionRow}><span>Edit monitoring, folder, and metadata settings for this volume.</span><Button variant="secondary" onClick={openEdit}>Open Volume Settings</Button></div><div className={styles.tabActionRow}><span>Inspect or correct matched issue files without leaving the detail page.</span><Button variant="secondary" onClick={openManageIssues}>Manage Issues</Button></div></div>}
+        {tab === 'issues' ? <IssuesSection issues={volume.issues} volumeId={id} queueEntries={queueEntries} autoSearchingIssueId={autoSearchIssueMutation.isPending ? autoSearchIssueMutation.variables?.issueId : undefined} onAutoSearch={(issueId) => autoSearchIssueMutation.mutate({ volumeId: id, issueId })} onManualSearch={handleManualSearch} onHistory={handleShowHistory} onAddCover={(fileId, issueId, filename) => openCoverDialog(fileId, issueId, filename)} /> : tab === 'files' ? <VolumeFilesPanel issues={volume.issues} generalFiles={volume.general_files} /> : tab === 'history' ? <VolumeHistoryPanel entries={volumeHistoryQuery.data ?? []} issues={volume.issues} loading={volumeHistoryQuery.isLoading} error={volumeHistoryQuery.error} /> : <VolumeSettingsPanel onEdit={openEdit} onManageIssues={openManageIssues} />}
       </section>
 
       {/* ── Manual Search Dialog ────────────────────────────── */}

@@ -15,3 +15,11 @@
 .field label { font-weight: 600; }
 .help, .fieldError { margin: 0; font-size: 0.875rem; }
 @media (max-width: 600px) { .pageHeader { flex-direction: column; } .actions { width: 100%; } }
+
+.sectionHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }
+.sectionHeader h2, .sectionHeader p { margin: 0; }
+.sectionHeader p { color: var(--text-dim); }
+.eyebrow { display: block; margin-bottom: var(--space-1); color: var(--accent); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.actionGroup { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.actionGroup :where(button, a) { min-height: var(--control-height); }
+@media (max-width: 600px) { .sectionHeader { align-items: stretch; flex-direction: column; } .actionGroup { width: 100%; } }

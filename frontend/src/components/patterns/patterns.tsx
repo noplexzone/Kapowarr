@@ -48,3 +48,41 @@ export function FormField({
     </div>
   );
 }
+
+
+export function SectionHeader({
+  eyebrow,
+  title,
+  description,
+  actions,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className={styles.sectionHeader}>
+      <div>
+        {eyebrow && <span className={styles.eyebrow}>{eyebrow}</span>}
+        <h2>{title}</h2>
+        {description && <p>{description}</p>}
+      </div>
+      {actions && <div className={styles.actions}>{actions}</div>}
+    </div>
+  );
+}
+
+export function ActionGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={styles.actionGroup} aria-label={label}>
+      {children}
+    </div>
+  );
+}

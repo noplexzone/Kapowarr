@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { FormField, StatusBanner } from './patterns';
+import { ActionGroup, FormField, SectionHeader, StatusBanner } from './patterns';
 
 describe('shared UI patterns', () => {
   it('associates labels, help, and errors with the control', () => {
@@ -9,6 +9,7 @@ describe('shared UI patterns', () => {
         {(props) => <input {...props} />}
       </FormField>,
     );
+
     const input = screen.getByLabelText('Library path');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     const describedBy = input.getAttribute('aria-describedby') ?? '';
@@ -19,5 +20,20 @@ describe('shared UI patterns', () => {
   it('uses one explicit live status surface', () => {
     render(<StatusBanner>Settings saved.</StatusBanner>);
     expect(screen.getByRole('status').textContent).toBe('Settings saved.');
+  });
+
+  it('renders section headers and named action groups for premium route layouts', () => {
+    render(
+      <SectionHeader
+        eyebrow="Operate"
+        title="Queue"
+        description="Live work"
+        actions={<ActionGroup label="Queue actions"><button type="button">Refresh</button></ActionGroup>}
+      />,
+    );
+
+    expect(screen.getByText('Operate')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Queue' })).toBeTruthy();
+    expect(screen.getByLabelText('Queue actions').textContent).toContain('Refresh');
   });
 });

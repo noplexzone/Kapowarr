@@ -27,6 +27,7 @@ async function mockApi(route: Route) {
     general_files: [{ id: 31, filepath: '/comics/Acceptance Volume/Volume Notes.pdf', size: 2048, file_type: 'metadata' }],
   };
   else if (pathname.endsWith('/api/volumes')) result = { items: [], total: 0, offset: 0, page_size: 60 };
+  else if (pathname.endsWith('/api/savedfilters')) result = [];
   else if (pathname.endsWith('/api/settings')) result = {
     host: '0.0.0.0', port: 5656, url_base: '', auth_password: '', auth_username: '',
     timezone: 'UTC', log_level: 'INFO', proxy_ignored_addresses: [], format_preference: [],

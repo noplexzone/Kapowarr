@@ -1333,3 +1333,20 @@ def _migrate_add_metadata_language_to_volumes():
             ADD COLUMN metadata_language VARCHAR(20) NOT NULL DEFAULT 'en';
     """)
     return
+
+
+@DatabaseMigrationHandler.register_handler(56)
+def _migrate_add_saved_filters():
+    cursor = get_db()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS saved_filters(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            section TEXT NOT NULL CHECK(section IN ('comic', 'manga')),
+            name TEXT NOT NULL,
+            query TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(section, name)
+        );
+    """)
+    return

@@ -4,6 +4,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const navigateMock = vi.fn();
 let searchState: Record<string, unknown>;
 
+const savedFilters = [
+  {
+    id: 8,
+    section: 'comic',
+    name: 'Missing comics',
+    query: { filter: 'wanted', sort: 'wanted', view: 'posters' },
+    created_at: 100,
+    updated_at: 100,
+  },
+];
+
 const queryClientMock = {
   invalidateQueries: vi.fn(() => Promise.resolve()),
 };
@@ -42,14 +53,16 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   return {
     ...actual,
     useQueryClient: () => queryClientMock,
-    useSuspenseQuery: () => ({
-      data: {
-        volumes,
-        total: volumes.length,
-        offset: 0,
-        page_size: 60,
-      },
-    }),
+    useSuspenseQuery: (options: any) => (options?.queryKey?.[0] === 'saved-filters'
+      ? { data: savedFilters }
+      : {
+        data: {
+          volumes,
+          total: volumes.length,
+          offset: 0,
+          page_size: 60,
+        },
+      }),
   };
 });
 
@@ -67,14 +80,16 @@ vi.mock('../-comics.api', async () => {
   const actual = await vi.importActual<typeof import('../-comics.api')>('../-comics.api');
   return {
     ...actual,
+    createSavedFilter: vi.fn(() => Promise.resolve(savedFilters[0])),
     deleteLibraryVolume: vi.fn(() => Promise.resolve()),
+    deleteSavedFilter: vi.fn(() => Promise.resolve()),
     runLibraryTask: vi.fn(() => Promise.resolve({ id: 10 })),
     runVolumeTask: vi.fn(() => Promise.resolve({ id: 11 })),
     setVolumeMonitored: vi.fn(() => Promise.resolve()),
   };
 });
 
-import { runVolumeTask, setVolumeMonitored } from '../-comics.api';
+import { createSavedFilter, deleteSavedFilter, runVolumeTask, setVolumeMonitored } from '../-comics.api';
 import { ComicsPage } from './comics-page';
 
 function renderPage(section: 'comic' | 'manga' = 'comic') {
@@ -127,6 +142,32 @@ describe('ComicsPage poster-first manage mode', () => {
     rerender(<ComicsPage section="comic" />);
 
     expect(screen.getByTestId('bulk-toolbar').textContent).toContain('0 selected');
+  });
+
+
+
+  it('applies and manages persisted smart filters for the active section', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('Night reads');
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Missing comics' }));
+    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
+      to: '/comics',
+      search: expect.any(Function),
+    }));
+    const lastSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
+    expect(lastSearch({})).toMatchObject({ filter: 'wanted', sort: 'wanted', view: 'posters', offset: 0 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Current View' }));
+    await waitFor(() => expect(createSavedFilter).toHaveBeenCalledWith('comic', 'Night reads', {
+      sort: 'title',
+      filter: '',
+      view: 'posters',
+      search: undefined,
+    }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete smart filter Missing comics' }));
+    await waitFor(() => expect(deleteSavedFilter).toHaveBeenCalledWith(8));
   });
 
   it('offers direct visible card controls for monitoring and missing searches', async () => {

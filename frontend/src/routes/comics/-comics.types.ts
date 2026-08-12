@@ -96,3 +96,13 @@ export interface IssueSummary {
   downloaded: boolean;
   release_date?: string;
 }
+
+
+export interface SavedFilter {
+  id: number;
+  section: SectionType;
+  name: string;
+  query: Partial<VolumesSearch>;
+  created_at: number;
+  updated_at: number;
+}

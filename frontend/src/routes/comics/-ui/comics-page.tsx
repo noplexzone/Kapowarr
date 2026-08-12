@@ -5,11 +5,15 @@ import { Button } from '@/components/primitives';
 import { Pagination } from '@/components/pagination/pagination';
 import { EmptyState, StatusBanner } from '@/components/patterns';
 import {
+  createSavedFilter,
   deleteLibraryVolume,
+  deleteSavedFilter,
   runLibraryTask,
+  savedFiltersQueryOptions,
   runVolumeTask,
   setVolumeMonitored,
   volumeListQueryOptions,
+  SAVED_FILTERS_KEY,
   VOLUMES_KEY,
 } from '../-comics.api';
 import { type ViewOption, type SectionType, type VolumesSearch } from '../-comics.types';
@@ -55,6 +59,7 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
     offset: Math.max(0, (rawSearch.page ?? 1) - 1),
   } : rawSearch as VolumesSearch;
   const { data } = useSuspenseQuery(volumeListQueryOptions(1, search, section));
+  const { data: savedFilters = [] } = useSuspenseQuery(savedFiltersQueryOptions(section));
 
   const [view, setView] = useState<ViewOption>(search.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -186,6 +191,48 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
     }, `${successVerb} ${ids.length} selected volume${ids.length === 1 ? '' : 's'}.`);
   }, [performAction, selectedIds]);
 
+
+  const saveCurrentView = useCallback(async () => {
+    if (pendingAction) return;
+    const name = window.prompt('Name this smart filter');
+    if (!name?.trim()) return;
+    setPendingAction('save-filter');
+    setActionMessage('');
+    try {
+      await createSavedFilter(section, name.trim(), {
+        sort: search.sort,
+        filter: search.filter,
+        view: search.view,
+        search: search.search,
+      });
+      await queryClient.invalidateQueries({ queryKey: SAVED_FILTERS_KEY });
+      setActionMessage(`Saved smart filter ${name.trim()}.`);
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : 'Saving the smart filter failed.');
+    } finally {
+      setPendingAction(null);
+    }
+  }, [pendingAction, queryClient, search.filter, search.search, search.sort, search.view, section]);
+
+  const applySavedFilter = useCallback((query: Partial<VolumesSearch>) => {
+    updateSearch({ ...query, offset: 0 });
+  }, [updateSearch]);
+
+  const removeSavedFilter = useCallback(async (id: number, name: string) => {
+    if (pendingAction) return;
+    setPendingAction(`delete-filter-${id}`);
+    setActionMessage('');
+    try {
+      await deleteSavedFilter(id);
+      await queryClient.invalidateQueries({ queryKey: SAVED_FILTERS_KEY });
+      setActionMessage(`Deleted smart filter ${name}.`);
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : 'Deleting the smart filter failed.');
+    } finally {
+      setPendingAction(null);
+    }
+  }, [pendingAction, queryClient]);
+
   const volumes = data?.volumes ?? [];
   const total = data?.total ?? 0;
   const hasSelection = selectedIds.size > 0;
@@ -304,6 +351,40 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
           </Button>
         </div>
       </div>
+
+
+      <section className={styles.smartFilters} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} smart filters`}>
+        <div className={styles.smartFiltersHeader}>
+          <div>
+            <span className={styles.smartEyebrow}>Smart filters</span>
+            <strong>Saved library views</strong>
+          </div>
+          <Button variant="secondary" disabled={pendingAction !== null} onClick={saveCurrentView}>
+            {pendingAction === 'save-filter' ? 'Saving…' : 'Save Current View'}
+          </Button>
+        </div>
+        {savedFilters.length > 0 ? (
+          <div className={styles.smartFilterChips}>
+            {savedFilters.map((filter) => (
+              <span key={filter.id} className={styles.smartFilterChip}>
+                <button type="button" onClick={() => applySavedFilter(filter.query)}>
+                  {filter.name}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete smart filter ${filter.name}`}
+                  disabled={pendingAction !== null}
+                  onClick={() => void removeSavedFilter(filter.id, filter.name)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className={styles.smartFilterEmpty}>Save the current search, filter, sort, and view as a reusable shortcut.</p>
+        )}
+      </section>
 
       {actionMessage && <StatusBanner>{actionMessage}</StatusBanner>}
 

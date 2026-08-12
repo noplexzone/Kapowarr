@@ -553,4 +553,13 @@ CREATE TABLE IF NOT EXISTS nzb_indexers(
     categories VARCHAR(255) NOT NULL DEFAULT '7030,7020',
     enabled BOOL NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS saved_filters(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    section TEXT NOT NULL CHECK(section IN ('comic', 'manga')),
+    name TEXT NOT NULL,
+    query TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(section, name)
+);
 """

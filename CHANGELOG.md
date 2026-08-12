@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add persisted Comics/Manga smart filters so saved library views survive across browsers and devices.
 - Add poster-first Comics/Manga manage mode hardening with visible card actions, missing indicators, and scoped bulk controls.
 - Redesign Home into a premium command center with wanted triage, live operations, failure recovery links, and recent Comics/Manga shelves.
 - Begin the premium media-manager redesign with separated Comics and Manga primary navigation, a new Kapowarr Noir default theme, and updated product/design direction.

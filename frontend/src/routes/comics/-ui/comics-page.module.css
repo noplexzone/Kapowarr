@@ -109,6 +109,80 @@
   font-size: 0.95rem;
 }
 
+
+.smartFilters {
+  display: grid;
+  gap: var(--space-2, 0.5rem);
+  padding: 0.85rem;
+  background: color-mix(in srgb, var(--surface-raised) 86%, var(--accent) 6%);
+  border: 1px solid color-mix(in srgb, var(--border) 74%, var(--accent));
+  border-radius: 12px;
+}
+
+.smartFiltersHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 0.5rem);
+  flex-wrap: wrap;
+}
+
+.smartFiltersHeader > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.smartEyebrow {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.smartFilterChips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+  flex-wrap: wrap;
+}
+
+.smartFilterChip {
+  display: inline-flex;
+  min-height: var(--touch-target, 2.75rem);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.smartFilterChip button {
+  min-height: var(--touch-target, 2.75rem);
+  padding: 0 0.7rem;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+}
+
+.smartFilterChip button:hover:not(:disabled),
+.smartFilterChip button:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+.smartFilterChip button + button {
+  min-width: var(--touch-target, 2.75rem);
+  padding-inline: 0.5rem;
+  border-left: 1px solid var(--border);
+}
+
+.smartFilterEmpty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
 .posterGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -227,6 +301,23 @@
 
 /* ── Mobile ───────────────────────────────────────── */
 @media (max-width: 480px) {
+  .massBar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .massBar button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .massSummary {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
   .posterGrid {
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: 0.5rem;

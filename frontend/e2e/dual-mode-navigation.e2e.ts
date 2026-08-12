@@ -87,11 +87,11 @@ test('canonical internal navigation preserves the application shell and browser 
   expect(await shellHandle?.evaluate(node => node.isConnected)).toBe(true);
 });
 
-test('mobile shell exposes five safe primary destinations without root overflow', async ({ page }) => {
+test('mobile shell exposes six safe primary destinations without root overflow', async ({ page }) => {
   await boot(page, 390);
   const navigation = page.getByRole('navigation', { name: /primary/i });
   await expect(navigation).toBeVisible();
-  for (const label of ['Home', 'Comics', 'Manga', 'Discover', 'Activity']) {
+  for (const label of ['Home', 'Comics', 'Manga', 'Discover', 'Activity', 'Settings']) {
     const link = navigation.getByRole('link', { name: label, exact: true });
     await expect(link).toBeVisible();
     const box = await link.boundingBox();
@@ -99,6 +99,8 @@ test('mobile shell exposes five safe primary destinations without root overflow'
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+  const navRows = await navigation.getByRole('link').evaluateAll((links) => new Set(links.map((link) => Math.round(link.getBoundingClientRect().top))).size);
+  expect(navRows).toBe(1);
 });
 
 for (const route of ['/home', '/comics', '/manga', '/discover?section=comic&category=upcoming', '/activity/queue']) {

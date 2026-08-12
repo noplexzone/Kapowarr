@@ -1,3 +1,5 @@
+export const PWA_THEME_COLOR = '#0d1117';
+
 export interface RuntimeConfig {
   urlBase: string;
   routerBasePath: string;
@@ -9,6 +11,7 @@ export interface RuntimeConfig {
   icon512Url: string;
   serviceWorkerUrl: string;
   serviceWorkerScope: string;
+  themeColor: string;
   assetUrl: (path: string) => string;
 }
 
@@ -33,6 +36,7 @@ export function createRuntimeConfig(value: string | null | undefined): RuntimeCo
     icon512Url: assetUrl('icon-512.png'),
     serviceWorkerUrl: assetUrl('sw.js'),
     serviceWorkerScope: `${urlBase}/`,
+    themeColor: PWA_THEME_COLOR,
     assetUrl,
   };
 }
@@ -51,9 +55,11 @@ export function applyRuntimeDocumentUrls(): void {
   const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
   const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   const appleIcon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+  const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
   if (manifest) manifest.href = runtimeConfig.manifestUrl;
   if (favicon) favicon.href = runtimeConfig.faviconUrl;
   if (appleIcon) appleIcon.href = runtimeConfig.icon192Url;
+  if (themeColor) themeColor.content = runtimeConfig.themeColor;
 }
 
 function requestWaitingWorkerActivation(registration: ServiceWorkerRegistration): void {
@@ -100,6 +106,7 @@ export async function registerServiceWorker(): Promise<void> {
     scope: runtimeConfig.serviceWorkerScope,
     updateViaCache: 'none',
   });
+  if (!registration) return;
   setupServiceWorkerUpdateHandling(registration);
   void registration.update();
 }

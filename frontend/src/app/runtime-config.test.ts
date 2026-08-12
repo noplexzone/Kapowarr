@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createRuntimeConfig, normalizeUrlBase, setupServiceWorkerUpdateHandling } from './runtime-config';
+import { createRuntimeConfig, normalizeUrlBase, setupServiceWorkerUpdateHandling, applyRuntimeDocumentUrls, PWA_THEME_COLOR } from './runtime-config';
 
 describe('runtime URL configuration', () => {
   it('normalizes the root deployment', () => {
@@ -12,6 +12,7 @@ describe('runtime URL configuration', () => {
       manifestUrl: '/manifest.json',
       serviceWorkerUrl: '/sw.js',
       serviceWorkerScope: '/',
+      themeColor: PWA_THEME_COLOR,
     }));
   });
 
@@ -26,6 +27,21 @@ describe('runtime URL configuration', () => {
       serviceWorkerUrl: '/kapowarr/sw.js',
       serviceWorkerScope: '/kapowarr/',
     }));
+  });
+  it('applies manifest, icon, and theme-color document URLs', async () => {
+    document.head.innerHTML = `
+      <meta name="theme-color" content="#1a1a1a">
+      <link rel="manifest" href="./manifest.json">
+      <link rel="icon" href="./favicon.svg">
+      <link rel="apple-touch-icon" href="./icon-192.png">
+    `;
+
+    applyRuntimeDocumentUrls();
+
+    expect(document.querySelector<HTMLLinkElement>('link[rel="manifest"]')?.getAttribute('href')).toBe('/manifest.json');
+    expect(document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.getAttribute('href')).toBe('/favicon.svg');
+    expect(document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]')?.getAttribute('href')).toBe('/icon-192.png');
+    expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe(PWA_THEME_COLOR);
   });
 });
 

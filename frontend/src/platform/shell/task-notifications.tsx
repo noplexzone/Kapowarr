@@ -3,25 +3,37 @@ import { Link } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSocketEvent } from '@/platform/socketio/socket';
 import { SYSTEM_TASKS_KEY, systemTasksQueryOptions } from '@/routes/system/-system.api';
-import type { SystemTask } from '@/routes/system/-system.types';
+import type { SystemTask, SystemTaskProgress } from '@/routes/system/-system.types';
 import styles from './task-notifications.module.css';
 
 type TaskNoticeTone = 'info' | 'success' | 'danger';
 
-interface TaskEndedPayload {
+type NotificationTarget =
+  | { label: string; to: '/system/status'; search?: never; params?: never }
+  | { label: string; to: '/activity/history'; search?: { page: number; status?: string; section?: string }; params?: never }
+  | { label: string; to: '/activity/search-history'; search?: { page: number }; params?: never }
+  | { label: string; to: '/volumes/$volumeId'; params: { volumeId: string }; search?: never };
+
+export interface TaskEndedPayload {
   action?: string | null;
+  display_title?: string | null;
   volume_id?: number | null;
+  volume_title?: string | null;
   issue_id?: number | null;
+  issue_number?: number | null;
   message?: string | null;
 }
 
-interface TaskNotice {
+export interface TaskNotice {
   id: string;
   tone: TaskNoticeTone;
   title: string;
   message: string;
   detail?: string | null;
   createdAt: number;
+  target: NotificationTarget;
+  progress?: SystemTaskProgress;
+  queuedCount?: number;
 }
 
 export function TaskNotificationCenter() {
@@ -37,7 +49,7 @@ export function TaskNotificationCenter() {
   const lastActiveTask = useRef<SystemTask | null>(null);
 
   const activeTask = useMemo(
-    () => tasks?.find((task) => task.status === 'running') ?? null,
+    () => tasks?.find((task) => task.status === 'running' || task.status === 'queued') ?? null,
     [tasks],
   );
   const queuedCount = tasks?.filter((task) => task.status === 'queued').length ?? 0;
@@ -58,26 +70,18 @@ export function TaskNotificationCenter() {
   useSocketEvent('task_added', refreshTasks);
   useSocketEvent('task_status', refreshTasks);
   useSocketEvent<TaskEndedPayload>('task_ended', useCallback((payload) => {
-    const finishedTask = lastActiveTask.current;
-    const message = payload.message || finishedTask?.message || '';
-    const failed = /error|failed|permission denied/i.test(message);
-    const notice: TaskNotice = {
-      id: `${Date.now()}-${payload.action ?? finishedTask?.action ?? 'task'}`,
-      tone: failed ? 'danger' : 'success',
-      title: failed ? 'Task failed' : 'Task completed',
-      message: formatTaskLabel(finishedTask, payload),
-      detail: failed ? message : null,
-      createdAt: Date.now(),
-    };
+    const notice = buildEndedTaskNotice(lastActiveTask.current, payload);
     setNotices((items) => [notice, ...items].slice(0, 12));
     lastActiveTask.current = null;
     setDismissedActiveId(null);
     refreshTasks();
   }, [refreshTasks]));
 
-  const showActiveToast = activeTask && dismissedActiveId !== activeTask.id;
-  const visibleNotices = notices.slice(0, showActiveToast ? 1 : 2);
-  if (!activeTask && notices.length === 0) return null;
+  const activeNotice = activeTask && dismissedActiveId !== activeTask.id
+    ? buildActiveTaskNotice(activeTask, queuedCount)
+    : null;
+  const visibleNotices = notices.slice(0, activeNotice ? 1 : 2);
+  if (!activeNotice && notices.length === 0) return null;
 
   return (
     <section className={styles.region} aria-label="Task notifications" aria-live="polite">
@@ -112,6 +116,7 @@ export function TaskNotificationCenter() {
                     <strong>{notice.title}</strong>
                     <span>{notice.message}</span>
                     {notice.detail && <small>{notice.detail}</small>}
+                    <TaskNoticeLink target={notice.target} />
                     <time>{formatNoticeTime(notice.createdAt)}</time>
                   </div>
                   <button
@@ -128,24 +133,16 @@ export function TaskNotificationCenter() {
         </div>
       )}
 
-      {showActiveToast && (
+      {activeNotice && (
         <TaskToast
-          tone="info"
-          title={activeTask.status === 'running' ? 'Task running' : 'Task queued'}
-          message={formatTaskStatus(activeTask)}
-          progress={activeTask.progress}
-          queuedCount={queuedCount}
-          currentFile={activeTask.progress?.current_file}
-          onDismiss={() => setDismissedActiveId(activeTask.id)}
+          notice={activeNotice}
+          onDismiss={() => setDismissedActiveId(activeTask!.id)}
         />
       )}
       {visibleNotices.map((notice) => (
         <TaskToast
           key={notice.id}
-          tone={notice.tone}
-          title={notice.title}
-          message={notice.message}
-          currentFile={notice.detail}
+          notice={notice}
           onDismiss={() => setNotices((items) => items.filter((item) => item.id !== notice.id))}
         />
       ))}
@@ -153,52 +150,112 @@ export function TaskNotificationCenter() {
   );
 }
 
-function TaskToast({
-  tone,
-  title,
-  message,
-  progress,
-  queuedCount,
-  currentFile,
-  onDismiss,
-}: {
-  tone: TaskNoticeTone;
-  title: string;
-  message: string;
-  progress?: SystemTask['progress'];
-  queuedCount?: number;
-  currentFile?: string | null;
-  onDismiss: () => void;
-}) {
-  const total = progress?.total_count ?? null;
-  const processed = progress?.processed_count ?? null;
+export function TaskToast({ notice, onDismiss }: { notice: TaskNotice; onDismiss: () => void }) {
+  const total = notice.progress?.total_count ?? null;
+  const processed = notice.progress?.processed_count ?? null;
   const percent = total && processed !== null
     ? Math.max(0, Math.min(100, Math.round((processed / total) * 100)))
     : null;
 
   return (
-    <article className={styles.toast} data-tone={tone}>
+    <article className={styles.toast} data-tone={notice.tone}>
       <div className={styles.header}>
         <div>
-          <p className={styles.title}>{title}</p>
-          <p className={styles.message}>{message}</p>
+          <p className={styles.title}>{notice.title}</p>
+          <p className={styles.message}>{notice.message}</p>
         </div>
         <button type="button" className={styles.dismiss} aria-label="Dismiss task notification" onClick={onDismiss}>×</button>
       </div>
-      {currentFile && <p className={styles.detail}>{currentFile}</p>}
+      {notice.detail && <p className={styles.detail}>{notice.detail}</p>}
+      {notice.progress?.current_file && <p className={styles.detail}>{notice.progress.current_file}</p>}
       {percent !== null && (
         <div className={styles.progress} aria-label={`${percent}% complete`}>
           <span style={{ transform: `scaleX(${percent / 100})` }} />
         </div>
       )}
       <div className={styles.footer}>
-        {typeof queuedCount === 'number' && queuedCount > 0 && (
-          <span>{queuedCount} queued behind this</span>
+        {typeof notice.queuedCount === 'number' && notice.queuedCount > 0 && (
+          <span>{notice.queuedCount} queued behind this</span>
         )}
-        <Link to="/system/status" className={styles.openLink}>Open tasks</Link>
+        <TaskNoticeLink target={notice.target} className={styles.openLink} />
       </div>
     </article>
   );
+}
+
+function TaskNoticeLink({ target, className }: { target: NotificationTarget; className?: string }) {
+  if (target.to === '/volumes/$volumeId') {
+    return <Link to={target.to} params={target.params} className={className}>{target.label}</Link>;
+  }
+  if (target.to === '/activity/history') {
+    return <Link to={target.to} search={target.search} className={className}>{target.label}</Link>;
+  }
+  if (target.to === '/activity/search-history') {
+    return <Link to={target.to} search={target.search} className={className}>{target.label}</Link>;
+  }
+  return <Link to={target.to} className={className}>{target.label}</Link>;
+}
+
+export function buildActiveTaskNotice(task: SystemTask, queuedCount = 0): TaskNotice {
+  return {
+    id: `active-${task.id}`,
+    tone: 'info',
+    title: task.status === 'running' ? 'Task running' : 'Task queued',
+    message: formatTaskLabel(task, {}),
+    detail: task.message && task.message !== formatTaskStatus(task) ? task.message : null,
+    createdAt: Date.now(),
+    target: getTaskActionTarget(task),
+    progress: task.progress,
+    queuedCount,
+  };
+}
+
+export function buildEndedTaskNotice(task: SystemTask | null, payload: TaskEndedPayload): TaskNotice {
+  const message = payload.message || task?.message || '';
+  const failed = /error|failed|failure|permission denied|no working|not found|timed out/i.test(message);
+  const mergedTask = mergeTaskPayload(task, payload);
+
+  return {
+    id: `${Date.now()}-${payload.action ?? task?.action ?? 'task'}`,
+    tone: failed ? 'danger' : 'success',
+    title: failed ? 'Task failed' : 'Task completed',
+    message: formatTaskLabel(mergedTask, payload),
+    detail: failed ? message : null,
+    createdAt: Date.now(),
+    target: failed ? failureTarget(payload.action ?? task?.action) : getTaskActionTarget(mergedTask),
+  };
+}
+
+function mergeTaskPayload(task: SystemTask | null, payload: TaskEndedPayload): SystemTask | null {
+  if (!task && !payload.action && !payload.display_title) return null;
+  return {
+    id: task?.id ?? 0,
+    action: payload.action ?? task?.action ?? 'task',
+    display_title: payload.display_title ?? task?.display_title ?? readableAction(payload.action ?? 'Task'),
+    status: 'ended',
+    message: payload.message ?? task?.message,
+    volume_id: payload.volume_id ?? task?.volume_id,
+    volume_title: payload.volume_title ?? task?.volume_title,
+    issue_id: payload.issue_id ?? task?.issue_id,
+    issue_number: payload.issue_number ?? task?.issue_number,
+  };
+}
+
+export function getTaskActionTarget(task: SystemTask | null): NotificationTarget {
+  if (task?.volume_id) {
+    return { label: 'View volume', to: '/volumes/$volumeId', params: { volumeId: String(task.volume_id) } };
+  }
+  if (task?.action?.includes('search')) {
+    return { label: 'Open searches', to: '/activity/search-history', search: { page: 1 } };
+  }
+  return { label: 'Open tasks', to: '/system/status' };
+}
+
+function failureTarget(action?: string | null): NotificationTarget {
+  if (action?.includes('search')) {
+    return { label: 'Open searches', to: '/activity/search-history', search: { page: 1 } };
+  }
+  return { label: 'Open history', to: '/activity/history', search: { page: 1, status: 'failed', section: 'all' } };
 }
 
 export function formatTaskStatus(task: SystemTask): string {
@@ -217,11 +274,17 @@ export function formatTaskStatus(task: SystemTask): string {
 
 function formatTaskLabel(task: SystemTask | null, payload: TaskEndedPayload): string {
   if (task) {
-    if (task.volume_title) return `${task.display_title} — ${task.volume_title}`;
+    const issueSuffix = task.issue_number != null ? ` #${task.issue_number}` : '';
+    if (task.volume_title) return `${task.display_title} — ${task.volume_title}${issueSuffix}`;
     return task.display_title;
   }
-  if (payload.action) return payload.action.replace(/_/g, ' ');
+  if (payload.display_title) return payload.display_title;
+  if (payload.action) return readableAction(payload.action);
   return 'Task';
+}
+
+function readableAction(action: string): string {
+  return action.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function formatNoticeTime(value: number): string {

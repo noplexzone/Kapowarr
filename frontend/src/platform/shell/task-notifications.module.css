@@ -150,6 +150,23 @@
   white-space: nowrap;
 }
 
+.historyList a {
+  width: max-content;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 32px;
+  border: 1px solid rgb(var(--accent-rgb) / 28%);
+  border-radius: var(--radius-sm);
+}
+
+.historyList a:hover,
+.historyList a:focus-visible {
+  background: rgb(var(--accent-rgb) / 12%);
+}
+
 .historyList strong {
   font-size: 0.82rem;
 }
@@ -172,6 +189,7 @@
 .toast {
   display: grid;
   gap: var(--space-2);
+  min-width: 0;
   padding: var(--space-3);
   color: var(--text);
   pointer-events: auto;
@@ -215,7 +233,9 @@
 }
 
 .message {
+  max-width: 100%;
   margin-top: var(--space-1);
+  overflow-wrap: anywhere;
   font-weight: 700;
 }
 
@@ -265,6 +285,7 @@
 
 .footer {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
   justify-content: space-between;
@@ -293,5 +314,16 @@
     right: var(--space-3);
     left: var(--space-3);
     width: auto;
+    max-height: calc(100dvh - 7rem - env(safe-area-inset-bottom));
+    overflow: auto;
+  }
+
+  .toast,
+  .historyPanel {
+    border-radius: var(--radius-lg);
+  }
+
+  .historyPanel {
+    max-height: calc(100dvh - 9rem - env(safe-area-inset-bottom));
   }
 }

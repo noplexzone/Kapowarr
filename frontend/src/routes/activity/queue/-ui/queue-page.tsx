@@ -41,11 +41,25 @@ export function QueuePage() {
 
   return (
     <div className={styles.page}>
+      <div className={styles.hero}>
+        <div>
+          <p className={styles.kicker}>Activity Queue</p>
+          <h1>Downloads</h1>
+          <p>Live download, import, and recovery state for the current queue.</p>
+        </div>
+        <div className={styles.summary} aria-label="Queue summary">
+          <strong>{queue.length}</strong>
+          <span>item{queue.length !== 1 ? 's' : ''} queued</span>
+        </div>
+      </div>
+
       <div className={styles.toolbar}>
         <span className={styles.toolbarTitle}>{queue.length} item{queue.length !== 1 ? 's' : ''} in queue</span>
         <Button
           variant="secondary"
-          onClick={() => clearMutation.mutate()}
+          onClick={() => {
+            if (window.confirm('Remove every item from the queue?')) clearMutation.mutate();
+          }}
           disabled={queue.length === 0 || clearMutation.isPending}
         >
           Remove All
@@ -82,6 +96,7 @@ export function QueuePage() {
                     );
                   }}
                   onRemove={(blocklist) => {
+                    if (blocklist && !window.confirm(`Remove and blocklist “${entry.title}”?`)) return;
                     removeDownload(entry.id, blocklist).then(() =>
                       queryClient.invalidateQueries({ queryKey: QUEUE_KEY }),
                     );
@@ -104,7 +119,7 @@ interface QueueRowProps {
   onRemove: (blocklist: boolean) => void;
 }
 
-function statusTone(status: string): 'info' | 'success' | 'danger' | 'neutral' {
+export function statusTone(status: string): 'info' | 'success' | 'danger' | 'neutral' {
   switch (status) {
     case 'downloading':
     case 'importing':
@@ -118,7 +133,7 @@ function statusTone(status: string): 'info' | 'success' | 'danger' | 'neutral' {
   }
 }
 
-function formatStatus(status: string): string {
+export function formatStatus(status: string): string {
   if (!status) return 'Unknown';
   return status
     .split(/[_-]/g)
@@ -126,74 +141,77 @@ function formatStatus(status: string): string {
     .join(' ');
 }
 
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (bytes < 0) return '—';
   if (bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
-function formatSpeed(bps: number): string {
+export function formatSpeed(bps: number): string {
   if (bps <= 0) return '—';
   return `${formatBytes(bps)}/s`;
 }
 
-function resolveProgress(entry: QueueEntry): number {
-  if (entry.progress_is_percent !== false) return Math.round(entry.progress);
-  if (entry.size > 0) return Math.round((entry.progress / entry.size) * 100);
+export function resolveProgress(entry: QueueEntry): number {
+  if (entry.progress_is_percent !== false) return Math.max(0, Math.min(100, Math.round(entry.progress)));
+  if (entry.size > 0) return Math.max(0, Math.min(100, Math.round((entry.progress / entry.size) * 100)));
   return 0;
 }
 
-function QueueRow({ entry, index, total, onMove, onRemove }: QueueRowProps) {
+export function progressLabel(entry: QueueEntry): string {
+  if (entry.progress_is_percent === false) {
+    return entry.size > 0 ? `${formatBytes(entry.progress)} of ${formatBytes(entry.size)}` : formatBytes(entry.progress);
+  }
+  return `${resolveProgress(entry)}% complete`;
+}
+
+export function QueueRow({ entry, index, total, onMove, onRemove }: QueueRowProps) {
   const pct = resolveProgress(entry);
   const isActive = ['downloading', 'importing', 'seeding'].includes(entry.status);
 
   return (
-    <tr>
-      <td>
-        <Badge tone={statusTone(entry.status)}>
-          {formatStatus(entry.status)}
-        </Badge>
-        {entry.task_label && (
-          <div className={styles.taskLabel}>{entry.task_label}</div>
-        )}
+    <tr className={styles.queueRow} data-status={entry.status}>
+      <td data-label="Status">
+        <div className={styles.statusBlock}>
+          <Badge tone={statusTone(entry.status)}>{formatStatus(entry.status)}</Badge>
+          {entry.task_label && <div className={styles.taskLabel}>{entry.task_label}</div>}
+        </div>
       </td>
-      <td>
+      <td data-label="Title">
         <Link to="/volumes/$volumeId" params={{ volumeId: String(entry.volume_id) }} className={styles.titleLink}>
           {entry.title}
         </Link>
       </td>
-      <td>
+      <td data-label="Source">
         <Badge tone="neutral">
           {entry.source_detail ? `${entry.source_name} / ${entry.source_detail}` : entry.source_name}
         </Badge>
       </td>
-      <td>
+      <td data-label="Size">
         <span className={styles.sizeSpeed}>{formatBytes(entry.size)}</span>
       </td>
-      <td>
+      <td data-label="Speed">
         <span className={styles.sizeSpeed}>{formatSpeed(entry.speed)}</span>
       </td>
-      <td className={styles.progressCell}>
+      <td data-label="Progress" className={styles.progressCell}>
         {isActive ? (
-          <>
-            <div className={styles.progressWrap}>
-              <Progress value={pct} tone="success" className={styles.progressBar} />
-              <span className={styles.progressText}>{pct}%</span>
-            </div>
-          </>
+          <div className={styles.progressWrap}>
+            <Progress value={pct} tone="success" className={styles.progressBar} />
+            <span className={styles.progressText}>{progressLabel(entry)}</span>
+          </div>
         ) : (
           <span className={styles.progressText}>—</span>
         )}
       </td>
-      <td>
+      <td data-label="Actions">
         <div className={styles.actions}>
-          <Button variant="ghost" onClick={() => onMove('up')} disabled={index === 0} title="Move up">↑</Button>
-          <Button variant="ghost" onClick={() => onMove('down')} disabled={index === total - 1} title="Move down">↓</Button>
-          <Button variant="ghost" onClick={() => onRemove(false)} title="Remove">✕</Button>
-          <Button variant="ghost" onClick={() => onRemove(true)} title="Remove & Blocklist">Blocklist</Button>
+          <Button variant="ghost" onClick={() => onMove('up')} disabled={index === 0} title="Move up">Move up</Button>
+          <Button variant="ghost" onClick={() => onMove('down')} disabled={index === total - 1} title="Move down">Move down</Button>
+          <Button variant="ghost" onClick={() => onRemove(false)} title="Remove">Remove</Button>
+          <Button variant="ghost" onClick={() => onRemove(true)} title="Remove & blocklist">Remove & blocklist</Button>
         </div>
       </td>
     </tr>

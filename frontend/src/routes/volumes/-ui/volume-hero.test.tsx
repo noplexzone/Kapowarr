@@ -14,6 +14,7 @@ vi.mock('@/components/authenticated-resource', () => ({
 }));
 
 import type { VolumeDetailFull } from '../-volumes.types';
+import styles from './volume-detail-page.module.css';
 import { getMissingIssueCount, getReadableIssue, VolumeHero } from './volume-hero';
 
 const baseVolume: VolumeDetailFull = {
@@ -68,6 +69,7 @@ describe('VolumeHero media detail actions', () => {
     const onAutoSearch = vi.fn();
     renderHero(baseVolume, { onAutoSearch });
 
+    expect(screen.getByTestId('volume-hero').querySelector(`.${styles.heroBackdrop}`)).toBeTruthy();
     expect(screen.getByText('7 missing')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Search Missing' }));
     expect(onAutoSearch).toHaveBeenCalledOnce();

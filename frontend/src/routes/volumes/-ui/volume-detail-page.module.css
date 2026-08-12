@@ -90,8 +90,50 @@
   padding: clamp(1rem, 3vw, 1.5rem);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl, 1rem);
-  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.12), transparent 36%), var(--surface-raised);
+  background: var(--surface-raised);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
+}
+
+.mediaHero::before,
+.mediaHero::after {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: '';
+  pointer-events: none;
+}
+
+.mediaHero::before {
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.76) 42%, rgba(0, 0, 0, 0.88)),
+    linear-gradient(0deg, rgba(var(--accent-rgb), 0.16), rgba(var(--accent-rgb), 0));
+}
+
+.mediaHero::after {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(255, 255, 255, 0.18), transparent 18rem),
+    linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), transparent 48%);
+  mix-blend-mode: screen;
+  opacity: 0.7;
+}
+
+.heroBackdrop {
+  position: absolute;
+  inset: -18% -8%;
+  z-index: 0;
+  width: 116%;
+  height: 136%;
+  object-fit: cover;
+  filter: blur(26px) saturate(1.15);
+  opacity: 0.5;
+  transform: scale(1.04);
+  pointer-events: none;
+}
+
+.coverStack,
+.info {
+  position: relative;
+  z-index: 1;
 }
 
 .coverStack {
@@ -180,6 +222,19 @@
   .header,
   .mediaHero {
     grid-template-columns: 1fr;
+  }
+
+  .mediaHero::before {
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.78) 38%, rgba(0, 0, 0, 0.9)),
+      linear-gradient(0deg, rgba(var(--accent-rgb), 0.18), rgba(var(--accent-rgb), 0));
+  }
+
+  .heroBackdrop {
+    inset: -12% -24%;
+    width: 148%;
+    height: 82%;
+    opacity: 0.48;
   }
 
   .coverStack,

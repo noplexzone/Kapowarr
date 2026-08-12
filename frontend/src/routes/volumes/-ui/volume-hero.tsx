@@ -78,6 +78,12 @@ export function VolumeHero({
     {actionMsg && <StatusBanner>{actionMsg}</StatusBanner>}
 
     <div className={styles.mediaHero} data-testid="volume-hero">
+      <AuthenticatedImage
+        className={styles.heroBackdrop}
+        endpoint={`volumes/${volume.id}/cover`}
+        alt=""
+        aria-hidden="true"
+      />
       <div className={styles.coverStack}>
         <AuthenticatedImage
           className={styles.cover}

@@ -78,6 +78,13 @@ const SPECIAL_VERSIONS = [
   { value: 'volume-as-issue', label: 'Volume As Issue' },
 ] as const;
 
+
+interface TaskEndedPayload {
+  action?: string | null;
+  volume_id?: number | null;
+  message?: string | null;
+}
+
 const MONITORING_SCHEMES = [
   { value: '', label: "-- Don't apply --" },
   { value: 'all', label: 'All' },
@@ -243,6 +250,14 @@ export function VolumeDetailPage() {
     });
   }, []));
 
+  useSocketEvent<TaskEndedPayload>('task_ended', useCallback((payload) => {
+    if (payload.action !== 'refresh_and_scan' || payload.volume_id !== id) return;
+    void queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+    void queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
+    void queryClient.invalidateQueries({ queryKey: ['volumes', 'stats'] });
+    setActionMsg(payload.message || 'Refresh & Scan completed.');
+  }, [id, queryClient]));
+
   const rootFoldersQuery = useQuery({
     queryKey: ['rootFolders'],
     queryFn: fetchRootFolders,
@@ -377,7 +392,10 @@ export function VolumeDetailPage() {
 
   const refreshMutation = useMutation({
     mutationFn: () => refreshVolume(id),
-    onSuccess: () => setActionMsg('Refresh & Scan started.'),
+    onSuccess: () => {
+      setActionMsg('Refresh & Scan started.');
+      void queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
+    },
     onError: (err) => setActionMsg('Refresh failed: ' + (err as Error).message),
   });
 

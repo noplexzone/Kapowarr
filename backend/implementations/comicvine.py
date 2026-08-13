@@ -4,6 +4,8 @@
 Search for volumes/issues and fetch metadata for them on ComicVine
 """
 
+from __future__ import annotations
+
 from asyncio import gather, run, sleep
 from json import JSONDecodeError
 from re import IGNORECASE, compile

@@ -525,3 +525,13 @@
   }
   .floatingSearchInput { min-height: 44px; }
 }
+
+.loadMoreSentinel {
+  grid-column: 1 / -1;
+  min-height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}

@@ -1,4 +1,4 @@
-import { useState, useDeferredValue, useCallback } from 'react';
+import { useState, useDeferredValue, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/primitives';
@@ -183,10 +183,34 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
   );
 }
 
+const DISCOVERY_BATCH_SIZE = 50;
+
 function VolumeGridView({ type, section, hideAlreadyAdded, onAddVolume }: { type: 'upcoming' | 'new'; section: DiscoverySection; hideAlreadyAdded: boolean; onAddVolume: (volume: DiscoveryVolume) => void }) {
   const navigate = useNavigate();
   const { data: allVolumes = [], isFetching } = useQuery(discoveryVolumeQueryOptions(type, section));
   const volumes = filterDiscoveryVolumes(allVolumes, hideAlreadyAdded);
+  const [visibleCount, setVisibleCount] = useState(DISCOVERY_BATCH_SIZE);
+  const shownVolumes = useMemo(() => volumes.slice(0, visibleCount), [volumes, visibleCount]);
+  const hasMore = visibleCount < volumes.length;
+
+  useEffect(() => {
+    setVisibleCount(DISCOVERY_BATCH_SIZE);
+  }, [type, section, hideAlreadyAdded]);
+
+  useEffect(() => {
+    if (!hasMore) return;
+
+    const onScroll = () => {
+      const remaining = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      if (remaining < 900) {
+        setVisibleCount((current) => Math.min(current + DISCOVERY_BATCH_SIZE, volumes.length));
+      }
+    };
+
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [hasMore, volumes.length]);
 
   const handleClick = (vol: DiscoveryVolume) => {
     if (vol.already_added != null) {
@@ -206,9 +230,14 @@ function VolumeGridView({ type, section, hideAlreadyAdded, onAddVolume }: { type
 
   return (
     <div className={styles.grid}>
-      {volumes.map((vol) => (
+      {shownVolumes.map((vol) => (
         <VolumeCard key={getDiscoveryCardKey(type, vol)} volume={vol} onClick={handleClick} />
       ))}
+      {hasMore && (
+        <div className={styles.loadMoreSentinel} aria-live="polite">
+          Loading more titles…
+        </div>
+      )}
     </div>
   );
 }

@@ -33,6 +33,7 @@ from backend.internals.settings import Settings
 _NON_ENGLISH_PUBLISHERS = frozenset({
     # Japanese publishers
     'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
+    'shodensha', 'shucream', 'shu-cream', 'two virgins',
     'media factory', 'kodansha', 'kodansha comics', 'kodansha usa',
     'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
     'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
@@ -83,6 +84,7 @@ _NON_ENGLISH_PUBLISHERS = frozenset({
 
 _NON_ENGLISH_TITLE_KEYWORDS = frozenset({
     'manga action', 'young king', 'weekly shonen', 'shonen jump',
+    'monthly dragon age', 'dragon age', 'feel young', 'comic it',
     'weekly jump', 'young jump', 'big comic', 'shonen sunday',
     'shonen magazine', 'weekly playboy', 'young magazine',
     'sho-comi', 'hana to yume', 'sunday comics', 'morning comics',
@@ -109,6 +111,7 @@ _MANGA_TITLE_KEYWORDS = _NON_ENGLISH_TITLE_KEYWORDS
 # identify manga volumes for the Manga section).
 _MANGA_PUBLISHERS = frozenset({
     'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
+    'shodensha', 'shucream', 'shu-cream', 'two virgins',
     'media factory', 'kodansha', 'kodansha comics', 'kodansha usa',
     'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
     'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
@@ -186,6 +189,28 @@ def _is_comic_discovery_excluded_publisher(pub: str) -> bool:
         _publisher_matches(pub, _NON_ENGLISH_PUBLISHERS)
         or _publisher_matches(pub, _ENGLISH_MANGA_PUBLISHERS)
     )
+
+
+def _has_manga_discovery_title_keyword(title: str) -> bool:
+    normalized = normalise_query_string(title or '').lower()
+    return any(keyword in normalized for keyword in _MANGA_TITLE_KEYWORDS)
+
+
+def _has_non_ascii(value: str) -> bool:
+    return any(ord(c) > 127 for c in (value or ''))
+
+
+def _is_comic_discovery_candidate_volume(volume: Dict[str, Any]) -> bool:
+    pub = ((volume.get('publisher') or {}).get('name') or '')
+    return (
+        not _is_comic_discovery_excluded_publisher(pub)
+        and not _has_non_ascii(volume.get('name') or '')
+        and not _has_manga_discovery_title_keyword(volume.get('name') or '')
+    )
+
+
+def _is_english_manga_publisher(pub: str) -> bool:
+    return _publisher_matches(pub, _ENGLISH_MANGA_PUBLISHERS)
 
 
 translation_regex = compile(
@@ -922,19 +947,13 @@ class ComicVine:
             )
             results = [r for page in issue_pages for r in (page.get('results') or [])]
 
-            def _has_non_ascii(s: str) -> bool:
-                return any(ord(c) > 127 for c in s)
-
             # Pre-filter using data already present in the issue stubs —
             # no extra API call needed for these checks.
             results = [
                 r for r in results
                 if not _has_non_ascii((r.get('volume') or {}).get('name') or '')
                 and not _has_non_ascii(r.get('name') or '')
-                and not any(
-                    k in ((r.get('volume') or {}).get('name') or '').lower()
-                    for k in _MANGA_TITLE_KEYWORDS
-                )
+                and not _has_manga_discovery_title_keyword((r.get('volume') or {}).get('name') or '')
             ]
 
             # Batch-fetch publisher for every unique volume (all batches run
@@ -1045,23 +1064,10 @@ class ComicVine:
             except (TypeError, ValueError):
                 return 0
 
-        def _is_comic_discovery_excluded(v: Dict[str, Any]) -> bool:
-            pub = ((v.get('publisher') or {}).get('name') or '')
-            return _is_comic_discovery_excluded_publisher(pub)
-
-        def _has_non_ascii_title(v: Dict[str, Any]) -> bool:
-            return any(ord(c) > 127 for c in (v.get('name') or ''))
-
-        def _has_manga_title_keyword(v: Dict[str, Any]) -> bool:
-            name = normalise_query_string(v.get('name') or '').lower()
-            return any(k in name for k in _MANGA_TITLE_KEYWORDS)
-
         pre_filtered = [
             v for v in all_results
             if _year(v) >= cutoff
-            and not _is_comic_discovery_excluded(v)
-            and not _has_non_ascii_title(v)
-            and not _has_manga_title_keyword(v)
+            and _is_comic_discovery_candidate_volume(v)
         ]
         formatted = [self.__format_volume_output(v) for v in pre_filtered]
         filtered = [v for v in formatted if not v['translated']][:limit]
@@ -1416,10 +1422,6 @@ class ComicVine:
             'limit': 100,
         }
 
-        def _is_english_manga_pub(pub: str) -> bool:
-            p = pub.lower()
-            return p in _ENGLISH_MANGA_PUBLISHERS or any(m in p for m in _ENGLISH_MANGA_PUBLISHERS)
-
         async with AsyncSession() as session:
             issue_pages = await gather(
                 self.__call_api(session, '/issues', {**issue_params, 'offset': 0},   {'results': []}),
@@ -1452,16 +1454,13 @@ class ComicVine:
                 for vol_page in vol_pages:
                     for v in (vol_page.get('results') or []):
                         pub = ((v.get('publisher') or {}).get('name') or '')
-                        if _is_english_manga_pub(pub):
+                        if _is_english_manga_publisher(pub):
                             english_manga_vol_ids.add(int(v['id']))
 
         filtered = [
             r for r in results
             if int(r['volume']['id']) in english_manga_vol_ids
-            and not any(
-                k in ((r.get('volume') or {}).get('name') or '').lower()
-                for k in _MANGA_TITLE_KEYWORDS
-            )
+            and not _has_manga_discovery_title_keyword((r.get('volume') or {}).get('name') or '')
         ]
 
         vol_ids_int = tuple(int(r['volume']['id']) for r in filtered)
@@ -1531,21 +1530,15 @@ class ComicVine:
                 return 0
 
         def _is_english_manga(v: Dict[str, Any]) -> bool:
-            pub = ((v.get('publisher') or {}).get('name') or '').lower()
-            return pub in _ENGLISH_MANGA_PUBLISHERS or any(p in pub for p in _ENGLISH_MANGA_PUBLISHERS)
-
-        def _has_non_ascii_title(v: Dict[str, Any]) -> bool:
-            return any(ord(c) > 127 for c in (v.get('name') or ''))
+            pub = ((v.get('publisher') or {}).get('name') or '')
+            return _is_english_manga_publisher(pub)
 
         pre_filtered = [
             v for v in all_results
             if _year(v) >= cutoff
             and _is_english_manga(v)
-            and not _has_non_ascii_title(v)
-            and not any(
-                k in (v.get('name') or '').lower()
-                for k in _MANGA_TITLE_KEYWORDS
-            )
+            and not _has_non_ascii(v.get('name') or '')
+            and not _has_manga_discovery_title_keyword(v.get('name') or '')
         ]
         formatted = [self.__format_volume_output(v) for v in pre_filtered]
         # Keep only volumes flagged as translated — the positive publisher

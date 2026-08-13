@@ -15,3 +15,11 @@ it('clears and refreshes discover search results after adding from the search ba
   expect(source).toContain("invalidateQueries({ queryKey: ['volumes', 'search'] })");
   expect(source).toContain('void queryClient.invalidateQueries({ queryKey: VOLUMES_KEY });');
 });
+
+
+it('lazy-reveals discover volume results as the user scrolls', () => {
+  expect(source).toContain('const DISCOVERY_BATCH_SIZE = 50;');
+  expect(source).toContain('shownVolumes.map((vol) => (');
+  expect(source).toContain("window.addEventListener('scroll', onScroll, { passive: true })");
+  expect(source).toContain('Loading more titles…');
+});

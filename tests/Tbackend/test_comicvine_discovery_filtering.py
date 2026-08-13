@@ -19,9 +19,12 @@ def _load_discovery_filter_symbols():
     module = ast.parse(source_path.read_text())
     names = {
         '_NON_ENGLISH_PUBLISHERS',
+        '_NON_ENGLISH_TITLE_KEYWORDS',
+        '_MANGA_TITLE_KEYWORDS',
         '_ENGLISH_MANGA_PUBLISHERS',
         '_publisher_matches',
         '_is_comic_discovery_excluded_publisher',
+        '_has_manga_discovery_title_keyword',
     }
     selected = [
         node
@@ -53,6 +56,17 @@ class ComicVineDiscoveryFilteringTests(unittest.TestCase):
         self.assertTrue(excluded('Yen On'))
         self.assertTrue(excluded('Shōnen Gahōsha'))
         self.assertTrue(excluded('Line Manga'))
+        self.assertTrue(excluded('Shodensha'))
+        self.assertTrue(excluded('ShuCream'))
+        self.assertTrue(excluded('Two Virgins'))
+
+    def test_title_keywords_are_normalized_before_comic_exclusion(self):
+        has_keyword = _SYMBOLS['_has_manga_discovery_title_keyword']
+
+        self.assertTrue(has_keyword('Monthly Dragon Age'))
+        self.assertTrue(has_keyword('Feel Young'))
+        self.assertTrue(has_keyword('COMIC it'))
+        self.assertFalse(has_keyword('Amazing Spider-Man'))
 
     def test_western_publishers_are_not_excluded_from_comic_discovery(self):
         excluded = _SYMBOLS['_is_comic_discovery_excluded_publisher']

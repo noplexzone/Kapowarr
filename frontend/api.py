@@ -1247,8 +1247,8 @@ def api_volumes_search():
 
         if metadata_source == 'all':
             results = search_comicvine()
-            if section == 'manga' and not results:
-                results = search_mangadex()
+            if section == 'manga':
+                results.extend(search_mangadex())
         elif metadata_source == 'mangadex':
             results = search_mangadex()
         elif metadata_source == 'comicvine':

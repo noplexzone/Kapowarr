@@ -11,8 +11,9 @@ export const librarySortSchema = z.enum([
   'recently_added',
   'recently_released',
   'publisher',
-  'wanted',
+  'completion',
 ]);
+export const sortDirectionSchema = z.enum(['asc', 'desc']);
 
 export const mediaLibrarySearchSchema = z.preprocess((raw) => {
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
@@ -26,7 +27,8 @@ export const mediaLibrarySearchSchema = z.preprocess((raw) => {
     q: value.q ?? value.search,
     status: legacyFilter === 'wanted' ? 'missing' : legacyFilter === 'upcoming' ? 'upcoming' : value.status,
     monitoring: legacyFilter === 'unmonitored' ? 'unmonitored' : legacyFilter === 'monitored' ? 'monitored' : value.monitoring,
-    sort: value.sort,
+    sort: value.sort === 'wanted' ? 'completion' : value.sort,
+    direction: value.direction,
     page: Number.isFinite(offset) ? offset + 1 : value.page,
     collection: value.collection,
     section: value.section,
@@ -37,6 +39,7 @@ export const mediaLibrarySearchSchema = z.preprocess((raw) => {
   status: z.enum(['all', 'missing', 'upcoming']).default('all').catch('all'),
   monitoring: z.enum(['all', 'monitored', 'unmonitored']).default('all').catch('all'),
   sort: librarySortSchema.default('title').catch('title'),
+  direction: sortDirectionSchema.default('asc').catch('asc'),
   page: z.coerce.number().int().min(1).default(1).catch(1),
   collection: z.string().trim().max(80).optional().catch(undefined).transform((value) => value || undefined),
 }));
@@ -51,6 +54,7 @@ export const librarySearchSchema = z.preprocess((raw) => {
   status: z.enum(['all', 'missing', 'upcoming']),
   monitoring: z.enum(['all', 'monitored', 'unmonitored']),
   sort: librarySortSchema,
+  direction: sortDirectionSchema,
   page: z.number().int().min(1),
   collection: z.string().optional(),
   section: sectionSchema,
@@ -60,6 +64,7 @@ export const legacyLibrarySearchSchema = z.object({
   sort: z.string().optional().catch(undefined),
   filter: z.string().optional().catch(undefined),
   view: z.string().optional().catch(undefined),
+  direction: z.string().optional().catch(undefined),
   search: cleanQuery,
   offset: z.coerce.number().int().min(0).default(0).catch(0),
 });
@@ -129,6 +134,7 @@ export function mediaLibraryToLegacySearch(search: MediaLibrarySearch) {
     sort: search.sort,
     filter,
     view: search.view === 'grid' ? 'posters' as const : 'table' as const,
+    direction: search.direction,
     search: search.q,
     offset: search.page - 1,
   };
@@ -143,7 +149,8 @@ export function legacyLibraryToCanonical(
   rawSearch: unknown,
 ): LibrarySearch {
   const search = legacyLibrarySearchSchema.parse(rawSearch);
-  const sortResult = librarySortSchema.safeParse(search.sort);
+  const sortResult = librarySortSchema.safeParse(search.sort === 'wanted' ? 'completion' : search.sort);
+  const directionResult = sortDirectionSchema.safeParse(search.direction);
 
   return librarySearchSchema.parse({
     section,
@@ -156,6 +163,7 @@ export function legacyLibraryToCanonical(
         ? 'monitored'
         : 'all',
     sort: sortResult.success ? sortResult.data : 'title',
+    direction: directionResult.success ? directionResult.data : 'asc',
     page: search.offset + 1,
   });
 }

@@ -70,7 +70,7 @@ describe('VolumeHero media detail actions', () => {
     const onAutoSearch = vi.fn();
     renderHero(baseVolume, { onAutoSearch });
 
-    expect(screen.getByTestId('volume-hero').querySelector(`.${styles.heroBackdrop}`)).toBeTruthy();
+    expect(screen.getByTestId('volume-hero').querySelector(`.${styles.publisherBackdrop}`)).toBeTruthy();
     expect(screen.getByText('7 missing')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Search Missing' }));
     expect(onAutoSearch).toHaveBeenCalledOnce();

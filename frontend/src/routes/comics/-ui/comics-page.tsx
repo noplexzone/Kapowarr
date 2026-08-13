@@ -18,6 +18,8 @@ import {
   FILTER_OPTIONS,
   VIEW_OPTIONS,
   SORT_LABELS,
+  DIRECTION_LABELS,
+  COMPLETION_DIRECTION_LABELS,
   FILTER_LABELS,
   VIEW_LABELS,
   STORAGE_KEY_SORT,
@@ -53,6 +55,7 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
     view: rawSearch.view === 'list' ? 'table' : 'posters',
     search: rawSearch.q,
     offset: Math.max(0, (rawSearch.page ?? 1) - 1),
+    direction: rawSearch.direction === 'desc' ? 'desc' : 'asc',
   } : rawSearch as VolumesSearch;
   const { data } = useSuspenseQuery(volumeListQueryOptions(1, search, section));
 
@@ -121,12 +124,13 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
       if ('filter' in patch) setStorageVal(STORAGE_KEY_FILTER, patch.filter);
       if ('search' in patch) setStorageVal(STORAGE_KEY_SEARCH, patch.search);
 
-      const resetsPage = ('sort' in patch || 'filter' in patch || 'search' in patch)
+      const resetsPage = ('sort' in patch || 'direction' in patch || 'filter' in patch || 'search' in patch)
         && !('offset' in patch);
       if (canonical) {
         const canonicalPatch: Record<string, unknown> = {};
         if ('sort' in patch) canonicalPatch.sort = patch.sort;
         if ('view' in patch) canonicalPatch.view = patch.view === 'table' ? 'list' : 'grid';
+        if ('direction' in patch) canonicalPatch.direction = patch.direction;
         if ('search' in patch) canonicalPatch.q = patch.search;
         if ('offset' in patch) canonicalPatch.page = Number(patch.offset) + 1;
         if ('filter' in patch) {
@@ -287,6 +291,20 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
               </option>
             ))}
           </select>
+
+          <div className={styles.directionGroup} aria-label="Sort direction">
+            {(['asc', 'desc'] as const).map((direction) => (
+              <Button
+                key={direction}
+                variant={search.direction === direction ? 'primary' : 'ghost'}
+                aria-pressed={search.direction === direction}
+                title={search.sort === 'completion' ? COMPLETION_DIRECTION_LABELS[direction] : DIRECTION_LABELS[direction]}
+                onClick={() => updateSearch({ direction })}
+              >
+                {direction === 'asc' ? 'Ascending' : 'Descending'}
+              </Button>
+            ))}
+          </div>
         </div>
 
       </div>
@@ -377,9 +395,15 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
               key={v.id}
               volume={v}
               selected={selectedIds.has(v.id)}
+              manageMode={manageMode}
               selectionVisible={manageMode || selectedIds.size > 0}
               pending={pendingAction === `search-${v.id}`}
               onSelect={toggleSelect}
+              onMonitor={(id, monitored) => performAction(
+                `monitor-${id}`,
+                () => setVolumeMonitored(id, monitored),
+                `${monitored ? 'Monitored' : 'Unmonitored'} ${v.title}.`,
+              )}
               onSearch={(id) => performAction(
                 `search-${id}`,
                 () => runVolumeTask(id, 'auto_search'),

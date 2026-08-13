@@ -38,6 +38,10 @@ export interface VolumeDetailFull {
   root_folder_path: string;
   issue_count: number;
   issues_downloaded: number;
+  released_issue_count?: number;
+  released_issues_downloaded?: number;
+  upcoming_issue_count?: number;
+  completion_percentage?: number | null;
   cover?: string;
   issues: IssueDetail[];
   general_files: GeneralFileDetail[];

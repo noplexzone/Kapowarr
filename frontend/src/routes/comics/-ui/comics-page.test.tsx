@@ -206,7 +206,7 @@ describe('ComicsPage poster-first manage mode', () => {
   it('offers a poster overlay control for missing searches only', async () => {
     renderPage();
 
-    expect(screen.queryByRole('button', { name: 'Monitor Berserk' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Monitor Berserk' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Search missing issues for Saga' }));
     await waitFor(() => expect(runVolumeTask).toHaveBeenCalledWith(1, 'auto_search'));
   });

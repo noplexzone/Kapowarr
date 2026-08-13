@@ -183,20 +183,15 @@ describe('ComicsPage poster-first manage mode', () => {
     expect(screen.queryByRole('button', { name: /Image/ })).toBeNull();
   });
 
-  it('surfaces compact wanted triage for the current result set', () => {
+  it('keeps the phase 3 library header compact without wanted triage banners', () => {
     renderPage();
 
-    expect(screen.getByText(/visible volumes need attention/)).toBeTruthy();
-    expect(screen.queryByText('15 missing issues in the current result set.')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show Missing' }));
-    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
-      to: '/comics',
-      search: expect.any(Function),
-    }));
-    const patchSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
-    expect(patchSearch({})).toMatchObject({ filter: 'wanted', offset: 0 });
-    expect(screen.queryByRole('button', { name: 'Search Visible Missing' })).toBeNull();
+    expect(screen.queryByText(/visible volumes need attention/)).toBeNull();
+    expect(screen.queryByText('Saved views')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Missing' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Sort library' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Ascending' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Descending' })).toBeTruthy();
   });
 
   it('only queues selected missing volumes from the manage toolbar', async () => {
@@ -215,34 +210,26 @@ describe('ComicsPage poster-first manage mode', () => {
     expect(screen.getByTestId('bulk-toolbar').textContent).toContain('0 selected');
   });
 
-  it('applies and manages persisted smart filters for the active section', async () => {
-    vi.spyOn(window, 'prompt').mockReturnValue('Night reads');
+  it('removes saved views while keeping the Missing status filter URL-backed', () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Missing comics' }));
+    expect(screen.queryByRole('button', { name: 'Missing comics' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save View' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Missing' }));
     expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
       to: '/comics',
       search: expect.any(Function),
     }));
     const lastSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
-    expect(lastSearch({})).toMatchObject({ filter: 'wanted', sort: 'wanted', view: 'posters', offset: 0 });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save View' }));
-    await waitFor(() => expect(createSavedFilter).toHaveBeenCalledWith('comic', 'Night reads', {
-      sort: 'title',
-      filter: '',
-      view: 'posters',
-      search: undefined,
-    }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete smart filter Missing comics' }));
-    await waitFor(() => expect(deleteSavedFilter).toHaveBeenCalledWith(8));
+    expect(lastSearch({})).toMatchObject({ filter: 'wanted', offset: 0 });
+    expect(createSavedFilter).not.toHaveBeenCalled();
+    expect(deleteSavedFilter).not.toHaveBeenCalled();
   });
 
   it('offers a poster overlay control for missing searches only', async () => {
     renderPage();
 
-    expect(screen.queryByRole('button', { name: 'Monitor Berserk' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Monitor Berserk' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Search missing issues for Saga' }));
     await waitFor(() => expect(runVolumeTask).toHaveBeenCalledWith(1, 'auto_search'));
   });

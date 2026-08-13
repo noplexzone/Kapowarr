@@ -222,6 +222,46 @@ class VolumePaginationTests(unittest.TestCase):
         self.assertEqual([row['id'] for row in manga_wanted], [20])
         self.assertEqual(manga_total, 1)
 
+    def test_completion_sort_uses_released_issue_counts_and_nulls_last(self):
+        db_conn = sqlite3.connect(':memory:')
+        db_conn.row_factory = sqlite3.Row
+        db_conn.executescript("""
+            CREATE TABLE root_folders (id INTEGER PRIMARY KEY, section TEXT);
+            CREATE TABLE volumes (
+                id INTEGER PRIMARY KEY, comicvine_id INTEGER, title TEXT, year INTEGER,
+                publisher TEXT, volume_number INTEGER, description TEXT, special_version TEXT,
+                monitored INTEGER, monitor_new_issues INTEGER, root_folder INTEGER, folder TEXT
+            );
+            CREATE TABLE issues (id INTEGER PRIMARY KEY, volume_id INTEGER, monitored INTEGER, date TEXT);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER);
+            CREATE TABLE issues_files (file_id INTEGER, issue_id INTEGER);
+        """)
+        db_conn.execute("INSERT INTO root_folders VALUES (1, 'comic')")
+        db_conn.executemany(
+            "INSERT INTO volumes VALUES (?, ?, ?, 2020, 'Image', 1, '', '', 1, 1, 1, '/v')",
+            [(1, 1, 'Alpha'), (2, 2, 'Beta'), (3, 3, 'Gamma')],
+        )
+        db_conn.executemany('INSERT INTO issues VALUES (?, ?, 1, ?)', [
+            (11, 1, '2020-01-01'), (12, 1, '2020-02-01'), (13, 1, '2999-01-01'), (14, 1, None),
+            (21, 2, '2020-01-01'), (22, 2, '2020-02-01'),
+            (31, 3, None),
+        ])
+        db_conn.executemany('INSERT INTO files VALUES (?, 100)', [(101,), (102,), (201,), (202,)])
+        db_conn.executemany('INSERT INTO issues_files VALUES (?, ?)', [(101, 11), (102, 11), (201, 21), (202, 22)])
+        db_conn.commit()
+        try:
+            with patch('backend.implementations.volumes.get_db', return_value=_SqliteDB(db_conn)):
+                asc, _ = Library.get_public_volumes_page(LibrarySorting.COMPLETION, None, 'comic', page=0, page_size=10, direction='asc')
+                desc, _ = Library.get_public_volumes_page(LibrarySorting.COMPLETION, None, 'comic', page=0, page_size=10, direction='desc')
+        finally:
+            db_conn.close()
+        self.assertEqual([row['id'] for row in asc], [1, 2, 3])
+        self.assertEqual([row['completion_percentage'] for row in asc], [50.0, 100.0, None])
+        self.assertEqual(asc[0]['released_issue_count'], 2)
+        self.assertEqual(asc[0]['released_issues_downloaded'], 1)
+        self.assertEqual(asc[0]['upcoming_issue_count'], 1)
+        self.assertEqual([row['id'] for row in desc], [2, 1, 3])
+
 
 if __name__ == '__main__':
     unittest.main()

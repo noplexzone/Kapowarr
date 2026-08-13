@@ -461,6 +461,11 @@ def extract_key(request, key: str, check_existence: bool = True) -> Any:
             except KeyError:
                 raise InvalidKeyValue(key, value)
 
+        elif key == 'direction':
+            value = str(value).lower()
+            if value not in ('asc', 'desc'):
+                raise InvalidKeyValue(key, value)
+
         elif key == 'filter':
             try:
                 value = LibraryFilter[value.upper()] if value else None
@@ -495,6 +500,14 @@ def extract_key(request, key: str, check_existence: bool = True) -> Any:
         # Default value
         if key == 'sort':
             value = LibrarySorting.TITLE
+
+        elif key == 'direction':
+            value = str(value).lower()
+            if value not in ('asc', 'desc'):
+                raise InvalidKeyValue(key, value)
+
+        elif key == 'direction':
+            value = 'asc'
 
         elif key == 'filter':
             value = None
@@ -1467,15 +1480,16 @@ def api_volumes():
         query = extract_key(request, 'query', False)
         sort = extract_key(request, 'sort', False)
         filter = extract_key(request, 'filter', False)
+        direction = extract_key(request, 'direction', False) or 'asc'
         section = extract_key(request, 'section', False) or 'comic'
         paginated = request.values.get('paginated') == 'true'
         if not paginated:
             if query:
                 return return_api(Library.search(
-                    query, sort or LibrarySorting.TITLE, filter, section
+                    query, sort or LibrarySorting.TITLE, filter, section, direction
                 ))
             return return_api(Library.get_public_volumes(
-                sort or LibrarySorting.TITLE, filter, section
+                sort or LibrarySorting.TITLE, filter, section, direction
             ))
         offset = extract_key(request, 'offset', False)
         limit = (
@@ -1492,14 +1506,14 @@ def api_volumes():
 
         LOGGER.debug(
             'api_volumes GET: query=%r sort=%r filter=%r section=%r '
-            'offset=%r limit=%r',
-            query, sort, filter, section, offset, limit
+            'offset=%r limit=%r direction=%r',
+            query, sort, filter, section, offset, limit, direction
         )
         for attempt in range(3):
             try:
                 if query:
                     matching = Library.search(
-                        query, sort or LibrarySorting.TITLE, filter, section
+                        query, sort or LibrarySorting.TITLE, filter, section, direction
                     )
                     total = len(matching)
                     start = offset * limit
@@ -1510,7 +1524,8 @@ def api_volumes():
                         filter,
                         section,
                         offset,
-                        limit
+                        limit,
+                        direction
                     )
                 LOGGER.debug(
                     'api_volumes GET: returning %d of %d volumes',

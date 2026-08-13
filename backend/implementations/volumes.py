@@ -940,7 +940,8 @@ class Library:
         filter: Union[LibraryFilter, int, None],
         section: str,
         page: Union[int, None] = None,
-        page_size: Union[int, None] = None
+        page_size: Union[int, None] = None,
+        direction: str = 'asc'
     ) -> List[Dict[str, Any]]:
         """Run the public-volume query, optionally as a zero-based page."""
         if section not in ('comic', 'manga'):
@@ -970,11 +971,18 @@ class Library:
             pagination = "LIMIT ? OFFSET ?"
             params.extend((page_size, page * page_size))
 
-        order_by = sort.value
-        if sort == LibrarySorting.RECENTLY_RELEASED:
-            order_by = "latest_issue_date DESC, title, year, volume_number"
-        if sort != LibrarySorting.RECENTLY_ADDED:
-            order_by = f'{order_by}, volumes.id'
+        direction_sql = 'DESC' if str(direction).lower() == 'desc' else 'ASC'
+        if sort == LibrarySorting.COMPLETION:
+            order_by = (
+                f"CASE WHEN completion_percentage IS NULL THEN 1 ELSE 0 END ASC, "
+                f"completion_percentage {direction_sql}, normalized_title ASC, volumes.id ASC"
+            )
+        elif sort == LibrarySorting.RECENTLY_RELEASED:
+            order_by = "latest_issue_date DESC, title, year, volume_number, volumes.id"
+        elif sort == LibrarySorting.RECENTLY_ADDED:
+            order_by = "volumes.id DESC, title, year, volume_number"
+        else:
+            order_by = f'{sort.value}, volumes.id'
 
         return get_db().execute(f"""
             WITH
@@ -998,14 +1006,22 @@ class Library:
                             AS issues_downloaded,
                         SUM(CASE WHEN i.monitored = 1 AND li.issue_id IS NOT NULL THEN 1 ELSE 0 END)
                             AS issues_downloaded_monitored,
+                        SUM(CASE WHEN i.date IS NOT NULL AND i.date <= date('now') THEN 1 ELSE 0 END)
+                            AS released_issue_count,
+                        SUM(CASE WHEN i.date IS NOT NULL AND i.date <= date('now') AND li.issue_id IS NOT NULL THEN 1 ELSE 0 END)
+                            AS released_issues_downloaded,
+                        SUM(CASE WHEN i.date IS NOT NULL AND i.date > date('now') THEN 1 ELSE 0 END)
+                            AS upcoming_issue_count,
                         MAX(CASE
                             WHEN i.monitored = 1
-                                AND (i.date IS NULL OR i.date <= date('now'))
+                                AND i.date IS NOT NULL
+                                AND i.date <= date('now')
                                 AND li.issue_id IS NULL
                             THEN 1 ELSE 0
                         END) AS has_wanted,
                         MAX(CASE
                             WHEN i.monitored = 1
+                                AND i.date IS NOT NULL
                                 AND i.date > date('now')
                                 AND li.issue_id IS NULL
                             THEN 1 ELSE 0
@@ -1044,6 +1060,17 @@ class Library:
                     AS issues_downloaded,
                 COALESCE(issue_stats.issues_downloaded_monitored, 0)
                     AS issues_downloaded_monitored,
+                COALESCE(issue_stats.released_issue_count, 0)
+                    AS released_issue_count,
+                COALESCE(issue_stats.released_issues_downloaded, 0)
+                    AS released_issues_downloaded,
+                COALESCE(issue_stats.upcoming_issue_count, 0)
+                    AS upcoming_issue_count,
+                CASE
+                    WHEN COALESCE(issue_stats.released_issue_count, 0) = 0 THEN NULL
+                    ELSE ROUND((COALESCE(issue_stats.released_issues_downloaded, 0) * 100.0) / issue_stats.released_issue_count, 1)
+                END AS completion_percentage,
+                LOWER(TRIM(title)) AS normalized_title,
                 COALESCE(file_stats.total_size, 0) AS total_size,
                 issue_stats.latest_issue_date,
                 COUNT(*) OVER () AS _total_count
@@ -1061,10 +1088,11 @@ class Library:
         cls,
         sort: LibrarySorting = LibrarySorting.TITLE,
         filter: Union[LibraryFilter, int, None] = None,
-        section: str = 'comic'
+        section: str = 'comic',
+        direction: str = 'asc'
     ) -> List[Dict[str, Any]]:
         """Get all public volumes while preserving the legacy list contract."""
-        rows = cls._get_public_volume_rows(sort, filter, section)
+        rows = cls._get_public_volume_rows(sort, filter, section, direction=direction)
         for row in rows:
             row.pop('_total_count', None)
         return rows
@@ -1076,16 +1104,17 @@ class Library:
         filter: Union[LibraryFilter, int, None] = None,
         section: str = 'comic',
         page: int = 0,
-        page_size: int = 60
+        page_size: int = 60,
+        direction: str = 'asc'
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Get one zero-based page and the total matching volume count."""
         rows = cls._get_public_volume_rows(
-            sort, filter, section, page, page_size
+            sort, filter, section, page, page_size, direction
         )
         if rows:
             total = int(rows[0].get('_total_count') or 0)
         elif page:
-            first = cls._get_public_volume_rows(sort, filter, section, 0, 1)
+            first = cls._get_public_volume_rows(sort, filter, section, 0, 1, direction)
             total = int(first[0].get('_total_count') or 0) if first else 0
         else:
             total = 0
@@ -1100,7 +1129,8 @@ class Library:
         query: str,
         sort: LibrarySorting = LibrarySorting.TITLE,
         filter: Union[LibraryFilter, None] = None,
-        section: str = 'comic'
+        section: str = 'comic',
+        direction: str = 'asc'
     ) -> List[Dict[str, Any]]:
         """Search in the library with a query.
 
@@ -1124,7 +1154,7 @@ class Library:
         if query.startswith(('4050-', 'cv:')):
             try:
                 cv_id = to_number_cv_id((query,))[0]
-                volumes = cls.get_public_volumes(sort, cv_id, section)
+                volumes = cls.get_public_volumes(sort, cv_id, section, direction)
 
             except ValueError:
                 volumes = []
@@ -1132,7 +1162,7 @@ class Library:
         else:
             volumes = [
                 v
-                for v in cls.get_public_volumes(sort, filter, section)
+                for v in cls.get_public_volumes(sort, filter, section, direction)
                 if (
                     match_title(v['title'], query, allow_contains=True)
                     or match_title(v.get('publisher') or '', query, allow_contains=True)

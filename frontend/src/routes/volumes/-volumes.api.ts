@@ -51,6 +51,10 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
     root_folder_path: raw.root_folder_path ?? '',
     issue_count: raw.issue_count ?? 0,
     issues_downloaded: raw.issues_downloaded ?? 0,
+    released_issue_count: raw.released_issue_count ?? raw.issue_count ?? 0,
+    released_issues_downloaded: raw.released_issues_downloaded ?? raw.issues_downloaded ?? 0,
+    upcoming_issue_count: raw.upcoming_issue_count ?? 0,
+    completion_percentage: raw.completion_percentage ?? null,
     cover: raw.cover ?? undefined,
     issues: Array.isArray(raw.issues)
       ? raw.issues.map((i: Record<string, any>) => ({

@@ -47,7 +47,7 @@ describe('volume list pagination', () => {
     expect(get.mock.calls[0]?.[1]?.timeout).toBe(60_000);
     expect(result).toMatchObject({ total: 1167, offset: 2, page_size: 60 });
     expect(result.volumes).toHaveLength(1);
-    expect(result.volumes[0]?.progress).toEqual({ have: 2, total: 5 });
+    expect(result.volumes[0]?.progress).toEqual({ have: 2, total: 5, completion: null, upcoming: 0 });
     expect(parse).toHaveBeenCalledWith(response, expect.anything());
   });
 

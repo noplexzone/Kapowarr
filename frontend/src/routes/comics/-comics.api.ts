@@ -28,8 +28,10 @@ function toVolumeSummary(raw: Record<string, any>): VolumeSummary {
     folder: raw.folder ?? '',
     special_version: raw.special_version ?? '',
     progress: {
-      have: raw.issues_downloaded ?? 0,
-      total: raw.issue_count ?? 0,
+      have: raw.released_issues_downloaded ?? raw.issues_downloaded ?? 0,
+      total: raw.released_issue_count ?? raw.issue_count ?? 0,
+      completion: raw.completion_percentage ?? null,
+      upcoming: raw.upcoming_issue_count ?? 0,
     },
     cover_url: `${getUrlBase()}/api/volumes/${raw.id}/cover`,
   };
@@ -125,6 +127,7 @@ async function fetchVolumeList(params: VolumesSearch, section: SectionType): Pro
   sp.set('paginated', 'true');
   sp.set('section', section);
   if (params.sort) sp.set('sort', params.sort);
+  sp.set('direction', params.direction ?? 'asc');
   if (params.filter) sp.set('filter', params.filter);
   if (params.search) sp.set('query', params.search);
   sp.set('offset', String(params.offset ?? 0));

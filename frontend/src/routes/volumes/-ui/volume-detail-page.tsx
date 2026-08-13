@@ -1111,10 +1111,9 @@ export function VolumeDetailPage() {
     );
   }
 
-  const progressPct =
-    volume.issue_count > 0
-      ? Math.round((volume.issues_downloaded / volume.issue_count) * 100)
-      : 0;
+  const progressPct = volume.completion_percentage != null
+    ? Math.round(volume.completion_percentage)
+    : 0;
   const progressTone = progressPct >= 100 ? 'success' : 'danger';
   const selectedManualSearchIssue = volume.issues.find(
     (issue) => issue.id === manualSearchIssueId,

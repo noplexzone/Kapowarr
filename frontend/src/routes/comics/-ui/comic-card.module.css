@@ -4,12 +4,9 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: 10px;
-  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.card:hover {
-  transform: scale(1.02);
-}
 
 .selectControl {
   position: absolute;
@@ -31,7 +28,7 @@
   accent-color: var(--accent);
 }
 
-.card:hover .selectControl, .card:focus-within .selectControl, .selectionVisible .selectControl, .selected .selectControl { opacity: 1; }
+.selectionVisible .selectControl, .selected .selectControl, .manageMode .selectControl { opacity: 1; }
 .selected { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .coverArea {
@@ -50,28 +47,48 @@
   display: block;
 }
 
-.searchOverlayButton {
+.actionTray {
   position: absolute;
-  z-index: 3;
   right: var(--space-2, 0.5rem);
-  bottom: 5.6rem;
-  display: grid;
-  place-items: center;
-  min-width: var(--touch-target, 2.75rem);
-  width: var(--touch-target, 2.75rem);
-  height: var(--touch-target, 2.75rem);
-  padding: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-raised) 86%, black);
-  border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
-  color: var(--accent);
-  box-shadow: 0 8px 22px rgb(0 0 0 / 0.38);
+  bottom: 5.4rem;
+  z-index: 4;
+  display: flex;
+  gap: 0.35rem;
+  opacity: 1;
 }
 
-.searchOverlayButton:hover:not(:disabled),
-.searchOverlayButton:focus-visible {
+.trayButton {
+  display: grid;
+  place-items: center;
+  min-width: 2.25rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised) 90%, black);
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  color: var(--accent);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 0.34);
+}
+
+.trayButton:hover:not(:disabled),
+.trayButton:focus-visible {
   background: var(--accent);
   color: #000;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .actionTray { opacity: 0; transform: translateY(0.25rem); transition: opacity 0.16s ease, transform 0.16s ease; }
+  .card:hover .actionTray, .card:focus-within .actionTray { opacity: 1; transform: translateY(0); }
+  .card::before, .card::after { content: ''; position: absolute; top: 0; right: 0; z-index: 3; pointer-events: none; transform-origin: top right; transition: transform 170ms ease, opacity 170ms ease; }
+  .card::before { width: 30px; height: 30px; background: linear-gradient(135deg, rgba(255,255,255,0.88), rgba(230,218,190,0.9)); clip-path: polygon(100% 0, 100% 100%, 0 0); opacity: 0; transform: rotate(0deg) scale(0.35); }
+  .card::after { width: 32px; height: 32px; background: linear-gradient(135deg, rgba(0,0,0,0.28), transparent 58%); clip-path: polygon(100% 0, 100% 100%, 0 0); opacity: 0; transform: translate(-2px, 2px) scale(0.35); }
+  .card:hover::before, .card:focus-within::before { opacity: 1; transform: rotate(-12deg) scale(1); }
+  .card:hover::after, .card:focus-within::after { opacity: 1; transform: translate(-2px, 3px) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actionTray, .card::before, .card::after { transition: none; }
 }
 
 .meta {
@@ -144,7 +161,7 @@
     gap: 0.3rem;
   }
 
-  .searchOverlayButton {
+  .actionTray {
     bottom: 5.1rem;
   }
 }

@@ -459,9 +459,10 @@
 
 .floatingResults {
   position: absolute;
+  z-index: 20;
   left: 0;
   right: 0;
-  bottom: calc(100% + 0.5rem);
+  top: calc(100% + 0.25rem);
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -493,7 +494,8 @@
 }
 
 .floatingResult:hover,
-.floatingResult:focus-visible {
+.floatingResult:focus-visible,
+.floatingResultActive {
   background: var(--surface);
   outline: none;
 }
@@ -504,9 +506,97 @@
 }
 
 .floatingResultMeta,
-.floatingResultStatus {
+.floatingResultStatus,
+.floatingStatusSlot {
   color: var(--text-dim);
   font-size: 0.78rem;
+}
+
+
+.floatingStatusSlot {
+  min-height: 1rem;
+  padding: 0.15rem 0.75rem 0;
+}
+
+.viewAllResult {
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  font-weight: 800;
+}
+
+.resultBadges,
+.searchResultTopline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.searchPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.searchResults {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.searchResultCard {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised);
+}
+
+.searchResultCoverWrap {
+  width: 5rem;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.searchResultCover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.searchResultBody {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.searchResultBody h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 1rem;
+}
+
+.searchResultMeta,
+.inlineStatus {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.searchResultActions,
+.paginationRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.paginationRow {
+  justify-content: center;
 }
 
 .loadMoreSentinel {
@@ -526,6 +616,70 @@
 .loadMoreSentinel:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+
+.modalGrid {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.modalCover {
+  width: 100%;
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  background: var(--surface);
+}
+
+.modalForm {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.formField {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.formLabel {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.formInput,
+.formSelect {
+  width: 100%;
+  min-height: var(--control-height, 2.5rem);
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+}
+
+.formError {
+  color: var(--danger, #ef4444);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  .modalGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .modalCover {
+    max-width: 12rem;
+  }
 }
 
 @media (max-width: 480px) {
@@ -604,15 +758,6 @@
     gap: 0.55rem;
   }
 
-  .discoveryModeChips {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .modeChip,
-  .modeChipActive {
-    flex: 0 0 auto;
-  }
 
   .floatingSearchInput {
     min-height: 2.6rem;
@@ -623,4 +768,13 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.75rem;
   }
+
+  .searchResultCard {
+    grid-template-columns: 4rem minmax(0, 1fr);
+  }
+
+  .searchResultActions {
+    grid-column: 1 / -1;
+  }
+
 }

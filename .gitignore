@@ -145,3 +145,7 @@ temp_downloads/*
 
 # Project management files
 release*.sh
+
+# Playwright artifacts
+frontend/test-results/
+frontend/playwright-report/

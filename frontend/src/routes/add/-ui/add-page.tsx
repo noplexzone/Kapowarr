@@ -10,11 +10,34 @@ import {
   type AddVolumePayload,
 } from '../-add.api';
 import type { SearchResult } from '../-add.types';
-import styles from './add-page.module.css';
+import { getUrlBase } from '@/app/api-client';
+import styles from '@/routes/discovery/-ui/discovery-page.module.css';
 
 export interface AddSelection { metadata_source: 'comicvine' | 'mangadex'; metadata_id: string; title?: string; metadata_language?: string }
+function proxiedMangaDexCover(url: string): string {
+  const base = getUrlBase().replace(/\/$/, '');
+  return `${base}/api/mangadex/cover-proxy?url=${encodeURIComponent(url)}`;
+}
 
-export function ExactAddReview({ section, selection }: { section: 'comic' | 'manga'; selection: AddSelection }) {
+function getCoverSrc(result: SearchResult): string | null {
+  if (result.cover_link) {
+    if (/^https:\/\/uploads\.mangadex\.org\/covers\//i.test(result.cover_link)) {
+      return proxiedMangaDexCover(result.cover_link);
+    }
+    return result.cover_link;
+  }
+  if (result.cover_url) {
+    if (/^https:\/\/uploads\.mangadex\.org\/covers\//i.test(result.cover_url)) {
+      return proxiedMangaDexCover(result.cover_url);
+    }
+    if (/^https?:\/\//i.test(result.cover_url)) return result.cover_url;
+    const base = getUrlBase();
+    return `${base}/api/${result.cover_url.replace(/^\/+/, '')}`;
+  }
+  return null;
+}
+
+export function ExactAddReview({ section, selection, searchFallbackTo = '/add' }: { section: 'comic' | 'manga'; selection: AddSelection; searchFallbackTo?: '/add' | '/discover/search' }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
@@ -23,9 +46,11 @@ export function ExactAddReview({ section, selection }: { section: 'comic' | 'man
   if (exact.isPending) return <div className={styles.empty} role="status">Loading {selection.title ?? selection.metadata_id} from {selection.metadata_source}…</div>;
   if (exact.isError) return <div className={styles.empty} role="alert">
     <h1>Could not load {selection.title ?? 'selected item'}</h1>
-    <p>{selection.metadata_source}: {exact.error.message}</p>
+    <p>Provider: {selection.metadata_source}</p>
+    <p>Metadata ID: {selection.metadata_id}</p>
+    <p>{exact.error.message}</p>
     <Button onClick={() => void exact.refetch()}>Retry</Button>
-    {selection.title && <Button variant="secondary" onClick={() => navigate({ to: '/discover', search: { section } })}>Back to Discover</Button>}
+    {selection.title && <Button variant="secondary" onClick={() => navigate(searchFallbackTo === '/discover/search' ? { to: '/discover/search', search: { section, q: selection.title } } : { to: '/add', search: { section, title: selection.title } })}>Search by title instead</Button>}
   </div>;
   const result = exact.data;
   const existingId = result.id ?? result.already_added;
@@ -33,7 +58,8 @@ export function ExactAddReview({ section, selection }: { section: 'comic' | 'man
   return <div className={styles.page} data-testid="exact-add-review">
     <AddModal result={{ ...result, metadata_language: selection.metadata_language ?? result.metadata_language }} rootFolders={rootFolders} section={section} onClose={() => history.back()} onAdded={(id) => {
       void queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
-      void queryClient.invalidateQueries({ queryKey: ['discovery', section] });
+      void queryClient.invalidateQueries({ queryKey: ['discovery'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       navigate({ to: '/volumes/$volumeId', params: { volumeId: String(id) } });
     }} />
   </div>;
@@ -52,11 +78,6 @@ const SPECIAL_VERSION_OPTIONS = [
   { value: 'hard_cover', label: 'Hard Cover' },
   { value: 'epic_collection', label: 'Epic Collection' },
 ];
-
-
-function getCoverSrc(result: SearchResult): string | null {
-  return result.cover_link || result.cover_url || null;
-}
 
 interface AddModalProps {
   result: SearchResult;

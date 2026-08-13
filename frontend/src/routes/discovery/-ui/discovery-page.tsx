@@ -1,10 +1,12 @@
-import { useState, useDeferredValue, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Badge, Button } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
-import { AddModal } from '@/routes/add/-ui/add-page';
-import { exactVolumeQueryOptions, rootFoldersQueryOptions, searchVolumesQueryOptions } from '@/routes/add/-add.api';
+import { AddModal, ExactAddReview } from '@/routes/add/-ui/add-page';
+import { exactVolumeQueryOptions, rootFoldersQueryOptions, searchVolumesPageQueryOptions, searchVolumesQueryOptions } from '@/routes/add/-add.api';
 import { VOLUMES_KEY } from '@/routes/comics/-comics.api';
+import { getUrlBase } from '@/app/api-client';
 import { fetchDiscoveryVolumePage } from '../-discovery.api';
 import { filterDiscoveryVolumes, getDiscoveryAddSelection } from '../-discovery.types';
 import type { SearchResult } from '@/routes/add/-add.types';
@@ -22,11 +24,8 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const [addSelection, setAddSelection] = useState<DiscoveryVolume | null>(null);
-  const [searchSelection, setSearchSelection] = useState<SearchResult | null>(null);
   const [hideAlreadyAdded, setHideAlreadyAdded] = useState(false);
   const [rawAddSearch, setRawAddSearch] = useState('');
-  const [addSearchMode, setAddSearchMode] = useState<'title' | 'publisher' | 'genre'>('title');
-  const addSearch = useDeferredValue(rawAddSearch.trim());
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -46,21 +45,18 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
       : ({ ...previous, type: nextType }),
   });
 
-  const handleSearchSelect = (result: SearchResult) => {
-    const existingId = result.id ?? result.already_added;
-    if (existingId != null) {
-      navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } });
-      return;
-    }
-    setSearchSelection(result);
-  };
-
   const heading = getDiscoveryHeading(section, type);
+  const subheading = getDiscoverySubheading(section, type);
+
   return (
     <div className={styles.page}>
-      <h1 id="discover-heading" className={styles.srOnly}>{heading}</h1>
+      <section className={styles.hero} aria-labelledby="discover-heading">
+        <p className={styles.kicker}>Discover</p>
+        <h1 id="discover-heading">{heading}</h1>
+        <p>{subheading}</p>
+      </section>
 
-      <div className={styles.toolbar} aria-labelledby="discover-heading">
+      <div className={styles.toolbar}>
         <div className={styles.tabs}>
           <button
             className={`${styles.tab}${type === 'upcoming' ? ` ${styles.tabActive}` : ''}`}
@@ -76,14 +72,15 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
           </button>
         </div>
         <div className={styles.toolbarRight}>
-          <label className={styles.hideAddedToggle}>
-            <input
-              type="checkbox"
-              checked={hideAlreadyAdded}
-              onChange={(event) => setHideAlreadyAdded(event.target.checked)}
-            />
-            <span>Hide in library</span>
-          </label>
+          {            <label className={styles.hideAddedToggle}>
+              <input
+                type="checkbox"
+                checked={hideAlreadyAdded}
+                onChange={(event) => setHideAlreadyAdded(event.target.checked)}
+              />
+              <span>Hide in library</span>
+            </label>
+          }
           <div className={styles.sectionToggle}>
             <button
               className={`${styles.sectionBtn}${section === 'comic' ? ` ${styles.sectionActive}` : ''}`}
@@ -109,15 +106,7 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
         </div>
       </div>
 
-      <FloatingAddSearch
-        section={section}
-        mode={addSearchMode}
-        onModeChange={setAddSearchMode}
-        query={addSearch}
-        rawQuery={rawAddSearch}
-        onQueryChange={setRawAddSearch}
-        onSelect={handleSearchSelect}
-      />
+      <DiscoverSearchCombobox section={section} rawQuery={rawAddSearch} onQueryChange={setRawAddSearch} />
 
       <VolumeGridView type={type} section={section} hideAlreadyAdded={hideAlreadyAdded} onAddVolume={setAddSelection} />
 
@@ -129,22 +118,12 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
         />
       )}
 
-      {searchSelection != null && (
-        <SearchResultAddModal
-          result={searchSelection}
-          section={section}
-          onClose={() => setSearchSelection(null)}
-          onAdded={() => {
-            setRawAddSearch('');
-            setSearchSelection(null);
-          }}
-        />
-      )}
     </div>
   );
 }
 
 const DISCOVERY_BATCH_SIZE = 50;
+const SEARCH_PAGE_SIZE = 30;
 
 function VolumeGridView({ type, section, hideAlreadyAdded, onAddVolume }: { type: 'upcoming' | 'new'; section: DiscoverySection; hideAlreadyAdded: boolean; onAddVolume: (volume: DiscoveryVolume) => void }) {
   const navigate = useNavigate();
@@ -269,7 +248,7 @@ function VolumeCard({ volume, onClick }: { volume: DiscoveryVolume; onClick: (v:
             {[
               volume.year,
               volume.publisher,
-              volume.issue_count != null ? `${volume.issue_count} issue${volume.issue_count !== 1 ? 's' : ''}` : null,
+              volume.issue_count == null ? 'Issue count unavailable' : `${volume.issue_count} issue${volume.issue_count !== 1 ? 's' : ''}`,
               volume.date_added,
             ].filter(Boolean).join(' · ')}
           </div>
@@ -279,131 +258,111 @@ function VolumeCard({ volume, onClick }: { volume: DiscoveryVolume; onClick: (v:
   );
 }
 
-function FloatingAddSearch({ section, mode, onModeChange, query, rawQuery, onQueryChange, onSelect }: {
-  section: DiscoverySection;
-  mode: 'title' | 'publisher' | 'genre';
-  onModeChange: (mode: 'title' | 'publisher' | 'genre') => void;
-  query: string;
-  rawQuery: string;
-  onQueryChange: (query: string) => void;
-  onSelect: (result: SearchResult) => void;
-}) {
-  const { data: results = [], isFetching } = useQuery({
-    ...searchVolumesQueryOptions(query, section, 'comicvine'),
-    enabled: query.length >= 2,
-  });
-  const visibleResults = results.slice(0, 6);
-
-  const searchLabel = mode === 'publisher' ? 'Search by publisher' : mode === 'genre' ? 'Search by genre keyword' : `Search to add ${section === 'manga' ? 'manga' : 'comics'}`;
-
-  return (
-    <div className={styles.addSearchPanel}>
-      <div className={styles.addSearchHeader}>
-        <div>
-          <strong>Add new {section === 'manga' ? 'manga' : 'comics'}</strong>
-          <span>Search ComicVine by title, publisher, or genre keyword.</span>
-        </div>
-        <div className={styles.discoveryModeChips} aria-label="Add search method">
-          {(['title', 'publisher', 'genre'] as const).map((option) => (
-            <button key={option} type="button" className={mode === option ? styles.modeChipActive : styles.modeChip} onClick={() => onModeChange(option)}>
-              {option[0].toUpperCase() + option.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className={styles.floatingSearchWrap}>
-      {query.length >= 2 && (
-        <div className={styles.floatingResults} role="listbox" aria-label={`Add ${section === 'manga' ? 'manga' : 'comics'} search results`}>
-          {isFetching && visibleResults.length === 0 ? (
-            <div className={styles.floatingResultStatus}>Searching…</div>
-          ) : visibleResults.length === 0 ? (
-            <div className={styles.floatingResultStatus}>No matches found</div>
-          ) : visibleResults.map((result) => (
-            <button
-              key={`${result.metadata_source ?? 'comicvine'}:${result.metadata_id ?? result.comicvine_id}`}
-              type="button"
-              className={styles.floatingResult}
-              onClick={() => onSelect(result)}
-            >
-              <span className={styles.floatingResultTitle}>{result.title}</span>
-              <span className={styles.floatingResultMeta}>{[result.year, result.publisher].filter(Boolean).join(' · ')}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      <label className={styles.srOnly} htmlFor="discover-add-search">
-        Search to add {section === 'manga' ? 'manga' : 'comics'}
-      </label>
-      <input
-        id="discover-add-search"
-        className={styles.floatingSearchInput}
-        type="search"
-        value={rawQuery}
-        onChange={(event) => onQueryChange(event.target.value)}
-        placeholder={`${searchLabel}…`}
-      />
-      </div>
-    </div>
-  );
+function useDebouncedValue(value: string, delay = 300): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timeoutId);
+  }, [value, delay]);
+  return debounced;
 }
 
-function SearchResultAddModal({
-  result,
-  section,
-  onClose,
-  onAdded,
-}: {
-  result: SearchResult;
-  section: DiscoverySection;
-  onClose: () => void;
-  onAdded: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const selection = {
-    metadata_source: result.metadata_source ?? 'comicvine',
-    metadata_id: result.metadata_id ?? String(result.comicvine_id),
-    metadata_language: result.metadata_language ?? undefined,
-    title: result.title,
-  };
-  const exact = useQuery(exactVolumeQueryOptions(selection, section));
-  const { data: rootFolders = [], isPending: rootFoldersPending } = useQuery(rootFoldersQueryOptions());
+function getResultIdentity(result: Pick<SearchResult, 'metadata_source' | 'metadata_id' | 'comicvine_id'>): string {
+  return `${result.metadata_source ?? 'comicvine'}:${result.metadata_id ?? result.comicvine_id}`;
+}
 
-  if (exact.isPending || rootFoldersPending) {
-    return (
-      <DialogFrame open onOpenChange={(open) => !open && onClose()}>
-        <DialogHeader title={`Add ${result.title}`} onClose={onClose} />
-        <DialogBody><div className={styles.empty}>Loading add settings…</div></DialogBody>
-      </DialogFrame>
-    );
-  }
+function getAddRouteParams(result: SearchResult) {
+  return { source: result.metadata_source ?? 'comicvine', metadataId: result.metadata_id ?? String(result.comicvine_id) } as const;
+}
 
-  if (exact.isError) {
-    return (
-      <DialogFrame open onOpenChange={(open) => !open && onClose()}>
-        <DialogHeader title={`Add ${result.title}`} onClose={onClose} />
-        <DialogBody><div className={styles.empty}>Could not load add settings: {exact.error.message}</div></DialogBody>
-      </DialogFrame>
-    );
-  }
+function getAddRouteSearch(section: DiscoverySection, result: SearchResult) {
+  return { section, title: result.title, language: result.metadata_language ?? undefined };
+}
 
-  const hydratedResult = {
-    ...exact.data,
-    metadata_language: result.metadata_language ?? exact.data.metadata_language,
+function formatIssueCount(result: { issue_count?: number | null }, section: DiscoverySection): string {
+  if (section === 'manga') return '';
+  if (result.issue_count == null) return 'Issue count unavailable';
+  return `${result.issue_count} issue${result.issue_count === 1 ? '' : 's'}`;
+}
+
+function formatSearchMeta(result: SearchResult, section: DiscoverySection): string {
+  return [result.year, result.publisher, result.volume_number != null ? `Vol. ${result.volume_number}` : null, formatIssueCount(result, section), result.metadata_source === 'mangadex' ? 'MangaDex' : 'ComicVine'].filter(Boolean).join(' · ');
+}
+
+export function DiscoverSearchCombobox({ section, rawQuery, onQueryChange }: { section: DiscoverySection; rawQuery: string; onQueryChange: (query: string) => void }) {
+  const navigate = useNavigate();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const query = rawQuery.trim();
+  const debouncedQuery = useDebouncedValue(query, 300);
+  const enabled = debouncedQuery.length >= 2;
+  const { data: results = [], isFetching, isError } = useQuery({
+    ...searchVolumesQueryOptions(debouncedQuery, section, 'all'),
+    enabled,
+    staleTime: 5 * 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+  const suggestions = useMemo(() => {
+    const seen = new Set<string>();
+    return results.filter((result) => {
+      const key = getResultIdentity(result);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 6);
+  }, [results]);
+  const listboxId = `discover-add-suggestions-${section}`;
+  const activeDescendant = open && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined;
+  const optionCount = suggestions.length + (query.length >= 2 ? 1 : 0);
+
+  useEffect(() => {
+    if (query.length < 2) { setOpen(false); setActiveIndex(-1); return; }
+    if (enabled && (suggestions.length > 0 || isFetching || isError)) setOpen(true);
+  }, [enabled, isError, isFetching, query.length, suggestions.length]);
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) { setOpen(false); setActiveIndex(-1); }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, []);
+
+  const goToAllResults = useCallback(() => {
+    if (query.length < 2) return;
+    setOpen(false);
+    navigate({ to: '/discover/search', search: { section, q: query } });
+  }, [navigate, query, section]);
+
+  const openResult = useCallback((result: SearchResult) => {
+    setOpen(false);
+    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result) });
+  }, [navigate, section]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(query.length >= 2); setActiveIndex((current) => Math.min(current + 1, Math.max(optionCount - 1, 0))); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); setOpen(query.length >= 2); setActiveIndex((current) => Math.max(current - 1, 0)); }
+    else if (event.key === 'Escape') { event.preventDefault(); setOpen(false); setActiveIndex(-1); }
+    else if (event.key === 'Enter') { event.preventDefault(); if (open && activeIndex >= 0 && activeIndex < suggestions.length) openResult(suggestions[activeIndex]); else goToAllResults(); }
   };
 
   return (
-    <AddModal
-      result={hydratedResult}
-      rootFolders={rootFolders}
-      section={section}
-      onClose={onClose}
-      onAdded={() => {
-        void queryClient.invalidateQueries({ queryKey: ['discovery'] });
-        void queryClient.invalidateQueries({ queryKey: ['volumes', 'search'] });
-        void queryClient.invalidateQueries({ queryKey: VOLUMES_KEY });
-        onAdded();
-      }}
-    />
+    <div className={styles.addSearchPanel} ref={rootRef}>
+      <div className={styles.addSearchHeader}><div><strong>Add new {section === 'manga' ? 'manga' : 'comics'}</strong><span>Search series titles, then review the exact metadata record before adding.</span></div></div>
+      <div className={styles.floatingSearchWrap}>
+        <label className={styles.srOnly} htmlFor="discover-add-search">Search to add {section === 'manga' ? 'manga' : 'comics'}</label>
+        <input id="discover-add-search" className={styles.floatingSearchInput} type="search" role="combobox" aria-expanded={open} aria-controls={listboxId} aria-activedescendant={activeDescendant} aria-autocomplete="list" value={rawQuery} onFocus={() => { if (query.length >= 2 && (suggestions.length > 0 || isFetching || isError)) setOpen(true); }} onChange={(event) => { onQueryChange(event.target.value); setActiveIndex(-1); if (event.target.value.trim().length < 2) setOpen(false); }} onKeyDown={handleKeyDown} placeholder={`Search ${section === 'manga' ? 'manga' : 'comics'} titles…`} />
+        <div className={styles.floatingStatusSlot} aria-live="polite">{query.length >= 2 && isFetching ? 'Searching…' : isError ? 'Search failed' : '\u00a0'}</div>
+        {open && query.length >= 2 && <div id={listboxId} className={styles.floatingResults} role="listbox" aria-label={`Add ${section === 'manga' ? 'manga' : 'comics'} search suggestions`}>
+          {isError ? <div className={styles.floatingResultStatus}>Could not load suggestions.</div> : null}
+          {!isError && suggestions.map((result, index) => <button id={`${listboxId}-option-${index}`} key={getResultIdentity(result)} type="button" role="option" aria-selected={activeIndex === index} className={`${styles.floatingResult}${activeIndex === index ? ` ${styles.floatingResultActive}` : ''}`} onMouseEnter={() => setActiveIndex(index)} onClick={() => openResult(result)}><span className={styles.floatingResultTitle}>{result.title}</span><span className={styles.floatingResultMeta}>{formatSearchMeta(result, section)}</span></button>)}
+          {!isError && suggestions.length === 0 && !isFetching ? <div className={styles.floatingResultStatus}>No matches found</div> : null}
+          <button id={`${listboxId}-option-${suggestions.length}`} type="button" role="option" aria-selected={activeIndex === suggestions.length} className={`${styles.floatingResult} ${styles.viewAllResult}${activeIndex === suggestions.length ? ` ${styles.floatingResultActive}` : ''}`} onMouseEnter={() => setActiveIndex(suggestions.length)} onClick={goToAllResults}>View all results for “{query}”</button>
+        </div>}
+      </div>
+    </div>
   );
 }
 
@@ -447,8 +406,55 @@ function DiscoveryAddModal({ volume, section, onClose }: { volume: DiscoveryVolu
 }
 
 
+
+function proxiedMangaDexCover(url: string): string {
+  const base = getUrlBase().replace(/\/$/, '');
+  return `${base}/api/mangadex/cover-proxy?url=${encodeURIComponent(url)}`;
+}
+
+function getCoverSrc(result: SearchResult): string | null {
+  if (result.cover_link) return /^https:\/\/uploads\.mangadex\.org\/covers\//i.test(result.cover_link) ? proxiedMangaDexCover(result.cover_link) : result.cover_link;
+  if (result.cover_url) {
+    if (/^https:\/\/uploads\.mangadex\.org\/covers\//i.test(result.cover_url)) return proxiedMangaDexCover(result.cover_url);
+    if (/^https?:\/\//i.test(result.cover_url)) return result.cover_url;
+    return `${getUrlBase()}/api/${result.cover_url.replace(/^\/+/, '')}`;
+  }
+  return null;
+}
+
+function SearchResultCard({ result, section, onOpen }: { result: SearchResult; section: DiscoverySection; onOpen: (result: SearchResult) => void }) {
+  const isAdded = (result.id ?? result.already_added) != null;
+  const coverSrc = getCoverSrc(result);
+  return <article className={`${styles.searchResultCard}${isAdded ? ` ${styles.added}` : ''}`}><div className={styles.searchResultCoverWrap}>{coverSrc ? <img src={coverSrc} alt={result.title} className={styles.searchResultCover} loading="lazy" /> : <div className={styles.coverPlaceholder}>📚</div>}</div><div className={styles.searchResultBody}><div className={styles.searchResultTopline}><Badge tone="neutral">{result.metadata_source === 'mangadex' ? 'MangaDex' : 'ComicVine'}</Badge>{isAdded && <Badge tone="success">In Library</Badge>}</div><h2>{result.title}</h2><p className={styles.searchResultMeta}>{formatSearchMeta(result, section)}</p>{result.status && <p className={styles.searchResultMeta}>{String(result.status)}</p>}{result.completion && <p className={styles.searchResultMeta}>Completion: {String(result.completion)}</p>}</div><div className={styles.searchResultActions}><Button variant={isAdded ? 'secondary' : 'primary'} onClick={() => onOpen(result)}>{isAdded ? 'Open' : 'Add'}</Button></div></article>;
+}
+
+export function DiscoverSearchResultsPage({ section, q, page }: { section: DiscoverySection; q: string; page: number }) {
+  const navigate = useNavigate();
+  const offset = (page - 1) * SEARCH_PAGE_SIZE;
+  const query = q.trim();
+  const { data, isFetching, isError, error, refetch } = useQuery({ ...searchVolumesPageQueryOptions(query, section, 'all', offset, SEARCH_PAGE_SIZE), enabled: query.length >= 2, placeholderData: keepPreviousData, staleTime: 5 * 60_000 });
+  const items = data?.items ?? [];
+  const openResult = (result: SearchResult) => {
+    const existingId = result.id ?? result.already_added;
+    if (existingId != null) { navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } }); return; }
+    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result) });
+  };
+  if (query.length < 2) return <div className={styles.searchPage}><div className={styles.empty}>Type at least 2 characters to search.</div></div>;
+  return <div className={styles.searchPage}><section className={styles.hero} aria-labelledby="discover-search-heading"><p className={styles.kicker}>Discover Search</p><h1 id="discover-search-heading">Results for “{query}”</h1><p>{section === 'manga' ? 'Manga' : 'Comic'} series and volumes from metadata providers.</p></section>{isError ? <div className={styles.empty} role="alert"><span>Could not load search results: {error.message}</span><Button onClick={() => void refetch()}>Retry</Button></div> : null}{!isError && isFetching && !data ? <div className={styles.empty} role="status">Loading results…</div> : null}{!isError && data && items.length === 0 ? <div className={styles.empty}>No results found for “{query}”.</div> : null}{!isError && items.length > 0 ? <div className={styles.searchResults}>{items.map((result) => <SearchResultCard key={getResultIdentity(result)} result={result} section={section} onOpen={openResult} />)}</div> : null}{data ? <div className={styles.paginationRow}><Button variant="secondary" disabled={page <= 1 || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page - 1 } })}>Previous</Button><span>{data.total} results</span><Button variant="secondary" disabled={!data.has_more || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page + 1 } })}>Next</Button></div> : null}{isFetching && data ? <div className={styles.inlineStatus} role="status">Refreshing results…</div> : null}</div>;
+}
+
+export function DiscoverExactAddPage({ section, source, metadataId, title, language }: { section: DiscoverySection; source: 'comicvine' | 'mangadex'; metadataId: string; title?: string; language?: string }) {
+  return <ExactAddReview section={section} selection={{ metadata_source: source, metadata_id: metadataId, title, metadata_language: language }} searchFallbackTo="/discover/search" />;
+}
+
 export function getDiscoveryHeading(section: DiscoverySection, type: DiscoveryType): string {
   const media = section === 'manga' ? 'Manga' : 'Comics';
   if (type === 'new') return `New ${media}`;
   return `Upcoming ${media}`;
+}
+
+export function getDiscoverySubheading(section: DiscoverySection, type: DiscoveryType): string {
+  const media = section === 'manga' ? 'manga' : 'comics';
+  if (type === 'new') return `Browse newly indexed ${media}, keep library-owned titles visible, and add from verified metadata.`;
+  return `Review upcoming ${media} releases with poster-first actions and direct add/open controls.`;
 }

@@ -5,6 +5,15 @@ import { searchResultSchema, rootFolderSchema } from './-add.types';
 import type { SearchResult, RootFolder } from './-add.types';
 
 const addedVolumeSchema = z.object({ id: z.number().int().positive() });
+const searchPageSchema = z.object({
+  items: z.array(searchResultSchema),
+  total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(),
+  page_size: z.number().int().positive(),
+  next_offset: z.number().int().nonnegative().nullable(),
+  has_more: z.boolean(),
+});
+export type SearchResultsPage = z.infer<typeof searchPageSchema>;
 
 export type MetadataSourceFilter = 'all' | 'comicvine' | 'mangadex';
 
@@ -39,7 +48,18 @@ export function searchVolumesQueryOptions(query: string, section: string, metada
     queryKey: ['volumes', 'search', query, section, metadataSource],
     queryFn: () => searchVolumes(query, section, metadataSource),
     enabled: query.length >= 2,
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function searchVolumesPageQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine', offset = 0, limit = 30) {
+  return queryOptions({
+    queryKey: ['volumes', 'search-page', query, section, metadataSource, offset, limit],
+    queryFn: () => searchVolumesPage(query, section, metadataSource, offset, limit),
+    enabled: query.length >= 2,
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -47,6 +67,12 @@ async function searchVolumes(query: string, section: string, metadataSource: Met
   const sp = new URLSearchParams({ query, section, metadata_source: metadataSource });
   const response = await apiClient.get('volumes/search', { searchParams: sp });
   return readJson(response, z.array(searchResultSchema));
+}
+
+async function searchVolumesPage(query: string, section: string, metadataSource: MetadataSourceFilter, offset: number, limit: number): Promise<SearchResultsPage> {
+  const sp = new URLSearchParams({ query, section, metadata_source: metadataSource, paginated: 'true', offset: String(offset), limit: String(limit) });
+  const response = await apiClient.get('volumes/search', { searchParams: sp });
+  return readJson(response, searchPageSchema);
 }
 
 export function rootFoldersQueryOptions() {

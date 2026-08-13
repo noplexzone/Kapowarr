@@ -12,4 +12,8 @@ describe('exact Discovery to Add identity', () => {
   it('rejects an exact review route without source identity', () => {
     expect(() => addReviewSearchSchema.parse({ section: 'comic', id: '1' })).toThrow();
   });
+  it('legacy exact add parameters can be preserved by Discover redirects', () => {
+    const legacy = addReviewSearchSchema.parse({ section: 'comic', source: 'comicvine', id: '4050-123', title: 'Saga' });
+    expect(legacy).toEqual({ section: 'comic', source: 'comicvine', id: '4050-123', title: 'Saga' });
+  });
 });

@@ -32,6 +32,7 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
   const [hideAlreadyAdded, setHideAlreadyAdded] = useState(false);
   const [rawArcSearch, setRawArcSearch] = useState('');
   const [rawAddSearch, setRawAddSearch] = useState('');
+  const [addSearchMode, setAddSearchMode] = useState<'title' | 'publisher' | 'genre'>('title');
   const arcSearch = useDeferredValue(rawArcSearch);
   const addSearch = useDeferredValue(rawAddSearch.trim());
 
@@ -68,15 +69,9 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
   return (
     <div className={styles.page}>
       <section className={styles.hero} aria-labelledby="discover-heading">
-        <div>
-          <p className={styles.kicker}>Discover</p>
-          <h1 id="discover-heading">{heading}</h1>
-          <p>{subheading}</p>
-        </div>
-        <div className={styles.heroRail} aria-label="Discovery mode">
-          <span>{section === 'manga' ? 'Manga' : 'Comics'}</span>
-          <strong>{type === 'story-arcs' ? 'Story arcs' : type === 'upcoming' ? 'Upcoming' : 'New'}</strong>
-        </div>
+        <p className={styles.kicker}>Discover</p>
+        <h1 id="discover-heading">{heading}</h1>
+        <p>{subheading}</p>
       </section>
 
       <div className={styles.toolbar}>
@@ -136,6 +131,16 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
         </div>
       </div>
 
+      <FloatingAddSearch
+        section={section}
+        mode={addSearchMode}
+        onModeChange={setAddSearchMode}
+        query={addSearch}
+        rawQuery={rawAddSearch}
+        onQueryChange={setRawAddSearch}
+        onSelect={handleSearchSelect}
+      />
+
       {type === 'story-arcs' ? (
         <StoryArcsView
           section={section}
@@ -171,14 +176,6 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
           }}
         />
       )}
-
-      <FloatingAddSearch
-        section={section}
-        query={addSearch}
-        rawQuery={rawAddSearch}
-        onQueryChange={setRawAddSearch}
-        onSelect={handleSearchSelect}
-      />
     </div>
   );
 }
@@ -410,8 +407,10 @@ function ArcDetailModal({ id, onClose, onAddVolume }: { id: number; onClose: () 
   );
 }
 
-function FloatingAddSearch({ section, query, rawQuery, onQueryChange, onSelect }: {
+function FloatingAddSearch({ section, mode, onModeChange, query, rawQuery, onQueryChange, onSelect }: {
   section: DiscoverySection;
+  mode: 'title' | 'publisher' | 'genre';
+  onModeChange: (mode: 'title' | 'publisher' | 'genre') => void;
   query: string;
   rawQuery: string;
   onQueryChange: (query: string) => void;
@@ -423,8 +422,24 @@ function FloatingAddSearch({ section, query, rawQuery, onQueryChange, onSelect }
   });
   const visibleResults = results.slice(0, 6);
 
+  const searchLabel = mode === 'publisher' ? 'Search by publisher' : mode === 'genre' ? 'Search by genre keyword' : `Search to add ${section === 'manga' ? 'manga' : 'comics'}`;
+
   return (
-    <div className={styles.floatingSearchWrap}>
+    <div className={styles.addSearchPanel}>
+      <div className={styles.addSearchHeader}>
+        <div>
+          <strong>Add new {section === 'manga' ? 'manga' : 'comics'}</strong>
+          <span>Search ComicVine by title, publisher, or genre keyword.</span>
+        </div>
+        <div className={styles.discoveryModeChips} aria-label="Add search method">
+          {(['title', 'publisher', 'genre'] as const).map((option) => (
+            <button key={option} type="button" className={mode === option ? styles.modeChipActive : styles.modeChip} onClick={() => onModeChange(option)}>
+              {option[0].toUpperCase() + option.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className={styles.floatingSearchWrap}>
       {query.length >= 2 && (
         <div className={styles.floatingResults} role="listbox" aria-label={`Add ${section === 'manga' ? 'manga' : 'comics'} search results`}>
           {isFetching && visibleResults.length === 0 ? (
@@ -453,8 +468,9 @@ function FloatingAddSearch({ section, query, rawQuery, onQueryChange, onSelect }
         type="search"
         value={rawQuery}
         onChange={(event) => onQueryChange(event.target.value)}
-        placeholder={`Search to add ${section === 'manga' ? 'manga' : 'comics'}…`}
+        placeholder={`${searchLabel}…`}
       />
+      </div>
     </div>
   );
 }

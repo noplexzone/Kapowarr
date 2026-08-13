@@ -47,54 +47,11 @@
   gap: 0.25rem;
 }
 
-.savedViewsRow,
-.discoveryFacets {
+.savedViewsRow {
   gap: var(--space-2, 0.5rem);
   flex-wrap: wrap;
   padding-top: var(--space-2, 0.5rem);
   border-top: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-}
-
-.discoveryFacets {
-  display: flex;
-  align-items: flex-start;
-}
-
-.facetGroup {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-}
-
-.facetLabel {
-  color: var(--text-dim);
-  font-size: 0.75rem;
-  font-weight: 800;
-}
-
-.facetChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 2rem;
-  padding: 0 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.facetChip:hover,
-.facetChip:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.facetChip span {
-  color: var(--text-dim);
-  font-size: 0.75rem;
 }
 
 .missingSummary {
@@ -380,7 +337,6 @@
   .primaryControls,
   .secondaryControls,
   .savedViewsRow,
-  .discoveryFacets,
   .missingSummary {
     align-items: stretch;
     flex-direction: column;
@@ -391,9 +347,14 @@
   }
 
   .toolbarRight {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: flex;
     gap: 0.4rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .toolbarRight::-webkit-scrollbar {
+    display: none;
   }
 
   .toolbarRight button,
@@ -418,6 +379,7 @@
   .searchBar {
     width: 100%;
     min-width: 0;
+    flex: 0 1 auto;
   }
 
   .searchInput {
@@ -427,8 +389,7 @@
   }
 
   .filterChips,
-  .viewToggle,
-  .facetGroup {
+  .viewToggle {
     display: flex;
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -437,13 +398,12 @@
   }
 
   .filterChips::-webkit-scrollbar,
-  .viewToggle::-webkit-scrollbar,
-  .facetGroup::-webkit-scrollbar {
+  .viewToggle::-webkit-scrollbar {
     display: none;
   }
 
   .filterChip,
-  .facetChip {
+  .toolbarRight button {
     flex: 0 0 auto;
   }
 
@@ -454,8 +414,12 @@
   }
 
   .libraryHeader {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
     gap: 0.65rem;
     padding: 0.75rem;
+    overflow: hidden;
     border-radius: 14px;
   }
 }

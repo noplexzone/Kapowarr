@@ -9,7 +9,6 @@ import {
   deleteLibraryVolume,
   deleteSavedFilter,
   runLibraryTask,
-  libraryFacetsQueryOptions,
   savedFiltersQueryOptions,
   runVolumeTask,
   setVolumeMonitored,
@@ -61,7 +60,6 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
   } : rawSearch as VolumesSearch;
   const { data } = useSuspenseQuery(volumeListQueryOptions(1, search, section));
   const { data: savedFilters = [] } = useSuspenseQuery(savedFiltersQueryOptions(section));
-  const { data: facets } = useSuspenseQuery(libraryFacetsQueryOptions(section));
 
   const [view, setView] = useState<ViewOption>(search.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -337,35 +335,6 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
           </select>
         </div>
 
-        {facets && (
-          <div className={styles.discoveryFacets} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} discovery shortcuts`}>
-            <span className={styles.smartEyebrow}>Browse</span>
-            <div className={styles.facetGroup} aria-label="Browse by publisher">
-              <span className={styles.facetLabel}>Publisher</span>
-              {(facets.publishers ?? []).slice(0, 6).map((facet) => (
-                <button key={`publisher-${facet.value}`} type="button" className={styles.facetChip} onClick={() => updateSearch({ search: facet.value, offset: 0 })}>
-                  {facet.value}<span>{facet.count ?? 0}</span>
-                </button>
-              ))}
-            </div>
-            <div className={styles.facetGroup} aria-label="Browse by year">
-              <span className={styles.facetLabel}>Year</span>
-              {(facets.years ?? []).slice(0, 5).map((facet) => (
-                <button key={`year-${facet.value}`} type="button" className={styles.facetChip} onClick={() => updateSearch({ search: facet.value, offset: 0 })}>
-                  {facet.value}<span>{facet.count ?? 0}</span>
-                </button>
-              ))}
-            </div>
-            <div className={styles.facetGroup} aria-label="Browse by status">
-              <span className={styles.facetLabel}>Status</span>
-              {(facets.status ?? []).map((facet) => (
-                <button key={`status-${facet.value}`} type="button" className={styles.facetChip} onClick={() => updateSearch({ filter: facet.filter ?? '', offset: 0 })}>
-                  Status: {facet.label ?? facet.value}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className={styles.savedViewsRow} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} saved views`}>
           <span className={styles.smartEyebrow}>Saved views</span>

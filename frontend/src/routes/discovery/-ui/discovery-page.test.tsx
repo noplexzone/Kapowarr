@@ -24,3 +24,11 @@ it('lazy-reveals discover volume results as the user scrolls', () => {
   expect(source).toContain("window.addEventListener('scroll', onScroll, { passive: true })");
   expect(source).toContain('Load more titles');
 });
+
+
+it('keeps the discovery add methods in the add-new-comics panel, not as library filters', () => {
+  expect(source).toContain("Add new {section === 'manga' ? 'manga' : 'comics'}");
+  expect(source).toContain("(['title', 'publisher', 'genre'] as const)");
+  expect(source).toContain('Search ComicVine by title, publisher, or genre keyword.');
+  expect(source).not.toContain('heroRail');
+});

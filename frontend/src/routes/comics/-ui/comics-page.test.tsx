@@ -176,12 +176,11 @@ describe('ComicsPage poster-first manage mode', () => {
     expect(patchSearch({})).toMatchObject({ status: 'missing', monitoring: 'all', page: 1 });
   });
 
-  it('surfaces library browse shortcuts from facets', () => {
+  it('keeps discovery shortcuts out of the library header', () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /Image/ }));
-    const patchSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
-    expect(patchSearch({})).toMatchObject({ search: 'Image', offset: 0 });
+    expect(screen.queryByText('Browse')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Image/ })).toBeNull();
   });
 
   it('surfaces compact wanted triage for the current result set', () => {

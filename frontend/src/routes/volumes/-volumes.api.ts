@@ -93,11 +93,11 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
           };
         })
       : [],
-    canonical_provider: raw.canonical_provider ?? undefined,
-    enriched_by: Array.isArray(raw.enriched_by) ? raw.enriched_by.map(String) : [],
-    provider_badges: Array.isArray(raw.provider_badges) ? raw.provider_badges : [],
-    metron: raw.metron ?? undefined,
-    enrichment_terms: Array.isArray(raw.enrichment_terms) ? raw.enrichment_terms : [],
+    canonical_provider: raw.canonical_provider ?? raw.metadata_provenance?.canonical_provider ?? undefined,
+    enriched_by: Array.isArray(raw.enriched_by) ? raw.enriched_by.map(String) : Array.isArray(raw.metadata_provenance?.enriched_by) ? raw.metadata_provenance.enriched_by.map(String) : [],
+    provider_badges: Array.isArray(raw.provider_badges) ? raw.provider_badges : Array.isArray(raw.metadata_provenance?.provider_badges) ? raw.metadata_provenance.provider_badges : [],
+    metron: raw.metron ?? raw.metadata_provenance?.metron ?? undefined,
+    enrichment_terms: Array.isArray(raw.enrichment_terms) ? raw.enrichment_terms : Array.isArray(raw.metadata_provenance?.enrichment_terms) ? raw.metadata_provenance.enrichment_terms : [],
   };
 }
 

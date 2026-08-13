@@ -3,8 +3,9 @@ from unittest.mock import patch
 
 from backend.implementations.metron import (
     MetronAuthenticationError, MetronClient, MetronInvalidResponseError,
-    MetronRateLimitedError, parse_rate_limit_headers, safe_headers,
+    MetronNotModifiedError, MetronRateLimitedError, parse_rate_limit_headers, safe_headers,
 )
+from backend.features.metron_enrichment import extract_terms
 from backend.internals.settings import Constants, PublicSettingsValues, _settings_for_log
 
 
@@ -55,6 +56,38 @@ class MetronClientSecurityTests(unittest.TestCase):
         client = MetronClient('TEST_METRON_TOKEN_REDACTED', session=FakeSession([FakeResponse(200, payload='<html>', headers={'Content-Type': 'text/html'})]))
         with self.assertRaises(MetronInvalidResponseError):
             client.test_connection()
+
+    def test_not_modified_and_last_modified_are_supported(self):
+        client = MetronClient('TEST_METRON_TOKEN_REDACTED', session=FakeSession([
+            FakeResponse(304, headers={'Content-Type': 'application/json'}),
+        ]))
+        with self.assertRaises(MetronNotModifiedError):
+            client.get_series('9001', 'Wed, 21 Oct 2015 07:28:00 GMT')
+        client = MetronClient('TEST_METRON_TOKEN_REDACTED', session=FakeSession([
+            FakeResponse(payload={'id': 9001}, headers={'Content-Type': 'application/json', 'Last-Modified': 'Thu, 22 Oct 2015 07:28:00 GMT', 'ETag': 'W/"series-9001"'}),
+        ]))
+        payload = client.get_series('9001')
+        self.assertEqual(payload['_metron_last_modified'], 'Thu, 22 Oct 2015 07:28:00 GMT')
+        self.assertEqual(payload['_metron_etag'], 'W/"series-9001"')
+
+    def test_extract_terms_indexes_additive_metron_payload_without_duplicates(self):
+        payload = {
+            'characters': [{'id': 1, 'name': 'Ada'}, {'id': 1, 'name': 'Ada'}],
+            'genres': ['Noir'],
+            'credits': [{'id': 2, 'name': 'Writer One'}],
+            'imprint': {'id': 3, 'name': 'Imprint House'},
+            'aliases': ['Alt Title'],
+            'identifiers': [{'source': 'isbn', 'value': '123'}],
+            'images': [{'url': 'https://example.invalid/cover.jpg', 'type': 'cover'}],
+        }
+        terms = extract_terms(payload)
+        self.assertIn({'term_type': 'character', 'external_id': '1', 'name': 'Ada'}, terms)
+        self.assertIn({'term_type': 'genre', 'external_id': 'noir', 'name': 'Noir'}, terms)
+        self.assertIn({'term_type': 'creator', 'external_id': '2', 'name': 'Writer One'}, terms)
+        self.assertIn({'term_type': 'imprint', 'external_id': '3', 'name': 'Imprint House'}, terms)
+        self.assertIn({'term_type': 'alternate_title', 'external_id': 'alt title', 'name': 'Alt Title'}, terms)
+        self.assertIn({'term_type': 'identifier', 'external_id': '123', 'name': 'isbn'}, terms)
+        self.assertEqual([t for t in terms if t['term_type'] == 'character'], [{'term_type': 'character', 'external_id': '1', 'name': 'Ada'}])
 
     def test_metron_token_masked_in_public_settings_and_logs(self):
         public = PublicSettingsValues(metron_api_token='TEST_METRON_TOKEN_REDACTED').todict()

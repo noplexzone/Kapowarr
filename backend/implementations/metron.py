@@ -38,6 +38,7 @@ class MetronError(Exception):
 class MetronAuthenticationError(MetronError): status = 'authentication_failed'
 class MetronPermissionError(MetronError): status = 'permission_denied'
 class MetronNotFoundError(MetronError): status = 'not_found'
+class MetronNotModifiedError(MetronError): status = 'not_modified'
 class MetronRateLimitedError(MetronError): status = 'rate_limited'
 class MetronTemporaryError(MetronError): status = 'temporary_failure'
 class MetronInvalidResponseError(MetronError): status = 'invalid_response'
@@ -105,6 +106,8 @@ class MetronClient:
                 raise MetronAuthenticationError('Metron token was rejected', rate)
             if response.status_code == 403:
                 raise MetronPermissionError('Metron permission denied', rate)
+            if response.status_code == 304:
+                raise MetronNotModifiedError('Metron resource not modified', rate)
             if response.status_code == 404:
                 raise MetronNotFoundError('Metron resource not found', rate)
             if response.status_code == 429:
@@ -155,4 +158,8 @@ class MetronClient:
     def get_series(self, series_id: str, last_modified: Optional[str] = None) -> Dict[str, Any]:
         headers = {'If-Modified-Since': last_modified} if last_modified else None
         response = self._request('GET', f'series/{series_id}/', headers=headers, retry_safe=True)
-        return self._json(response)
+        payload = self._json(response)
+        if isinstance(payload, dict):
+            payload['_metron_last_modified'] = response.headers.get('Last-Modified') or last_modified
+            payload['_metron_etag'] = response.headers.get('ETag')
+        return payload

@@ -1369,9 +1369,11 @@ def _migrate_add_metron_enrichment_tables():
             last_successful_enrichment INTEGER,
             last_checked INTEGER,
             FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
-            UNIQUE(volume_id, provider, resource_type),
-            UNIQUE(provider, resource_type, external_id)
+            UNIQUE(volume_id, provider, resource_type)
         );
+        CREATE UNIQUE INDEX IF NOT EXISTS volume_provider_links_provider_external_unique_idx
+            ON volume_provider_links(provider, resource_type, external_id)
+            WHERE external_id != '';
         CREATE INDEX IF NOT EXISTS volume_provider_links_provider_external_idx
             ON volume_provider_links(provider, resource_type, external_id);
         CREATE TABLE IF NOT EXISTS provider_cache(

@@ -11,7 +11,7 @@ from backend.base.definitions import Constants
 from backend.base.logging import LOGGER
 from backend.implementations.metron import (
     METRON_PROVIDER, MetronAuthenticationError, MetronClient, MetronError,
-    MetronRateLimitedError,
+    MetronNotModifiedError, MetronRateLimitedError,
 )
 from backend.internals.db import commit, get_db
 from backend.internals.settings import Settings
@@ -64,27 +64,57 @@ def _name_id(item: Dict[str, Any], fallback: str) -> Tuple[str, str]:
     return external_id, name
 
 
+def _iter_values(payload: Dict[str, Any], keys: Tuple[str, ...]) -> Iterable[Any]:
+    for key in keys:
+        values = payload.get(key)
+        if values is None:
+            continue
+        if isinstance(values, dict):
+            nested = values.get('results') or values.get('items') or values.get('data')
+            values = nested if nested is not None else [values]
+        if not isinstance(values, list):
+            values = [values]
+        for value in values:
+            yield value
+
+
 def extract_terms(payload: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Normalize additive Metron data into indexed local provenance terms.
+
+    The official schema can grow; this accepts optional/null/mixed list shapes and
+    keeps unknown richer provider payload in provider_cache for troubleshooting.
+    """
     terms: List[Dict[str, str]] = []
-    for term_type, keys in (('character', ('characters', 'character_credits')), ('genre', ('genres', 'genre'))):
-        for key in keys:
-            values = payload.get(key)
-            if values is None:
+    field_map: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+        ('character', ('characters', 'character_credits')),
+        ('genre', ('genres', 'genre')),
+        ('creator', ('creators', 'credits', 'creator_credits')),
+        ('imprint', ('imprint', 'imprints')),
+        ('alternate_title', ('aliases', 'alternative_titles', 'alternate_titles')),
+        ('identifier', ('identifiers', 'external_ids')),
+        ('artwork', ('images', 'covers', 'alternate_artwork')),
+    )
+    seen = set()
+    for term_type, keys in field_map:
+        for index, item in enumerate(_iter_values(payload, keys)):
+            if isinstance(item, str):
+                name = item.strip()
+                external_id = name.lower()
+            elif isinstance(item, dict):
+                external_id, name = _name_id(item, f'{term_type}:{index}')
+                if term_type == 'identifier':
+                    name = str(item.get('source') or item.get('provider') or item.get('type') or name).strip()
+                    external_id = str(item.get('id') or item.get('value') or external_id).strip()
+                if term_type == 'artwork':
+                    name = str(item.get('caption') or item.get('type') or item.get('image') or item.get('url') or name).strip()
+            else:
                 continue
-            if isinstance(values, dict):
-                values = values.get('results') or values.get('items') or []
-            if not isinstance(values, list):
+            if not name:
                 continue
-            for index, item in enumerate(values):
-                if isinstance(item, str):
-                    name = item.strip()
-                    external_id = name.lower()
-                elif isinstance(item, dict):
-                    external_id, name = _name_id(item, f'{key}:{index}')
-                else:
-                    continue
-                if name:
-                    terms.append({'term_type': term_type, 'external_id': external_id, 'name': name})
+            key = (term_type, external_id, name)
+            if key not in seen:
+                seen.add(key)
+                terms.append({'term_type': term_type, 'external_id': external_id, 'name': name})
     return terms
 
 
@@ -164,7 +194,15 @@ class MetronEnrichmentService:
             WHERE provider = ? AND resource_type = ? AND external_id = ?;""",
             (METRON_PROVIDER, RESOURCE_SERIES, series_id),
         ).fetchonedict() or {}
-        payload = self.client.get_series(series_id, cache.get('last_modified'))
+        try:
+            payload = self.client.get_series(series_id, cache.get('last_modified'))
+        except MetronNotModifiedError:
+            cached_payload = get_db().execute(
+                """SELECT payload FROM provider_cache
+                WHERE provider = ? AND resource_type = ? AND external_id = ?;""",
+                (METRON_PROVIDER, RESOURCE_SERIES, series_id),
+            ).fetchonedict() or {}
+            payload = loads(cached_payload.get('payload') or '{}')
         self.apply_payload(volume_id, series_id, payload)
         ts = now_ts()
         get_db().execute(
@@ -203,7 +241,7 @@ class MetronEnrichmentService:
                 last_modified = excluded.last_modified,
                 fetched_at = excluded.fetched_at,
                 expires_at = excluded.expires_at;""",
-            (METRON_PROVIDER, RESOURCE_SERIES, series_id, dumps(payload), None, payload.get('modified') or payload.get('last_modified'), ts, None),
+            (METRON_PROVIDER, RESOURCE_SERIES, series_id, dumps(payload), payload.get('_metron_etag'), payload.get('_metron_last_modified') or payload.get('modified') or payload.get('last_modified'), ts, None),
         )
         db.execute('DELETE FROM volume_enrichment_terms WHERE volume_id = ? AND provider = ?;', (volume_id, METRON_PROVIDER))
         db.executemany(
@@ -217,6 +255,8 @@ class MetronEnrichmentService:
         imprint = payload.get('imprint')
         if not row.get('publisher') and isinstance(imprint, dict):
             scalar_updates['publisher'] = imprint.get('name')
+        elif not row.get('publisher') and isinstance(imprint, str):
+            scalar_updates['publisher'] = imprint.strip()
         desc = payload.get('desc') or payload.get('description')
         if not row.get('description') and isinstance(desc, str) and desc.strip():
             scalar_updates['description'] = desc.strip()

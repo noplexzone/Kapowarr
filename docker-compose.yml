@@ -1,7 +1,7 @@
 services:
   kapowarr:
     container_name: kapowarr
-    image: ${KAPOWARR_IMAGE:-noplexzone/kapowarr:1.5.0}
+    image: ${KAPOWARR_IMAGE:-noplexzone/kapowarr:1.6.0}
     user: "99:100"
     environment:
       TZ: ${TZ:-Etc/UTC}

@@ -37,11 +37,20 @@ async function mockApi(route: Route) {
       ];
     }
   }
-  else if (pathname.endsWith('/api/volumes/search')) result = [{
-    comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result',
+  else if (pathname.endsWith('/api/volumes/search')) {
+    const items = [
+      { comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result', year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null, description: null, aliases: null, issue_count: 5, already_added: null },
+      { comicvine_id: 101, metadata_source: 'comicvine', metadata_id: '101', title: 'Acceptance Volume', year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null, description: null, aliases: null, issue_count: null, already_added: 1, id: 1 },
+    ];
+    result = searchParams.get('paginated') === 'true'
+      ? { items, total: items.length, offset: Number(searchParams.get('offset') ?? 0), page_size: Number(searchParams.get('limit') ?? 30), next_offset: null, has_more: false }
+      : items;
+  }
+  else if (pathname.endsWith('/api/volumes/search/exact')) result = {
+    comicvine_id: Number(searchParams.get('metadata_id') ?? 501), metadata_source: searchParams.get('metadata_source') ?? 'comicvine', metadata_id: searchParams.get('metadata_id') ?? '501', title: 'Acceptance Search Result',
     year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null,
     description: null, aliases: null, issue_count: 5, already_added: null,
-  }];
+  };
   else if (pathname.endsWith('/api/volumes/1')) result = {
     id: 1, comicvine_id: 101, title: 'Acceptance Volume', year: 2026,
     publisher: 'Test Publisher', volume_number: 1, section: 'comic', monitored: true,
@@ -169,7 +178,7 @@ for (const route of ['/home', '/comics', '/manga', '/discover?section=comic&cate
 }
 
 const workflowRoutes = [
-  { route: '/add?section=comic', evidence: 'ComicVine' },
+  { route: '/discover/search?section=comic&q=Acceptance', evidence: 'Acceptance Search Result' },
   { route: '/settings/general', evidence: 'Service configuration' },
   { route: '/volumes/1/files', evidence: 'Volume Notes.pdf' },
   { route: '/volumes/1/history', evidence: 'Volume bundle release' },
@@ -201,28 +210,28 @@ for (const { route, evidence } of workflowRoutes) {
 
 
 
-test('Discover exposes a bottom Search/Add Comics control', async ({ page }) => {
+test('Discover combobox opens exact review and full results without leaving Discover', async ({ page }) => {
   await boot(page);
   await page.getByRole('link', { name: 'Discover', exact: true }).click();
-  const search = page.getByRole('searchbox', { name: 'Search to add comics' });
+  const search = page.getByRole('combobox', { name: 'Search to add comics' });
   await expect(search).toBeVisible();
   await search.fill('Acceptance');
-  await expect(page.getByRole('button', { name: /Acceptance Search Result/ })).toBeVisible();
-  await expect(page).toHaveURL(/\/discover/);
+  await expect(page.getByRole('listbox')).toBeVisible();
+  await expect(page.getByRole('option', { name: /Acceptance Search Result/ })).toBeVisible();
+  await search.press('Enter');
+  await expect(page).toHaveURL(/\/discover\/search\?section=comic&q=Acceptance/);
+  await expect(page.getByText('5 issues')).toBeVisible();
+  await expect(page.getByText('Issue count unavailable')).toBeVisible();
+  await page.getByRole('button', { name: 'Add' }).first().click();
+  await expect(page).toHaveURL(/\/discover\/add\/comicvine\/501/);
+  await expect(page.getByRole('dialog')).toBeVisible();
 });
 
-test('Add review modal is keyboard-operable, labelled, and mobile-safe', async ({ page }) => {
+test('Discover exact add review is keyboard-operable, labelled, and mobile-safe', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
   await page.route('**/*', injectProductionBase);
   await page.route('**/api/**', mockApi);
-  await page.goto('/add?section=comic');
-  const search = page.getByRole('searchbox', { name: 'Search Comics' });
-  await search.fill('Acceptance');
-  await search.press('Enter');
-  const result = page.getByRole('button', { name: /Acceptance Search Result/ });
-  await expect(result).toBeVisible();
-  await result.focus();
-  await result.press('Space');
+  await page.goto('/discover/add/comicvine/501?section=comic&title=Acceptance');
   await expect(page.getByRole('dialog')).toBeVisible();
   for (const label of ['Root Folder', 'Volume Folder', 'Monitoring Scheme', 'Special Version', 'Monitor Volume', 'Monitor Issues', 'Auto Search']) {
     await expect(page.getByLabel(label, { exact: true })).toBeVisible();

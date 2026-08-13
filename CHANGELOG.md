@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Make Discover the canonical search-and-add surface with a title-only accessible combobox, paginated `/discover/search`, and exact `/discover/add/<source>/<metadata-id>` review routes.
+
+### Changed
+
+- Redirect legacy Add URLs into Discover and return paginated metadata-search envelopes for full result pages while keeping legacy search callers compatible.
+
 ## [1.6.0] - 2026-08-12
 
 ### Added

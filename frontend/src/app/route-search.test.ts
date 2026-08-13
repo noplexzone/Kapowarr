@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   activitySearchSchema,
   discoverySearchSchema,
+  discoverAddSearchSchema,
+  discoverResultsSearchSchema,
   historySearchSchema,
   legacyDiscoveryToCanonical,
   legacyLibraryToCanonical,
@@ -117,6 +119,11 @@ describe('legacy route redirects', () => {
       view: 'grid',
       page: 2,
     });
+  });
+
+  it('validates Discover result and exact-add route state', () => {
+    expect(discoverResultsSearchSchema.parse({ section: 'manga', q: '  Saga ', page: '2' })).toEqual({ section: 'manga', q: 'Saga', page: 2 });
+    expect(discoverAddSearchSchema.parse({ section: 'manga', title: '  Akira ', language: 'en' })).toEqual({ section: 'manga', title: 'Akira', language: 'en' });
   });
 
   it('preserves discovery section, category, and query', () => {

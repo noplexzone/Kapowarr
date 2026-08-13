@@ -1280,6 +1280,9 @@ def api_volumes_search():
             extract_key(request, 'metadata_source', False)
             or 'comicvine'
         )
+        paginated = str(extract_key(request, 'paginated', False) or '').lower() == 'true'
+        offset = int(extract_key(request, 'offset', False) or 0)
+        limit = min(max(int(extract_key(request, 'limit', False) or 30), 1), 100)
 
         def search_comicvine() -> List[dict]:
             results = run(ComicVine().search_volumes(query, section=section))
@@ -1311,18 +1314,41 @@ def api_volumes_search():
             return results
 
         if metadata_source == 'all':
-            comicvine_results = search_comicvine()
-            if section != 'manga' or comicvine_results:
-                return return_api(comicvine_results)
-            return return_api(search_mangadex())
-
-        if metadata_source == 'mangadex':
-            return return_api(search_mangadex())
-
-        if metadata_source != 'comicvine':
+            results = search_comicvine()
+            if section == 'manga' and not results:
+                results = search_mangadex()
+        elif metadata_source == 'mangadex':
+            results = search_mangadex()
+        elif metadata_source == 'comicvine':
+            results = search_comicvine()
+        else:
             raise InvalidKeyValue('metadata_source', metadata_source)
 
-        return return_api(search_comicvine())
+        seen = set()
+        deduped = []
+        for result in results:
+            identity = (
+                result.get('metadata_source') or 'comicvine',
+                str(result.get('metadata_id') or result.get('comicvine_id'))
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            deduped.append(result)
+
+        if paginated:
+            page_items = deduped[offset:offset + limit]
+            next_offset = offset + limit if offset + limit < len(deduped) else None
+            return return_api({
+                'items': page_items,
+                'total': len(deduped),
+                'offset': offset,
+                'page_size': limit,
+                'next_offset': next_offset,
+                'has_more': next_offset is not None,
+            })
+
+        return return_api(deduped)
 
     elif request.method == 'POST':
         data: Dict[str, Any] = request.get_json()

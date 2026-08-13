@@ -70,6 +70,18 @@ export const discoverySearchSchema = z.object({
   q: cleanQuery,
 });
 
+export const discoverResultsSearchSchema = z.object({
+  section: sectionSchema,
+  q: z.string().trim().min(2).max(200).catch(''),
+  page: z.coerce.number().int().min(1).default(1).catch(1),
+});
+
+export const discoverAddSearchSchema = z.object({
+  section: sectionSchema,
+  title: z.string().trim().min(1).max(200).optional().catch(undefined),
+  language: z.string().min(2).max(16).optional().catch(undefined),
+});
+
 export const legacyDiscoverySearchSchema = z.object({
   section: sectionSchema,
   type: z.enum(['upcoming', 'new', 'story-arcs']).default('upcoming').catch('upcoming'),

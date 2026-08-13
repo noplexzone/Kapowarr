@@ -13,13 +13,12 @@ import { AuthGuard } from '@/platform/auth/auth-guard';
 import { LoginPage } from '@/routes/login/-ui/login-page';
 import { DashboardPage } from '@/routes/dashboard/-ui/dashboard-page';
 import { ComicsPage } from '@/routes/comics/-ui/comics-page';
-import { AddPage, ExactAddReview } from '@/routes/add/-ui/add-page';
+
 import { ReaderPage } from '@/routes/reader/-ui/reader-page';
 import { MismatchPage } from '@/routes/mismatch/-ui/mismatch-page';
 import { SystemStatusPage } from '@/routes/system/-ui/system-status-page';
 import { RouteError, RouteNotFound, RoutePending } from '@/components/route-state/route-state';
 import { volumeListQueryOptions } from '@/routes/comics/-comics.api';
-import { rootFoldersQueryOptions } from '@/routes/add/-add.api';
 import { queueQueryOptions } from '@/routes/activity/queue/-queue.api';
 import { historyQueryOptions } from '@/routes/activity/history/-history.api';
 import { searchHistoryQueryOptions } from '@/routes/activity/search-history/-search-history.api';
@@ -31,6 +30,8 @@ import {
   activitySearchSchema,
   blocklistSearchSchema,
   discoverySearchSchema,
+  discoverAddSearchSchema,
+  discoverResultsSearchSchema,
   historySearchSchema,
   searchHistorySearchSchema,
   legacyDiscoverySearchSchema,
@@ -53,6 +54,8 @@ const SearchHistoryPage = lazy(() => import('@/routes/activity/search-history/-u
 const BlocklistPage = lazy(() => import('@/routes/activity/blocklist/-ui/blocklist-page').then((module) => ({ default: module.BlocklistPage })));
 const SettingsPage = lazy(() => import('@/routes/settings/-ui/settings-page').then((module) => ({ default: module.SettingsPage })));
 const DiscoveryPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoveryPage })));
+const DiscoverSearchResultsPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoverSearchResultsPage })));
+const DiscoverExactAddPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoverExactAddPage })));
 const ImportPage = lazy(() => import('@/routes/import/-ui/import-page').then((module) => ({ default: module.ImportPage })));
 const VolumeDetailPage = lazy(() => import('@/routes/volumes/-ui/volume-detail-page').then((module) => ({ default: module.VolumeDetailPage })));
 
@@ -137,12 +140,12 @@ const mangaRoute = createRoute({
 const comicsAddRedirectRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'comics/add',
-  loader: () => { throw redirect({ to: '/add', search: { section: 'comic' }, replace: true }); },
+  loader: () => { throw redirect({ to: '/discover', search: { section: 'comic' }, replace: true }); },
 });
 const mangaAddRedirectRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'manga/add',
-  loader: () => { throw redirect({ to: '/add', search: { section: 'manga' }, replace: true }); },
+  loader: () => { throw redirect({ to: '/discover', search: { section: 'manga' }, replace: true }); },
 });
 
 const discoverRoute = createRoute({
@@ -166,6 +169,28 @@ const discoveryRedirectRoute = createRoute({
       search: legacyDiscoveryToCanonical(deps),
       replace: true,
     });
+  },
+});
+
+const discoverSearchRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'discover/search',
+  validateSearch: discoverResultsSearchSchema,
+  component: () => {
+    const search = discoverSearchRoute.useSearch();
+    return <DiscoverSearchResultsPage section={search.section} q={search.q} page={search.page} />;
+  },
+});
+
+const discoverAddRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'discover/add/$source/$metadataId',
+  validateSearch: discoverAddSearchSchema,
+  component: () => {
+    const search = discoverAddRoute.useSearch();
+    const params = discoverAddRoute.useParams();
+    const source = params.source === 'mangadex' ? 'mangadex' : 'comicvine';
+    return <DiscoverExactAddPage section={search.section} source={source} metadataId={params.metadataId} title={search.title} language={search.language} />;
   },
 });
 
@@ -357,20 +382,12 @@ const addRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'add',
   validateSearch: addSearchSchema,
-  loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(rootFoldersQueryOptions());
-  },
-  component: () => {
-    const search = addRoute.useSearch();
-    if (search.metadata_source && search.metadata_id) {
-      return <ExactAddReview section={search.section} selection={{
-        metadata_source: search.metadata_source,
-        metadata_id: search.metadata_id,
-        title: search.title,
-        metadata_language: search.metadata_language,
-      }} />;
+  loaderDeps: ({ search }) => search,
+  loader: ({ deps }) => {
+    if (deps.metadata_source && deps.metadata_id) {
+      throw redirect({ to: '/discover/add/$source/$metadataId', params: { source: deps.metadata_source, metadataId: deps.metadata_id }, search: { section: deps.section, title: deps.title, language: deps.metadata_language }, replace: true });
     }
-    return <AddPage section={search.section} initialQuery={search.title} />;
+    throw redirect({ to: '/discover', search: { section: deps.section }, replace: true });
   },
 });
 
@@ -378,17 +395,9 @@ const addReviewRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'add/review',
   validateSearch: addReviewSearchSchema,
-  loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(rootFoldersQueryOptions());
-  },
-  component: function AddReviewRouteComponent() {
-    const search = addReviewRoute.useSearch();
-    return <ExactAddReview section={search.section} selection={{
-      metadata_source: search.source,
-      metadata_id: search.id,
-      title: search.title,
-      metadata_language: search.language,
-    }} />;
+  loaderDeps: ({ search }) => search,
+  loader: ({ deps }) => {
+    throw redirect({ to: '/discover/add/$source/$metadataId', params: { source: deps.source, metadataId: deps.id }, search: { section: deps.section, title: deps.title, language: deps.language }, replace: true });
   },
 });
 
@@ -456,6 +465,8 @@ export const routeTree = rootRoute.addChildren([
     comicsRoute,
     mangaRoute,
     discoverRoute,
+    discoverSearchRoute,
+    discoverAddRoute,
     discoveryRedirectRoute,
     activityRedirectRoute,
     queueRoute,

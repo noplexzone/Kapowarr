@@ -42,6 +42,17 @@ export function ExactAddReview({ section, selection, searchFallbackTo = '/add' }
   const queryClient = useQueryClient();
   const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
   const exact = useQuery(exactVolumeQueryOptions(selection, section));
+  const closeReview = () => {
+    if (searchFallbackTo === '/discover/search' && selection.title) {
+      navigate({ to: '/discover/search', search: { section, q: selection.title } });
+      return;
+    }
+    if (searchFallbackTo === '/discover/search') {
+      navigate({ to: '/discover', search: { section } });
+      return;
+    }
+    navigate({ to: '/discover', search: { section } });
+  };
 
   if (exact.isPending) return <div className={styles.empty} role="status">Loading {selection.title ?? selection.metadata_id} from {selection.metadata_source}…</div>;
   if (exact.isError) return <div className={styles.empty} role="alert">
@@ -56,7 +67,7 @@ export function ExactAddReview({ section, selection, searchFallbackTo = '/add' }
   const existingId = result.id ?? result.already_added;
   if (existingId != null) return <div className={styles.empty}><Badge tone="success">In Library</Badge><Button onClick={() => navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } })}>Open Volume</Button></div>;
   return <div className={styles.page} data-testid="exact-add-review">
-    <AddModal result={{ ...result, metadata_language: selection.metadata_language ?? result.metadata_language }} rootFolders={rootFolders} section={section} onClose={() => history.back()} onAdded={(id) => {
+    <AddModal result={{ ...result, metadata_language: selection.metadata_language ?? result.metadata_language }} rootFolders={rootFolders} section={section} onClose={closeReview} onAdded={(id) => {
       void queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
       void queryClient.invalidateQueries({ queryKey: ['discovery'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });

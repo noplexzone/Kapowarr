@@ -16,4 +16,14 @@ describe('exact Discovery to Add identity', () => {
     const legacy = addReviewSearchSchema.parse({ section: 'comic', source: 'comicvine', id: '4050-123', title: 'Saga' });
     expect(legacy).toEqual({ section: 'comic', source: 'comicvine', id: '4050-123', title: 'Saga' });
   });
+
+  it('exact add close fallback is explicit instead of browser-history dependent', () => {
+    // Source-level guard because this route is rendered through TanStack Router lazies in e2e.
+    const source = require('node:fs').readFileSync('src/routes/add/-ui/add-page.tsx', 'utf8');
+    expect(source).toContain('const closeReview = () =>');
+    expect(source).toContain("navigate({ to: '/discover/search', search: { section, q: selection.title } })");
+    expect(source).toContain("navigate({ to: '/discover', search: { section } })");
+    expect(source).toContain('onClose={closeReview}');
+    expect(source).not.toContain('history.back()');
+  });
 });

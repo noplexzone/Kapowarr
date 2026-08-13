@@ -32,6 +32,11 @@ it('opens highlighted suggestions by exact provider identity', () => {
   expect(source).toContain('metadata_id ?? String(result.comicvine_id)');
 });
 
+it('asks the all-source search endpoint so manga can aggregate MangaDex results', () => {
+  expect(source).toContain("searchVolumesQueryOptions(debouncedQuery, section, 'all')");
+  expect(source).toContain("searchVolumesPageQueryOptions(query, section, 'all'");
+});
+
 it('shows comic issue counts and unknown fallback in search metadata', () => {
   expect(source).toContain("Issue count unavailable");
   expect(source).toContain("`${result.issue_count} issue${result.issue_count === 1 ? '' : 's'}`");

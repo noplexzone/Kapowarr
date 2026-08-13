@@ -1133,18 +1133,32 @@ def api_library_import_delete():
 def api_discovery():
     discovery_type = extract_key(request, 'type')
     section = extract_key(request, 'section', False) or 'comic'
+    paginated = request.values.get('paginated') == 'true'
+    offset = extract_key(request, 'offset', False) or 0
+    limit = (
+        extract_key(request, 'limit', False)
+        if request.values.get('limit') is not None
+        else 50
+    )
+    if offset < 0:
+        raise InvalidKeyValue('offset', offset)
+    if limit < 1 or limit > 100:
+        raise InvalidKeyValue('limit', limit)
+
     cv = ComicVine()
 
     if discovery_type == 'upcoming':
+        fetch_limit = offset + limit if paginated else 200
         if section == 'manga':
-            results = run(cv.get_upcoming_releases_manga())
+            results = run(cv.get_upcoming_releases_manga(limit=fetch_limit))
         else:
-            results = run(cv.get_upcoming_releases())
+            results = run(cv.get_upcoming_releases(limit=fetch_limit))
     elif discovery_type == 'new':
+        fetch_limit = offset + limit if paginated else 200
         if section == 'manga':
-            results = run(cv.get_new_volumes_manga())
+            results = run(cv.get_new_volumes_manga(limit=fetch_limit))
         else:
-            results = run(cv.get_new_volumes())
+            results = run(cv.get_new_volumes(limit=fetch_limit))
         for r in results:
             if 'cover' in r:
                 del r['cover']
@@ -1157,6 +1171,18 @@ def api_discovery():
         return return_api(results)
     else:
         raise InvalidKeyValue('type', discovery_type)
+
+    if paginated:
+        items = results[offset:offset + limit]
+        total = offset + len(items)
+        if len(results) >= offset + limit:
+            total += 1
+        return return_api({
+            'items': items,
+            'total': total,
+            'offset': offset,
+            'page_size': limit
+        })
 
     return return_api(results)
 
@@ -1559,6 +1585,16 @@ def api_volumes():
             )
         volume_info = Library.get_volume(volume_id).get_public_data()
         return return_api(volume_info, code=201)
+
+
+@api.route('/volumes/facets', methods=['GET'])
+@error_handler
+@auth
+def api_volumes_facets():
+    section = extract_key(request, 'section', False) or 'comic'
+    if section not in ('comic', 'manga'):
+        raise InvalidKeyValue('section', section)
+    return return_api(Library.get_facets(section))
 
 
 @api.route('/volumes/stats', methods=['GET'])

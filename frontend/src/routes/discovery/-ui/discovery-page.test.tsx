@@ -19,7 +19,8 @@ it('clears and refreshes discover search results after adding from the search ba
 
 it('lazy-reveals discover volume results as the user scrolls', () => {
   expect(source).toContain('const DISCOVERY_BATCH_SIZE = 50;');
-  expect(source).toContain('shownVolumes.map((vol) => (');
+  expect(source).toContain('fetchDiscoveryVolumePage(type, section, pageOffset, DISCOVERY_BATCH_SIZE)');
+  expect(source).toContain('volumes.map((vol) => (');
   expect(source).toContain("window.addEventListener('scroll', onScroll, { passive: true })");
-  expect(source).toContain('Loading more titles…');
+  expect(source).toContain('Load more titles');
 });

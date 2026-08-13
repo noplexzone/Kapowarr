@@ -1,9 +1,38 @@
-import { describe, expect, it } from 'vitest';
-import { normalizeDiscoveryItem } from './-discovery.api';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/app/api-client', () => ({
+  apiClient: { get: vi.fn() },
+  readJson: vi.fn(),
+}));
+
+import { apiClient, readJson } from '@/app/api-client';
+import { fetchDiscoveryVolumePage, normalizeDiscoveryItem } from './-discovery.api';
 import { filterDiscoveryVolumes, getDiscoveryAddSearch, getDiscoveryAddSelection } from './-discovery.types';
 
+const get = vi.mocked(apiClient.get);
+const parse = vi.mocked(readJson);
+
+beforeEach(() => vi.clearAllMocks());
 
 describe('Discovery to Add identity', () => {
+  it('requests paginated discovery volumes and normalizes returned items', async () => {
+    get.mockResolvedValue({} as never);
+    parse.mockResolvedValue({
+      items: [{ volume_id: 4050, volume_title: 'Saga', issue_id: 9001, issue_number: '70' }],
+      total: 51,
+      offset: 50,
+      page_size: 50,
+    });
+
+    const page = await fetchDiscoveryVolumePage('upcoming', 'comic', 50, 50);
+    const searchParams = get.mock.calls[0]?.[1]?.searchParams as Record<string, string>;
+
+    expect(get).toHaveBeenCalledWith('discovery', expect.any(Object));
+    expect(searchParams).toMatchObject({ type: 'upcoming', section: 'comic', paginated: 'true', offset: '50', limit: '50' });
+    expect(page.total).toBe(51);
+    expect(page.items[0]).toMatchObject({ title: 'Saga', comicvine_id: 4050, issue_number: '70' });
+  });
+
   it('preserves the exact ComicVine volume identity from an upcoming issue', () => {
     const volume = normalizeDiscoveryItem({
       volume_id: 4050,

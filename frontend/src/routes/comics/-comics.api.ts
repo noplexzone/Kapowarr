@@ -1,10 +1,11 @@
 import { queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { apiClient, readJson, getUrlBase } from '@/app/api-client';
-import type { VolumesSearch, VolumeSummary, VolumeListResponse, VolumeDetail, SectionType, SavedFilter } from './-comics.types';
+import type { VolumesSearch, VolumeSummary, VolumeListResponse, VolumeDetail, SectionType, SavedFilter, LibraryFacets } from './-comics.types';
 
 export const VOLUMES_KEY = ['volumes'] as const;
 export const SAVED_FILTERS_KEY = ['saved-filters'] as const;
+export const LIBRARY_FACETS_KEY = ['library-facets'] as const;
 
 export function volumeListQueryOptions(profile: number, params: VolumesSearch, section: SectionType = 'comic') {
   return queryOptions({
@@ -71,6 +72,8 @@ const savedFilterSchema = z.object({
   updated_at: z.number().int(),
 });
 const savedFiltersSchema = z.array(savedFilterSchema);
+const facetItemSchema = z.object({ value: z.string(), label: z.string().optional(), filter: z.string().optional(), count: z.number().int().optional() });
+const libraryFacetsSchema = z.object({ publishers: z.array(facetItemSchema), years: z.array(facetItemSchema), status: z.array(facetItemSchema) });
 
 function toSavedFilter(raw: { id: number; section: SectionType; name: string; query?: Record<string, unknown>; created_at: number; updated_at: number }): SavedFilter {
   return {
@@ -81,6 +84,17 @@ function toSavedFilter(raw: { id: number; section: SectionType; name: string; qu
     created_at: raw.created_at,
     updated_at: raw.updated_at,
   };
+}
+
+export function libraryFacetsQueryOptions(section: SectionType) {
+  return queryOptions({
+    queryKey: [...LIBRARY_FACETS_KEY, section],
+    queryFn: async (): Promise<LibraryFacets> => {
+      const response = await apiClient.get('volumes/facets', { searchParams: { section } });
+      return readJson(response, libraryFacetsSchema) as Promise<LibraryFacets>;
+    },
+    staleTime: 60_000,
+  });
 }
 
 export function savedFiltersQueryOptions(section: SectionType) {

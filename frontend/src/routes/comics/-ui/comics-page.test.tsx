@@ -53,16 +53,24 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   return {
     ...actual,
     useQueryClient: () => queryClientMock,
-    useSuspenseQuery: (options: any) => (options?.queryKey?.[0] === 'saved-filters'
-      ? { data: savedFilters }
-      : {
+    useSuspenseQuery: (options: any) => {
+      if (options?.queryKey?.[0] === 'saved-filters') return { data: savedFilters };
+      if (options?.queryKey?.[0] === 'library-facets') return {
+        data: {
+          publishers: [{ value: 'Image', count: 1 }, { value: 'Dark Horse', count: 1 }],
+          years: [{ value: '2012', count: 1 }, { value: '1989', count: 1 }],
+          status: [{ value: 'missing', label: 'Missing', filter: 'wanted' }],
+        },
+      };
+      return {
         data: {
           volumes,
           total: volumes.length,
           offset: 0,
           page_size: 60,
         },
-      }),
+      };
+    },
   };
 });
 
@@ -166,6 +174,14 @@ describe('ComicsPage poster-first manage mode', () => {
     }));
     const patchSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
     expect(patchSearch({})).toMatchObject({ status: 'missing', monitoring: 'all', page: 1 });
+  });
+
+  it('surfaces library browse shortcuts from facets', () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Image/ }));
+    const patchSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
+    expect(patchSearch({})).toMatchObject({ search: 'Image', offset: 0 });
   });
 
   it('surfaces compact wanted triage for the current result set', () => {

@@ -106,3 +106,16 @@ export interface SavedFilter {
   created_at: number;
   updated_at: number;
 }
+
+export interface LibraryFacetItem {
+  value: string;
+  label?: string;
+  filter?: FilterOption;
+  count?: number;
+}
+
+export interface LibraryFacets {
+  publishers: LibraryFacetItem[];
+  years: LibraryFacetItem[];
+  status: LibraryFacetItem[];
+}

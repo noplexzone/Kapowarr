@@ -1133,7 +1133,11 @@ class Library:
             volumes = [
                 v
                 for v in cls.get_public_volumes(sort, filter, section)
-                if match_title(v['title'], query, allow_contains=True)
+                if (
+                    match_title(v['title'], query, allow_contains=True)
+                    or match_title(v.get('publisher') or '', query, allow_contains=True)
+                    or str(v.get('year') or '') == query.strip()
+                )
             ]
 
         return volumes
@@ -1238,6 +1242,43 @@ class Library:
             if _is_mismatch_volume(folder or '', title or '', publisher or '')
         )
         return result
+
+    @classmethod
+    def get_facets(cls, section: str = 'comic') -> Dict[str, List[Dict[str, Any]]]:
+        """Return compact library facets for discovery/browse shortcuts."""
+        if section not in ('comic', 'manga'):
+            raise ValueError(f'Unknown library section: {section}')
+        db = get_db()
+        publishers = db.execute("""
+            SELECT COALESCE(NULLIF(TRIM(vol.publisher), ''), 'Unknown') AS value,
+                COUNT(*) AS count
+            FROM volumes vol
+            INNER JOIN root_folders rf ON rf.id = vol.root_folder
+            WHERE rf.section = ?
+            GROUP BY value
+            ORDER BY count DESC, value COLLATE NOCASE
+            LIMIT 12;
+        """, (section,)).fetchalldict()
+        years = db.execute("""
+            SELECT CAST(vol.year AS TEXT) AS value, COUNT(*) AS count
+            FROM volumes vol
+            INNER JOIN root_folders rf ON rf.id = vol.root_folder
+            WHERE rf.section = ? AND vol.year IS NOT NULL AND vol.year > 0
+            GROUP BY vol.year
+            ORDER BY vol.year DESC
+            LIMIT 12;
+        """, (section,)).fetchalldict()
+        return {
+            'publishers': publishers,
+            'years': years,
+            'status': [
+                {'value': 'missing', 'label': 'Missing', 'filter': 'wanted'},
+                {'value': 'upcoming', 'label': 'Upcoming', 'filter': 'upcoming'},
+                {'value': 'unmonitored', 'label': 'Unmonitored', 'filter': 'unmonitored'},
+                {'value': 'monitored', 'label': 'Monitored', 'filter': 'monitored'},
+            ]
+        }
+
 
     @classmethod
     def get_volumes(cls) -> List[int]:

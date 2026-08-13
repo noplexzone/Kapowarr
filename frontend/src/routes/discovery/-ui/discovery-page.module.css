@@ -528,10 +528,82 @@
 
 .loadMoreSentinel {
   grid-column: 1 / -1;
-  min-height: 4rem;
+  min-height: 3rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
+  color: var(--text);
   font-size: 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.loadMoreSentinel:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 480px) {
+  .hero {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.9rem;
+    border-radius: var(--radius-lg);
+  }
+
+  .hero h1 {
+    font-size: 1.45rem;
+  }
+
+  .hero p {
+    font-size: 0.9rem;
+  }
+
+  .heroRail {
+    display: flex;
+    justify-content: space-between;
+    min-width: 0;
+    text-align: left;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .toolbar,
+  .toolbarRight {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .tabs,
+  .toolbarRight,
+  .sectionToggle {
+    width: 100%;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar { display: none; }
+
+  .tab,
+  .sectionBtn,
+  .refreshBtn,
+  .hideAddedToggle {
+    min-height: 2.65rem;
+    flex: 1 0 auto;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .floatingSearchWrap {
+    width: min(calc(100vw - 1rem), 42rem);
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    padding: 0.45rem;
+  }
 }

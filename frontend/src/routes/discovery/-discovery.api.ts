@@ -1,8 +1,8 @@
 import { queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { apiClient, readJson } from '@/app/api-client';
-import { discoveryVolumeSchema, storyArcSchema, storyArcDetailSchema } from './-discovery.types';
-import type { DiscoveryVolume, DiscoverySection } from './-discovery.types';
+import { discoveryVolumeSchema, storyArcSchema, storyArcDetailSchema, discoveryPageSchema } from './-discovery.types';
+import type { DiscoveryVolume, DiscoverySection, DiscoveryPage } from './-discovery.types';
 
 const discoveryItemsSchema = z.array(z.record(z.unknown()));
 
@@ -15,6 +15,18 @@ export function discoveryVolumeQueryOptions(type: 'upcoming' | 'new', section: D
     staleTime: 5 * 60_000,
     refetchOnMount: false,
   });
+}
+
+export async function fetchDiscoveryVolumePage(type: 'upcoming' | 'new', section: DiscoverySection, offset: number, limit = 50): Promise<DiscoveryPage> {
+  const response = await apiClient.get('discovery', {
+    searchParams: { type, section, paginated: 'true', offset: String(offset), limit: String(limit) },
+    timeout: 60_000,
+  });
+  const page = await readJson(response, discoveryPageSchema);
+  return {
+    ...page,
+    items: page.items.map(item => normalizeDiscoveryItem(item, type)),
+  };
 }
 
 export function normalizeDiscoveryItem(item: Record<string, unknown>, type: 'upcoming' | 'new'): DiscoveryVolume {

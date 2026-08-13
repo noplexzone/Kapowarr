@@ -1,4 +1,4 @@
-import { useState, useDeferredValue, useCallback, useEffect, useMemo } from 'react';
+import { useState, useDeferredValue, useCallback, useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/primitives';
@@ -7,7 +7,7 @@ import { AddModal } from '@/routes/add/-ui/add-page';
 import { exactVolumeQueryOptions, rootFoldersQueryOptions, searchVolumesQueryOptions } from '@/routes/add/-add.api';
 import { VOLUMES_KEY } from '@/routes/comics/-comics.api';
 import {
-  discoveryVolumeQueryOptions,
+  fetchDiscoveryVolumePage,
   storyArcsQueryOptions,
   storyArcDetailQueryOptions,
 } from '../-discovery.api';
@@ -187,30 +187,57 @@ const DISCOVERY_BATCH_SIZE = 50;
 
 function VolumeGridView({ type, section, hideAlreadyAdded, onAddVolume }: { type: 'upcoming' | 'new'; section: DiscoverySection; hideAlreadyAdded: boolean; onAddVolume: (volume: DiscoveryVolume) => void }) {
   const navigate = useNavigate();
-  const { data: allVolumes = [], isFetching } = useQuery(discoveryVolumeQueryOptions(type, section));
+  const [pageOffset, setPageOffset] = useState(0);
+  const [allVolumes, setAllVolumes] = useState<DiscoveryVolume[]>([]);
+  const [total, setTotal] = useState(0);
+  const { data: pageData, isFetching } = useQuery({
+    queryKey: ['discovery', type, section, 'page', pageOffset],
+    queryFn: () => fetchDiscoveryVolumePage(type, section, pageOffset, DISCOVERY_BATCH_SIZE),
+    staleTime: 5 * 60_000,
+  });
+
+  useEffect(() => {
+    setPageOffset(0);
+    setAllVolumes([]);
+    setTotal(0);
+  }, [type, section]);
+
+  useEffect(() => {
+    if (!pageData) return;
+    setTotal(pageData.total);
+    setAllVolumes((current) => {
+      const base: DiscoveryVolume[] = pageData.offset === 0 ? [] : current;
+      const seen = new Set(base.map((volume) => getDiscoveryCardKey(type, volume)));
+      return [
+        ...base,
+        ...pageData.items.filter((volume: DiscoveryVolume) => {
+          const key = getDiscoveryCardKey(type, volume);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }),
+      ];
+    });
+  }, [pageData, type]);
+
   const volumes = filterDiscoveryVolumes(allVolumes, hideAlreadyAdded);
-  const [visibleCount, setVisibleCount] = useState(DISCOVERY_BATCH_SIZE);
-  const shownVolumes = useMemo(() => volumes.slice(0, visibleCount), [volumes, visibleCount]);
-  const hasMore = visibleCount < volumes.length;
+  const hasMore = allVolumes.length < total;
 
   useEffect(() => {
-    setVisibleCount(DISCOVERY_BATCH_SIZE);
-  }, [type, section, hideAlreadyAdded]);
-
-  useEffect(() => {
-    if (!hasMore) return;
+    if (!hasMore || isFetching) return;
 
     const onScroll = () => {
       const remaining = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
       if (remaining < 900) {
-        setVisibleCount((current) => Math.min(current + DISCOVERY_BATCH_SIZE, volumes.length));
+        setPageOffset(allVolumes.length);
       }
     };
 
-    onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
-  }, [hasMore, volumes.length]);
+  }, [allVolumes.length, hasMore, isFetching]);
+
+  const loadMore = () => setPageOffset(allVolumes.length);
 
   const handleClick = (vol: DiscoveryVolume) => {
     if (vol.already_added != null) {
@@ -220,7 +247,7 @@ function VolumeGridView({ type, section, hideAlreadyAdded, onAddVolume }: { type
     onAddVolume(vol);
   };
 
-  if (isFetching && volumes.length === 0) {
+  if (isFetching && allVolumes.length === 0) {
     return <div className={styles.empty}>Loading…</div>;
   }
 
@@ -230,13 +257,13 @@ function VolumeGridView({ type, section, hideAlreadyAdded, onAddVolume }: { type
 
   return (
     <div className={styles.grid}>
-      {shownVolumes.map((vol) => (
+      {volumes.map((vol) => (
         <VolumeCard key={getDiscoveryCardKey(type, vol)} volume={vol} onClick={handleClick} />
       ))}
       {hasMore && (
-        <div className={styles.loadMoreSentinel} aria-live="polite">
-          Loading more titles…
-        </div>
+        <button type="button" className={styles.loadMoreSentinel} onClick={loadMore} disabled={isFetching}>
+          {isFetching ? 'Loading more titles…' : 'Load more titles'}
+        </button>
       )}
     </div>
   );

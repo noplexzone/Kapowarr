@@ -47,11 +47,54 @@
   gap: 0.25rem;
 }
 
-.savedViewsRow {
+.savedViewsRow,
+.discoveryFacets {
   gap: var(--space-2, 0.5rem);
   flex-wrap: wrap;
   padding-top: var(--space-2, 0.5rem);
   border-top: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+}
+
+.discoveryFacets {
+  display: flex;
+  align-items: flex-start;
+}
+
+.facetGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.facetLabel {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.facetChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  padding: 0 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.facetChip:hover,
+.facetChip:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.facetChip span {
+  color: var(--text-dim);
+  font-size: 0.75rem;
 }
 
 .missingSummary {
@@ -336,16 +379,21 @@
 
   .primaryControls,
   .secondaryControls,
-  .toolbarRight,
   .savedViewsRow,
+  .discoveryFacets,
   .missingSummary {
     align-items: stretch;
     flex-direction: column;
   }
 
+  .primaryControls {
+    gap: 0.65rem;
+  }
+
   .toolbarRight {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
   }
 
   .toolbarRight button,
@@ -353,6 +401,9 @@
   .saveViewButton,
   .select {
     width: 100%;
+    min-height: 2.65rem;
+    padding-inline: 0.45rem;
+    font-size: 0.82rem;
   }
 
   .saveViewButton {
@@ -371,6 +422,29 @@
 
   .searchInput {
     min-width: 0;
+    min-height: 2.9rem;
+    font-size: 1rem;
+  }
+
+  .filterChips,
+  .viewToggle,
+  .facetGroup {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+    scrollbar-width: none;
+  }
+
+  .filterChips::-webkit-scrollbar,
+  .viewToggle::-webkit-scrollbar,
+  .facetGroup::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filterChip,
+  .facetChip {
+    flex: 0 0 auto;
   }
 
   .statsBar {
@@ -380,7 +454,8 @@
   }
 
   .libraryHeader {
-    gap: var(--space-2, 0.5rem);
-    padding: var(--space-2, 0.5rem);
+    gap: 0.65rem;
+    padding: 0.75rem;
+    border-radius: 14px;
   }
 }

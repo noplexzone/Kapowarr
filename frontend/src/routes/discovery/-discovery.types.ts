@@ -22,6 +22,14 @@ export const discoveryVolumeSchema = z.object({
 
 export type DiscoveryVolume = z.infer<typeof discoveryVolumeSchema>;
 
+export const discoveryPageSchema = z.object({
+  items: z.array(z.record(z.unknown())),
+  total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(),
+  page_size: z.number().int().positive(),
+});
+export type DiscoveryPage = Omit<z.infer<typeof discoveryPageSchema>, 'items'> & { items: DiscoveryVolume[] };
+
 export const storyArcSchema = z.object({
   id: z.number().int(), name: z.string(), issue_count: z.number().int().optional(),
   cover_url: z.string().optional(), description: z.string().optional(),

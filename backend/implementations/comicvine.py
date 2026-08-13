@@ -915,7 +915,8 @@ class ComicVine:
 
     async def get_upcoming_releases(
         self,
-        days: int = 60
+        days: int = 60,
+        limit: int = 200
     ) -> List[Dict[str, Any]]:
         """Get comic issues releasing in the next N days.
 
@@ -1016,7 +1017,7 @@ class ComicVine:
                 'volume_title': vol.get('name') or '',
                 'already_added': already_added.get(vol_cv_id) if vol_cv_id else None,
             })
-        return upcoming
+        return upcoming[:limit]
 
     async def get_new_volumes(
         self,
@@ -1404,7 +1405,8 @@ class ComicVine:
 
     async def get_upcoming_releases_manga(
         self,
-        days: int = 60
+        days: int = 60,
+        limit: int = 200
     ) -> List[Dict[str, Any]]:
         """Get manga issues releasing in the next N days.
 
@@ -1488,7 +1490,7 @@ class ComicVine:
                 'volume_title': vol.get('name') or '',
                 'already_added': already_added.get(vol_cv_id) if vol_cv_id else None,
             })
-        return upcoming
+        return upcoming[:limit]
 
     async def get_new_volumes_manga(
         self,

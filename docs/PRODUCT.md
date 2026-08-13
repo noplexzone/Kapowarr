@@ -10,7 +10,7 @@ Kapowarr is a premium media manager for comics and manga that also serves as an 
 - Manage Comics and Manga as separate top-level media sections while sharing implementation patterns where that keeps behavior consistent.
 - Add an exact metadata result without losing provider identity or silently falling back to a title search.
 - Triage wanted/missing content, active searches, failed downloads, and recoverable queue states from a hybrid Home command center.
-- Manage large libraries through URL-backed filters, saved views/smart collections, poster-card selection actions, bulk actions, and recoverable partial failures.
+- Manage large libraries through URL-backed filters, poster-card selection actions, bulk actions, and recoverable partial failures.
 - Configure integrations and media behavior without losing unsaved edits or operational context.
 
 ## Canonical information architecture
@@ -32,7 +32,7 @@ Comics and Manga are separate top-level browse/manage destinations. Shared route
 
 ## Home command center
 
-Home combines browse and operate jobs. It should surface library health, wanted/missing triage, active downloads and searches, failed or recoverable work, recent additions, and saved smart-collection shortcuts. It should link to exact filtered destinations rather than duplicate every management workflow inline.
+Home combines browse and operate jobs. It should surface library health, wanted/missing triage, active downloads and searches, failed or recoverable work, recent additions. It should link to exact filtered destinations rather than duplicate every management workflow inline.
 
 ## Experience principles
 

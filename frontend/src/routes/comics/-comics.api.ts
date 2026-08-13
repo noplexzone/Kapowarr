@@ -1,10 +1,9 @@
 import { queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { apiClient, readJson, getUrlBase } from '@/app/api-client';
-import type { VolumesSearch, VolumeSummary, VolumeListResponse, VolumeDetail, SectionType, SavedFilter, LibraryFacets } from './-comics.types';
+import type { VolumesSearch, VolumeSummary, VolumeListResponse, VolumeDetail, SectionType, LibraryFacets } from './-comics.types';
 
 export const VOLUMES_KEY = ['volumes'] as const;
-export const SAVED_FILTERS_KEY = ['saved-filters'] as const;
 export const LIBRARY_FACETS_KEY = ['library-facets'] as const;
 
 export function volumeListQueryOptions(profile: number, params: VolumesSearch, section: SectionType = 'comic') {
@@ -63,28 +62,8 @@ const rawVolumeListSchema = z.object({
 const emptyObjectSchema = z.object({}).strict();
 const nullSchema = z.null();
 
-const savedFilterSchema = z.object({
-  id: z.number().int().positive(),
-  section: z.enum(['comic', 'manga']),
-  name: z.string(),
-  query: z.record(z.unknown()).default({}),
-  created_at: z.number().int(),
-  updated_at: z.number().int(),
-});
-const savedFiltersSchema = z.array(savedFilterSchema);
 const facetItemSchema = z.object({ value: z.string(), label: z.string().optional(), filter: z.string().optional(), count: z.number().int().optional() });
 const libraryFacetsSchema = z.object({ publishers: z.array(facetItemSchema), years: z.array(facetItemSchema), status: z.array(facetItemSchema) });
-
-function toSavedFilter(raw: { id: number; section: SectionType; name: string; query?: Record<string, unknown>; created_at: number; updated_at: number }): SavedFilter {
-  return {
-    id: raw.id,
-    section: raw.section,
-    name: raw.name,
-    query: (raw.query ?? {}) as Partial<VolumesSearch>,
-    created_at: raw.created_at,
-    updated_at: raw.updated_at,
-  };
-}
 
 export function libraryFacetsQueryOptions(section: SectionType) {
   return queryOptions({
@@ -96,29 +75,6 @@ export function libraryFacetsQueryOptions(section: SectionType) {
     staleTime: 60_000,
   });
 }
-
-export function savedFiltersQueryOptions(section: SectionType) {
-  return queryOptions({
-    queryKey: [...SAVED_FILTERS_KEY, section],
-    queryFn: async () => {
-      const response = await apiClient.get('savedfilters', { searchParams: { section } });
-      const data = await readJson(response, savedFiltersSchema);
-      return data.map(toSavedFilter);
-    },
-    staleTime: 30_000,
-  });
-}
-
-export async function createSavedFilter(section: SectionType, name: string, query: Partial<VolumesSearch>): Promise<SavedFilter> {
-  const response = await apiClient.post('savedfilters', { json: { section, name, query } });
-  return toSavedFilter(await readJson(response, savedFilterSchema));
-}
-
-export async function deleteSavedFilter(id: number): Promise<void> {
-  const response = await apiClient.delete(`savedfilters/${id}`);
-  await readJson(response, emptyObjectSchema);
-}
-
 
 async function fetchVolumeList(params: VolumesSearch, section: SectionType): Promise<VolumeListResponse> {
   const sp = new URLSearchParams();

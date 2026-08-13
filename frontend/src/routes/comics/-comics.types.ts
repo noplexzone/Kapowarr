@@ -98,15 +98,6 @@ export interface IssueSummary {
 }
 
 
-export interface SavedFilter {
-  id: number;
-  section: SectionType;
-  name: string;
-  query: Partial<VolumesSearch>;
-  created_at: number;
-  updated_at: number;
-}
-
 export interface LibraryFacetItem {
   value: string;
   label?: string;

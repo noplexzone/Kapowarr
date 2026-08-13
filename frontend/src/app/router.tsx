@@ -13,7 +13,7 @@ import { AuthGuard } from '@/platform/auth/auth-guard';
 import { LoginPage } from '@/routes/login/-ui/login-page';
 import { DashboardPage } from '@/routes/dashboard/-ui/dashboard-page';
 import { ComicsPage } from '@/routes/comics/-ui/comics-page';
-import { AddPage, ExactAddReview } from '@/routes/add/-ui/add-page';
+import { ExactAddReview } from '@/routes/add/-ui/add-page';
 import { ReaderPage } from '@/routes/reader/-ui/reader-page';
 import { MismatchPage } from '@/routes/mismatch/-ui/mismatch-page';
 import { SystemStatusPage } from '@/routes/system/-ui/system-status-page';
@@ -137,12 +137,12 @@ const mangaRoute = createRoute({
 const comicsAddRedirectRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'comics/add',
-  loader: () => { throw redirect({ to: '/add', search: { section: 'comic' }, replace: true }); },
+  loader: () => { throw redirect({ to: '/discover', search: { section: 'comic' }, replace: true }); },
 });
 const mangaAddRedirectRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'manga/add',
-  loader: () => { throw redirect({ to: '/add', search: { section: 'manga' }, replace: true }); },
+  loader: () => { throw redirect({ to: '/discover', search: { section: 'manga' }, replace: true }); },
 });
 
 const discoverRoute = createRoute({
@@ -357,20 +357,26 @@ const addRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'add',
   validateSearch: addSearchSchema,
-  loader: async ({ context }) => {
+  loaderDeps: ({ search }) => search,
+  loader: async ({ context, deps }) => {
+    if (!deps.metadata_source || !deps.metadata_id) {
+      throw redirect({
+        to: '/discover',
+        search: { section: deps.section },
+        replace: true,
+      });
+    }
     await context.queryClient.ensureQueryData(rootFoldersQueryOptions());
   },
+  // Temporary exact Add review route retained for Phase 2 replacement at /discover/add/...
   component: () => {
     const search = addRoute.useSearch();
-    if (search.metadata_source && search.metadata_id) {
-      return <ExactAddReview section={search.section} selection={{
-        metadata_source: search.metadata_source,
-        metadata_id: search.metadata_id,
-        title: search.title,
-        metadata_language: search.metadata_language,
-      }} />;
-    }
-    return <AddPage section={search.section} initialQuery={search.title} />;
+    return <ExactAddReview section={search.section} selection={{
+      metadata_source: search.metadata_source!,
+      metadata_id: search.metadata_id!,
+      title: search.title,
+      metadata_language: search.metadata_language,
+    }} />;
   },
 });
 

@@ -9,7 +9,7 @@ interface ImportPageProps {
   section: 'comic' | 'manga';
 }
 
-export function ImportPage({ section }: ImportPageProps) {
+export function ImportPage({ section: _section }: ImportPageProps) {
   const [folderFilter, setFolderFilter] = useState('');
   const [fuzzyFallback, setFuzzyFallback] = useState(false);
   const [quick, setQuick] = useState(false);
@@ -117,24 +117,14 @@ export function ImportPage({ section }: ImportPageProps) {
   const unmatchedCount = unmatchedFolders.length;
   const matchedCount = items.filter(i => i.matched).length;
   const selectedMatchedCount = items.filter(i => selected.has(i.folder) && i.matched).length;
-  const scanState = scanning ? 'Scanning' : scanComplete ? 'Scan complete' : 'Ready to scan';
 
   return (
     <div className={styles.page}>
-      <section className={styles.hero} aria-labelledby="import-heading">
-        <div>
-          <p className={styles.kicker}>Activity Diagnostics</p>
-          <h1 id="import-heading">Library Import</h1>
-          <p>Scan staged folders, verify metadata matches, and import only confirmed {section === 'comic' ? 'comic' : 'manga'} volumes.</p>
-        </div>
-        <div className={styles.heroStats} aria-label="Import scan summary">
-          <div><span>State</span><strong>{scanState}</strong></div>
-          <div><span>Matched</span><strong>{matchedCount}</strong></div>
-          <div><span>Unmatched</span><strong>{unmatchedCount}</strong></div>
-        </div>
-      </section>
+      <h1 id="import-heading" className={styles.srOnly}>Library Import</h1>
 
-      <div className={styles.scanForm}>
+      <div className={styles.srOnly} aria-label="Import scan summary">Matched {matchedCount} · Unmatched {unmatchedCount} · State {scanning ? 'Scanning' : scanComplete ? 'Scan complete' : 'Ready'}</div>
+
+      <div className={styles.scanForm} aria-labelledby="import-heading">
         <div className={styles.formRow}>
           <label className={styles.label}>Folder Filter</label>
           <input

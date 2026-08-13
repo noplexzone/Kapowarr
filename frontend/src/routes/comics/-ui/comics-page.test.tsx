@@ -4,17 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const navigateMock = vi.fn();
 let searchState: Record<string, unknown>;
 
-const savedFilters = [
-  {
-    id: 8,
-    section: 'comic',
-    name: 'Missing comics',
-    query: { filter: 'wanted', sort: 'wanted', view: 'posters' },
-    created_at: 100,
-    updated_at: 100,
-  },
-];
-
 const queryClientMock = {
   invalidateQueries: vi.fn(() => Promise.resolve()),
 };
@@ -54,7 +43,6 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
     ...actual,
     useQueryClient: () => queryClientMock,
     useSuspenseQuery: (options: any) => {
-      if (options?.queryKey?.[0] === 'saved-filters') return { data: savedFilters };
       if (options?.queryKey?.[0] === 'library-facets') return {
         data: {
           publishers: [{ value: 'Image', count: 1 }, { value: 'Dark Horse', count: 1 }],
@@ -88,16 +76,14 @@ vi.mock('../-comics.api', async () => {
   const actual = await vi.importActual<typeof import('../-comics.api')>('../-comics.api');
   return {
     ...actual,
-    createSavedFilter: vi.fn(() => Promise.resolve(savedFilters[0])),
     deleteLibraryVolume: vi.fn(() => Promise.resolve()),
-    deleteSavedFilter: vi.fn(() => Promise.resolve()),
     runLibraryTask: vi.fn(() => Promise.resolve({ id: 10 })),
     runVolumeTask: vi.fn(() => Promise.resolve({ id: 11 })),
     setVolumeMonitored: vi.fn(() => Promise.resolve()),
   };
 });
 
-import { createSavedFilter, deleteSavedFilter, runVolumeTask } from '../-comics.api';
+import { runVolumeTask } from '../-comics.api';
 import { ComicsPage } from './comics-page';
 
 function renderPage(section: 'comic' | 'manga' = 'comic', canonical = false) {
@@ -183,20 +169,14 @@ describe('ComicsPage poster-first manage mode', () => {
     expect(screen.queryByRole('button', { name: /Image/ })).toBeNull();
   });
 
-  it('surfaces compact wanted triage for the current result set', () => {
+  it('starts with library controls and does not render the obsolete attention banner', () => {
     renderPage();
 
-    expect(screen.getByText(/visible volumes need attention/)).toBeTruthy();
-    expect(screen.queryByText('15 missing issues in the current result set.')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show Missing' }));
-    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
-      to: '/comics',
-      search: expect.any(Function),
-    }));
-    const patchSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
-    expect(patchSearch({})).toMatchObject({ filter: 'wanted', offset: 0 });
-    expect(screen.queryByRole('button', { name: 'Search Visible Missing' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Comic Library' })).toBeTruthy();
+    expect(screen.getByRole('searchbox', { name: 'Search library' })).toBeTruthy();
+    expect(screen.queryByText(/visible volumes need attention/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Show Missing' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Missing' })).toBeTruthy();
   });
 
   it('only queues selected missing volumes from the manage toolbar', async () => {
@@ -215,28 +195,12 @@ describe('ComicsPage poster-first manage mode', () => {
     expect(screen.getByTestId('bulk-toolbar').textContent).toContain('0 selected');
   });
 
-  it('applies and manages persisted smart filters for the active section', async () => {
-    vi.spyOn(window, 'prompt').mockReturnValue('Night reads');
+  it('does not render saved views controls or empty saved-view spacing', () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Missing comics' }));
-    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
-      to: '/comics',
-      search: expect.any(Function),
-    }));
-    const lastSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
-    expect(lastSearch({})).toMatchObject({ filter: 'wanted', sort: 'wanted', view: 'posters', offset: 0 });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save View' }));
-    await waitFor(() => expect(createSavedFilter).toHaveBeenCalledWith('comic', 'Night reads', {
-      sort: 'title',
-      filter: '',
-      view: 'posters',
-      search: undefined,
-    }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete smart filter Missing comics' }));
-    await waitFor(() => expect(deleteSavedFilter).toHaveBeenCalledWith(8));
+    expect(screen.queryByText(/Saved views/i)).toBeNull();
+    expect(screen.queryByText(/No saved views/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save View' })).toBeNull();
   });
 
   it('offers a poster overlay control for missing searches only', async () => {

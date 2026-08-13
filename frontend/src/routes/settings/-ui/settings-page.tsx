@@ -98,20 +98,9 @@ function SettingsPageContent({ category = 'general', onCategoryChange }: { categ
   else content = <SettingsCategoryPanel category={category} form={form} set={set} errors={errors} theme={theme} setTheme={setTheme} suwayomiSources={suwayomiSourcesData?.sources ?? []} suwayomiSourcesLoading={suwayomiSourcesFetching} />;
 
   return <div className={styles.page}>
-    <header className={styles.hero}>
-      <div className={styles.heroCopy}>
-        <p className={styles.eyebrow}>Service configuration</p>
-        <h1 className={styles.pageTitle}>Settings</h1>
-        <p className={styles.heroText}>Manage Kapowarr services, paths, credentials, and host behavior from URL-backed categories. Saves are disabled until a category has real changes.</p>
-        <p className={styles.dirtyState} role="status">{dirtyCount ? `${dirtyCount} unsaved ${dirtyCount === 1 ? 'change' : 'changes'}` : 'All changes saved'}</p>
-      </div>
-      <div className={styles.heroStats} aria-label="Settings status">
-        <div><span>Active category</span><strong>{activeCategory.label}</strong></div>
-        <div><span>Unsaved drafts</span><strong>{dirtyCount}</strong></div>
-      </div>
-    </header>
+    <h1 className={styles.srOnly}>Settings</h1>
     <div className={styles.toolbar}>
-      <div className={styles.currentCategory}><strong>{activeCategory.label}</strong><span>{activeCategory.description}</span></div>
+      <div className={styles.currentCategory}><strong>{activeCategory.label}</strong><span>{activeCategory.description}</span><em className={styles.dirtyState} role="status">{dirtyCount ? `${dirtyCount} unsaved ${dirtyCount === 1 ? 'change' : 'changes'}` : 'All changes saved'}</em></div>
       <div className={styles.toolbarRight}>
         <Button variant="secondary" onClick={discard} disabled={!topLevelDirtyCount || mutation.isPending}>Discard</Button>
         <Button variant="primary" onClick={handleSave} disabled={!topLevelDirtyCount || mutation.isPending}>{mutation.isPending ? 'Saving…' : 'Save Changes'}</Button>

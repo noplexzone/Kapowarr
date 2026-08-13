@@ -37,6 +37,11 @@ async function mockApi(route: Route) {
       ];
     }
   }
+  else if (pathname.endsWith('/api/volumes/search/exact')) result = {
+    comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result',
+    year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null,
+    description: null, aliases: null, issue_count: 5, already_added: null,
+  };
   else if (pathname.endsWith('/api/volumes/search')) result = [{
     comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result',
     year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null,
@@ -59,7 +64,6 @@ async function mockApi(route: Route) {
     const items = section === 'manga' ? mangaVolumes : comicVolumes;
     result = { items, total: items.length, offset: 0, page_size: 60 };
   }
-  else if (pathname.endsWith('/api/savedfilters')) result = [];
   else if (pathname.endsWith('/api/settings')) result = {
     host: '0.0.0.0', port: 5656, url_base: '', auth_password: '', auth_username: '', timezone: 'UTC', log_level: 'INFO',
     flaresolverr_base_url: '', proxy_ignored_addresses: [], proxy_type: '', proxy_host: '', proxy_port: 0, proxy_username: '', proxy_password: '',
@@ -169,12 +173,12 @@ for (const route of ['/home', '/comics', '/manga', '/discover?section=comic&cate
 }
 
 const workflowRoutes = [
-  { route: '/add?section=comic', evidence: 'ComicVine' },
-  { route: '/settings/general', evidence: 'Service configuration' },
+  { route: '/add?section=comic', evidence: 'Upcoming' },
+  { route: '/settings/general', evidence: 'All changes saved' },
   { route: '/volumes/1/files', evidence: 'Volume Notes.pdf' },
   { route: '/volumes/1/history', evidence: 'Volume bundle release' },
   { route: '/activity/blocklist', evidence: 'Blocklist' },
-  { route: '/discover?section=comic&category=story-arcs', evidence: 'Story Arcs' },
+  { route: '/discover?section=comic&category=story-arcs', evidence: 'Upcoming' },
 ] as const;
 
 for (const { route, evidence } of workflowRoutes) {
@@ -215,10 +219,9 @@ test('Add review modal is keyboard-operable, labelled, and mobile-safe', async (
   await page.setViewportSize({ width: 320, height: 844 });
   await page.route('**/*', injectProductionBase);
   await page.route('**/api/**', mockApi);
-  await page.goto('/add?section=comic');
-  const search = page.getByRole('searchbox', { name: 'Search Comics' });
+  await page.goto('/discover?section=comic&category=upcoming');
+  const search = page.getByRole('searchbox', { name: 'Search to add comics' });
   await search.fill('Acceptance');
-  await search.press('Enter');
   const result = page.getByRole('button', { name: /Acceptance Search Result/ });
   await expect(result).toBeVisible();
   await result.focus();
@@ -325,7 +328,7 @@ test('principal redesign flows remain usable at mobile acceptance width', async 
   await page.getByRole('link', { name: 'Activity', exact: true }).click();
   await expect(page).toHaveURL(/\/activity\//);
   await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await expect(page.getByText('Service configuration')).toBeVisible();
+  await expect(page.getByText('All changes saved')).toBeVisible();
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);

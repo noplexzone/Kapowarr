@@ -1350,3 +1350,10 @@ def _migrate_add_saved_filters():
         );
     """)
     return
+
+
+@DatabaseMigrationHandler.register_handler(57)
+def _migrate_drop_saved_filters():
+    cursor = get_db()
+    cursor.execute('DROP TABLE IF EXISTS saved_filters;')
+    return

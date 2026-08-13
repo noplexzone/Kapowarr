@@ -1,19 +1,14 @@
 import { useState, useDeferredValue, useCallback, useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge } from '@/components/primitives';
 import { DialogFrame, DialogHeader, DialogBody } from '@/components/dialog';
 import { AddModal } from '@/routes/add/-ui/add-page';
 import { exactVolumeQueryOptions, rootFoldersQueryOptions, searchVolumesQueryOptions } from '@/routes/add/-add.api';
 import { VOLUMES_KEY } from '@/routes/comics/-comics.api';
-import {
-  fetchDiscoveryVolumePage,
-  storyArcsQueryOptions,
-  storyArcDetailQueryOptions,
-} from '../-discovery.api';
+import { fetchDiscoveryVolumePage } from '../-discovery.api';
 import { filterDiscoveryVolumes, getDiscoveryAddSelection } from '../-discovery.types';
 import type { SearchResult } from '@/routes/add/-add.types';
-import type { DiscoveryVolume, StoryArc, DiscoveryType, DiscoverySection } from '../-discovery.types';
+import type { DiscoveryVolume, DiscoveryType, DiscoverySection } from '../-discovery.types';
 import styles from './discovery-page.module.css';
 
 interface DiscoveryPageProps {
@@ -26,14 +21,11 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
-  const [arcId, setArcId] = useState<number | null>(null);
   const [addSelection, setAddSelection] = useState<DiscoveryVolume | null>(null);
   const [searchSelection, setSearchSelection] = useState<SearchResult | null>(null);
   const [hideAlreadyAdded, setHideAlreadyAdded] = useState(false);
-  const [rawArcSearch, setRawArcSearch] = useState('');
   const [rawAddSearch, setRawAddSearch] = useState('');
   const [addSearchMode, setAddSearchMode] = useState<'title' | 'publisher' | 'genre'>('title');
-  const arcSearch = useDeferredValue(rawArcSearch);
   const addSearch = useDeferredValue(rawAddSearch.trim());
 
   const handleRefresh = useCallback(() => {
@@ -64,17 +56,11 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
   };
 
   const heading = getDiscoveryHeading(section, type);
-  const subheading = getDiscoverySubheading(section, type);
-
   return (
     <div className={styles.page}>
-      <section className={styles.hero} aria-labelledby="discover-heading">
-        <p className={styles.kicker}>Discover</p>
-        <h1 id="discover-heading">{heading}</h1>
-        <p>{subheading}</p>
-      </section>
+      <h1 id="discover-heading" className={styles.srOnly}>{heading}</h1>
 
-      <div className={styles.toolbar}>
+      <div className={styles.toolbar} aria-labelledby="discover-heading">
         <div className={styles.tabs}>
           <button
             className={`${styles.tab}${type === 'upcoming' ? ` ${styles.tabActive}` : ''}`}
@@ -88,24 +74,16 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
           >
             New
           </button>
-          <button
-            className={`${styles.tab}${type === 'story-arcs' ? ` ${styles.tabActive}` : ''}`}
-            onClick={() => setType('story-arcs')}
-          >
-            Story Arcs
-          </button>
         </div>
         <div className={styles.toolbarRight}>
-          {type !== 'story-arcs' && (
-            <label className={styles.hideAddedToggle}>
-              <input
-                type="checkbox"
-                checked={hideAlreadyAdded}
-                onChange={(event) => setHideAlreadyAdded(event.target.checked)}
-              />
-              <span>Hide in library</span>
-            </label>
-          )}
+          <label className={styles.hideAddedToggle}>
+            <input
+              type="checkbox"
+              checked={hideAlreadyAdded}
+              onChange={(event) => setHideAlreadyAdded(event.target.checked)}
+            />
+            <span>Hide in library</span>
+          </label>
           <div className={styles.sectionToggle}>
             <button
               className={`${styles.sectionBtn}${section === 'comic' ? ` ${styles.sectionActive}` : ''}`}
@@ -141,21 +119,7 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
         onSelect={handleSearchSelect}
       />
 
-      {type === 'story-arcs' ? (
-        <StoryArcsView
-          section={section}
-          query={arcSearch}
-          rawQuery={rawArcSearch}
-          onQueryChange={setRawArcSearch}
-          onSelectArc={setArcId}
-        />
-      ) : (
-        <VolumeGridView type={type} section={section} hideAlreadyAdded={hideAlreadyAdded} onAddVolume={setAddSelection} />
-      )}
-
-      {arcId != null && (
-        <ArcDetailModal id={arcId} onClose={() => setArcId(null)} onAddVolume={setAddSelection} />
-      )}
+      <VolumeGridView type={type} section={section} hideAlreadyAdded={hideAlreadyAdded} onAddVolume={setAddSelection} />
 
       {addSelection != null && (
         <DiscoveryAddModal
@@ -312,98 +276,6 @@ function VolumeCard({ volume, onClick }: { volume: DiscoveryVolume; onClick: (v:
         )}
       </div>
     </div>
-  );
-}
-
-interface StoryArcsViewProps {
-  section: DiscoverySection;
-  query: string;
-  rawQuery: string;
-  onQueryChange: (q: string) => void;
-  onSelectArc: (id: number) => void;
-}
-
-function StoryArcsView({ section, query, rawQuery, onQueryChange, onSelectArc }: StoryArcsViewProps) {
-  const { data: arcs = [], isFetching } = useQuery(storyArcsQueryOptions(query, section));
-
-  return (
-    <div className={styles.arcsView}>
-      <input
-        className={styles.searchInput}
-        type="search"
-        aria-label="Search story arcs"
-        placeholder="Search story arcs…"
-        value={rawQuery}
-        onChange={e => onQueryChange(e.target.value)}
-        autoFocus
-      />
-
-      {rawQuery.length < 2 ? (
-        <div className={styles.empty}>Type at least 2 characters to search</div>
-      ) : isFetching ? (
-        <div className={styles.empty}>Searching…</div>
-      ) : arcs.length === 0 ? (
-        <div className={styles.empty}>No story arcs found for &ldquo;{rawQuery}&rdquo;</div>
-      ) : (
-        <div className={styles.arcList}>
-          {(arcs as StoryArc[]).map((arc) => (
-            <div
-              key={arc.id}
-              className={styles.arcItem}
-              onClick={() => onSelectArc(arc.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onSelectArc(arc.id);
-                }
-              }}
-            >
-              <span className={styles.arcName}>{arc.name}</span>
-              {arc.issue_count != null && (
-                <Badge tone="neutral">{arc.issue_count} issues</Badge>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ArcDetailModal({ id, onClose, onAddVolume }: { id: number; onClose: () => void; onAddVolume: (volume: DiscoveryVolume) => void }) {
-  const navigate = useNavigate();
-  const { data, isLoading } = useQuery(storyArcDetailQueryOptions(id));
-
-  return (
-    <DialogFrame open onOpenChange={open => !open && onClose()}>
-      <DialogHeader title="Story Arc Volumes" onClose={onClose} />
-      <DialogBody>
-        {isLoading ? (
-          <div className={styles.empty}>Loading…</div>
-        ) : !data || data.volumes.length === 0 ? (
-          <div className={styles.empty}>No volumes found for this arc</div>
-        ) : (
-          <div className={styles.grid}>
-            {data.volumes.map((vol) => (
-              <VolumeCard
-                key={vol.comicvine_id}
-                volume={vol}
-                onClick={() => {
-                  if (vol.already_added != null) {
-                    navigate({ to: '/volumes/$volumeId', params: { volumeId: String(vol.already_added) } });
-                  } else {
-                    onClose();
-                    onAddVolume(vol);
-                  }
-                }}
-              />
-            ))}
-          </div>
-        )}
-      </DialogBody>
-    </DialogFrame>
   );
 }
 
@@ -577,14 +449,6 @@ function DiscoveryAddModal({ volume, section, onClose }: { volume: DiscoveryVolu
 
 export function getDiscoveryHeading(section: DiscoverySection, type: DiscoveryType): string {
   const media = section === 'manga' ? 'Manga' : 'Comics';
-  if (type === 'story-arcs') return `${media} Story Arcs`;
   if (type === 'new') return `New ${media}`;
   return `Upcoming ${media}`;
-}
-
-export function getDiscoverySubheading(section: DiscoverySection, type: DiscoveryType): string {
-  const media = section === 'manga' ? 'manga' : 'comics';
-  if (type === 'story-arcs') return `Find curated ${media} reading arcs and add missing volumes without leaving Discover.`;
-  if (type === 'new') return `Browse newly indexed ${media}, keep library-owned titles visible, and add from verified metadata.`;
-  return `Review upcoming ${media} releases with poster-first actions and direct add/open controls.`;
 }

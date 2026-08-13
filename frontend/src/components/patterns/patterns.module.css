@@ -1,12 +1,5 @@
-.pageHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
-}
-.pageHeader h1, .pageHeader p, .emptyState h2, .emptyState p { margin: 0; }
-.pageHeader p, .emptyState p, .help { color: var(--text-dim); }
+.emptyState h2, .emptyState p { margin: 0; }
+.emptyState p, .help { color: var(--text-dim); }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .emptyState { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-8); text-align: center; }
 .status, .error { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-raised); }
@@ -14,7 +7,7 @@
 .field { display: grid; gap: var(--space-1); }
 .field label { font-weight: 600; }
 .help, .fieldError { margin: 0; font-size: 0.875rem; }
-@media (max-width: 600px) { .pageHeader { flex-direction: column; } .actions { width: 100%; } }
+@media (max-width: 600px) { .actions { width: 100%; } }
 
 .sectionHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }
 .sectionHeader h2, .sectionHeader p { margin: 0; }

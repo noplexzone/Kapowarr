@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Card, Badge, Button, Progress } from '@/components/primitives';
 import { useSocketEvent } from '@/platform/socketio/socket';
-import { PageHeader, StatusBanner } from '@/components/patterns';
+import { StatusBanner } from '@/components/patterns';
 import {
   comicStatsQueryOptions,
   mangaStatsQueryOptions,
@@ -85,15 +85,6 @@ export function DashboardPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader
-        title="Home"
-        description="Kapowarr command center for library health, wanted triage, live tasks, and recent shelves."
-        actions={
-          <Button variant="secondary" disabled={isRefreshing} onClick={refreshHome}>
-            {isRefreshing ? 'Refreshing…' : 'Refresh Home'}
-          </Button>
-        }
-      />
       {hasError && (
         <StatusBanner error>
           Some Home data could not be loaded. Preserve successful sections while retrying stale panels.
@@ -116,6 +107,9 @@ export function DashboardPage() {
               Manga missing
             </Link>
             <Link className={`${styles.actionLink} ${styles.actionGhost}`} to="/activity/queue">Open queue</Link>
+            <Button variant="secondary" disabled={isRefreshing} onClick={refreshHome}>
+              {isRefreshing ? 'Refreshing…' : 'Refresh Home'}
+            </Button>
           </div>
         </div>
         <Card className={styles.heroPanel}>

@@ -50,10 +50,10 @@ describe('SettingsPage', () => {
   });
   it('renders settings categories as descriptive service cards with the active category summary', async () => {
     renderPage();
-    expect(await screen.findByText('Service configuration')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeTruthy();
     expect(screen.getAllByText('Hosting, authentication, theme, logs, and local browser identity.').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Root Folders Storage locations/ })).toBeTruthy();
-    expect(screen.getByText('Active category')).toBeTruthy();
+    expect(screen.getByText('All changes saved')).toBeTruthy();
   });
   it('associates labels and help descriptions with controls', async () => {
     renderPage(); const host = await screen.findByLabelText('Host');

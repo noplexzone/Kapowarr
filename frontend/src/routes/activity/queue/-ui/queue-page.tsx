@@ -41,17 +41,7 @@ export function QueuePage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.hero}>
-        <div>
-          <p className={styles.kicker}>Activity Queue</p>
-          <h1>Downloads</h1>
-          <p>Live download, import, and recovery state for the current queue.</p>
-        </div>
-        <div className={styles.summary} aria-label="Queue summary">
-          <strong>{queue.length}</strong>
-          <span>item{queue.length !== 1 ? 's' : ''} queued</span>
-        </div>
-      </div>
+      <h1 className={styles.srOnly}>Queue</h1>
 
       <div className={styles.toolbar}>
         <span className={styles.toolbarTitle}>{queue.length} item{queue.length !== 1 ? 's' : ''} in queue</span>

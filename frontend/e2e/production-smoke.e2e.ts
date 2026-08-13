@@ -70,7 +70,7 @@ async function openDashboard(page: Page, width: number, height = 820) {
   await page.route('**/api/**', fulfillApi);
   await page.goto('/');
   await expect(page.locator('#root')).not.toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Run the collection, then browse it.' })).toBeVisible();
 }
 
 for (const width of [1280, 390, 320]) {

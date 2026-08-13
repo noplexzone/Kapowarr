@@ -35,9 +35,9 @@ describe('canonical route search', () => {
   });
 
   it('preserves supported discover state and trims query text', () => {
-    expect(discoverySearchSchema.parse({ section: 'manga', category: 'story-arcs', q: '  berserk  ' })).toEqual({
+    expect(discoverySearchSchema.parse({ section: 'manga', category: 'new', q: '  berserk  ' })).toEqual({
       section: 'manga',
-      category: 'story-arcs',
+      category: 'new',
       q: 'berserk',
     });
   });
@@ -123,6 +123,14 @@ describe('legacy route redirects', () => {
     expect(legacyDiscoveryToCanonical({ section: 'manga', type: 'new', q: '  Pluto ' })).toEqual({
       section: 'manga',
       category: 'new',
+      q: 'Pluto',
+    });
+  });
+
+  it('redirects legacy story arc discovery state to the normal Discover landing', () => {
+    expect(legacyDiscoveryToCanonical({ section: 'manga', type: 'story-arcs', q: '  Pluto ' })).toEqual({
+      section: 'manga',
+      category: 'upcoming',
       q: 'Pluto',
     });
   });

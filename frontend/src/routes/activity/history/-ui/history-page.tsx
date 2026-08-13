@@ -49,17 +49,7 @@ export function HistoryPage({ offset, state }: HistoryPageProps) {
 
   return (
     <div className={styles.page}>
-      <div className={styles.hero}>
-        <div>
-          <p className={styles.kicker}>Download History</p>
-          <h1>History</h1>
-          <p>Completed, failed, and cancelled downloads with source context and recovery clues.</p>
-        </div>
-        <div className={styles.summary} aria-label="History summary">
-          <strong>{total}</strong>
-          <span>{state === 'all' ? 'downloads' : `${formatHistoryState(state)} downloads`}</span>
-        </div>
-      </div>
+      <h1 className={styles.srOnly}>History</h1>
 
       <div className={styles.toolbar}>
         <div className={styles.filters} aria-label="History filters">

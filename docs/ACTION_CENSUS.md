@@ -14,8 +14,6 @@ This census records the main state-changing actions exposed by the redesigned SP
 
 | Action | Trigger | Backend/API | Confirmation | Update contract | Mobile placement |
 | --- | --- | --- | --- | --- | --- |
-| Save current view | Saved-filter toolbar | `POST /api/savedfilters` | none | invalidate saved-filter list | toolbar button |
-| Delete saved filter | saved-filter chip action | `DELETE /api/savedfilters/<id>` | target filter name | invalidate saved-filter list | chip/button row wraps |
 | Search visible/selected missing | wanted triage and manage toolbar | system task API through library helpers | none; reports partial failures | task/activity invalidation and per-target partial-failure message | poster/action toolbar buttons |
 | Monitor/unmonitor selected | manage toolbar | volume update helpers | no broad destructive confirmation; scoped to visible selected IDs | clear/update selection and invalidate library | fixed/visible bulk toolbar |
 | Delete selected volumes | manage toolbar | `DELETE /api/volumes/<id>` | exact selected count and visible-page scope | clear selection and invalidate library | bulk toolbar above bottom nav |

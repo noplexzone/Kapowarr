@@ -30,14 +30,7 @@ export const discoveryPageSchema = z.object({
 });
 export type DiscoveryPage = Omit<z.infer<typeof discoveryPageSchema>, 'items'> & { items: DiscoveryVolume[] };
 
-export const storyArcSchema = z.object({
-  id: z.number().int(), name: z.string(), issue_count: z.number().int().optional(),
-  cover_url: z.string().optional(), description: z.string().optional(),
-}).passthrough();
-export type StoryArc = z.infer<typeof storyArcSchema>;
-export const storyArcDetailSchema = z.object({ volumes: z.array(discoveryVolumeSchema) });
-export type StoryArcDetail = z.infer<typeof storyArcDetailSchema>;
-export type DiscoveryType = 'upcoming' | 'new' | 'story-arcs';
+export type DiscoveryType = 'upcoming' | 'new';
 export type DiscoverySection = 'comic' | 'manga';
 
 export function filterDiscoveryVolumes<T extends { already_added?: number | null }>(volumes: T[], hideAlreadyAdded: boolean): T[] {

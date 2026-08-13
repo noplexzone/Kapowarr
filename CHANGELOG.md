@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- Remove obsolete visible page headers, Library attention banner, Saved Views, Story Arcs, and the generic Add/search page while preserving Discover exact Add review.
+
 ## [1.6.0] - 2026-08-12
 
 ### Added

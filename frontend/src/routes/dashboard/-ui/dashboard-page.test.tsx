@@ -51,7 +51,7 @@ it('presents Home as a hybrid command center before shelf rows', () => {
   const triage = source.indexOf('Wanted / Missing Triage');
   const liveOps = source.indexOf('Live Operations');
   const shelves = source.indexOf('Recently Added');
-  expect(source).toContain('title="Home"');
+  expect(source).toContain('home-command-center-title');
   expect(hero).toBeGreaterThan(-1);
   expect(triage).toBeGreaterThan(hero);
   expect(liveOps).toBeGreaterThan(triage);

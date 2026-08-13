@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { apiClient, readJson } from '@/app/api-client';
-import { discoveryVolumeSchema, storyArcSchema, storyArcDetailSchema, discoveryPageSchema } from './-discovery.types';
+import { discoveryVolumeSchema, discoveryPageSchema } from './-discovery.types';
 import type { DiscoveryVolume, DiscoverySection, DiscoveryPage } from './-discovery.types';
 
 const discoveryItemsSchema = z.array(z.record(z.unknown()));
@@ -46,23 +46,4 @@ export function normalizeDiscoveryItem(item: Record<string, unknown>, type: 'upc
     already_added: item.already_added ?? null,
   };
   return discoveryVolumeSchema.parse(normalized);
-}
-
-export function storyArcsQueryOptions(query: string, section: DiscoverySection) {
-  return queryOptions({
-    queryKey: ['discovery', 'story-arcs', query, section],
-    queryFn: () => apiClient.get('discovery', { searchParams: { type: 'story-arcs', query, section } })
-      .then(res => readJson(res, z.array(storyArcSchema))),
-    staleTime: 5 * 60_000,
-    enabled: query.length >= 2,
-    refetchOnMount: false,
-  });
-}
-
-export function storyArcDetailQueryOptions(id: number) {
-  return queryOptions({
-    queryKey: ['discovery', 'story-arc', id],
-    queryFn: () => apiClient.get(`discovery/story-arc/${id}`).then(res => readJson(res, storyArcDetailSchema)),
-    staleTime: 5 * 60_000,
-  });
 }

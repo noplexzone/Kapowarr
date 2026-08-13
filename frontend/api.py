@@ -83,58 +83,6 @@ def return_api(
     return {'error': error, 'result': result}, code
 
 
-def _validate_saved_filter_section(section: Any) -> str:
-    section = section or 'comic'
-    if section not in ('comic', 'manga'):
-        raise InvalidKeyValue('section', section)
-    return section
-
-
-def _validate_saved_filter_name(name: Any) -> str:
-    if not isinstance(name, str) or not name.strip():
-        raise InvalidKeyValue('name', name)
-    return name.strip()
-
-
-def _validate_saved_filter_query(query: Any) -> Dict[str, Any]:
-    if not isinstance(query, dict):
-        raise InvalidKeyValue('query', query)
-    for key, value in query.items():
-        if not isinstance(key, str):
-            raise InvalidKeyValue('query', query)
-        if value is not None and not isinstance(value, (str, int, float, bool)):
-            raise InvalidKeyValue('query', query)
-    return query
-
-
-def _format_saved_filter(row) -> Dict[str, Any]:
-    if row is None:
-        raise InvalidKeyValue('id', None)
-    query_raw = row['query'] if isinstance(row, dict) else row['query']
-    try:
-        query = _json.loads(query_raw)
-    except (TypeError, ValueError):
-        query = {}
-    return {
-        'id': row['id'],
-        'section': row['section'],
-        'name': row['name'],
-        'query': query if isinstance(query, dict) else {},
-        'created_at': row['created_at'],
-        'updated_at': row['updated_at'],
-    }
-
-
-def _get_saved_filter_or_404(filter_id: int):
-    row = get_db().execute(
-        'SELECT id, section, name, query, created_at, updated_at FROM saved_filters WHERE id = ?;',
-        (filter_id,)
-    ).fetchone()
-    if row is None:
-        raise InvalidKeyValue('id', filter_id)
-    return row
-
-
 _PROTECTED_DELETE_NAMES = {
     '.env', 'config.ini', 'config.json', 'config.yaml', 'config.yml',
     'kapowarr.db', 'settings.ini', 'settings.json',
@@ -1162,13 +1110,6 @@ def api_discovery():
         for r in results:
             if 'cover' in r:
                 del r['cover']
-    elif discovery_type == 'story-arcs':
-        query = extract_key(request, 'query', False) or ''
-        if section == 'manga':
-            results = run(cv.get_story_arcs_manga(query=query))
-        else:
-            results = run(cv.get_story_arcs(query=query))
-        return return_api(results)
     else:
         raise InvalidKeyValue('type', discovery_type)
 
@@ -1185,15 +1126,6 @@ def api_discovery():
         })
 
     return return_api(results)
-
-
-@api.route('/discovery/story-arc/<int:arc_id>', methods=['GET'])
-@error_handler
-@auth
-def api_discovery_story_arc(arc_id: int):
-    cv = ComicVine()
-    result = run(cv.get_story_arc_volumes(arc_id))
-    return return_api(result)
 
 
 # =====================
@@ -1356,81 +1288,6 @@ def api_volumes_search():
 
         folder = generate_volume_folder_name(vd)
         return return_api({'folder': folder})
-
-
-@api.route('/savedfilters', methods=['GET', 'POST'])
-@error_handler
-@auth
-def api_saved_filters():
-    if request.method == 'GET':
-        section = _validate_saved_filter_section(extract_key(request, 'section', False))
-        rows = get_db().execute(
-            'SELECT id, section, name, query, created_at, updated_at '
-            'FROM saved_filters WHERE section = ? ORDER BY name COLLATE NOCASE, id;',
-            (section,)
-        ).fetchall()
-        return return_api([_format_saved_filter(row) for row in rows])
-
-    data = request.get_json() or {}
-    section = _validate_saved_filter_section(data.get('section'))
-    name = _validate_saved_filter_name(data.get('name'))
-    query = _validate_saved_filter_query(data.get('query'))
-    now = round(time())
-    cursor = get_db()
-    try:
-        result = cursor.execute(
-            'INSERT INTO saved_filters(section, name, query, created_at, updated_at) '
-            'VALUES (?, ?, ?, ?, ?);',
-            (section, name, _json.dumps(query, sort_keys=True), now, now)
-        )
-    except IntegrityError:
-        raise InvalidKeyValue('name', name)
-    cursor.connection.commit()
-    row = cursor.execute(
-        'SELECT id, section, name, query, created_at, updated_at FROM saved_filters WHERE id = ?;',
-        (result.lastrowid,)
-    ).fetchone()
-    return return_api(_format_saved_filter(row), code=201)
-
-
-@api.route('/savedfilters/<int:filter_id>', methods=['PUT', 'DELETE'])
-@error_handler
-@auth
-def api_saved_filter(filter_id: int):
-    cursor = get_db()
-    _get_saved_filter_or_404(filter_id)
-    if request.method == 'DELETE':
-        cursor.execute('DELETE FROM saved_filters WHERE id = ?;', (filter_id,))
-        cursor.connection.commit()
-        return return_api({})
-
-    data = request.get_json() or {}
-    updates = []
-    values = []
-    if 'name' in data:
-        updates.append('name = ?')
-        values.append(_validate_saved_filter_name(data.get('name')))
-    if 'query' in data:
-        updates.append('query = ?')
-        values.append(_json.dumps(_validate_saved_filter_query(data.get('query')), sort_keys=True))
-    if not updates:
-        raise InvalidKeyValue('payload', data)
-    updates.append('updated_at = ?')
-    values.append(round(time()))
-    values.append(filter_id)
-    try:
-        cursor.execute(
-            f"UPDATE saved_filters SET {', '.join(updates)} WHERE id = ?;",
-            tuple(values)
-        )
-    except IntegrityError:
-        raise InvalidKeyValue('name', data.get('name'))
-    cursor.connection.commit()
-    row = cursor.execute(
-        'SELECT id, section, name, query, created_at, updated_at FROM saved_filters WHERE id = ?;',
-        (filter_id,)
-    ).fetchone()
-    return return_api(_format_saved_filter(row))
 
 
 @api.route('/volumes', methods=['GET', 'POST'])

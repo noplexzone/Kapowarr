@@ -77,25 +77,15 @@ export function MismatchPage({ section }: MismatchPageProps) {
     }
   };
 
-  const issueTotal = items.reduce((sum, item) => sum + (item.issue_count ?? 0), 0);
   const unmatchedCount = items.filter(item => item.status === 'unmatched').length;
 
   return (
     <div className={styles.page}>
-      <section className={styles.hero} aria-labelledby="mismatch-heading">
-        <div>
-          <p className={styles.kicker}>Activity Diagnostics</p>
-          <h1 id="mismatch-heading">Mismatch Review</h1>
-          <p>Audit folders whose disk names or publisher signals do not line up cleanly with the monitored {section === 'comic' ? 'comics' : 'manga'} library.</p>
-        </div>
-        <div className={styles.heroStats} aria-label="Mismatch scan summary">
-          <div><span>State</span><strong>{scanning ? 'Scanning' : 'Ready'}</strong></div>
-          <div><span>Folders</span><strong>{items.length}</strong></div>
-          <div><span>Issues</span><strong>{issueTotal}</strong></div>
-        </div>
-      </section>
+      <h1 id="mismatch-heading" className={styles.srOnly}>Mismatch Review</h1>
 
-      <div className={styles.toolbar}>
+      <div className={styles.srOnly} aria-label="Mismatch scan summary">Folders {items.length} · Issues {items.reduce((sum, item) => sum + (item.issue_count ?? 0), 0)} · State {scanning ? 'Scanning' : 'Ready'}</div>
+
+      <div className={styles.toolbar} aria-labelledby="mismatch-heading">
         <Badge tone={section === 'comic' ? 'info' : 'neutral'}>
           {section === 'comic' ? 'Comics' : 'Manga'}
         </Badge>

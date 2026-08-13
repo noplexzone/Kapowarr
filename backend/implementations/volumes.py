@@ -354,6 +354,13 @@ class Volume:
 
         volume_info['issues'] = [i.todict() for i in self.get_issues()]
         volume_info['general_files'] = self.get_general_files()
+        if volume_info.get('section') == 'comic':
+            try:
+                from backend.features.metron_enrichment import MetronEnrichmentService
+                volume_info.update(MetronEnrichmentService.get_volume_provenance(self.id))
+            except Exception as exc:
+                LOGGER.debug('Metron provenance failed open for volume %s: %s', self.id, exc)
+
 
         return volume_info
 
@@ -1318,9 +1325,30 @@ class Library:
             ORDER BY vol.year DESC
             LIMIT 12;
         """, (section,)).fetchalldict()
+        characters = []
+        genres = []
+        if section == 'comic':
+            characters = db.execute("""
+                SELECT name AS value, name AS label, COUNT(DISTINCT volume_id) AS count
+                FROM volume_enrichment_terms
+                WHERE provider = 'metron' AND term_type = 'character'
+                GROUP BY name
+                ORDER BY count DESC, name COLLATE NOCASE
+                LIMIT 24;
+            """).fetchalldict()
+            genres = db.execute("""
+                SELECT name AS value, name AS label, COUNT(DISTINCT volume_id) AS count
+                FROM volume_enrichment_terms
+                WHERE provider = 'metron' AND term_type = 'genre'
+                GROUP BY name
+                ORDER BY count DESC, name COLLATE NOCASE
+                LIMIT 24;
+            """).fetchalldict()
         return {
             'publishers': publishers,
             'years': years,
+            'characters': characters,
+            'genres': genres,
             'status': [
                 {'value': 'missing', 'label': 'Missing', 'filter': 'wanted'},
                 {'value': 'upcoming', 'label': 'Upcoming', 'filter': 'upcoming'},
@@ -1585,6 +1613,14 @@ class Library:
             # but that's already done by the completion of the transaction above
             task = AutoSearchVolume(volume_id)
             TaskHandler().add(task)
+
+        try:
+            from backend.features.metron_enrichment import metron_configured
+            if metron_configured():
+                from backend.features.tasks import MetronEnrichVolume, TaskHandler
+                TaskHandler().add(MetronEnrichVolume(volume_id))
+        except Exception as exc:
+            LOGGER.debug('Metron enrich enqueue failed open for volume %s: %s', volume_id, exc)
 
         LOGGER.info(
             f'Added volume with CV ID {comicvine_id} and ID {volume_id}'
@@ -2339,6 +2375,16 @@ def refresh_and_scan(
 
     commit()
 
+    # Queue optional Metron enrichment after canonical ComicVine refresh.
+    try:
+        from backend.features.metron_enrichment import metron_configured
+        if metron_configured():
+            from backend.features.tasks import MetronEnrichVolume, TaskHandler
+            for local_id, _last_fetch in cv_to_id_fetch.values():
+                TaskHandler().add(MetronEnrichVolume(local_id))
+    except Exception as exc:
+        LOGGER.debug('Metron enrich enqueue failed open after refresh: %s', exc)
+
     # Scan for files
     if cancelled():
         return
@@ -2408,14 +2454,14 @@ def rematch_volume(volume_id: int, new_comicvine_id: int) -> None:
 
     conflict = cursor.execute(
         'SELECT id FROM volumes WHERE comicvine_id = ? AND id != ?;',
-        (new_comicvine_id, volume_id)
+        (new_comicvine_id, new_comicvine_id, volume_id)
     ).fetchone()
     if conflict:
         raise InvalidKeyValue('comicvine_id', new_comicvine_id)
 
     cursor.execute(
-        'UPDATE volumes SET comicvine_id = ?, last_cv_fetch = 0 WHERE id = ?;',
-        (new_comicvine_id, volume_id)
+        "UPDATE volumes SET comicvine_id = ?, metadata_id = CAST(? AS TEXT), last_cv_fetch = 0 WHERE id = ?;",
+        (new_comicvine_id, new_comicvine_id, volume_id)
     )
     cursor.execute(
         'DELETE FROM issues_files WHERE issue_id IN '
@@ -2423,6 +2469,11 @@ def rematch_volume(volume_id: int, new_comicvine_id: int) -> None:
         (volume_id,)
     )
     cursor.execute('DELETE FROM issues WHERE volume_id = ?;', (volume_id,))
+    try:
+        from backend.features.metron_enrichment import MetronEnrichmentService
+        MetronEnrichmentService.unlink(volume_id)
+    except Exception as exc:
+        LOGGER.debug('Metron link cleanup failed open during rematch: %s', exc)
     commit()
     LOGGER.info('Volume %d rematched to CV ID %d', volume_id, new_comicvine_id)
 

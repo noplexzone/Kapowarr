@@ -562,4 +562,62 @@ CREATE TABLE IF NOT EXISTS saved_filters(
     updated_at INTEGER NOT NULL,
     UNIQUE(section, name)
 );
+CREATE TABLE IF NOT EXISTS volume_provider_links(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    volume_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    match_method TEXT NOT NULL DEFAULT '',
+    match_confidence REAL,
+    review_status TEXT NOT NULL DEFAULT 'linked',
+    linked_at INTEGER NOT NULL,
+    last_successful_enrichment INTEGER,
+    last_checked INTEGER,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+    UNIQUE(volume_id, provider, resource_type),
+    UNIQUE(provider, resource_type, external_id)
+);
+CREATE INDEX IF NOT EXISTS volume_provider_links_provider_external_idx
+    ON volume_provider_links(provider, resource_type, external_id);
+CREATE TABLE IF NOT EXISTS provider_cache(
+    provider TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    etag TEXT,
+    last_modified TEXT,
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    PRIMARY KEY(provider, resource_type, external_id)
+);
+CREATE TABLE IF NOT EXISTS volume_enrichment_terms(
+    volume_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    term_type TEXT NOT NULL,
+    external_id TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+    UNIQUE(volume_id, provider, term_type, external_id, name)
+);
+CREATE INDEX IF NOT EXISTS volume_enrichment_terms_type_name_idx
+    ON volume_enrichment_terms(term_type, name);
+CREATE INDEX IF NOT EXISTS volume_enrichment_terms_provider_external_idx
+    ON volume_enrichment_terms(provider, external_id);
+CREATE TABLE IF NOT EXISTS metron_backfill_state(
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    status TEXT NOT NULL,
+    total INTEGER NOT NULL DEFAULT 0,
+    processed INTEGER NOT NULL DEFAULT 0,
+    matched INTEGER NOT NULL DEFAULT 0,
+    unmatched INTEGER NOT NULL DEFAULT 0,
+    review_required INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    current_volume_id INTEGER,
+    rate_limit_paused_until INTEGER,
+    cancel_requested BOOL NOT NULL DEFAULT 0,
+    started_at INTEGER,
+    updated_at INTEGER,
+    completed_at INTEGER
+);
 """

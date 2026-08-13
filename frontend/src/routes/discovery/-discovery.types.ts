@@ -57,7 +57,7 @@ export type DiscoveryFacet = z.infer<typeof discoveryFacetSchema>;
 
 export const discoveryCapabilitiesSchema = z.object({
   section: discoverySectionSchema,
-  filters: z.array(z.enum(['publisher', 'decade', 'status', 'original_language', 'demographic', 'content_rating', 'year'])),
+  filters: z.array(z.enum(['publisher', 'decade', 'status', 'original_language', 'demographic', 'content_rating', 'year', 'character', 'genre'])),
   deferred_filters: z.array(z.string()),
   shelves: z.array(z.string()),
   source_notes: z.record(z.string()),
@@ -65,6 +65,8 @@ export const discoveryCapabilitiesSchema = z.object({
   decades: z.array(discoveryFacetSchema).optional(),
   statuses: z.array(discoveryFacetSchema).optional(),
   original_languages: z.array(discoveryFacetSchema).optional(),
+  characters: z.array(discoveryFacetSchema).optional(),
+  genres: z.array(discoveryFacetSchema).optional(),
 });
 export type DiscoveryCapabilities = z.infer<typeof discoveryCapabilitiesSchema>;
 
@@ -78,6 +80,8 @@ export interface BrowseFilters {
   status?: string;
   original_language?: string;
   year?: string;
+  character?: string;
+  genre?: string;
   sort: BrowseSort;
 }
 

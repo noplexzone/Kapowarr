@@ -1,3 +1,7 @@
+import type { ReactElement } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button, Notice } from '@/components/primitives';
+import { METRON_STATUS_KEY, SETTINGS_KEY, metronStatusQueryOptions, testMetronConnection, startMetronBackfill, cancelMetronBackfill } from '../-settings.api';
 import type { AllSettings, SuwayomiSource } from '../-settings.types';
 import { SettingsField as Field, SettingsSection as Section, ToggleField } from './settings-field';
 import styles from './settings-page.module.css';
@@ -8,7 +12,7 @@ export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: string; descrip
   { id: 'media-management', label: 'Media Management', description: 'Naming, file operations, conversion, issue ranges, and library cleanup defaults.', searchText: 'volume folder naming file naming padding regex rename downloaded illegal characters empty folders chmod chown convert format date issue' },
   { id: 'root-folders', label: 'Root Folders', description: 'Storage locations for Comics and Manga libraries.', searchText: 'root folders library path comics manga storage' },
   { id: 'download', label: 'Download', description: 'Download folders, source priority, concurrency, seeding, and Suwayomi preferences.', searchText: 'source priority service preference download folder concurrent timeout seeding completed suwayomi username password source' },
-  { id: 'metadata', label: 'Metadata', description: 'ComicVine and metadata-provider credentials.', searchText: 'comicvine api key metadata provider' },
+  { id: 'metadata', label: 'Metadata', description: 'ComicVine and Metron metadata-provider credentials and enrichment backfills.', searchText: 'comicvine metron api key api token metadata provider enrichment backfill character genre' },
   { id: 'indexers', label: 'Indexers', description: 'NZB indexer services, API keys, categories, and connection tests.', searchText: 'nzb indexers usenet api key categories' },
   { id: 'download-clients', label: 'Download Clients', description: 'Torrent and Usenet clients with credential test/save flows.', searchText: 'torrent usenet external download clients credentials category' },
   { id: 'remote-mappings', label: 'Remote Path Mappings', description: 'Client path translations from remote download paths to local library paths.', searchText: 'remote local path mapping download client' },
@@ -52,10 +56,45 @@ export function SettingsCategoryPanel({ category, ...props }: Props & { category
     {toggle('delete_completed_downloads','Delete Completed Downloads')}{text('suwayomi_base_url','Suwayomi Base URL')}{text('suwayomi_username','Suwayomi Username')}{text('suwayomi_password','Suwayomi Password',undefined,'password')}
     <Field id="setting-suwayomi_source_ids" label="Suwayomi Source Priority" help={props.suwayomiSourcesLoading ? 'Loading Suwayomi sources…' : 'Comma-separated Suwayomi source IDs in preferred order.'}><input className={styles.input} value={arr(form,'suwayomi_source_ids').join(', ')} onChange={e=>set('suwayomi_source_ids',e.target.value.split(',').map(s=>s.trim()))}/></Field>
   </Section>;
-  if (category === 'metadata') return <Section title="Metadata">{text('comicvine_api_key','ComicVine API Key','API key used to retrieve comic metadata.')}</Section>;
+  if (category === 'metadata') return <MetadataSettingsSection {...props} text={text} toggle={toggle} />;
   if (category === 'proxy') return <Section title="Proxy">
     <Field id="setting-proxy_type" label="Proxy Type" help="Proxy protocol. Proxy hosting changes require a restart."><select className={styles.select} value={str(form,'proxy_type')} onChange={e=>set('proxy_type',e.target.value)}><option value="">None</option><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option><option value="socks5h">SOCKS5H</option></select></Field>
     {text('proxy_host','Proxy Host','Changing proxy hosting settings requires a restart.')}{text('proxy_port','Proxy Port','Changing proxy hosting settings requires a restart.','number')}{text('proxy_username','Proxy Username')}{text('proxy_password','Proxy Password',undefined,'password')}
   </Section>;
   return null;
+}
+
+
+function fmtTime(value: unknown): string {
+  const n = Number(value || 0);
+  return n > 0 ? new Date(n * 1000).toLocaleString() : 'Never';
+}
+function MetadataSettingsSection({ form, set, errors, text, toggle }: Props & { text: (key: keyof AllSettings, label: string, help?: string, type?: string) => ReactElement; toggle: (key: keyof AllSettings, label: string, help?: string) => ReactElement }) {
+  const queryClient = useQueryClient();
+  const status = useQuery(metronStatusQueryOptions());
+  const testMutation = useMutation({ mutationFn: testMetronConnection, onSettled: () => { void queryClient.invalidateQueries({ queryKey: METRON_STATUS_KEY }); void queryClient.invalidateQueries({ queryKey: SETTINGS_KEY }); } });
+  const backfillMutation = useMutation({ mutationFn: startMetronBackfill, onSettled: () => void queryClient.invalidateQueries({ queryKey: METRON_STATUS_KEY }) });
+  const cancelMutation = useMutation({ mutationFn: cancelMetronBackfill, onSettled: () => void queryClient.invalidateQueries({ queryKey: METRON_STATUS_KEY }) });
+  const backfill = status.data?.backfill ?? {};
+  const rate = status.data?.rate_limit ?? {};
+  return <Section title="Metadata">
+    {text('comicvine_api_key','ComicVine API Key','Canonical comic metadata provider. ComicVine remains primary for Comics.')}
+    {toggle('metron_enabled','Enable Metron enrichment','Optional Comics-only enrichment. ComicVine remains canonical and Manga is unchanged.')}
+    <Field id="setting-metron_api_token" label="Metron API Token" help="Bearer token used server-side only. The saved token is returned as a masked placeholder." error={errors.metron_api_token}>
+      <input className={styles.input} type="password" autoComplete="off" value={str(form,'metron_api_token')} onChange={e=>set('metron_api_token',e.target.value)} />
+    </Field>
+    <div className={styles.inlineActions}>
+      <Button variant="secondary" onClick={() => testMutation.mutate()} disabled={testMutation.isPending}>{testMutation.isPending ? 'Testing…' : 'Test Connection'}</Button>
+      <Button variant="secondary" onClick={() => backfillMutation.mutate()} disabled={backfillMutation.isPending}>{backfillMutation.isPending ? 'Starting…' : 'Backfill Existing Comics'}</Button>
+      <Button variant="secondary" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>Cancel Backfill</Button>
+    </div>
+    {testMutation.data && <Notice tone={testMutation.data.success ? 'success' : 'danger'}>{testMutation.data.description}</Notice>}
+    <div className={styles.settingsSummary}>
+      <div><span>Last successful connection</span><strong>{fmtTime(form.metron_last_successful_connection ?? 0)}</strong></div>
+      <div><span>Last enrichment run</span><strong>{fmtTime(form.metron_last_enrichment_run ?? 0)}</strong></div>
+      <div><span>Backfill status</span><strong>{String(backfill.status ?? 'idle')} ({String(backfill.processed ?? 0)}/{String(backfill.total ?? 0)})</strong></div>
+      <div><span>Matched / review / failed</span><strong>{String(backfill.matched ?? 0)} / {String(backfill.review_required ?? 0)} / {String(backfill.failed ?? 0)}</strong></div>
+      <div><span>Rate limit remaining</span><strong>{String(rate.burst_remaining ?? rate.sustained_remaining ?? 'unknown')}</strong></div>
+    </div>
+  </Section>;
 }

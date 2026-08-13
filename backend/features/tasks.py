@@ -26,6 +26,11 @@ from backend.implementations.conversion import mass_convert
 from backend.implementations.file_matching import scan_files
 from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume, refresh_and_scan
+from backend.features.metron_enrichment import (
+    MetronEnrichmentService, get_backfill_status, metron_configured,
+    now_ts, update_backfill_state,
+)
+from backend.implementations.metron import MetronAuthenticationError, MetronError, MetronRateLimitedError
 from os.path import basename
 from random import uniform
 from sqlite3 import OperationalError
@@ -437,6 +442,135 @@ class RefreshAndScanVolume(Task):
 
         return
 
+
+
+class MetronEnrichVolume(Task):
+    "Trigger Metron enrichment for a ComicVine-backed comic volume"
+
+    stop = False
+    message = ''
+    action = 'metron_enrich_volume'
+    display_title = 'Refresh Metron Enrichment'
+    category = 'metadata'
+
+    @property
+    def volume_id(self) -> int:
+        return self._volume_id
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self, volume_id: int) -> None:
+        self._volume_id = volume_id
+        return
+
+    def run(self) -> None:
+        title = Volume(self._volume_id).vd.title
+        self.message = f'Enriching {title} with Metron'
+        _emit_task_event(TaskStatusEvent(self.message))
+        if not metron_configured():
+            self.message = 'Metron enrichment skipped: not configured'
+            return
+        try:
+            result = MetronEnrichmentService().refresh_volume(self._volume_id)
+            self.details = result
+            self.message = f'Metron enrichment {result.get("status", "complete")}'
+        except MetronAuthenticationError:
+            self.message = 'Metron authentication failed; enrichment paused'
+            raise
+        except MetronRateLimitedError as exc:
+            rate = exc.rate_limit.todict() if exc.rate_limit else {}
+            self.details = {'status': 'rate_limited', 'rate_limit': rate}
+            self.message = 'Metron rate limit reached; enrichment paused'
+        except MetronError as exc:
+            self.details = {'status': exc.status}
+            self.message = f'Metron enrichment failed: {exc.status}'
+        return
+
+
+class MetronBackfillExistingComics(Task):
+    "Backfill Metron enrichment for existing ComicVine-backed comic volumes"
+
+    stop = False
+    message = ''
+    action = 'metron_backfill_existing_comics'
+    display_title = 'Backfill Metron Enrichment'
+    category = 'metadata'
+    cancellable = True
+    processed_count: int = 0
+    total_count: int | None = None
+    last_progress_at: float | None = None
+
+    @property
+    def volume_id(self) -> None:
+        return None
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self, resume: bool = True) -> None:
+        self.resume = resume
+        return
+
+    def run(self) -> None:
+        if not metron_configured():
+            update_backfill_state(status='disabled', completed_at=now_ts())
+            self.message = 'Metron backfill skipped: not configured'
+            return
+        rows = get_db().execute("""
+            SELECT v.id, v.title
+            FROM volumes v
+            INNER JOIN root_folders rf ON rf.id = v.root_folder
+            WHERE rf.section = 'comic'
+                AND v.metadata_source = 'comicvine'
+            ORDER BY v.id;
+        """).fetchalldict()
+        status = get_backfill_status()
+        start_processed = 0
+        if self.resume and status.get('status') in ('running', 'paused'):
+            start_processed = int(status.get('processed') or 0)
+        rows = rows[start_processed:]
+        self.total_count = len(rows) + start_processed
+        self.processed_count = start_processed
+        update_backfill_state(status='running', total=self.total_count, processed=start_processed, started_at=status.get('started_at') or now_ts(), completed_at=None, cancel_requested=0)
+        service = MetronEnrichmentService()
+        for row in rows:
+            if self.stop or get_backfill_status().get('cancel_requested'):
+                update_backfill_state(status='cancelled', processed=self.processed_count, completed_at=now_ts())
+                self.message = 'Metron backfill cancelled'
+                return
+            self.message = f'Metron backfill {self.processed_count + 1}/{self.total_count}: {row["title"]}'
+            self.last_progress_at = time()
+            try:
+                result = service.refresh_volume(row['id'])
+                key = {
+                    'linked': 'matched',
+                    'unavailable': 'unmatched',
+                    'review_required': 'review_required',
+                }.get(result.get('status'), None)
+                if key:
+                    current = get_backfill_status()
+                    update_backfill_state(**{key: int(current.get(key) or 0) + 1})
+            except MetronRateLimitedError as exc:
+                rate = exc.rate_limit.todict() if exc.rate_limit else {}
+                retry_after = rate.get('retry_after') or 3600
+                update_backfill_state(status='paused', rate_limit_paused_until=now_ts() + retry_after, current_volume_id=row['id'])
+                self.message = 'Metron backfill paused by rate limit'
+                return
+            except MetronAuthenticationError:
+                update_backfill_state(status='auth_failed', current_volume_id=row['id'])
+                raise
+            except Exception as exc:
+                LOGGER.warning('Metron backfill failed for volume %s: %s', row['id'], exc)
+                current = get_backfill_status()
+                update_backfill_state(failed=int(current.get('failed') or 0) + 1)
+            self.processed_count += 1
+            update_backfill_state(processed=self.processed_count, current_volume_id=row['id'])
+        update_backfill_state(status='complete', processed=self.processed_count, completed_at=now_ts())
+        self.message = 'Metron backfill complete'
+        return
 
 class MassRenameVolume(Task):
     "Trigger a mass rename for a volume"
@@ -1511,6 +1645,17 @@ class TaskHandler(metaclass=Singleton):
             'started_at': task.get('started_at'),
         }
         if isinstance(t, SearchAll):
+            last_progress_at = getattr(t, 'last_progress_at', None)
+            result['progress'] = {
+                'processed_count': getattr(t, 'processed_count', 0),
+                'total_count': getattr(t, 'total_count', None),
+                'last_progress_at': last_progress_at,
+                'seconds_since_progress': (
+                    round(time() - last_progress_at)
+                    if last_progress_at is not None else None
+                ),
+            }
+        elif isinstance(t, MetronBackfillExistingComics):
             last_progress_at = getattr(t, 'last_progress_at', None)
             result['progress'] = {
                 'processed_count': getattr(t, 'processed_count', 0),

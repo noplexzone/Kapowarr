@@ -93,6 +93,11 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
           };
         })
       : [],
+    canonical_provider: raw.canonical_provider ?? undefined,
+    enriched_by: Array.isArray(raw.enriched_by) ? raw.enriched_by.map(String) : [],
+    provider_badges: Array.isArray(raw.provider_badges) ? raw.provider_badges : [],
+    metron: raw.metron ?? undefined,
+    enrichment_terms: Array.isArray(raw.enrichment_terms) ? raw.enrichment_terms : [],
   };
 }
 
@@ -422,4 +427,17 @@ export async function addCoverPage(
     timeout: 300000,
   });
   return readJson<AddCoverResult>(response);
+}
+
+export async function refreshMetronVolume(id: number): Promise<{ task_id: number }> {
+  const response = await apiClient.post(`volumes/${id}/metron/refresh`);
+  return readJson<{ task_id: number }>(response);
+}
+export async function relinkMetronVolume(id: number, externalId: string): Promise<Record<string, unknown>> {
+  const response = await apiClient.post(`volumes/${id}/metron/relink`, { json: { external_id: externalId } });
+  return readJson<Record<string, unknown>>(response);
+}
+export async function removeMetronVolume(id: number): Promise<Record<string, unknown>> {
+  const response = await apiClient.delete(`volumes/${id}/metron`);
+  return readJson<Record<string, unknown>>(response);
 }

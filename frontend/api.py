@@ -42,7 +42,8 @@ from backend.features.library_import import (generate_bulk_scan,
 from backend.features.mass_edit import run_mass_editor_action
 from backend.features.search import manual_search, manual_suwayomi_bundle_search
 from backend.features.tasks import (BulkLibraryImport, ImportFilesVolume,
-                                    RefreshAndScanVolume,
+                                    MetronBackfillExistingComics,
+                                    MetronEnrichVolume, RefreshAndScanVolume,
                                     Task, TaskHandler,
                                     delete_task_history, get_task_history,
                                     get_task_history_count, get_task_planning,
@@ -56,6 +57,10 @@ from backend.implementations.blocklist import (add_to_blocklist,
                                                get_blocklist_count,
                                                get_blocklist_entry)
 from backend.implementations.comicvine import ComicVine
+from backend.features.metron_enrichment import (
+    MetronEnrichmentService, get_backfill_status, safe_test_connection,
+    update_backfill_state,
+)
 from backend.implementations.conversion import preview_mass_convert
 from backend.implementations.converters import ConvertersManager
 from backend.implementations.credentials import Credentials
@@ -1025,6 +1030,40 @@ def api_settings_api_key():
     return return_api(settings.get_public_settings().todict())
 
 
+
+
+@api.route('/settings/metron/test', methods=['POST'])
+@error_handler
+@auth
+def api_settings_metron_test():
+    return return_api(safe_test_connection())
+
+
+@api.route('/metron/status', methods=['GET'])
+@error_handler
+@auth
+def api_metron_status():
+    settings = Settings().sv
+    return return_api({
+        'enabled': settings.metron_enabled,
+        'configured': bool(settings.metron_api_token),
+        'last_successful_connection': settings.metron_last_successful_connection,
+        'last_enrichment_run': settings.metron_last_enrichment_run,
+        'rate_limit': _json.loads(settings.metron_rate_limit_status) if settings.metron_rate_limit_status else {},
+        'backfill': get_backfill_status(),
+    })
+
+
+@api.route('/metron/backfill', methods=['POST', 'DELETE'])
+@error_handler
+@auth
+def api_metron_backfill():
+    if request.method == 'DELETE':
+        update_backfill_state(cancel_requested=1, status='cancelling')
+        return return_api(get_backfill_status())
+    task_id = TaskHandler().add(MetronBackfillExistingComics())
+    return return_api({'task_id': task_id, 'backfill': get_backfill_status()}, code=202)
+
 @api.route('/settings/availableformats', methods=['GET'])
 @error_handler
 @auth
@@ -1352,14 +1391,43 @@ def api_discovery_browse():
     decade = extract_key(request, 'decade', False) or ''
     status = extract_key(request, 'status', False) or ''
     original_language = extract_key(request, 'original_language', False) or ''
+    character = extract_key(request, 'character', False) or ''
+    genre = extract_key(request, 'genre', False) or ''
     query = extract_key(request, 'q', False) or ''
     sort = extract_key(request, 'sort', False) or 'trending'
 
-    # Current provider-backed Browse All support is deliberately conservative:
-    # ComicVine can back publisher/decade/status-ish summary browsing; MangaDex
-    # search metadata can back status/original language only once a true bounded
-    # catalog endpoint is added. Do not render fake Character or Genre filters.
-    if section == 'comic':
+    if section == 'comic' and (character or genre):
+        base = """
+            SELECT v.id AS already_added, v.comicvine_id, v.metadata_source,
+                v.metadata_id, v.metadata_language, v.title, v.year, v.publisher,
+                v.volume_number, COUNT(i.id) AS issue_count,
+                COUNT(*) OVER () AS _total_count
+            FROM volumes v
+            INNER JOIN root_folders rf ON rf.id = v.root_folder
+            LEFT JOIN issues i ON i.volume_id = v.id
+            WHERE rf.section = 'comic'
+                AND v.metadata_source = 'comicvine'
+        """
+        params = []
+        if character:
+            base += " AND EXISTS (SELECT 1 FROM volume_enrichment_terms vet WHERE vet.volume_id = v.id AND vet.term_type = 'character' AND vet.name = ?)"
+            params.append(character)
+        if genre:
+            base += " AND EXISTS (SELECT 1 FROM volume_enrichment_terms vet WHERE vet.volume_id = v.id AND vet.term_type = 'genre' AND vet.name = ?)"
+            params.append(genre)
+        if query:
+            base += " AND v.title LIKE ?"
+            params.append(f'%{query}%')
+        base += " GROUP BY v.id ORDER BY v.title COLLATE NOCASE LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = get_db().execute(base, tuple(params)).fetchalldict()
+        total = int(rows[0].get('_total_count') or 0) if rows else 0
+        for row in rows:
+            row.pop('_total_count', None)
+            row['metadata_source_label'] = 'ComicVine + Metron'
+            row['source_note'] = 'Character/Genre filter uses local Metron enrichment index.'
+        result = {'items': rows, 'total': total, 'offset': offset, 'page_size': limit, 'has_more': offset + len(rows) < total}
+    elif section == 'comic':
         result = run(ComicVine().browse_discover_volumes(
             section=section,
             query=query,
@@ -1394,22 +1462,20 @@ def api_discovery_browse():
 def api_discovery_capabilities():
     section = extract_key(request, 'section', False) or 'comic'
     if section == 'comic':
+        facets = Library.get_facets('comic')
         return return_api({
             'section': 'comic',
-            'filters': ['publisher', 'decade', 'status'],
-            'deferred_filters': ['character', 'genre', 'creator', 'imprint', 'format'],
+            'filters': ['publisher', 'decade', 'status', 'character', 'genre'],
+            'deferred_filters': ['creator', 'imprint', 'format'],
             'shelves': ['recently-started', 'upcoming-series-launches', 'trending', 'browse-publishers', 'browse-by-decade', 'browse-all'],
             'source_notes': {
                 'recently-started': 'ComicVine first known issue date, 12 month window.',
                 'upcoming': 'ComicVine future issue #1 records.',
                 'trending': 'ComicVine recently-updated order; not global popularity.',
             },
-            'publishers': [
-                {'value': 'Marvel', 'label': 'Marvel'},
-                {'value': 'DC Comics', 'label': 'DC'},
-                {'value': 'Image', 'label': 'Image'},
-                {'value': 'Dark Horse', 'label': 'Dark Horse'},
-            ],
+            'publishers': [{'value': f['value'], 'label': f['value'], 'count': f.get('count')} for f in facets.get('publishers', [])],
+            'characters': [{'value': f['value'], 'label': f['label'], 'count': f.get('count')} for f in facets.get('characters', [])],
+            'genres': [{'value': f['value'], 'label': f['label'], 'count': f.get('count')} for f in facets.get('genres', [])],
             'decades': [
                 {'value': '2020', 'label': '2020s'},
                 {'value': '2010', 'label': '2010s'},
@@ -1989,6 +2055,34 @@ def api_volume(id: int):
         volume.delete(delete_folder=delete_folder)
         return return_api({})
 
+
+
+
+@api.route('/volumes/<int:id>/metron/refresh', methods=['POST'])
+@error_handler
+@auth
+def api_volume_metron_refresh(id: int):
+    task_id = TaskHandler().add(MetronEnrichVolume(id))
+    return return_api({'task_id': task_id}, code=202)
+
+
+@api.route('/volumes/<int:id>/metron/relink', methods=['POST'])
+@error_handler
+@auth
+def api_volume_metron_relink(id: int):
+    data = request.get_json() or {}
+    external_id = str(data.get('external_id') or '').strip()
+    if not external_id:
+        raise KeyNotFound('external_id')
+    result = MetronEnrichmentService().relink(id, external_id)
+    return return_api(result)
+
+
+@api.route('/volumes/<int:id>/metron', methods=['DELETE'])
+@error_handler
+@auth
+def api_volume_metron_remove(id: int):
+    return return_api(MetronEnrichmentService.unlink(id))
 
 @api.route('/volumes/<int:id>/import', methods=['POST'])
 @error_handler

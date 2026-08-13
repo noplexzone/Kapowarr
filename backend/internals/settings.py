@@ -154,6 +154,13 @@ class PublicSettingsValues:
     suwayomi_password: str = ''
     suwayomi_source_ids: CommaList = field(default_factory=lambda: CommaList(''))
 
+    metron_enabled: bool = False
+    metron_api_token: str = ''
+    metron_last_successful_connection: int = 0
+    metron_last_enrichment_run: int = 0
+    metron_rate_limit_status: str = ''
+    metron_backfill_status: str = ''
+
     date_type: DateType = DateType.COVER_DATE
 
     def todict(self, to_public: bool = True) -> Dict[str, Any]:
@@ -173,7 +180,10 @@ class PublicSettingsValues:
             return result
 
         for k, v in result.items():
-            if k in ("auth_username", "auth_password", "proxy_password", "suwayomi_password") and v:
+            if k in (
+                "auth_username", "auth_password", "proxy_password",
+                "suwayomi_password", "metron_api_token",
+            ) and v:
                 result[k] = Constants.CREDENTIAL_REPLACEMENT
 
             if isinstance(v, BaseEnum):
@@ -491,6 +501,18 @@ class Settings(metaclass=Singleton):
         elif key == 'suwayomi_password':
             if value == Constants.CREDENTIAL_REPLACEMENT:
                 converted_value = self.sv.suwayomi_password
+
+        elif key == 'metron_api_token':
+            if value == Constants.CREDENTIAL_REPLACEMENT:
+                converted_value = self.sv.metron_api_token
+            else:
+                converted_value = value.strip()
+
+        elif key == 'metron_rate_limit_status':
+            converted_value = value.strip()
+
+        elif key == 'metron_backfill_status':
+            converted_value = value.strip()
 
         elif key == 'comicvine_api_key':
             from backend.implementations.comicvine import ComicVine

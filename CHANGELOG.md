@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Redesign Discover as provider-aware Comics and Manga landing/catalog flows with curated shelves, URL-backed Browse All filters, and hybrid automatic/load-more pagination.
+
+### Fixed
+
+- Remove Story Arcs and false Popular labels from Discover, and keep unsupported Character/Genre filters deferred until reliable Metron-backed data exists.
+
 ## [1.6.0] - 2026-08-12
 
 ### Added

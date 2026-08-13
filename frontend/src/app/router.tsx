@@ -31,6 +31,7 @@ import {
   activitySearchSchema,
   blocklistSearchSchema,
   discoverySearchSchema,
+  discoveryBrowseSearchSchema,
   historySearchSchema,
   searchHistorySearchSchema,
   legacyDiscoverySearchSchema,
@@ -53,6 +54,7 @@ const SearchHistoryPage = lazy(() => import('@/routes/activity/search-history/-u
 const BlocklistPage = lazy(() => import('@/routes/activity/blocklist/-ui/blocklist-page').then((module) => ({ default: module.BlocklistPage })));
 const SettingsPage = lazy(() => import('@/routes/settings/-ui/settings-page').then((module) => ({ default: module.SettingsPage })));
 const DiscoveryPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoveryPage })));
+const DiscoveryBrowsePage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoveryBrowsePage })));
 const ImportPage = lazy(() => import('@/routes/import/-ui/import-page').then((module) => ({ default: module.ImportPage })));
 const VolumeDetailPage = lazy(() => import('@/routes/volumes/-ui/volume-detail-page').then((module) => ({ default: module.VolumeDetailPage })));
 
@@ -151,8 +153,16 @@ const discoverRoute = createRoute({
   validateSearch: discoverySearchSchema,
   component: () => {
     const search = discoverRoute.useSearch();
-    return <DiscoveryPage section={search.section} type={search.category} canonical />;
+    return <DiscoveryPage section={search.section} category={search.category} q={search.q} canonical />;
   },
+});
+
+
+const discoverBrowseRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'discover/browse',
+  validateSearch: discoveryBrowseSearchSchema,
+  component: () => <DiscoveryBrowsePage search={discoverBrowseRoute.useSearch()} />,
 });
 
 const discoveryRedirectRoute = createRoute({
@@ -456,6 +466,7 @@ export const routeTree = rootRoute.addChildren([
     comicsRoute,
     mangaRoute,
     discoverRoute,
+    discoverBrowseRoute,
     discoveryRedirectRoute,
     activityRedirectRoute,
     queueRoute,

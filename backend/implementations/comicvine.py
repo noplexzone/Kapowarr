@@ -4,9 +4,12 @@
 Search for volumes/issues and fetch metadata for them on ComicVine
 """
 
+from __future__ import annotations
+
 from asyncio import gather, run, sleep
 from json import JSONDecodeError
 from re import IGNORECASE, compile
+from time import time
 from typing import Any, AsyncGenerator, Dict, FrozenSet, Iterable, List, Sequence, Union
 
 from aiohttp import ContentTypeError
@@ -29,6 +32,10 @@ from backend.base.logging import LOGGER
 from backend.implementations.matching import select_best_volume_result_for_file
 from backend.internals.db import get_db
 from backend.internals.settings import Settings
+
+RECENTLY_STARTED_MONTHS = 12
+_DISCOVER_SERIES_START_CACHE_TTL = 6 * 60 * 60
+_DISCOVER_SERIES_START_CACHE: Dict[tuple[int, str], tuple[float, Union[str, None]]] = {}
 
 _NON_ENGLISH_PUBLISHERS = frozenset({
     # Japanese publishers
@@ -320,6 +327,7 @@ class ComicVine:
         'aliases',
         'count_of_issues',
         'date_added',
+        'date_last_updated',
         'deck',
         'description',
         'id',
@@ -1599,6 +1607,238 @@ class ComicVine:
 
         filtered.sort(key=lambda a: a['issue_count'], reverse=True)
         return filtered[:limit]
+
+
+    async def _batch_first_issue_dates(
+        self,
+        session,
+        volume_ids: Sequence[int]
+    ) -> Dict[int, Union[str, None]]:
+        """Return first known issue date by volume, cached by configured date type.
+
+        ComicVine exposes series start reliably through issue dates, not through
+        volume record creation/edit timestamps. We batch issue requests for the
+        candidate volumes and cache the derived first issue date so Discover does
+        not refetch every issue on every page load.
+        """
+        now = time()
+        result: Dict[int, Union[str, None]] = {}
+        missing: List[int] = []
+        for volume_id in volume_ids:
+            key = (int(volume_id), self.date_type)
+            cached = _DISCOVER_SERIES_START_CACHE.get(key)
+            if cached and now - cached[0] < _DISCOVER_SERIES_START_CACHE_TTL:
+                result[int(volume_id)] = cached[1]
+            else:
+                missing.append(int(volume_id))
+
+        for batch in batched(missing, 50):
+            calls = [
+                self.__call_api(
+                    session,
+                    '/issues',
+                    {
+                        'field_list': f'id,issue_number,{self.date_type},volume',
+                        'filter': f'volume:{volume_id}',
+                        'sort': f'{self.date_type}:asc',
+                        'limit': 20,
+                    },
+                    {'results': []}
+                )
+                for volume_id in batch
+            ]
+            responses = await gather(*calls)
+            for volume_id, response in zip(batch, responses):
+                first_date: Union[str, None] = None
+                for issue in (response.get('results') or []):
+                    candidate = issue.get(self.date_type)
+                    if candidate:
+                        first_date = str(candidate)[:10]
+                        break
+                result[int(volume_id)] = first_date
+                _DISCOVER_SERIES_START_CACHE[(int(volume_id), self.date_type)] = (now, first_date)
+        return result
+
+    async def get_recently_started_volumes(self, limit: int = 200) -> List[VolumeMetadata]:
+        """Get series whose first known issue date is within the last 12 months."""
+        from datetime import date as _date, timedelta
+        cutoff = _date.today() - timedelta(days=RECENTLY_STARTED_MONTHS * 31)
+        params = {
+            'field_list': self.volume_field_list,
+            'sort': 'date_last_updated:desc',
+            'limit': 100,
+        }
+        async with AsyncSession() as session:
+            pages = await gather(*(
+                self.__call_api(session, '/volumes', {**params, 'offset': offset}, {'results': []})
+                for offset in range(0, 1000, 100)
+            ))
+            candidates = [
+                row
+                for page in pages
+                for row in (page.get('results') or [])
+                if _is_comic_discovery_candidate_volume(row)
+            ]
+            ids = [int(row['id']) for row in candidates if row.get('id')]
+            first_dates = await self._batch_first_issue_dates(session, ids)
+
+        qualified = []
+        for row in candidates:
+            first_date = first_dates.get(int(row['id'])) if row.get('id') else None
+            if not first_date:
+                continue
+            try:
+                parsed = _date.fromisoformat(first_date)
+            except ValueError:
+                continue
+            if parsed >= cutoff:
+                row = {**row, 'series_start_date': first_date}
+                qualified.append(row)
+        qualified.sort(key=lambda row: row.get('series_start_date') or '', reverse=True)
+        formatted = [self.__format_volume_output(row) for row in qualified[:limit]]
+        for item, raw in zip(formatted, qualified[:limit]):
+            item['series_start_date'] = raw.get('series_start_date')
+            item['metadata_source_label'] = 'ComicVine'
+            item['source_note'] = 'Recently Started uses the first known issue date from ComicVine, cached per series.'
+        self._mark_already_added(formatted)
+        return formatted
+
+    async def get_upcoming_series_launches(self, days: int = 120, limit: int = 200) -> List[Dict[str, Any]]:
+        """Get future series launches, not ordinary upcoming issues."""
+        from datetime import date, timedelta
+        today = date.today()
+        end = today + timedelta(days=days)
+        issue_params = {
+            'field_list': 'id,name,issue_number,cover_date,image,site_detail_url,volume',
+            'filter': f'{self.date_type}:{today}|{end}',
+            'sort': f'{self.date_type}:asc',
+            'limit': 100,
+        }
+        async with AsyncSession() as session:
+            issue_pages = await gather(*(
+                self.__call_api(session, '/issues', {**issue_params, 'offset': offset}, {'results': []})
+                for offset in range(0, 500, 100)
+            ))
+            issues = [r for page in issue_pages for r in (page.get('results') or [])]
+            launch_issues = []
+            for issue in issues:
+                number = str(issue.get('issue_number') or '').strip().lower().lstrip('#')
+                if number in {'1', '1.0', '001'}:
+                    launch_issues.append(issue)
+            unique_vol_ids = list({str((r.get('volume') or {}).get('id')) for r in launch_issues if (r.get('volume') or {}).get('id')})
+            publisher_by_id: Dict[int, str] = {}
+            excluded: set[int] = set()
+            if unique_vol_ids:
+                vol_pages = await gather(*(
+                    self.__call_api(
+                        session,
+                        '/volumes',
+                        {
+                            'field_list': 'id,publisher',
+                            'filter': f'id:{"|".join(unique_vol_ids[i:i + 100])}',
+                            'limit': 100,
+                        },
+                        {'results': []}
+                    )
+                    for i in range(0, len(unique_vol_ids), 100)
+                ))
+                for page in vol_pages:
+                    for vol in (page.get('results') or []):
+                        vid = int(vol['id'])
+                        publisher = ((vol.get('publisher') or {}).get('name') or '')
+                        publisher_by_id[vid] = publisher
+                        if _is_comic_discovery_excluded_publisher(publisher):
+                            excluded.add(vid)
+        vol_ids_int = tuple(int((r.get('volume') or {}).get('id')) for r in launch_issues if (r.get('volume') or {}).get('id'))
+        already_added: Dict[int, int] = {}
+        if vol_ids_int:
+            placeholders = ','.join('?' * len(vol_ids_int))
+            already_added = dict(get_db().execute(
+                f'SELECT comicvine_id, id FROM volumes WHERE comicvine_id IN ({placeholders})',
+                vol_ids_int
+            ).fetchall())
+        upcoming = []
+        seen: set[int] = set()
+        for item in launch_issues:
+            vol = item.get('volume') or {}
+            vol_cv_id = int(vol['id']) if vol.get('id') else None
+            if not vol_cv_id or vol_cv_id in seen or vol_cv_id in excluded:
+                continue
+            seen.add(vol_cv_id)
+            upcoming.append({
+                'issue_id': int(item['id']),
+                'issue_number': item.get('issue_number') or '1',
+                'title': item.get('name') or 'Issue #1',
+                'cover_date': item.get(self.date_type) or item.get('cover_date') or '',
+                'cover_link': (item.get('image') or {}).get('small_url', ''),
+                'site_url': item.get('site_detail_url') or '',
+                'volume_id': vol_cv_id,
+                'volume_title': vol.get('name') or '',
+                'publisher': publisher_by_id.get(vol_cv_id, ''),
+                'metadata_source': 'comicvine',
+                'metadata_id': str(vol_cv_id),
+                'metadata_source_label': 'ComicVine',
+                'source_note': 'Upcoming Series Launches only includes future issue #1 records from ComicVine.',
+                'already_added': already_added.get(vol_cv_id),
+            })
+        return upcoming[:limit]
+
+    async def browse_discover_volumes(
+        self,
+        section: str = 'comic',
+        query: str = '',
+        publisher: str = '',
+        decade: str = '',
+        sort: str = 'trending',
+        offset: int = 0,
+        limit: int = 30,
+    ) -> Dict[str, Any]:
+        """Browse a bounded ComicVine catalog with only reliable filters.
+
+        Trending is documented as ComicVine recently-updated order; ComicVine does
+        not expose a global popularity score through the current repository API.
+        Character and genre filters are intentionally omitted until Metron data is
+        introduced.
+        """
+        params: Dict[str, Any] = {'field_list': self.volume_field_list, 'limit': 100}
+        filters = []
+        if query.strip():
+            filters.append(f'name:{query.strip()}')
+        if publisher.strip() and section == 'comic':
+            filters.append(f'publisher:{publisher.strip()}')
+        if decade.strip():
+            try:
+                start = int(decade[:4])
+                filters.append(f'start_year:{start}|{start + 9}')
+            except ValueError:
+                pass
+        if filters:
+            params['filter'] = ','.join(filters)
+        params['sort'] = 'name:asc' if sort == 'title' else 'start_year:desc' if sort == 'year' else 'date_last_updated:desc'
+        async with AsyncSession() as session:
+            pages = await gather(*(
+                self.__call_api(session, '/volumes', {**params, 'offset': page_offset}, {'results': []})
+                for page_offset in range(offset, offset + limit + 100, 100)
+            ))
+        raw = [row for page in pages for row in (page.get('results') or [])]
+        if section == 'comic':
+            raw = [row for row in raw if _is_comic_discovery_candidate_volume(row)]
+        else:
+            raw = [row for row in raw if _is_english_manga_publisher(((row.get('publisher') or {}).get('name') or ''))]
+        formatted = [self.__format_volume_output(row) for row in raw]
+        for item in formatted:
+            item['metadata_source_label'] = 'ComicVine'
+            item['source_note'] = 'Trending uses ComicVine recently-updated order, not a global popularity score.'
+        self._mark_already_added(formatted)
+        items = formatted[:limit]
+        return {
+            'items': [{k: v for k, v in item.items() if k != 'cover'} for item in items],
+            'total': offset + len(items) + (1 if len(formatted) > limit else 0),
+            'offset': offset,
+            'page_size': limit,
+            'has_more': len(formatted) > limit,
+            'source_note': 'ComicVine browse surfaces only provider-backed publisher and decade filters; Character and Genre are deferred to Metron Phase 6.'
+        }
 
     async def filenames_to_cvs(
         self,

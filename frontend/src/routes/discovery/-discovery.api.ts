@@ -1,12 +1,26 @@
-import { queryOptions } from '@tanstack/react-query';
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { apiClient, readJson } from '@/app/api-client';
-import { discoveryVolumeSchema, storyArcSchema, storyArcDetailSchema, discoveryPageSchema } from './-discovery.types';
-import type { DiscoveryVolume, DiscoverySection, DiscoveryPage } from './-discovery.types';
+import {
+  DISCOVER_INITIAL_PAGE_SIZE,
+  discoveryCapabilitiesSchema,
+  discoveryPageSchema,
+  discoveryVolumeSchema,
+} from './-discovery.types';
+import type { BrowseFilters, DiscoveryCapabilities, DiscoveryPage, DiscoverySection, DiscoveryType, DiscoveryVolume } from './-discovery.types';
 
 const discoveryItemsSchema = z.array(z.record(z.unknown()));
 
-export function discoveryVolumeQueryOptions(type: 'upcoming' | 'new', section: DiscoverySection) {
+export function discoveryCapabilitiesQueryOptions(section: DiscoverySection) {
+  return queryOptions({
+    queryKey: ['discovery', 'capabilities', section],
+    queryFn: () => apiClient.get('discovery/capabilities', { searchParams: { section } })
+      .then(res => readJson(res, discoveryCapabilitiesSchema)) as Promise<DiscoveryCapabilities>,
+    staleTime: 30 * 60_000,
+  });
+}
+
+export function discoveryVolumeQueryOptions(type: DiscoveryType, section: DiscoverySection) {
   return queryOptions({
     queryKey: ['discovery', type, section],
     queryFn: () => apiClient.get('discovery', { searchParams: { type, section } })
@@ -17,19 +31,66 @@ export function discoveryVolumeQueryOptions(type: 'upcoming' | 'new', section: D
   });
 }
 
-export async function fetchDiscoveryVolumePage(type: 'upcoming' | 'new', section: DiscoverySection, offset: number, limit = 50): Promise<DiscoveryPage> {
+export async function fetchDiscoveryVolumePage(type: DiscoveryType, section: DiscoverySection, offset: number, limit = DISCOVER_INITIAL_PAGE_SIZE): Promise<DiscoveryPage> {
   const response = await apiClient.get('discovery', {
     searchParams: { type, section, paginated: 'true', offset: String(offset), limit: String(limit) },
     timeout: 60_000,
   });
   const page = await readJson(response, discoveryPageSchema);
+  return normalizeDiscoveryPage(page, type);
+}
+
+export function discoveryShelfInfiniteQueryOptions(type: DiscoveryType, section: DiscoverySection, limit = DISCOVER_INITIAL_PAGE_SIZE) {
+  return infiniteQueryOptions({
+    queryKey: ['discovery', 'shelf', type, section, limit],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => fetchDiscoveryVolumePage(type, section, pageParam as number, limit),
+    getNextPageParam: (lastPage) => (lastPage.has_more ?? (lastPage.offset + lastPage.items.length < lastPage.total))
+      ? lastPage.offset + lastPage.page_size
+      : undefined,
+    staleTime: 5 * 60_000,
+    refetchOnMount: false,
+  });
+}
+
+export function browseDiscoveryQueryOptions(filters: BrowseFilters, limit = DISCOVER_INITIAL_PAGE_SIZE) {
+  return infiniteQueryOptions({
+    queryKey: ['discovery', 'browse', filters, limit],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => fetchBrowseDiscoveryPage(filters, pageParam as number, limit),
+    getNextPageParam: (lastPage) => (lastPage.has_more ?? (lastPage.offset + lastPage.items.length < lastPage.total))
+      ? lastPage.offset + lastPage.page_size
+      : undefined,
+    staleTime: 5 * 60_000,
+    refetchOnMount: false,
+  });
+}
+
+export async function fetchBrowseDiscoveryPage(filters: BrowseFilters, offset: number, limit = DISCOVER_INITIAL_PAGE_SIZE): Promise<DiscoveryPage> {
+  const searchParams: Record<string, string> = {
+    section: filters.section,
+    offset: String(offset),
+    limit: String(limit),
+    sort: filters.sort,
+  };
+  for (const key of ['q', 'publisher', 'decade', 'status', 'original_language', 'year'] as const) {
+    const value = filters[key];
+    if (value) searchParams[key] = value;
+  }
+  const response = await apiClient.get('discovery/browse', { searchParams, timeout: 60_000 });
+  const page = await readJson(response, discoveryPageSchema);
+  return normalizeDiscoveryPage(page, filters.section === 'manga' ? 'recently-updated' : 'trending');
+}
+
+function normalizeDiscoveryPage(page: z.infer<typeof discoveryPageSchema>, type: DiscoveryType): DiscoveryPage {
   return {
     ...page,
+    has_more: page.has_more ?? page.offset + page.items.length < page.total,
     items: page.items.map(item => normalizeDiscoveryItem(item, type)),
   };
 }
 
-export function normalizeDiscoveryItem(item: Record<string, unknown>, type: 'upcoming' | 'new'): DiscoveryVolume {
+export function normalizeDiscoveryItem(item: Record<string, unknown>, type: DiscoveryType): DiscoveryVolume {
   const normalized = type === 'upcoming' ? {
     ...item,
     comicvine_id: item.volume_id ?? item.comicvine_id,
@@ -38,31 +99,14 @@ export function normalizeDiscoveryItem(item: Record<string, unknown>, type: 'upc
     title: item.volume_title || item.title || '',
     already_added: item.already_added ?? null,
     id: item.issue_id,
+    status: item.status ?? 'Launch',
   } : {
     ...item,
     metadata_source: item.metadata_source ?? 'comicvine',
     metadata_id: item.metadata_id ?? String(item.comicvine_id ?? ''),
     title: item.title || '',
     already_added: item.already_added ?? null,
+    status: item.status ?? (type === 'trending' ? 'Recently active' : undefined),
   };
   return discoveryVolumeSchema.parse(normalized);
-}
-
-export function storyArcsQueryOptions(query: string, section: DiscoverySection) {
-  return queryOptions({
-    queryKey: ['discovery', 'story-arcs', query, section],
-    queryFn: () => apiClient.get('discovery', { searchParams: { type: 'story-arcs', query, section } })
-      .then(res => readJson(res, z.array(storyArcSchema))),
-    staleTime: 5 * 60_000,
-    enabled: query.length >= 2,
-    refetchOnMount: false,
-  });
-}
-
-export function storyArcDetailQueryOptions(id: number) {
-  return queryOptions({
-    queryKey: ['discovery', 'story-arc', id],
-    queryFn: () => apiClient.get(`discovery/story-arc/${id}`).then(res => readJson(res, storyArcDetailSchema)),
-    staleTime: 5 * 60_000,
-  });
 }

@@ -66,8 +66,21 @@ export const legacyLibrarySearchSchema = z.object({
 
 export const discoverySearchSchema = z.object({
   section: sectionSchema,
-  category: z.enum(['upcoming', 'new', 'story-arcs']).default('upcoming').catch('upcoming'),
+  category: z.enum(['landing', 'upcoming', 'new', 'trending']).default('landing').catch('landing'),
   q: cleanQuery,
+  add: z.string().optional().catch(undefined),
+});
+
+export const discoveryBrowseSearchSchema = z.object({
+  section: sectionSchema,
+  q: cleanQuery,
+  publisher: z.string().trim().max(80).optional().catch(undefined).transform((value) => value || undefined),
+  decade: z.string().regex(/^\d{4}$/).optional().catch(undefined),
+  status: z.string().trim().max(40).optional().catch(undefined).transform((value) => value || undefined),
+  original_language: z.string().trim().max(10).optional().catch(undefined).transform((value) => value || undefined),
+  year: z.string().regex(/^\d{4}$/).optional().catch(undefined),
+  sort: z.enum(['trending', 'title', 'year', 'recently_started', 'recently_updated']).default('trending').catch('trending'),
+  add: z.string().optional().catch(undefined),
 });
 
 export const legacyDiscoverySearchSchema = z.object({
@@ -99,6 +112,7 @@ export const scopedActivitySearchSchema = z.object({
   q: cleanQuery,
 });
 
+export type DiscoveryBrowseSearch = z.infer<typeof discoveryBrowseSearchSchema>;
 export type MediaLibrarySearch = z.infer<typeof mediaLibrarySearchSchema>;
 export type LibrarySearch = z.infer<typeof librarySearchSchema>;
 
@@ -152,7 +166,7 @@ export function legacyDiscoveryToCanonical(rawSearch: unknown) {
   const search = legacyDiscoverySearchSchema.parse(rawSearch);
   return discoverySearchSchema.parse({
     section: search.section,
-    category: search.type,
+    category: search.type === 'story-arcs' ? 'landing' : search.type,
     q: search.q,
   });
 }

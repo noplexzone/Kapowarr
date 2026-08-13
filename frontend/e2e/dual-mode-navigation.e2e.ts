@@ -76,7 +76,22 @@ async function mockApi(route: Route) {
   else if (pathname.includes('/api/activity/history') && searchParams.has('volume_id')) result = [{ web_link: 'https://example.invalid/volume', web_title: 'Volume bundle release', web_sub_title: null, file_title: null, volume_id: 1, issue_id: null, source: 'test', source_name: 'Test Source', downloaded_at: 101, success: true }];
   else if (pathname.endsWith('/api/activity/history')) result = { entries: [{ id: 71, title: 'Acceptance Volume #1', source: 'Test Source', state: 'failed', downloaded_at: 100, failure_reason: 'Network timeout', volume_id: 1 }], total: 1, offset: 0, page_size: 50 };
   else if (pathname.endsWith('/api/blocklist')) result = { entries: [], total: 0, offset: 0, page_size: 50 };
-  else if (pathname.includes('/api/discovery')) result = [];
+  else if (pathname.endsWith('/api/discovery/capabilities')) result = {
+    section: searchParams.get('section') === 'manga' ? 'manga' : 'comic',
+    filters: searchParams.get('section') === 'manga' ? ['decade', 'status', 'original_language', 'year'] : ['publisher', 'decade', 'status'],
+    deferred_filters: ['Character', 'Genre'],
+    shelves: ['new', 'upcoming', 'trending'],
+    source_notes: { trending: 'Recently active provider records.' },
+    publishers: [{ value: 'Test Publisher', label: 'Test Publisher', count: 2 }],
+    decades: [{ value: '2020', label: '2020s', count: 2 }],
+  };
+  else if (pathname.endsWith('/api/discovery/browse') || pathname.endsWith('/api/discovery')) result = {
+    items: [{ comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result', year: 2026, publisher: 'Test Publisher', issue_count: 5, already_added: null }],
+    total: 1,
+    offset: Number(searchParams.get('offset') ?? 0),
+    page_size: Number(searchParams.get('limit') ?? 30),
+    has_more: false,
+  };
   else if (pathname.includes('/api/volumes/recent')) result = searchParams.get('section') === 'manga' ? mangaVolumes : comicVolumes;
   else if (pathname.includes('/api/rootfolder')) result = [{ id: 1, folder: '/comics', section: 'comic' }, { id: 2, folder: '/manga', section: 'manga' }];
   else if (pathname.endsWith('/api/files/21/info')) result = { id: 21, filepath: '/comics/Acceptance Volume/Issue 1.cbz', page_count: 2, is_pdf: false };
@@ -174,7 +189,7 @@ const workflowRoutes = [
   { route: '/volumes/1/files', evidence: 'Volume Notes.pdf' },
   { route: '/volumes/1/history', evidence: 'Volume bundle release' },
   { route: '/activity/blocklist', evidence: 'Blocklist' },
-  { route: '/discover?section=comic&category=story-arcs', evidence: 'Story Arcs' },
+  { route: '/discover/browse?section=comic&publisher=Test%20Publisher', evidence: 'Acceptance Search Result' },
 ] as const;
 
 for (const { route, evidence } of workflowRoutes) {
@@ -201,10 +216,10 @@ for (const { route, evidence } of workflowRoutes) {
 
 
 
-test('Discover exposes a bottom Search/Add Comics control', async ({ page }) => {
+test('Discover exposes a top search/add comics control', async ({ page }) => {
   await boot(page);
   await page.getByRole('link', { name: 'Discover', exact: true }).click();
-  const search = page.getByRole('searchbox', { name: 'Search to add comics' });
+  const search = page.getByRole('searchbox', { name: 'Search comics' });
   await expect(search).toBeVisible();
   await search.fill('Acceptance');
   await expect(page.getByRole('button', { name: /Acceptance Search Result/ })).toBeVisible();

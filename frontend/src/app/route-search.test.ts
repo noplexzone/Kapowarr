@@ -35,9 +35,9 @@ describe('canonical route search', () => {
   });
 
   it('preserves supported discover state and trims query text', () => {
-    expect(discoverySearchSchema.parse({ section: 'manga', category: 'story-arcs', q: '  berserk  ' })).toEqual({
+    expect(discoverySearchSchema.parse({ section: 'manga', category: 'landing', q: '  berserk  ' })).toEqual({
       section: 'manga',
-      category: 'story-arcs',
+      category: 'landing',
       q: 'berserk',
     });
   });

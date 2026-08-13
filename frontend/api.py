@@ -1152,23 +1152,27 @@ def api_discovery():
         if section == 'manga':
             results = run(cv.get_upcoming_releases_manga(limit=fetch_limit))
         else:
-            results = run(cv.get_upcoming_releases(limit=fetch_limit))
+            results = run(cv.get_upcoming_series_launches(limit=fetch_limit))
     elif discovery_type == 'new':
         fetch_limit = offset + limit if paginated else 200
         if section == 'manga':
             results = run(cv.get_new_volumes_manga(limit=fetch_limit))
         else:
-            results = run(cv.get_new_volumes(limit=fetch_limit))
+            results = run(cv.get_recently_started_volumes(limit=fetch_limit))
+        for r in results:
+            if 'cover' in r:
+                del r['cover']
+    elif discovery_type == 'trending':
+        fetch_limit = offset + limit if paginated else 200
+        if section == 'manga':
+            results = run(cv.get_new_volumes_manga(limit=fetch_limit))
+        else:
+            results = run(cv.get_popular_volumes(limit=fetch_limit))
         for r in results:
             if 'cover' in r:
                 del r['cover']
     elif discovery_type == 'story-arcs':
-        query = extract_key(request, 'query', False) or ''
-        if section == 'manga':
-            results = run(cv.get_story_arcs_manga(query=query))
-        else:
-            results = run(cv.get_story_arcs(query=query))
-        return return_api(results)
+        raise InvalidKeyValue('type', discovery_type)
     else:
         raise InvalidKeyValue('type', discovery_type)
 
@@ -1181,10 +1185,115 @@ def api_discovery():
             'items': items,
             'total': total,
             'offset': offset,
-            'page_size': limit
+            'page_size': limit,
+            'has_more': len(results) >= offset + limit
         })
 
     return return_api(results)
+
+
+@api.route('/discovery/browse', methods=['GET'])
+@error_handler
+@auth
+def api_discovery_browse():
+    section = extract_key(request, 'section', False) or 'comic'
+    if section not in ('comic', 'manga'):
+        raise InvalidKeyValue('section', section)
+    offset = extract_key(request, 'offset', False) or 0
+    limit = extract_key(request, 'limit', False) or 30
+    if offset < 0:
+        raise InvalidKeyValue('offset', offset)
+    if limit < 1 or limit > 100:
+        raise InvalidKeyValue('limit', limit)
+    publisher = extract_key(request, 'publisher', False) or ''
+    decade = extract_key(request, 'decade', False) or ''
+    status = extract_key(request, 'status', False) or ''
+    original_language = extract_key(request, 'original_language', False) or ''
+    query = extract_key(request, 'q', False) or ''
+    sort = extract_key(request, 'sort', False) or 'trending'
+
+    # Current provider-backed Browse All support is deliberately conservative:
+    # ComicVine can back publisher/decade/status-ish summary browsing; MangaDex
+    # search metadata can back status/original language only once a true bounded
+    # catalog endpoint is added. Do not render fake Character or Genre filters.
+    if section == 'comic':
+        result = run(ComicVine().browse_discover_volumes(
+            section=section,
+            query=query,
+            publisher=publisher,
+            decade=decade,
+            sort=sort,
+            offset=offset,
+            limit=limit,
+        ))
+    else:
+        result = run(ComicVine().browse_discover_volumes(
+            section=section,
+            query=query,
+            decade=decade,
+            sort=sort,
+            offset=offset,
+            limit=limit,
+        ))
+        result['source_note'] = (
+            'Manga Browse All uses current ComicVine manga records for bounded '
+            'catalog browsing. MangaDex status/original-language filters are '
+            'deferred until a non-misleading MangaDex catalog index exists.'
+        )
+    for item in result.get('items', []):
+        item.pop('cover', None)
+    return return_api(result)
+
+
+@api.route('/discovery/capabilities', methods=['GET'])
+@error_handler
+@auth
+def api_discovery_capabilities():
+    section = extract_key(request, 'section', False) or 'comic'
+    if section == 'comic':
+        return return_api({
+            'section': 'comic',
+            'filters': ['publisher', 'decade', 'status'],
+            'deferred_filters': ['character', 'genre', 'creator', 'imprint', 'format'],
+            'shelves': ['recently-started', 'upcoming-series-launches', 'trending', 'browse-publishers', 'browse-by-decade', 'browse-all'],
+            'source_notes': {
+                'recently-started': 'ComicVine first known issue date, 12 month window.',
+                'upcoming': 'ComicVine future issue #1 records.',
+                'trending': 'ComicVine recently-updated order; not global popularity.',
+            },
+            'publishers': [
+                {'value': 'Marvel', 'label': 'Marvel'},
+                {'value': 'DC Comics', 'label': 'DC'},
+                {'value': 'Image', 'label': 'Image'},
+                {'value': 'Dark Horse', 'label': 'Dark Horse'},
+            ],
+            'decades': [
+                {'value': '2020', 'label': '2020s'},
+                {'value': '2010', 'label': '2010s'},
+                {'value': '2000', 'label': '2000s'},
+                {'value': '1990', 'label': '1990s'},
+            ],
+            'statuses': [{'value': 'active', 'label': 'Active/known'}, {'value': 'completed', 'label': 'Completed/known'}],
+        })
+    if section == 'manga':
+        return return_api({
+            'section': 'manga',
+            'filters': ['decade', 'status'],
+            'deferred_filters': ['publisher', 'character', 'genre', 'tag', 'demographic', 'original_language', 'author', 'artist', 'content_rating'],
+            'shelves': ['recently-started', 'recently-updated', 'browse-by-decade', 'browse-all'],
+            'source_notes': {
+                'recently-started': 'Current repository uses ComicVine manga records; richer MangaDex catalog filters wait for Phase 6 indexing.',
+                'recently-updated': 'ComicVine manga records ordered by provider activity.',
+            },
+            'decades': [
+                {'value': '2020', 'label': '2020s'},
+                {'value': '2010', 'label': '2010s'},
+                {'value': '2000', 'label': '2000s'},
+                {'value': '1990', 'label': '1990s'},
+            ],
+            'statuses': [{'value': 'known', 'label': 'Known'}],
+        })
+    raise InvalidKeyValue('section', section)
 
 
 @api.route('/discovery/story-arc/<int:arc_id>', methods=['GET'])

@@ -1,5 +1,15 @@
 import { z } from 'zod';
 
+export const DISCOVER_INITIAL_PAGE_SIZE = 30;
+export const DISCOVER_AUTOMATIC_PAGE_LIMIT = 3;
+export const RECENTLY_STARTED_MONTHS = 12;
+
+export const discoverySectionSchema = z.enum(['comic', 'manga']);
+export type DiscoverySection = z.infer<typeof discoverySectionSchema>;
+
+export const browseSortSchema = z.enum(['trending', 'title', 'year', 'recently_started', 'recently_updated']).default('trending').catch('trending');
+export type BrowseSort = z.infer<typeof browseSortSchema>;
+
 export const discoveryVolumeSchema = z.object({
   comicvine_id: z.number().int(),
   metadata_source: z.enum(['comicvine', 'mangadex']).optional(),
@@ -18,6 +28,12 @@ export const discoveryVolumeSchema = z.object({
   cover_date: z.string().optional(),
   date_added: z.string().nullable().optional(),
   volume_title: z.string().optional(),
+  status: z.string().nullable().optional(),
+  metadata_source_label: z.string().optional(),
+  source_note: z.string().optional(),
+  original_language: z.string().nullable().optional(),
+  demographic: z.string().nullable().optional(),
+  content_rating: z.string().nullable().optional(),
 }).passthrough();
 
 export type DiscoveryVolume = z.infer<typeof discoveryVolumeSchema>;
@@ -27,18 +43,43 @@ export const discoveryPageSchema = z.object({
   total: z.number().int().nonnegative(),
   offset: z.number().int().nonnegative(),
   page_size: z.number().int().positive(),
+  has_more: z.boolean().optional(),
+  source_note: z.string().optional(),
 });
 export type DiscoveryPage = Omit<z.infer<typeof discoveryPageSchema>, 'items'> & { items: DiscoveryVolume[] };
 
-export const storyArcSchema = z.object({
-  id: z.number().int(), name: z.string(), issue_count: z.number().int().optional(),
-  cover_url: z.string().optional(), description: z.string().optional(),
-}).passthrough();
-export type StoryArc = z.infer<typeof storyArcSchema>;
-export const storyArcDetailSchema = z.object({ volumes: z.array(discoveryVolumeSchema) });
-export type StoryArcDetail = z.infer<typeof storyArcDetailSchema>;
-export type DiscoveryType = 'upcoming' | 'new' | 'story-arcs';
-export type DiscoverySection = 'comic' | 'manga';
+export const discoveryFacetSchema = z.object({
+  value: z.string(),
+  label: z.string(),
+  count: z.number().int().nonnegative().optional(),
+});
+export type DiscoveryFacet = z.infer<typeof discoveryFacetSchema>;
+
+export const discoveryCapabilitiesSchema = z.object({
+  section: discoverySectionSchema,
+  filters: z.array(z.enum(['publisher', 'decade', 'status', 'original_language', 'demographic', 'content_rating', 'year'])),
+  deferred_filters: z.array(z.string()),
+  shelves: z.array(z.string()),
+  source_notes: z.record(z.string()),
+  publishers: z.array(discoveryFacetSchema).optional(),
+  decades: z.array(discoveryFacetSchema).optional(),
+  statuses: z.array(discoveryFacetSchema).optional(),
+  original_languages: z.array(discoveryFacetSchema).optional(),
+});
+export type DiscoveryCapabilities = z.infer<typeof discoveryCapabilitiesSchema>;
+
+export type DiscoveryType = 'upcoming' | 'new' | 'trending' | 'recently-updated';
+
+export interface BrowseFilters {
+  section: DiscoverySection;
+  q?: string;
+  publisher?: string;
+  decade?: string;
+  status?: string;
+  original_language?: string;
+  year?: string;
+  sort: BrowseSort;
+}
 
 export function filterDiscoveryVolumes<T extends { already_added?: number | null }>(volumes: T[], hideAlreadyAdded: boolean): T[] {
   return hideAlreadyAdded ? volumes.filter((volume) => volume.already_added == null) : volumes;
@@ -65,7 +106,7 @@ export interface DiscoveryAddSearch {
   source: 'comicvine' | 'mangadex';
   id: string;
   title: string;
-  metadata_language?: string;
+  language?: string;
 }
 
 export function getDiscoveryAddSearch(volume: DiscoveryVolume, section: DiscoverySection): DiscoveryAddSearch {
@@ -77,4 +118,18 @@ export function getDiscoveryAddSearch(volume: DiscoveryVolume, section: Discover
     title: volume.title,
     ...(volume.metadata_language ? { language: volume.metadata_language } : {}),
   };
+}
+
+export function getDiscoveryCardKey(volume: DiscoveryVolume): string {
+  return `${volume.metadata_source ?? 'comicvine'}:${volume.metadata_id ?? volume.comicvine_id}`;
+}
+
+export function dedupeDiscoveryItems(items: DiscoveryVolume[]): DiscoveryVolume[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = getDiscoveryCardKey(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

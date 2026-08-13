@@ -201,7 +201,7 @@
   border: none;
   cursor: pointer;
   background: var(--accent);
-  color: #000;
+  color: var(--surface);
   transition: opacity 0.15s;
 }
 .overlayAddBtn:hover {
@@ -624,3 +624,25 @@
     gap: 0.75rem;
   }
 }
+
+
+.searchFirst { display: grid; gap: var(--space-2); padding: var(--space-3); background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-xl); }
+.searchRow { display: flex; align-items: center; gap: var(--space-3); }
+.discoverMain { display: grid; gap: var(--space-5); }
+.shelf { display: grid; gap: var(--space-3); }
+.shelfHeader { display: flex; align-items: end; justify-content: space-between; gap: var(--space-3); }
+.shelfHeader h2, .shelfHeader p { margin: 0; }
+.shelfHeader h2 { color: var(--text-strong); font-size: 1.1rem; }
+.shelfHeader p, .sourceFinePrint { color: var(--text-dim); font-size: 0.85rem; }
+.viewAllLink { color: var(--accent); font-weight: 800; text-decoration: none; }
+.shelfScroller { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 180px); gap: var(--space-3); overflow-x: auto; padding-bottom: var(--space-2); }
+.browsePanel { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-raised); }
+.shortcutGroup { display: grid; gap: var(--space-2); }
+.shortcutGroup h3 { margin: 0; font-size: 0.9rem; color: var(--text); }
+.shortcutChips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.modeChip { display: inline-flex; align-items: center; min-height: 2rem; padding: 0.25rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text-dim); text-decoration: none; font-weight: 750; }
+.filters { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) 0; }
+.filterInput, .select { min-height: 2.35rem; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-raised); color: var(--text); padding: 0 0.7rem; }
+.filterChip { border: 1px solid var(--accent); border-radius: var(--radius-lg); background: rgb(var(--accent-rgb) / 12%); color: var(--accent); padding: 0.35rem 0.65rem; cursor: pointer; }
+.loadMoreWrap { display: flex; justify-content: center; min-height: 4rem; align-items: center; color: var(--text-dim); }
+@media (max-width: 700px) { .searchRow, .shelfHeader { align-items: stretch; flex-direction: column; } .shelfScroller { grid-auto-columns: minmax(140px, 46vw); } .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); } }

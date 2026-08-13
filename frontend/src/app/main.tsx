@@ -1,8 +1,9 @@
 import '../index.css';
 import { createRoot } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { routeTree } from './router';
+import { queryClient } from './query-client';
 import { DEFAULT_THEME } from '@/platform/shell/store';
 import { applyRuntimeDocumentUrls, registerServiceWorker, runtimeConfig } from './runtime-config';
 
@@ -12,15 +13,6 @@ void registerServiceWorker();
 // Theme initialization — preserve legacy browser setting, otherwise use the premium Kapowarr default.
 const savedTheme = localStorage.getItem('hero_theme') || localStorage.getItem('kapowarr-theme');
 document.documentElement.dataset.theme = savedTheme || DEFAULT_THEME;
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
 
 const router = createRouter({
   routeTree,

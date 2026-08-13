@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import run
-from datetime import datetime
+from datetime import datetime, timezone
+from functools import lru_cache
 from hashlib import sha256
 from hmac import compare_digest, new as hmac_new
 from io import BytesIO
 import os
+import re
 from os import makedirs, remove
 from secrets import token_hex
 from sqlite3 import IntegrityError, OperationalError
@@ -82,6 +84,133 @@ def return_api(
 ) -> Tuple[Dict[str, Any], int]:
     return {'error': error, 'result': result}, code
 
+
+
+_CHANGELOG_HEADING_RE = re.compile(
+    r'^##\s+(?:\[(?P<bracket>[^\]]+)\]|(?P<plain>[^-]+?))'
+    r'(?:\s+-\s+(?P<date>\d{4}-\d{2}-\d{2}))?\s*$'
+)
+_CHANGELOG_SECTION_RE = re.compile(r'^###\s+(?P<title>.+?)\s*$')
+_CHANGELOG_VERSION_ID_RE = re.compile(r'[^a-zA-Z0-9._-]+')
+_KNOWN_CHANGELOG_SECTIONS = ('Added', 'Changed', 'Fixed', 'Removed', 'Security')
+
+
+def _changelog_anchor(version: str) -> str:
+    value = version.strip().lower().replace('[', '').replace(']', '')
+    return _CHANGELOG_VERSION_ID_RE.sub('-', value).strip('-') or 'version'
+
+
+def _empty_changelog_payload(error: Union[str, None] = None) -> Dict[str, Any]:
+    return {
+        'current_version': get_about_data().get('version'),
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'entries': [],
+        'error': error,
+    }
+
+
+@lru_cache(1)
+def _read_packaged_changelog() -> Dict[str, Any]:
+    changelog_path = Path(folder_path('CHANGELOG.md'))
+    try:
+        text = changelog_path.read_text(encoding='utf-8')
+    except OSError:
+        return _empty_changelog_payload('CHANGELOG.md could not be read')
+
+    entries: List[Dict[str, Any]] = []
+    current: Union[Dict[str, Any], None] = None
+    current_section: Union[str, None] = None
+    try:
+        for raw_line in text.splitlines():
+            line = raw_line.rstrip()
+            heading = _CHANGELOG_HEADING_RE.match(line)
+            if heading:
+                version = (heading.group('bracket') or heading.group('plain') or '').strip()
+                current = {
+                    'version': version,
+                    'date': heading.group('date'),
+                    'anchor': _changelog_anchor(version),
+                    'sections': [],
+                }
+                entries.append(current)
+                current_section = None
+                continue
+
+            section = _CHANGELOG_SECTION_RE.match(line)
+            if section and current is not None:
+                current_section = section.group('title').strip()
+                current['sections'].append({
+                    'title': current_section,
+                    'items': [],
+                })
+                continue
+
+            if current is None or current_section is None:
+                continue
+            stripped = line.strip()
+            if stripped.startswith('- '):
+                current['sections'][-1]['items'].append(stripped[2:].strip())
+            elif stripped and current['sections'][-1]['items']:
+                current['sections'][-1]['items'][-1] += '\n' + stripped
+
+        # Preserve known sections even when currently empty by leaving the parsed
+        # section order intact; malformed/unknown section names are returned as-is.
+        return {
+            'current_version': get_about_data().get('version'),
+            'generated_at': datetime.now(timezone.utc).isoformat(),
+            'entries': entries,
+            'error': None if entries else 'No version entries found in CHANGELOG.md',
+        }
+    except Exception:
+        LOGGER.exception('Failed to parse CHANGELOG.md')
+        return _empty_changelog_payload('CHANGELOG.md could not be parsed')
+
+
+def _dashboard_summary() -> Dict[str, Any]:
+    comic_stats = Library.get_stats('comic')
+    manga_stats = Library.get_stats('manga')
+    released_issues = int(comic_stats.get('released_issues') or 0) + int(manga_stats.get('released_issues') or 0)
+    downloaded_released_issues = (
+        int(comic_stats.get('downloaded_released_issues') or 0)
+        + int(manga_stats.get('downloaded_released_issues') or 0)
+    )
+    completion_percentage = (
+        round((downloaded_released_issues / released_issues) * 100, 1)
+        if released_issues else None
+    )
+    active_searches = sum(
+        1 for task in TaskHandler().get_all()
+        if task.get('action') in ('auto_search', 'auto_search_issue', 'search_all')
+    )
+    queue = DownloadHandler().get_all()
+    return {
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'library': {
+            'released_issues': released_issues,
+            'downloaded_released_issues': downloaded_released_issues,
+            'completion_percentage': completion_percentage,
+            'missing_monitored': int(comic_stats.get('missing_monitored') or 0) + int(manga_stats.get('missing_monitored') or 0),
+            'upcoming_monitored': int(comic_stats.get('upcoming_monitored') or 0) + int(manga_stats.get('upcoming_monitored') or 0),
+            'mismatches': int(comic_stats.get('mismatches') or 0) + int(manga_stats.get('mismatches') or 0),
+            'sections': {
+                'comic': {
+                    'missing_monitored': int(comic_stats.get('missing_monitored') or 0),
+                    'upcoming_monitored': int(comic_stats.get('upcoming_monitored') or 0),
+                    'mismatches': int(comic_stats.get('mismatches') or 0),
+                },
+                'manga': {
+                    'missing_monitored': int(manga_stats.get('missing_monitored') or 0),
+                    'upcoming_monitored': int(manga_stats.get('upcoming_monitored') or 0),
+                    'mismatches': int(manga_stats.get('mismatches') or 0),
+                },
+            },
+        },
+        'operations': {
+            'active_downloads': len(queue),
+            'failed_downloads': get_download_history_count(state='failed'),
+            'active_searches': active_searches,
+        },
+    }
 
 def _validate_saved_filter_section(section: Any) -> str:
     section = section or 'comic'
@@ -629,6 +758,20 @@ def api_public():
 
     return return_api(result)
 
+
+
+@api.route('/dashboard/summary', methods=['GET'])
+@error_handler
+@auth
+def api_dashboard_summary():
+    return return_api(_dashboard_summary())
+
+
+@api.route('/changelog', methods=['GET'])
+@error_handler
+@auth
+def api_changelog():
+    return return_api(_read_packaged_changelog())
 
 # =====================
 # Tasks

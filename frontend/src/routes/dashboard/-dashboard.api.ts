@@ -1,15 +1,39 @@
 import { queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { apiClient, readJson } from '@/app/api-client';
-import type { DashboardSearchTask, NavBadges, VolumeCard } from './-dashboard.types';
+import type { DashboardSearchTask, DashboardSummary, NavBadges, VolumeCard } from './-dashboard.types';
 
 const volumeStatsSchema = z.object({
   volumes: z.number().int().nonnegative(), monitored: z.number().int().nonnegative(), unmonitored: z.number().int().nonnegative(),
   issues: z.number().int().nonnegative(), downloaded_issues: z.number().int().nonnegative(),
+  released_issues: z.number().int().nonnegative().optional(), downloaded_released_issues: z.number().int().nonnegative().optional(),
+  completion_percentage: z.number().nullable().optional(),
   missing_monitored: z.number().int().nonnegative(), upcoming_monitored: z.number().int().nonnegative(),
   unmonitored_issues: z.number().int().nonnegative(), failed_downloads: z.number().int().nonnegative(),
   active_downloads: z.number().int().nonnegative(), mismatches: z.number().int().nonnegative(),
   files: z.number().int().nonnegative().optional(), total_file_size: z.number().nonnegative().optional(),
+});
+const dashboardSectionSummarySchema = z.object({
+  missing_monitored: z.number().int().nonnegative(),
+  upcoming_monitored: z.number().int().nonnegative(),
+  mismatches: z.number().int().nonnegative(),
+});
+const dashboardSummarySchema = z.object({
+  generated_at: z.string(),
+  library: z.object({
+    released_issues: z.number().int().nonnegative(),
+    downloaded_released_issues: z.number().int().nonnegative(),
+    completion_percentage: z.number().nullable(),
+    missing_monitored: z.number().int().nonnegative(),
+    upcoming_monitored: z.number().int().nonnegative(),
+    mismatches: z.number().int().nonnegative(),
+    sections: z.object({ comic: dashboardSectionSummarySchema, manga: dashboardSectionSummarySchema }),
+  }),
+  operations: z.object({
+    active_downloads: z.number().int().nonnegative(),
+    failed_downloads: z.number().int().nonnegative(),
+    active_searches: z.number().int().nonnegative(),
+  }),
 });
 const rawVolumeEntrySchema = z.object({ id: z.number().int(), title: z.string(), year: z.number().nullable(), publisher: z.string().nullable(), issue_count: z.number().int(), issues_downloaded: z.number().int() });
 const volumePageSchema = z.object({
@@ -65,6 +89,20 @@ interface HistoryEntry {
   source: string;
   downloaded_at: number;
   state: string;
+}
+
+export const DASHBOARD_SUMMARY_KEY = ['dashboard', 'summary'] as const;
+export const DASHBOARD_SUMMARY_STALE_TIME = 5 * 60_000;
+export const DASHBOARD_SUMMARY_GC_TIME = 30 * 60_000;
+
+export function dashboardSummaryQueryOptions() {
+  return queryOptions({
+    queryKey: DASHBOARD_SUMMARY_KEY,
+    queryFn: () => apiClient.get('dashboard/summary').then((r) => readJson<DashboardSummary>(r, dashboardSummarySchema)),
+    staleTime: DASHBOARD_SUMMARY_STALE_TIME,
+    gcTime: DASHBOARD_SUMMARY_GC_TIME,
+    refetchOnMount: false,
+  });
 }
 
 export function navBadgesQueryOptions() {

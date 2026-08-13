@@ -93,7 +93,7 @@ export function Sidebar() {
         })}
       </nav>
       <footer className={styles.footer}>
-        <span className={styles.footerVersion}>Kapowarr {about?.version ?? '…'}</span>
+        <Link to="/changelog" className={styles.footerVersion}>Kapowarr {about?.version ?? '…'}</Link>
         <Link to="/system/status">System status</Link>
       </footer>
     </aside>

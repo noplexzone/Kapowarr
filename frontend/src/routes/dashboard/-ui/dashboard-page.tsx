@@ -4,16 +4,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Card, Badge, Button, Progress } from '@/components/primitives';
 import { useSocketEvent } from '@/platform/socketio/socket';
-import { PageHeader, StatusBanner } from '@/components/patterns';
+import { StatusBanner } from '@/components/patterns';
 import {
-  comicStatsQueryOptions,
-  mangaStatsQueryOptions,
+  DASHBOARD_SUMMARY_KEY,
+  dashboardSummaryQueryOptions,
   recentlyAddedQueryOptions,
   dashboardActiveSearchesQueryOptions,
   dashboardQueueQueryOptions,
   dashboardHistoryQueryOptions,
 } from '../-dashboard.api';
-import type { DashboardSearchTask, VolumeCard, VolumeStats } from '../-dashboard.types';
+import type { DashboardSearchTask, DashboardSummary, VolumeCard } from '../-dashboard.types';
 import styles from './dashboard-page.module.css';
 
 interface QueueSummaryEntry {
@@ -28,55 +28,65 @@ interface QueueSummaryEntry {
 
 export function DashboardPage() {
   const queryClient = useQueryClient();
-  const comicStatsQuery = useQuery(comicStatsQueryOptions());
-  const mangaStatsQuery = useQuery(mangaStatsQueryOptions());
+  const summaryQuery = useQuery(dashboardSummaryQueryOptions());
   const comicRecentQuery = useQuery(recentlyAddedQueryOptions('comic'));
   const mangaRecentQuery = useQuery(recentlyAddedQueryOptions('manga'));
   const activeSearchesQuery = useQuery(dashboardActiveSearchesQueryOptions());
   const queueQuery = useQuery(dashboardQueueQueryOptions());
   const historyQuery = useQuery(dashboardHistoryQueryOptions());
-  const comicStats = comicStatsQuery.data;
-  const mangaStats = mangaStatsQuery.data;
+  const summary = summaryQuery.data;
   const comicRecent = comicRecentQuery.data;
   const mangaRecent = mangaRecentQuery.data;
   const activeSearchesData = activeSearchesQuery.data;
   const queueData = queueQuery.data;
   const historyData = historyQuery.data;
-  const dashboardQueries = [comicStatsQuery, mangaStatsQuery, comicRecentQuery, mangaRecentQuery, activeSearchesQuery, queueQuery, historyQuery];
+  const dashboardQueries = [summaryQuery, comicRecentQuery, mangaRecentQuery, activeSearchesQuery, queueQuery, historyQuery];
   const hasError = dashboardQueries.some((query) => query.isError);
   const isRefreshing = dashboardQueries.some((query) => query.isFetching);
+  const isSummaryUpdating = summaryQuery.isFetching && Boolean(summary);
 
   const activeSearches = Array.isArray(activeSearchesData) ? activeSearchesData : [];
   const queueItems = Array.isArray(queueData) ? queueData as QueueSummaryEntry[] : [];
   const historyEntries = (historyData?.entries ?? []).slice(0, 6);
-  const missingTotal = sumStat(comicStats, 'missing_monitored') + sumStat(mangaStats, 'missing_monitored');
-  const upcomingTotal = sumStat(comicStats, 'upcoming_monitored') + sumStat(mangaStats, 'upcoming_monitored');
-  const failedDownloads = sumStat(comicStats, 'failed_downloads') + sumStat(mangaStats, 'failed_downloads');
-  const activeDownloads = Math.max(sumStat(comicStats, 'active_downloads'), sumStat(mangaStats, 'active_downloads'), queueItems.length);
-  const totalIssues = sumStat(comicStats, 'issues') + sumStat(mangaStats, 'issues');
-  const downloadedIssues = sumStat(comicStats, 'downloaded_issues') + sumStat(mangaStats, 'downloaded_issues');
-  const completionPercent = totalIssues > 0 ? Math.round((downloadedIssues / totalIssues) * 100) : 0;
+  const missingTotal = summary?.library.missing_monitored ?? null;
+  const upcomingTotal = summary?.library.upcoming_monitored ?? null;
+  const failedDownloads = summary?.operations.failed_downloads ?? null;
+  const activeDownloads = summary ? Math.max(summary.operations.active_downloads, queueItems.length) : null;
+  const activeSearchCount = summary ? Math.max(summary.operations.active_searches, activeSearches.length) : null;
+  const mismatchTotal = summary?.library.mismatches ?? null;
+  const totalIssues = summary?.library.released_issues ?? 0;
+  const downloadedIssues = summary?.library.downloaded_released_issues ?? 0;
+  const completionPercent = Math.round(summary?.library.completion_percentage ?? 0);
 
-  const refreshLiveDashboard = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['system', 'tasks'] });
-    void queryClient.invalidateQueries({ queryKey: ['activity', 'queue'] });
-    void queryClient.invalidateQueries({ queryKey: ['activity', 'history'] });
-    void queryClient.invalidateQueries({ queryKey: ['activity', 'search-history'] });
-    void queryClient.invalidateQueries({ queryKey: ['volumes', 'stats'] });
+  const refreshLiveOperations = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['system', 'tasks', 'dashboard', 'active-searches'] });
+    void queryClient.invalidateQueries({ queryKey: ['activity', 'queue', 'dashboard'] });
+  }, [queryClient]);
+
+  const refreshCompletedWork = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: DASHBOARD_SUMMARY_KEY });
+    void queryClient.invalidateQueries({ queryKey: ['activity', 'queue', 'dashboard'] });
+    void queryClient.invalidateQueries({ queryKey: ['activity', 'history', 'dashboard'] });
     void queryClient.invalidateQueries({ queryKey: ['volumes', 'recently-added'] });
     void queryClient.invalidateQueries({ queryKey: ['nav', 'badges'] });
   }, [queryClient]);
 
-  useSocketEvent('task_added', refreshLiveDashboard);
-  useSocketEvent('task_status', refreshLiveDashboard);
-  useSocketEvent('task_ended', refreshLiveDashboard);
-  useSocketEvent('queue_added', refreshLiveDashboard);
-  useSocketEvent('queue_status', refreshLiveDashboard);
-  useSocketEvent('queue_ended', refreshLiveDashboard);
-  useSocketEvent('downloaded_status', refreshLiveDashboard);
+  const refreshDownloadedStatus = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: DASHBOARD_SUMMARY_KEY });
+    void queryClient.invalidateQueries({ queryKey: ['volumes', 'recently-added'] });
+    void queryClient.invalidateQueries({ queryKey: ['nav', 'badges'] });
+  }, [queryClient]);
+
+  useSocketEvent('task_added', refreshLiveOperations);
+  useSocketEvent('task_status', refreshLiveOperations);
+  useSocketEvent('task_ended', refreshCompletedWork);
+  useSocketEvent('queue_added', refreshLiveOperations);
+  useSocketEvent('queue_status', refreshLiveOperations);
+  useSocketEvent('queue_ended', refreshCompletedWork);
+  useSocketEvent('downloaded_status', refreshDownloadedStatus);
 
   const refreshHome = () => Promise.all([
-    ['volumes', 'stats'],
+    DASHBOARD_SUMMARY_KEY,
     ['volumes', 'recently-added'],
     ['system', 'tasks', 'dashboard', 'active-searches'],
     ['activity', 'queue', 'dashboard'],
@@ -85,15 +95,12 @@ export function DashboardPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader
-        title="Home"
-        description="Kapowarr command center for library health, wanted triage, live tasks, and recent shelves."
-        actions={
-          <Button variant="secondary" disabled={isRefreshing} onClick={refreshHome}>
-            {isRefreshing ? 'Refreshing…' : 'Refresh Home'}
-          </Button>
-        }
-      />
+      <div className={styles.topActions}>
+        {isSummaryUpdating && <span className={styles.updatingIndicator}>Updating KPIs…</span>}
+        <Button variant="secondary" disabled={isRefreshing} onClick={refreshHome}>
+          {isRefreshing ? 'Refreshing…' : 'Refresh Home'}
+        </Button>
+      </div>
       {hasError && (
         <StatusBanner error>
           Some Home data could not be loaded. Preserve successful sections while retrying stale panels.
@@ -120,20 +127,20 @@ export function DashboardPage() {
         </div>
         <Card className={styles.heroPanel}>
           <div className={styles.panelLabel}>Library completion</div>
-          <div className={styles.completionValue}>{completionPercent}%</div>
+          <div className={styles.completionValue}>{summary ? `${completionPercent}%` : <MetricSkeleton label="Library completion" />}</div>
           <Progress value={completionPercent} tone={completionPercent >= 90 ? 'success' : 'accent'} aria-label="Library completion" />
           <dl className={styles.heroStats}>
             <div>
               <dt>Downloaded</dt>
-              <dd>{formatCount(downloadedIssues)}</dd>
+              <dd>{summary ? formatCount(downloadedIssues) : <MetricSkeleton label="Downloaded released issues" />}</dd>
             </div>
             <div>
-              <dt>Tracked</dt>
-              <dd>{formatCount(totalIssues)}</dd>
+              <dt>Released</dt>
+              <dd>{summary ? formatCount(totalIssues) : <MetricSkeleton label="Released issues" />}</dd>
             </div>
             <div>
-              <dt>Wanted</dt>
-              <dd>{formatCount(missingTotal)}</dd>
+              <dt>Missing</dt>
+              <dd>{summary ? formatCount(missingTotal ?? 0) : <MetricSkeleton label="Missing monitored" />}</dd>
             </div>
           </dl>
         </Card>
@@ -142,8 +149,9 @@ export function DashboardPage() {
       <div className={styles.dashboardBody}>
         <div className={styles.mainColumn}>
           <div className={styles.commandGrid}>
-            <MetricCard label="Missing monitored" value={missingTotal} meta="Issues ready for wanted triage" tone="danger" to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
-            <MetricCard label="Upcoming monitored" value={upcomingTotal} meta="Recently released or expected soon" tone="info" to="/comics" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
+            <MetricCard label="Missing monitored" value={missingTotal} meta="Released monitored missing issues" tone="danger" to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
+            <MetricCard label="Upcoming monitored" value={upcomingTotal} meta="Monitored issues not released yet" tone="info" to="/comics" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
+            <MetricCard label="Mismatches" value={mismatchTotal} meta="Import records needing review" tone="warning" to="/activity/mismatches" search={{ section: 'comic' }} />
             <MetricCard label="Active downloads" value={activeDownloads} meta="Queue items moving now" tone="success" to="/activity/queue" />
             <MetricCard label="Failed downloads" value={failedDownloads} meta="History entries needing recovery" tone="warning" to="/activity/history" search={{ page: 1, status: 'failed', section: 'all' }} />
           </div>
@@ -160,12 +168,12 @@ export function DashboardPage() {
             </Link>
           </div>
           <Card className={styles.triageCard}>
-            <TriageRow label="Comics missing" value={comicStats?.missing_monitored ?? null} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
-            <TriageRow label="Manga missing" value={mangaStats?.missing_monitored ?? null} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
-            <TriageRow label="Comics unmonitored" value={comicStats?.unmonitored_issues ?? null} to="/comics" search={{ status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
-            <TriageRow label="Manga unmonitored" value={mangaStats?.unmonitored_issues ?? null} to="/manga" search={{ status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
-            <TriageRow label="Comic mismatches" value={comicStats?.mismatches ?? null} to="/activity/mismatches" search={{ section: 'comic' }} />
-            <TriageRow label="Manga mismatches" value={mangaStats?.mismatches ?? null} to="/activity/mismatches" search={{ section: 'manga' }} />
+            <TriageRow label="Comics missing" value={sectionMetric(summary, 'comic', 'missing_monitored')} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
+            <TriageRow label="Manga missing" value={sectionMetric(summary, 'manga', 'missing_monitored')} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
+            <TriageRow label="Comics upcoming" value={sectionMetric(summary, 'comic', 'upcoming_monitored')} to="/comics" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
+            <TriageRow label="Manga upcoming" value={sectionMetric(summary, 'manga', 'upcoming_monitored')} to="/manga" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
+            <TriageRow label="Comic mismatches" value={sectionMetric(summary, 'comic', 'mismatches')} to="/activity/mismatches" search={{ section: 'comic' }} />
+            <TriageRow label="Manga mismatches" value={sectionMetric(summary, 'manga', 'mismatches')} to="/activity/mismatches" search={{ section: 'manga' }} />
           </Card>
         </section>
 
@@ -180,6 +188,7 @@ export function DashboardPage() {
             </Link>
           </div>
           <Card className={styles.sectionCard}>
+            <MetricCard label="Active searches" value={activeSearchCount} meta="Search tasks running or queued" tone="info" to="/activity/search-history" search={{ page: 1 }} />
             <OperationList
               title="Active Searches"
               empty="No active searches"
@@ -258,7 +267,7 @@ function MetricCard({ label, value, meta, tone, to, search }: { label: string; v
   return (
     <Link to={to} search={search as never} className={styles.metricLink}>
       <Card className={`${styles.metricCard} ${styles[`metric-${tone}`]}`}>
-        <span className={styles.metricValue}>{value ?? '—'}</span>
+        <span className={styles.metricValue}>{value === null ? <MetricSkeleton label={label} /> : value}</span>
         <span className={styles.metricLabel}>{label}</span>
         <span className={styles.metricMeta}>{meta}</span>
       </Card>
@@ -352,9 +361,12 @@ function progressLabel(entry: QueueSummaryEntry) {
   return 'Download queued';
 }
 
-function sumStat(stats: VolumeStats | undefined, key: keyof VolumeStats) {
-  const value = stats?.[key];
-  return typeof value === 'number' ? value : 0;
+function sectionMetric(summary: DashboardSummary | undefined, section: 'comic' | 'manga', key: keyof DashboardSummary['library']['sections']['comic']) {
+  return summary?.library.sections[section][key] ?? null;
+}
+
+function MetricSkeleton({ label }: { label: string }) {
+  return <span className={styles.metricSkeleton} aria-label={`Loading ${label}`} />;
 }
 
 function formatCount(value: number) {

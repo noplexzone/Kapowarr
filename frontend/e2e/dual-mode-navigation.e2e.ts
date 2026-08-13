@@ -20,6 +20,28 @@ async function mockApi(route: Route) {
   if (pathname.endsWith('/api/public')) result = { authentication_method: 0 };
   else if (pathname.endsWith('/api/auth')) result = { api_key: 'browser-test-key' };
   else if (pathname.endsWith('/api/nav/badges')) result = { volumes: 3, comics: 2, manga: 1, queue: 1, library_import: 0, mismatch: 1 };
+  else if (pathname.endsWith('/api/system/about')) result = { version: '1.6.0', python_version: '3.13.5', database_version: '33', platform: 'test' };
+  else if (pathname.endsWith('/api/changelog')) result = {
+    current_version: '1.6.0',
+    generated_at: '2026-08-13T00:00:00Z',
+    error: null,
+    entries: [
+      { version: 'Unreleased', date: null, anchor: 'unreleased', sections: [{ title: 'Added', items: ['Future development note'] }] },
+      { version: '1.6.0', date: '2026-08-12', anchor: '1.6.0', sections: [{ title: 'Added', items: ['Cached dashboard summary'] }, { title: 'Fixed', items: ['Safe changelog markdown'] }] },
+    ],
+  };
+  else if (pathname.endsWith('/api/dashboard/summary')) result = {
+    generated_at: '2026-08-13T00:00:00Z',
+    library: {
+      released_issues: 100, downloaded_released_issues: 95, completion_percentage: 95,
+      missing_monitored: 11, upcoming_monitored: 2, mismatches: 1,
+      sections: {
+        comic: { missing_monitored: 8, upcoming_monitored: 1, mismatches: 1 },
+        manga: { missing_monitored: 3, upcoming_monitored: 1, mismatches: 0 },
+      },
+    },
+    operations: { active_downloads: 1, failed_downloads: 1, active_searches: 0 },
+  };
   else if (pathname.endsWith('/api/volumes/stats')) result = stats;
   else if (pathname.endsWith('/api/system/tasks/42')) {
     await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'TaskNotFound', result: null }) });
@@ -382,4 +404,36 @@ test('login branding honors a prefixed production base path', async ({ page }) =
   const logo = page.getByAltText('Kapowarr');
   await expect(logo).toBeVisible();
   await expect(logo).toHaveAttribute('src', /\/kapowarr\/static\/img\/favicon\.svg$/);
+});
+
+
+test('dashboard KPIs render from cache on return navigation and changelog supports direct anchors', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const dashboardRequests: string[] = [];
+  await page.route('**/api/**', async (route) => {
+    if (route.request().url().includes('/api/dashboard/summary')) dashboardRequests.push(route.request().url());
+    await mockApi(route);
+  });
+
+  await page.goto('/home');
+  await expect(page.getByRole('link', { name: /Missing monitored/ })).toBeVisible();
+  await expect(page.getByText('95%')).toBeVisible();
+  const firstVisitRequests = dashboardRequests.length;
+  expect(firstVisitRequests).toBe(1);
+
+  await page.getByRole('link', { name: 'Comics', exact: true }).click();
+  await expect(page).toHaveURL(/\/comics/);
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
+  await expect(page.getByRole('link', { name: /Missing monitored/ })).toBeVisible();
+  await expect(page.getByText('95%')).toBeVisible();
+  await expect(page.locator('[aria-label="Loading Missing monitored"]')).toHaveCount(0);
+  expect(dashboardRequests.length).toBe(firstVisitRequests);
+
+  await page.getByRole('link', { name: /Kapowarr 1\.6\.0/ }).click();
+  await expect(page).toHaveURL(/\/changelog/);
+  await expect(page.getByRole('heading', { name: 'Changelog' })).toBeVisible();
+  await page.locator('a[href="#1.6.0"]').click();
+  await expect(page).toHaveURL(/\/changelog#1\.6\.0/);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '1.6.0' })).toBeVisible();
 });

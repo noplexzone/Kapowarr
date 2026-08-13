@@ -13,6 +13,9 @@ export interface VolumeStats {
   unmonitored: number;
   issues: number;
   downloaded_issues: number;
+  released_issues?: number;
+  downloaded_released_issues?: number;
+  completion_percentage?: number | null;
   missing_monitored: number;
   upcoming_monitored: number;
   unmonitored_issues: number;
@@ -21,6 +24,27 @@ export interface VolumeStats {
   mismatches: number;
   files?: number;
   total_file_size?: number;
+}
+
+export interface DashboardSummary {
+  generated_at: string;
+  library: {
+    released_issues: number;
+    downloaded_released_issues: number;
+    completion_percentage: number | null;
+    missing_monitored: number;
+    upcoming_monitored: number;
+    mismatches: number;
+    sections: {
+      comic: { missing_monitored: number; upcoming_monitored: number; mismatches: number };
+      manga: { missing_monitored: number; upcoming_monitored: number; mismatches: number };
+    };
+  };
+  operations: {
+    active_downloads: number;
+    failed_downloads: number;
+    active_searches: number;
+  };
 }
 
 export interface VolumeCard {
@@ -32,7 +56,6 @@ export interface VolumeCard {
   issues_downloaded: number;
   section: 'comics' | 'manga';
 }
-
 
 export interface DashboardSearchProgress {
   processed_count?: number;

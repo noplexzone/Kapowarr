@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { useSuspenseQuery, useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
 import { systemAboutQueryOptions, downloadLogs, fetchLogTail } from '../-system.api';
 import styles from './system-status-page.module.css';
@@ -30,7 +31,7 @@ export function SystemStatusPage() {
       </div>
 
       <div className={styles.infoGrid}>
-        <InfoRow label="Version" value={about.version} />
+        <InfoRow label="Version" value={about.version} to="/changelog" />
         <InfoRow label="Python Version" value={about.python_version} />
         <InfoRow label="Database Version" value={about.database_version} />
         <InfoRow label="Platform" value={about.platform} />
@@ -50,11 +51,11 @@ export function SystemStatusPage() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string | undefined }) {
+function InfoRow({ label, value, to }: { label: string; value: string | number | undefined; to?: '/changelog' }) {
   return (
     <div className={styles.infoRow}>
       <span className={styles.infoLabel}>{label}</span>
-      <span className={styles.infoValue}>{value ?? '—'}</span>
+      {to ? <Link to={to} className={styles.infoValue}>{value ?? '—'}</Link> : <span className={styles.infoValue}>{value ?? '—'}</span>}
     </div>
   );
 }

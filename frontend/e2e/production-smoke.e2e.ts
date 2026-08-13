@@ -45,7 +45,24 @@ async function fulfillApi(route: Route) {
   else if (path.endsWith('/api/auth')) result = { api_key: 'browser-test-key' };
   else if (path.endsWith('/api/nav/badges')) {
     result = { volumes: 0, comics: 0, manga: 0, queue: 0, library_import: 0, mismatch: 0 };
-  } else if (path.endsWith('/api/volumes/stats')) result = emptyStats;
+  } else if (path.endsWith('/api/dashboard/summary')) result = {
+    generated_at: '2026-08-13T00:00:00Z',
+    library: {
+      released_issues: 0,
+      downloaded_released_issues: 0,
+      completion_percentage: null,
+      missing_monitored: 0,
+      upcoming_monitored: 0,
+      mismatches: 0,
+      sections: {
+        comic: { missing_monitored: 0, upcoming_monitored: 0, mismatches: 0 },
+        manga: { missing_monitored: 0, upcoming_monitored: 0, mismatches: 0 },
+      },
+    },
+    operations: { active_downloads: 0, failed_downloads: 0, active_searches: 0 },
+  };
+  else if (path.endsWith('/api/system/about')) result = { version: '1.6.0', python_version: '3.13.5', database_version: '33', platform: 'test' };
+  else if (path.endsWith('/api/volumes/stats')) result = emptyStats;
   else if (path.endsWith('/api/volumes')) result = { items: volumeItems, total: volumeItems.length, offset: 0, page_size: 60 };
   else if (path.endsWith('/api/activity/queue')) result = [];
   else if (path.endsWith('/api/activity/history')) result = [];
@@ -70,7 +87,7 @@ async function openDashboard(page: Page, width: number, height = 820) {
   await page.route('**/api/**', fulfillApi);
   await page.goto('/');
   await expect(page.locator('#root')).not.toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Run the collection, then browse it.' })).toBeVisible();
 }
 
 for (const width of [1280, 390, 320]) {

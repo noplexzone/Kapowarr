@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { setApiKey, clearApiKey, getUrlBase, readJson } from '@/app/api-client';
 import { z } from 'zod';
+import { prefetchDashboardSummary } from '@/app/query-client';
 
 const loginResultSchema = z.object({ api_key: z.string().min(1) });
 const publicSettingsSchema = z.object({ authentication_method: z.number().int() }).passthrough();
@@ -40,6 +41,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const data = await readJson(response, loginResultSchema);
     setApiKey(data.api_key);
     set({ apiKey: data.api_key, isAuthenticated: true });
+    prefetchDashboardSummary();
   },
 
   logout: () => {
@@ -64,6 +66,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (!keyResponse.ok) throw new Error('Failed to provision API key');
           const keyData = await readJson(keyResponse, loginResultSchema);
           setApiKey(keyData.api_key);
+          prefetchDashboardSummary();
           set({
             apiKey: keyData.api_key,
             isAuthenticated: true,
@@ -90,6 +93,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await readJson(checkRes, emptyObjectSchema);
         setApiKey(storedKey);
         set({ apiKey: storedKey, isAuthenticated: true, isChecking: false, initialized: true });
+        prefetchDashboardSummary();
       } else {
         clearApiKey();
         set({ apiKey: null, isAuthenticated: false, isChecking: false, initialized: true });

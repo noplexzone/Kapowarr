@@ -998,6 +998,12 @@ class Library:
                             AS issues_downloaded,
                         SUM(CASE WHEN i.monitored = 1 AND li.issue_id IS NOT NULL THEN 1 ELSE 0 END)
                             AS issues_downloaded_monitored,
+                        SUM(CASE WHEN i.date IS NOT NULL AND i.date <= date('now') THEN 1 ELSE 0 END)
+                            AS released_issue_count,
+                        SUM(CASE WHEN i.date IS NOT NULL AND i.date <= date('now') AND li.issue_id IS NOT NULL THEN 1 ELSE 0 END)
+                            AS released_issues_downloaded,
+                        SUM(CASE WHEN i.date IS NOT NULL AND i.date > date('now') THEN 1 ELSE 0 END)
+                            AS upcoming_issue_count,
                         MAX(CASE
                             WHEN i.monitored = 1
                                 AND (i.date IS NULL OR i.date <= date('now'))
@@ -1044,6 +1050,20 @@ class Library:
                     AS issues_downloaded,
                 COALESCE(issue_stats.issues_downloaded_monitored, 0)
                     AS issues_downloaded_monitored,
+                COALESCE(issue_stats.released_issue_count, 0)
+                    AS released_issue_count,
+                COALESCE(issue_stats.released_issues_downloaded, 0)
+                    AS released_issues_downloaded,
+                COALESCE(issue_stats.upcoming_issue_count, 0)
+                    AS upcoming_issue_count,
+                CASE
+                    WHEN COALESCE(issue_stats.released_issue_count, 0) = 0 THEN NULL
+                    ELSE ROUND(
+                        (CAST(COALESCE(issue_stats.released_issues_downloaded, 0) AS REAL)
+                        / issue_stats.released_issue_count) * 100,
+                        1
+                    )
+                END AS completion_percentage,
                 COALESCE(file_stats.total_size, 0) AS total_size,
                 issue_stats.latest_issue_date,
                 COUNT(*) OVER () AS _total_count
@@ -1141,6 +1161,35 @@ class Library:
             ]
 
         return volumes
+
+    @classmethod
+    def get_released_issue_stats(cls, section: str = 'comic') -> Dict[str, Union[int, float, None]]:
+        """Return released-issue completion metrics for a library section."""
+        row = get_db().execute("""
+            WITH linked_issues AS (
+                SELECT DISTINCT issue_id FROM issues_files
+            )
+            SELECT
+                COUNT(i.id) AS released_issues,
+                COUNT(li.issue_id) AS downloaded_released_issues
+            FROM issues i
+            INNER JOIN volumes vol ON vol.id = i.volume_id
+            INNER JOIN root_folders rf ON rf.id = vol.root_folder
+            LEFT JOIN linked_issues li ON li.issue_id = i.id
+            WHERE rf.section = :section
+                AND i.date IS NOT NULL
+                AND i.date <= date('now');
+        """, {'section': section}).fetchonedict() or {}
+        released = int(row.get('released_issues') or 0)
+        downloaded = int(row.get('downloaded_released_issues') or 0)
+        return {
+            'released_issues': released,
+            'downloaded_released_issues': downloaded,
+            'completion_percentage': (
+                round((downloaded / released) * 100, 1)
+                if released else None
+            ),
+        }
 
     @classmethod
     def get_stats(cls, section: str = 'comic') -> Dict[str, int]:
@@ -1241,6 +1290,7 @@ class Library:
             for folder, title, publisher in mismatch_rows
             if _is_mismatch_volume(folder or '', title or '', publisher or '')
         )
+        result.update(cls.get_released_issue_stats(section))
         return result
 
     @classmethod

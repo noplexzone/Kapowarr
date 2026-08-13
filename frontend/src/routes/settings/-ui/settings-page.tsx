@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tansta
 import { useBlocker } from '@tanstack/react-router';
 import type { ShouldBlockFn } from '@tanstack/react-router';
 import { Button, Notice } from '@/components/primitives';
+import { runtimeConfig } from '@/app/runtime-config';
 import { DEFAULT_THEME, useShellStore } from '@/platform/shell/store';
 import { settingsQueryOptions, updateSettings, SETTINGS_KEY, suwayomiSourcesQueryOptions } from '../-settings.api';
 import type { AllSettings } from '../-settings.types';
@@ -108,6 +109,7 @@ function SettingsPageContent({ category = 'general', onCategoryChange }: { categ
       <div className={styles.heroStats} aria-label="Settings status">
         <div><span>Active category</span><strong>{activeCategory.label}</strong></div>
         <div><span>Unsaved drafts</span><strong>{dirtyCount}</strong></div>
+        <div><span>About</span><strong><a href={runtimeConfig.assetUrl('changelog')} className={styles.aboutLink}>Changelog</a></strong></div>
       </div>
     </header>
     <div className={styles.toolbar}>

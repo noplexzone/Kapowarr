@@ -244,3 +244,6 @@
   .categoryButton,
   .categoryActive { min-height: 84px; }
 }
+
+.aboutLink { color: var(--accent); text-decoration: none; }
+.aboutLink:hover { text-decoration: underline; }

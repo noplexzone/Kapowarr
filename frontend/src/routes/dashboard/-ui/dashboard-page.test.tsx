@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 
 const source = readFileSync('src/routes/dashboard/-ui/dashboard-page.tsx', 'utf8');
+const apiSource = readFileSync('src/routes/dashboard/-dashboard.api.ts', 'utf8');
 
 it('links section mismatch metrics to the records counted by stats', () => {
   expect(source).toContain('label="Comic mismatches"');
-  expect(source).toContain('value={comicStats?.mismatches ?? null}');
+  expect(source).toContain("value={sectionMetric(summary, 'comic', 'mismatches')}");
   expect(source).toContain('label="Manga mismatches"');
-  expect(source).toContain('value={mangaStats?.mismatches ?? null}');
+  expect(source).toContain("value={sectionMetric(summary, 'manga', 'mismatches')}");
   expect(source).toContain('to="/activity/mismatches"');
   expect(source).not.toContain('label="Unmatched files"');
   expect(source).not.toContain('to="/import"');
@@ -22,6 +23,7 @@ it('orders live operation sections before history on the dashboard', () => {
   expect(activeDownloads).toBeGreaterThan(activeSearches);
   expect(recentActivity).toBeGreaterThan(activeDownloads);
   expect(source).toContain('dashboardActiveSearchesQueryOptions');
+  expect(source).toContain('dashboardSummaryQueryOptions');
   expect(source).toContain('searchTaskMeta(entry)');
 });
 
@@ -51,7 +53,7 @@ it('presents Home as a hybrid command center before shelf rows', () => {
   const triage = source.indexOf('Wanted / Missing Triage');
   const liveOps = source.indexOf('Live Operations');
   const shelves = source.indexOf('Recently Added');
-  expect(source).toContain('title="Home"');
+  expect(source).not.toContain('title="Home"');
   expect(hero).toBeGreaterThan(-1);
   expect(triage).toBeGreaterThan(hero);
   expect(liveOps).toBeGreaterThan(triage);
@@ -89,4 +91,32 @@ it('keeps the desktop dashboard in a compact fit-to-screen layout', () => {
   expect(styles).toContain('@media (min-width: 1181px) and (max-height: 930px)');
   expect(styles).toContain('aspect-ratio: 2 / 1.55');
   expect(styles).not.toContain('.coverGrid .coverCard:nth-child(n + 4)');
+});
+
+
+it('keeps cached summary data visible while background refreshes', () => {
+  expect(apiSource).toContain('DASHBOARD_SUMMARY_STALE_TIME');
+  expect(apiSource).toContain('DASHBOARD_SUMMARY_GC_TIME');
+  expect(apiSource).toContain('refetchOnMount: false');
+  expect(source).toContain('isSummaryUpdating');
+  expect(source).toContain('Updating KPIs…');
+  expect(source).toContain('MetricSkeleton');
+});
+
+it('targets invalidation so queue progress does not refetch the dashboard summary', () => {
+  const queueStatusHandler = source.slice(source.indexOf("useSocketEvent('queue_status'"), source.indexOf("useSocketEvent('queue_ended'"));
+  expect(queueStatusHandler).toContain('refreshLiveOperations');
+  expect(queueStatusHandler).not.toContain('DASHBOARD_SUMMARY_KEY');
+  expect(source).toContain("useSocketEvent('downloaded_status', refreshDownloadedStatus)");
+  expect(source).toContain("useSocketEvent('task_ended', refreshCompletedWork)");
+});
+
+it('links KPI cards to exact filtered destinations without Wanted label ambiguity', () => {
+  expect(source).toContain('label="Missing monitored"');
+  expect(source).toContain('Released monitored missing issues');
+  expect(source).toContain('label="Active downloads"');
+  expect(source).toContain('to="/activity/queue"');
+  expect(source).toContain('label="Failed downloads"');
+  expect(source).toContain("status: 'failed'");
+  expect(source).not.toContain('label="Wanted"');
 });

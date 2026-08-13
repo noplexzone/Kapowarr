@@ -17,6 +17,7 @@ import { AddPage, ExactAddReview } from '@/routes/add/-ui/add-page';
 import { ReaderPage } from '@/routes/reader/-ui/reader-page';
 import { MismatchPage } from '@/routes/mismatch/-ui/mismatch-page';
 import { SystemStatusPage } from '@/routes/system/-ui/system-status-page';
+import { ChangelogPage } from '@/routes/changelog/-ui/changelog-page';
 import { RouteError, RouteNotFound, RoutePending } from '@/components/route-state/route-state';
 import { volumeListQueryOptions } from '@/routes/comics/-comics.api';
 import { rootFoldersQueryOptions } from '@/routes/add/-add.api';
@@ -27,6 +28,7 @@ import { blocklistQueryOptions } from '@/routes/activity/blocklist/-blocklist.ap
 import { settingsQueryOptions } from '@/routes/settings/-settings.api';
 import type { SettingsCategory } from '@/routes/settings/-ui/settings-category-panels';
 import { systemAboutQueryOptions } from '@/routes/system/-system.api';
+import { changelogQueryOptions } from '@/routes/changelog/-changelog.api';
 import {
   activitySearchSchema,
   blocklistSearchSchema,
@@ -435,6 +437,15 @@ const readerRoute = createRoute({
   component: ReaderPage,
 });
 
+const changelogRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'changelog',
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(changelogQueryOptions());
+  },
+  component: ChangelogPage,
+});
+
 const systemRedirectRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'system',
@@ -489,6 +500,7 @@ export const routeTree = rootRoute.addChildren([
     volumeHistoryRoute,
     volumeSettingsRoute,
     readerRoute,
+    changelogRoute,
     systemRedirectRoute,
     systemStatusRoute,
     catchAllRoute,

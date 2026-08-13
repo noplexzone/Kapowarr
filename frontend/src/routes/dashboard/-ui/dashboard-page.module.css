@@ -1,7 +1,52 @@
 .page {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
+  gap: 0.75rem;
+}
+
+.topActions {
+  position: absolute;
+  z-index: 2;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.updatingIndicator {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.metricSkeleton {
+  display: inline-block;
+  width: 4.2rem;
+  max-width: 100%;
+  height: 0.82em;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--surface-raised) 70%, var(--border)) 0%,
+    color-mix(in srgb, var(--accent) 24%, var(--surface-raised)) 48%,
+    color-mix(in srgb, var(--surface-raised) 70%, var(--border)) 100%
+  );
+  background-size: 200% 100%;
+  animation: dashboard-skeleton 1.35s ease-in-out infinite;
+}
+
+@keyframes dashboard-skeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metricSkeleton { animation: none; }
 }
 
 .hero {
@@ -147,8 +192,8 @@
 
 .commandGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.65rem;
 }
 
 .metricLink,
@@ -164,8 +209,8 @@
   display: flex;
   flex-direction: column;
   gap: 0.22rem;
-  min-height: 5.75rem;
-  padding: 0.75rem 0.85rem;
+  min-height: 5.1rem;
+  padding: 0.65rem 0.75rem;
   overflow: hidden;
   border-top: 3px solid var(--accent);
   transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
@@ -222,7 +267,7 @@
 
 .dashboardBody {
   display: grid;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .mainColumn {
@@ -235,7 +280,7 @@
 .shelfGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .section {
@@ -486,15 +531,10 @@
 @media (min-width: 1181px) {
   .page {
     grid-template-areas:
-      "header"
       "hero"
       "dashboard";
     align-items: start;
     gap: 0.7rem;
-  }
-
-  .page > :first-child {
-    grid-area: header;
   }
 
   .hero {

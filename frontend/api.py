@@ -676,6 +676,7 @@ def api_logs():
 
 
 @api.route('/system/tasks', methods=['GET', 'POST'])
+@api.route('/tasks', methods=['GET'])
 @error_handler
 @auth
 def api_tasks():
@@ -1168,7 +1169,7 @@ def api_dashboard_summary():
         },
         'operations': {
             'active_downloads': len(DownloadHandler().get_all()),
-            'failed_downloads': get_download_history_count(success=False),
+            'failed_downloads': get_download_history_count(state='failed'),
             'active_searches': active_searches,
         },
         'sections': {
@@ -2981,13 +2982,24 @@ def api_metron_test():
     return return_api(safe_test_connection())
 
 
+@api.route('/metadata/metron/backfill/status', methods=['GET'])
+@error_handler
+@auth
+def api_metron_backfill_status():
+    from backend.features.metron_enrichment import get_backfill_status
+    return return_api(get_backfill_status())
+
+
 @api.route('/metadata/metron/backfill', methods=['POST'])
 @error_handler
 @auth
 def api_metron_backfill():
     from backend.features.tasks import MetronBackfillTask, TaskHandler
-    task_id = TaskHandler().add(MetronBackfillTask())
-    return return_api({'task_id': task_id}, code=202)
+    task_handler = TaskHandler()
+    if any(task.get('action') == 'metron_backfill' for task in task_handler.get_all()):
+        return return_api({'task_id': None, 'status': 'already_queued', 'duplicate': True}, code=202)
+    task_id = task_handler.add(MetronBackfillTask())
+    return return_api({'task_id': task_id, 'status': 'queued'}, code=202)
 
 
 @api.route('/metadata/metron/reviews', methods=['GET'])
@@ -2997,6 +3009,21 @@ def api_metron_reviews():
     from backend.features.metron_enrichment import get_review_candidates
     volume_id = request.values.get('volume_id')
     return return_api(get_review_candidates(int(volume_id) if volume_id else None))
+
+
+@api.route('/metadata/metron/reviews/<int:candidate_id>/select', methods=['POST'])
+@error_handler
+@auth
+def api_metron_review_select(candidate_id: int):
+    from backend.features.metron_enrichment import resolve_candidate
+    from backend.features.tasks import MetronEnrichmentTask, TaskHandler
+    result = resolve_candidate(candidate_id)
+    task_handler = TaskHandler()
+    volume_id = int(result['volume_id'])
+    if task_handler.task_for_volume_running(volume_id):
+        return return_api({**result, 'task_id': None, 'duplicate': True}, code=202)
+    task_id = task_handler.add(MetronEnrichmentTask(volume_id))
+    return return_api({**result, 'task_id': task_id, 'duplicate': False}, code=202)
 
 
 @api.route('/volumes/<int:id>/metadata/metron/refresh', methods=['POST'])

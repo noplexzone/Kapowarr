@@ -114,7 +114,7 @@ function SettingsPageContent({ category = 'general', onCategoryChange }: { categ
     <nav className={styles.categoryNav} aria-label="Settings categories">
       {filteredCategories.map(item => {
         const dirtyLabel = dirtyByCategory.get(item.id);
-        return <button key={item.id} type="button" aria-current={item.id === category ? 'page' : undefined} className={item.id === category ? styles.categoryActive : styles.categoryButton} onClick={() => selectCategory(item.id)}>
+        return <button key={item.id} type="button" className={item.id === category ? styles.categoryActive : styles.categoryButton} onClick={() => selectCategory(item.id)}>
           <span>{item.label}</span>
           <small>{item.description}</small>
           {dirtyLabel && <em>Unsaved {dirtyLabel}</em>}

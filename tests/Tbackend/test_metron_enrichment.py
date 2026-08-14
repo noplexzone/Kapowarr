@@ -1,11 +1,16 @@
+import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+from flask import Flask
 
 from backend.implementations.metron import (
     MetronAuthenticationError, MetronClient, MetronInvalidResponseError,
     MetronNotModifiedError, MetronRateLimitedError, parse_rate_limit_headers, safe_headers,
 )
-from backend.features.metron_enrichment import extract_terms
+from backend.features.metron_enrichment import MetronEnrichmentService, extract_terms, get_review_candidates, resolve_candidate
+from backend.internals.db import DB_SCHEMA, DBConnection, DBConnectionManager, close_db, commit, get_db, setup_db
 from backend.internals.settings import Constants, PublicSettingsValues, _settings_for_log
 
 
@@ -95,6 +100,56 @@ class MetronClientSecurityTests(unittest.TestCase):
         logged = _settings_for_log({'metron_api_token': 'TEST_METRON_TOKEN_REDACTED', 'host': '127.0.0.1'})
         self.assertEqual(logged['metron_api_token'], '[REDACTED]')
         self.assertNotIn('TEST_METRON_TOKEN_REDACTED', repr(logged))
+
+
+class MetronEnrichmentPersistenceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmpdir.name) / 'Kapowarr.db'
+        self.app = Flask(__name__)
+        DBConnectionManager.instances.clear()
+        DBConnection.file = str(self.db_path)
+        with self.app.app_context():
+            setup_db()
+            db = get_db()
+            db.execute("INSERT INTO root_folders(id, folder, section) VALUES(1, '/comics', 'comic');")
+            db.execute("""INSERT INTO volumes(id, comicvine_id, metadata_source, metadata_id, title, publisher, description, root_folder)
+                VALUES(1, 111, 'comicvine', '111', 'Canonical Title', 'ComicVine Publisher', 'ComicVine Description', 1);""")
+            commit()
+
+    def tearDown(self):
+        with self.app.app_context():
+            close_db(None)
+        DBConnectionManager.instances.clear()
+        self.tmpdir.cleanup()
+
+    def test_apply_payload_records_scalar_fallbacks_without_mutating_canonical_volume_fields(self):
+        payload = {'id': 'm1', 'imprint': {'id': 2, 'name': 'Metron Imprint'}, 'desc': 'Metron Description', 'characters': [{'id': 9, 'name': 'Metron Person'}]}
+        with self.app.app_context():
+            MetronEnrichmentService().apply_payload(1, 'm1', payload)
+            row = get_db().execute('SELECT publisher, description FROM volumes WHERE id = 1;').fetchonedict()
+            self.assertEqual(row['publisher'], 'ComicVine Publisher')
+            self.assertEqual(row['description'], 'ComicVine Description')
+            scalars = get_db().execute('SELECT field_name, normalized_value FROM volume_metadata_enrichment WHERE volume_id = 1 AND active = 1 ORDER BY field_name;').fetchalldict()
+            self.assertIn({'field_name': 'publisher', 'normalized_value': 'Metron Imprint'}, scalars)
+            self.assertIn({'field_name': 'description', 'normalized_value': 'Metron Description'}, scalars)
+            terms = get_db().execute('SELECT term_type, name FROM volume_enrichment_terms WHERE volume_id = 1;').fetchalldict()
+            self.assertIn({'term_type': 'character', 'name': 'Metron Person'}, terms)
+
+    def test_candidate_selection_resolves_review_without_losing_candidates_before_task(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("""INSERT INTO provider_match_candidates(volume_id, provider, resource_type, candidate_external_id, title, review_group_id, review_status, created_at, updated_at)
+                VALUES(1, 'metron', 'series', 'm-candidate', 'Metron Candidate', 'grp', 'review_required', 1, 1);""")
+            commit()
+            pending = get_review_candidates(1)['candidates']
+            self.assertEqual(len(pending), 1)
+            result = resolve_candidate(int(pending[0]['id']))
+            self.assertEqual(result['status'], 'pending')
+            link = db.execute("SELECT external_id, review_status FROM volume_provider_links WHERE volume_id = 1 AND provider = 'metron';").fetchonedict()
+            self.assertEqual(link['external_id'], 'm-candidate')
+            self.assertEqual(link['review_status'], 'pending')
+            self.assertEqual(get_review_candidates(1)['total'], 0)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 import type { AllSettings, SuwayomiSource } from '../-settings.types';
-import { startMetronBackfill, testMetronConnection } from '../-settings.api';
+import { dismissMetronReview, fetchMetronReviews, selectMetronCandidate, startMetronBackfill, testMetronConnection, type MetronReviewCandidate } from '../-settings.api';
 import { SettingsField as Field, SettingsSection as Section, ToggleField } from './settings-field';
 import styles from './settings-page.module.css';
 
@@ -21,6 +21,67 @@ type Props = { form: AllSettings; set: <K extends keyof AllSettings>(key: K, val
 const str = (form: AllSettings, key: keyof AllSettings) => String((form[key] as string | number | boolean | null | undefined) ?? '');
 const bool = (form: AllSettings, key: keyof AllSettings) => Boolean(form[key]);
 const arr = (form: AllSettings, key: keyof AllSettings): string[] => Array.isArray(form[key]) ? form[key] as string[] : [];
+
+
+function MetronSettingsPanel({ form, toggle, text }: { form: AllSettings; toggle: (key: keyof AllSettings, label: string, help?: string) => ReactElement; text: (key: keyof AllSettings, label: string, help?: string, type?: string) => ReactElement }) {
+  const [metronStatus, setMetronStatus] = useState<string>('');
+  const [reviews, setReviews] = useState<MetronReviewCandidate[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const metron = form.metron;
+  const backfill = metron?.backfill ?? {};
+  const refreshReviews = () => {
+    setReviewsLoading(true);
+    fetchMetronReviews()
+      .then((result) => setReviews(result.candidates))
+      .catch((error) => setMetronStatus(`Could not load Metron reviews: ${String(error)}`))
+      .finally(() => setReviewsLoading(false));
+  };
+  useEffect(() => { refreshReviews(); }, []);
+  const selectCandidate = (candidate: MetronReviewCandidate) => {
+    selectMetronCandidate(candidate.id)
+      .then((result) => {
+        setMetronStatus(result.duplicate ? 'Metron candidate selected; enrichment already queued.' : `Metron candidate selected; enrichment queued${result.task_id ? ` as task ${result.task_id}` : ''}.`);
+        refreshReviews();
+      })
+      .catch((error) => setMetronStatus(String(error)));
+  };
+  const dismissCandidate = (candidate: MetronReviewCandidate) => {
+    dismissMetronReview(candidate.volume_id)
+      .then(() => { setMetronStatus('Metron review dismissed.'); refreshReviews(); })
+      .catch((error) => setMetronStatus(String(error)));
+  };
+  return <div className={styles.clientCard}>
+    <h3>Metadata / Integrations — Metron</h3>
+    <p>Metron enriches Comics only. ComicVine remains canonical; Manga is unchanged.</p>
+    {toggle('metron_enabled','Enable Metron','Allow optional asynchronous comic enrichment after ComicVine adds and refreshes.')}
+    {text('metron_api_token','Metron API token','Write-only bearer token. Saved settings return only a masked value.','password')}
+    <div className={styles.actionBtns}>
+      <button className={styles.smallBtn} type="button" onClick={() => testMetronConnection().then(r => setMetronStatus(`${r.success ? 'Connection successful' : 'Connection failed'}: ${r.status}`)).catch(e => setMetronStatus(String(e)))}>Test Connection</button>
+      <button className={styles.smallBtn} type="button" onClick={() => startMetronBackfill().then(r => setMetronStatus(r.duplicate ? 'Backfill is already queued.' : `Backfill queued${r.task_id ? ` as task ${r.task_id}` : ''}`)).catch(e => setMetronStatus(String(e)))}>Backfill Existing Comics</button>
+      <button className={styles.smallBtn} type="button" onClick={refreshReviews} disabled={reviewsLoading}>{reviewsLoading ? 'Refreshing reviews…' : 'Refresh Reviews'}</button>
+    </div>
+    <dl className={styles.clientMeta}>
+      <div><dt>Token</dt><dd>{metron?.token_configured ? 'Configured (masked)' : 'Not configured'}</dd></div>
+      <div><dt>Last successful connection</dt><dd>{(metron?.last_successful_connection ?? form.metron_last_successful_connection) || 'Never'}</dd></div>
+      <div><dt>Last enrichment</dt><dd>{(metron?.last_enrichment ?? form.metron_last_enrichment_run) || 'Never'}</dd></div>
+      <div><dt>Rate status</dt><dd>{String((metron?.rate_limit?.last_status as string | undefined) ?? 'Unknown')}</dd></div>
+      <div><dt>Backfill status</dt><dd>{String((backfill.status as string | undefined) ?? 'Idle')}</dd></div>
+      <div><dt>Backfill progress</dt><dd>{Number(backfill.processed ?? 0)} processed · {Number(backfill.matched ?? 0)} matched · {Number(backfill.failed ?? 0)} failed · cursor {String(backfill.last_terminal_volume_id ?? 0)}</dd></div>
+      {backfill.rate_limit_paused_until ? <div><dt>Paused until</dt><dd>{String(backfill.rate_limit_paused_until)}</dd></div> : null}
+    </dl>
+    <div className={styles.priorityList} aria-label="Metron review candidates">
+      <h4 className={styles.subSectionTitle}>Multiple-match review</h4>
+      {reviewsLoading ? <p className={styles.emptyList}>Loading Metron reviews…</p> : reviews.length === 0 ? <p className={styles.emptyList}>No Metron reviews pending.</p> : reviews.map((candidate) => <article key={candidate.id} className={styles.priorityItem}>
+        <div><strong>{candidate.title}</strong><p className={styles.fieldHelp}>Volume {candidate.volume_id} · Metron ID {candidate.candidate_external_id}{candidate.year ? ` · ${candidate.year}` : ''}{candidate.publisher ? ` · ${candidate.publisher}` : ''}</p></div>
+        <div className={styles.actionBtns}>
+          <button className={styles.smallBtn} type="button" onClick={() => selectCandidate(candidate)}>Select candidate</button>
+          <button className={styles.smallBtn} type="button" onClick={() => dismissCandidate(candidate)}>Dismiss review</button>
+        </div>
+      </article>)}
+    </div>
+    {metronStatus && <p role="status">{metronStatus}</p>}
+  </div>;
+}
 
 export function SettingsCategoryPanel({ category, ...props }: Props & { category: SettingsCategory }) {
   const { form, set, errors } = props;
@@ -54,31 +115,10 @@ export function SettingsCategoryPanel({ category, ...props }: Props & { category
     {toggle('delete_completed_downloads','Delete Completed Downloads')}{text('suwayomi_base_url','Suwayomi Base URL')}{text('suwayomi_username','Suwayomi Username')}{text('suwayomi_password','Suwayomi Password',undefined,'password')}
     <Field id="setting-suwayomi_source_ids" label="Suwayomi Source Priority" help={props.suwayomiSourcesLoading ? 'Loading Suwayomi sources…' : 'Comma-separated Suwayomi source IDs in preferred order.'}><input className={styles.input} value={arr(form,'suwayomi_source_ids').join(', ')} onChange={e=>set('suwayomi_source_ids',e.target.value.split(',').map(s=>s.trim()))}/></Field>
   </Section>;
-  if (category === 'metadata') {
-    const [metronStatus, setMetronStatus] = useState<string>('');
-    const metron = form.metron;
-    return <Section title="Metadata">
-      {text('comicvine_api_key','ComicVine API Key','API key used to retrieve canonical comic metadata.')}
-      <div className={styles.card}>
-        <h3>Metadata / Integrations — Metron</h3>
-        <p>Metron enriches Comics only. ComicVine remains canonical; Manga is unchanged.</p>
-        {toggle('metron_enabled','Enable Metron','Allow optional asynchronous comic enrichment after ComicVine adds and refreshes.')}
-        {text('metron_api_token','Metron API token','Write-only bearer token. Saved settings return only a masked value.','password')}
-        <div className={styles.actions}>
-          <button className={styles.secondaryButton} type="button" onClick={() => testMetronConnection().then(r => setMetronStatus(`${r.success ? 'Connection successful' : 'Connection failed'}: ${r.status}`)).catch(e => setMetronStatus(String(e)))}>Test Connection</button>
-          <button className={styles.secondaryButton} type="button" onClick={() => startMetronBackfill().then(r => setMetronStatus(`Backfill queued${r.task_id ? ` as task ${r.task_id}` : ''}`)).catch(e => setMetronStatus(String(e)))}>Backfill Existing Comics</button>
-        </div>
-        <dl className={styles.metaList}>
-          <div><dt>Token</dt><dd>{metron?.token_configured ? 'Configured (masked)' : 'Not configured'}</dd></div>
-          <div><dt>Last successful connection</dt><dd>{(metron?.last_successful_connection ?? form.metron_last_successful_connection) || 'Never'}</dd></div>
-          <div><dt>Last enrichment</dt><dd>{(metron?.last_enrichment ?? form.metron_last_enrichment_run) || 'Never'}</dd></div>
-          <div><dt>Rate status</dt><dd>{String((metron?.rate_limit?.last_status as string | undefined) ?? 'Unknown')}</dd></div>
-          <div><dt>Backfill progress</dt><dd>{String((metron?.backfill?.status as string | undefined) ?? 'Idle')}</dd></div>
-        </dl>
-        {metronStatus && <p role="status">{metronStatus}</p>}
-      </div>
-    </Section>;
-  }
+  if (category === 'metadata') return <Section title="Metadata">
+    {text('comicvine_api_key','ComicVine API Key','API key used to retrieve canonical comic metadata.')}
+    <MetronSettingsPanel form={form} toggle={toggle} text={text} />
+  </Section>;
   if (category === 'proxy') return <Section title="Proxy">
     <Field id="setting-proxy_type" label="Proxy Type" help="Proxy protocol. Proxy hosting changes require a restart."><select className={styles.select} value={str(form,'proxy_type')} onChange={e=>set('proxy_type',e.target.value)}><option value="">None</option><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option><option value="socks5h">SOCKS5H</option></select></Field>
     {text('proxy_host','Proxy Host','Changing proxy hosting settings requires a restart.')}{text('proxy_port','Proxy Port','Changing proxy hosting settings requires a restart.','number')}{text('proxy_username','Proxy Username')}{text('proxy_password','Proxy Password',undefined,'password')}

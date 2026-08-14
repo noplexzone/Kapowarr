@@ -22,7 +22,7 @@ export function PageShell({ children }: { children: ReactNode }) {
                 key={to}
                 to={to as never}
                 search
-                aria-current={pathname === to ? 'page' : undefined}
+                data-current={pathname === to || undefined}
               >
                 {label}
               </Link>

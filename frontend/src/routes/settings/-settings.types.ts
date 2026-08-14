@@ -58,6 +58,30 @@ export interface AllSettings {
   [key: string]: unknown;
 }
 
+
+export interface MetronReviewCandidate {
+  id: number;
+  volume_id: number;
+  provider: string;
+  resource_type: string;
+  candidate_external_id: string;
+  title: string;
+  year?: number | null;
+  publisher?: string | null;
+  confidence?: number | null;
+  match_reason?: string | null;
+  review_status: string;
+  created_at?: number;
+  updated_at?: number;
+}
+
+export interface MetronReviewsResponse {
+  total: number;
+  candidates: MetronReviewCandidate[];
+  limit: number;
+  offset: number;
+}
+
 export interface NZBIndexer {
   id: number;
   name: string;

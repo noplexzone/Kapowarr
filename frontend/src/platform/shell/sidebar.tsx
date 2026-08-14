@@ -1,5 +1,6 @@
 import { runtimeConfig } from '@/app/runtime-config';
 import { Link, useLocation } from '@tanstack/react-router';
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { systemAboutQueryOptions } from '@/routes/system/-system.api';
 import { NavIcon } from './nav-icons';
@@ -64,11 +65,15 @@ export function SidebarSearch({
 export function Sidebar() {
   const { pathname } = useLocation();
   const active = getActivePrimary(pathname);
+
+  useEffect(() => {
+    document.querySelectorAll('[data-brand-home][aria-current]').forEach((node) => node.removeAttribute('aria-current'));
+  }, [pathname]);
   const { data: about } = useQuery(systemAboutQueryOptions());
 
   return (
     <aside className={styles.sidebar}>
-      <Link to="/home" className={styles.brand}>
+      <Link to="/home" className={styles.brand} data-brand-home>
         <img className={styles.brandIcon} src={runtimeConfig.faviconUrl} alt="" />
         <span className={styles.brandText}>Kapowarr</span>
       </Link>
@@ -83,7 +88,6 @@ export function Sidebar() {
               activeOptions={item.parent ? { exact: true } : undefined}
               className={styles.navItem}
               data-active={isActive || undefined}
-              activeProps={{ 'aria-current': item.parent ? false : 'page' }}
               aria-current={isActive && !item.parent ? 'page' : undefined}
             >
               <NavIcon name={item.label} className={styles.navIcon} />

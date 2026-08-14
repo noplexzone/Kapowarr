@@ -249,21 +249,8 @@ class MetronEnrichmentService:
             VALUES(?, ?, ?, ?, ?);""",
             ((volume_id, METRON_PROVIDER, t['term_type'], t['external_id'], t['name']) for t in extract_terms(payload)),
         )
-        # Scalar precedence: only fill blank ComicVine fields. Keep canonical nonempty values intact.
-        scalar_updates: Dict[str, Any] = {}
-        row = db.execute('SELECT publisher, description FROM volumes WHERE id = ?;', (volume_id,)).fetchonedict() or {}
-        imprint = payload.get('imprint')
-        if not row.get('publisher') and isinstance(imprint, dict):
-            scalar_updates['publisher'] = imprint.get('name')
-        elif not row.get('publisher') and isinstance(imprint, str):
-            scalar_updates['publisher'] = imprint.strip()
-        desc = payload.get('desc') or payload.get('description')
-        if not row.get('description') and isinstance(desc, str) and desc.strip():
-            scalar_updates['description'] = desc.strip()
-        if scalar_updates:
-            assignments = ', '.join(f'{k} = :{k}' for k in scalar_updates)
-            scalar_updates['id'] = volume_id
-            db.execute(f'UPDATE volumes SET {assignments} WHERE id = :id;', scalar_updates)
+        # Metron scalar values are enrichment-only; canonical volume fields stay untouched.
+        # The hardened apply_payload below records scalar fallbacks in volume_metadata_enrichment.
         commit()
 
     @staticmethod

@@ -1212,7 +1212,22 @@ class Library:
                     )
                 ) AS downloaded_issues,
                 (SELECT COUNT(*) FROM issues i
-                    WHERE i.monitored = 1 AND (i.date IS NULL OR i.date <= date('now'))
+                    INNER JOIN volumes vol ON vol.id = i.volume_id
+                    INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                    WHERE rf.section = :section
+                        AND i.date IS NOT NULL
+                        AND i.date <= date('now')
+                ) AS released_issues,
+                (SELECT COUNT(DISTINCT if.issue_id) FROM issues_files if
+                    INNER JOIN issues i ON i.id = if.issue_id
+                    INNER JOIN volumes vol ON vol.id = i.volume_id
+                    INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                    WHERE rf.section = :section
+                        AND i.date IS NOT NULL
+                        AND i.date <= date('now')
+                ) AS downloaded_released_issues,
+                (SELECT COUNT(*) FROM issues i
+                    WHERE i.monitored = 1 AND i.date IS NOT NULL AND i.date <= date('now')
                     AND NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.issue_id = i.id)
                     AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = :section)
                 ) AS missing_monitored,
@@ -1270,6 +1285,12 @@ class Library:
             1
             for folder, title, publisher in mismatch_rows
             if _is_mismatch_volume(folder or '', title or '', publisher or '')
+        )
+        released_issues = int(result.get('released_issues') or 0)
+        downloaded_released = int(result.get('downloaded_released_issues') or 0)
+        result['completion_percentage'] = (
+            None if released_issues == 0
+            else round((downloaded_released * 100.0) / released_issues, 1)
         )
         return result
 

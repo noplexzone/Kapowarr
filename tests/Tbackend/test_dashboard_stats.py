@@ -58,6 +58,7 @@ class DashboardStatsTests(unittest.TestCase):
             (102, 10, 1, '2999-01-01'),
             (103, 10, 0, '2020-01-01'),
             (104, 10, 1, '2020-01-01'),
+            (105, 10, 1, None),
             (201, 20, 1, '2020-01-01'),
         ])
         self.db.executemany('INSERT INTO files VALUES (?, ?)', [(1, 100), (2, 200), (3, 300), (4, 400)])
@@ -77,6 +78,9 @@ class DashboardStatsTests(unittest.TestCase):
 
         self.assertEqual(stats['missing_monitored'], 1)
         self.assertEqual(stats['upcoming_monitored'], 1)
+        self.assertEqual(stats['released_issues'], 3)
+        self.assertEqual(stats['downloaded_released_issues'], 1)
+        self.assertEqual(stats['completion_percentage'], 33.3)
         self.assertEqual(stats['unmonitored_issues'], 1)
         self.assertEqual(stats['failed_downloads'], 1)
         self.assertEqual(stats['active_downloads'], 1)
@@ -113,6 +117,8 @@ class DashboardStatsTests(unittest.TestCase):
 
         self.assertEqual(stats['volumes'], 0)
         self.assertEqual(stats['issues'], 0)
+        self.assertEqual(stats['released_issues'], 0)
+        self.assertIsNone(stats['completion_percentage'])
         self.assertEqual(stats['files'], 0)
         self.assertEqual(stats['total_file_size'], 0)
 

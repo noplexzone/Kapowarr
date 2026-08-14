@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
 import type { ShouldBlockFn } from '@tanstack/react-router';
+import { runtimeConfig } from '@/app/runtime-config';
 import { Button, Notice } from '@/components/primitives';
 import { DEFAULT_THEME, useShellStore } from '@/platform/shell/store';
 import { settingsQueryOptions, updateSettings, SETTINGS_KEY, suwayomiSourcesQueryOptions } from '../-settings.api';
@@ -122,5 +123,9 @@ function SettingsPageContent({ category = 'general', onCategoryChange }: { categ
       {filteredCategories.length === 0 && <span className={styles.emptyList}>No settings match “{search}”.</span>}
     </nav>
     {content}
+    <SettingsSection title="About">
+      <p>Review packaged release notes and the running Kapowarr version.</p>
+      <a href={runtimeConfig.assetUrl('changelog')}>Open changelog</a>
+    </SettingsSection>
   </div>;
 }

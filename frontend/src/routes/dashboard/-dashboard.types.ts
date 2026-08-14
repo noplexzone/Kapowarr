@@ -58,3 +58,24 @@ export interface DashboardSearchTask {
   started_at?: number | null;
   progress?: DashboardSearchProgress;
 }
+
+export interface DashboardSummary {
+  generated_at: string;
+  library: {
+    released_issues: number;
+    downloaded_released_issues: number;
+    completion_percentage: number | null;
+    missing_monitored: number;
+    upcoming_monitored: number;
+    mismatches: number;
+  };
+  operations: {
+    active_downloads: number;
+    failed_downloads: number;
+    active_searches: number;
+  };
+  sections: {
+    comic: { missing_monitored: number; upcoming_monitored: number; mismatches: number };
+    manga: { missing_monitored: number; upcoming_monitored: number; mismatches: number };
+  };
+}

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import run
-from datetime import datetime
+from datetime import datetime, timezone
+from functools import lru_cache
+import re
 from hashlib import sha256
 from hmac import compare_digest, new as hmac_new
 from io import BytesIO
@@ -74,6 +76,62 @@ from backend.internals.server import Server, StartTypeHandlers
 from backend.internals.settings import Settings, get_about_data
 
 api = Blueprint('api', __name__)
+
+
+
+_CHANGELOG_HEADING_RE = re.compile(r'^##\s+\[?([^\]\n]+)\]?\s*(?:-\s*(\d{4}-\d{2}-\d{2}))?\s*$')
+_CHANGELOG_SECTION_RE = re.compile(r'^###\s+(.+?)\s*$')
+_CHANGELOG_SECTION_NAMES = {'Added', 'Changed', 'Fixed', 'Removed', 'Security', 'Deprecated'}
+
+
+def _changelog_anchor(version: str) -> str:
+    return 'changelog-' + re.sub(r'[^a-z0-9]+', '-', version.lower()).strip('-')
+
+
+@lru_cache(maxsize=1)
+def _read_packaged_changelog() -> Dict[str, Any]:
+    changelog_path = Path(folder_path('CHANGELOG.md')).resolve(strict=False)
+    app_root = Path(folder_path()).resolve(strict=False)
+    try:
+        if commonpath((str(changelog_path), str(app_root))) != str(app_root):
+            raise OSError('Packaged changelog path is outside application root')
+        text = changelog_path.read_text(encoding='utf-8')
+    except OSError:
+        return {'entries': [], 'error': 'Packaged CHANGELOG.md could not be read.'}
+
+    entries: List[Dict[str, Any]] = []
+    current: Union[Dict[str, Any], None] = None
+    section: Union[Dict[str, Any], None] = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        heading = _CHANGELOG_HEADING_RE.match(line)
+        if heading:
+            version = heading.group(1).strip()
+            current = {
+                'version': version,
+                'date': heading.group(2),
+                'anchor': _changelog_anchor(version),
+                'sections': [],
+            }
+            entries.append(current)
+            section = None
+            continue
+        if current is None:
+            continue
+        section_match = _CHANGELOG_SECTION_RE.match(line)
+        if section_match:
+            title = section_match.group(1).strip()
+            if title in _CHANGELOG_SECTION_NAMES:
+                section = {'title': title, 'items': []}
+                current['sections'].append(section)
+            else:
+                section = None
+            continue
+        if section is not None and line.startswith('- '):
+            section['items'].append(line[2:].strip())
+    if not entries:
+        return {'entries': [], 'error': 'No version entries found in packaged CHANGELOG.md.'}
+    return {'entries': entries, 'error': None}
 
 
 def return_api(
@@ -1077,6 +1135,63 @@ def api_library_import_delete():
             delete_file_folder(folder)
 
     return return_api({})
+
+
+
+@api.route('/dashboard/summary', methods=['GET'])
+@error_handler
+@auth
+def api_dashboard_summary():
+    comic_stats = Library.get_stats('comic')
+    manga_stats = Library.get_stats('manga')
+    released = int(comic_stats.get('released_issues') or 0) + int(manga_stats.get('released_issues') or 0)
+    downloaded = int(comic_stats.get('downloaded_released_issues') or 0) + int(manga_stats.get('downloaded_released_issues') or 0)
+    tasks = TaskHandler().get_all()
+    active_searches = sum(
+        1 for task in tasks
+        if task.get('action') in ('auto_search', 'auto_search_issue', 'search_all')
+    )
+    return return_api({
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'library': {
+            'released_issues': released,
+            'downloaded_released_issues': downloaded,
+            'completion_percentage': None if released == 0 else round((downloaded * 100.0) / released, 1),
+            'missing_monitored': int(comic_stats.get('missing_monitored') or 0) + int(manga_stats.get('missing_monitored') or 0),
+            'upcoming_monitored': int(comic_stats.get('upcoming_monitored') or 0) + int(manga_stats.get('upcoming_monitored') or 0),
+            'mismatches': int(comic_stats.get('mismatches') or 0) + int(manga_stats.get('mismatches') or 0),
+        },
+        'operations': {
+            'active_downloads': len(DownloadHandler().get_all()),
+            'failed_downloads': get_download_history_count(success=False),
+            'active_searches': active_searches,
+        },
+        'sections': {
+            'comic': {
+                'missing_monitored': int(comic_stats.get('missing_monitored') or 0),
+                'upcoming_monitored': int(comic_stats.get('upcoming_monitored') or 0),
+                'mismatches': int(comic_stats.get('mismatches') or 0),
+            },
+            'manga': {
+                'missing_monitored': int(manga_stats.get('missing_monitored') or 0),
+                'upcoming_monitored': int(manga_stats.get('upcoming_monitored') or 0),
+                'mismatches': int(manga_stats.get('mismatches') or 0),
+            },
+        },
+    })
+
+
+@api.route('/changelog', methods=['GET'])
+@error_handler
+@auth
+def api_changelog():
+    parsed = _read_packaged_changelog()
+    return return_api({
+        'current_version': get_about_data().get('version'),
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'entries': parsed['entries'],
+        'error': parsed['error'],
+    })
 
 
 # =====================

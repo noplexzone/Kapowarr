@@ -1,7 +1,42 @@
 import { queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { apiClient, readJson } from '@/app/api-client';
-import type { DashboardSearchTask, NavBadges, VolumeCard } from './-dashboard.types';
+import type { DashboardSearchTask, DashboardSummary, NavBadges, VolumeCard } from './-dashboard.types';
+
+
+export const DASHBOARD_SUMMARY_KEY = ['dashboard', 'summary'] as const;
+const DASHBOARD_STALE_TIME = 5 * 60 * 1000;
+const DASHBOARD_GC_TIME = 30 * 60 * 1000;
+
+const dashboardSummarySchema = z.object({
+  generated_at: z.string(),
+  library: z.object({
+    released_issues: z.number().int().nonnegative(),
+    downloaded_released_issues: z.number().int().nonnegative(),
+    completion_percentage: z.number().nullable(),
+    missing_monitored: z.number().int().nonnegative(),
+    upcoming_monitored: z.number().int().nonnegative(),
+    mismatches: z.number().int().nonnegative(),
+  }),
+  operations: z.object({
+    active_downloads: z.number().int().nonnegative(),
+    failed_downloads: z.number().int().nonnegative(),
+    active_searches: z.number().int().nonnegative(),
+  }),
+  sections: z.object({
+    comic: z.object({ missing_monitored: z.number().int().nonnegative(), upcoming_monitored: z.number().int().nonnegative(), mismatches: z.number().int().nonnegative() }),
+    manga: z.object({ missing_monitored: z.number().int().nonnegative(), upcoming_monitored: z.number().int().nonnegative(), mismatches: z.number().int().nonnegative() }),
+  }),
+});
+
+export function dashboardSummaryQueryOptions() {
+  return queryOptions({
+    queryKey: DASHBOARD_SUMMARY_KEY,
+    queryFn: () => apiClient.get('dashboard/summary').then((r) => readJson<DashboardSummary>(r, dashboardSummarySchema)),
+    staleTime: DASHBOARD_STALE_TIME,
+    gcTime: DASHBOARD_GC_TIME,
+  });
+}
 
 const volumeStatsSchema = z.object({
   volumes: z.number().int().nonnegative(), monitored: z.number().int().nonnegative(), unmonitored: z.number().int().nonnegative(),
@@ -82,8 +117,8 @@ export function comicStatsQueryOptions() {
       apiClient
         .get('volumes/stats', { searchParams: { section: 'comic' } })
         .then((r) => readJson(r, volumeStatsSchema)),
-    staleTime: 0,
-    refetchInterval: 15_000,
+    staleTime: DASHBOARD_STALE_TIME,
+    gcTime: DASHBOARD_GC_TIME,
   });
 }
 
@@ -94,8 +129,8 @@ export function mangaStatsQueryOptions() {
       apiClient
         .get('volumes/stats', { searchParams: { section: 'manga' } })
         .then((r) => readJson(r, volumeStatsSchema)),
-    staleTime: 0,
-    refetchInterval: 15_000,
+    staleTime: DASHBOARD_STALE_TIME,
+    gcTime: DASHBOARD_GC_TIME,
   });
 }
 
@@ -116,8 +151,8 @@ export function recentlyAddedQueryOptions(section: 'comic' | 'manga') {
           (v): VolumeCard => ({ ...v, section: section === 'manga' ? 'manga' : 'comics' }),
         );
     },
-    staleTime: 0,
-    refetchInterval: 15_000,
+    staleTime: DASHBOARD_STALE_TIME,
+    gcTime: DASHBOARD_GC_TIME,
   });
 }
 

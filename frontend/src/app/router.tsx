@@ -26,6 +26,7 @@ import { blocklistQueryOptions } from '@/routes/activity/blocklist/-blocklist.ap
 import { settingsQueryOptions } from '@/routes/settings/-settings.api';
 import type { SettingsCategory } from '@/routes/settings/-ui/settings-category-panels';
 import { systemAboutQueryOptions } from '@/routes/system/-system.api';
+import { changelogQueryOptions } from '@/routes/changelog/-changelog.api';
 import {
   activitySearchSchema,
   blocklistSearchSchema,
@@ -58,6 +59,7 @@ const DiscoveryPage = lazy(() => import('@/routes/discovery/-ui/discovery-page')
 const DiscoverSearchResultsPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoverSearchResultsPage })));
 const DiscoverExactAddPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoverExactAddPage })));
 const DiscoveryBrowsePage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoveryBrowsePage })));
+const ChangelogPage = lazy(() => import('@/routes/changelog/-ui/changelog-page').then((module) => ({ default: module.ChangelogPage })));
 const ImportPage = lazy(() => import('@/routes/import/-ui/import-page').then((module) => ({ default: module.ImportPage })));
 const VolumeDetailPage = lazy(() => import('@/routes/volumes/-ui/volume-detail-page').then((module) => ({ default: module.VolumeDetailPage })));
 
@@ -458,6 +460,15 @@ const systemStatusRoute = createRoute({
   component: SystemStatusPage,
 });
 
+const changelogRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'changelog',
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(changelogQueryOptions());
+  },
+  component: ChangelogPage,
+});
+
 const catchAllRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: '$',
@@ -502,6 +513,7 @@ export const routeTree = rootRoute.addChildren([
     readerRoute,
     systemRedirectRoute,
     systemStatusRoute,
+    changelogRoute,
     catchAllRoute,
   ]),
 ]);

@@ -89,7 +89,7 @@ export const discoverAddSearchSchema = z.object({
 
 export const legacyDiscoverySearchSchema = z.object({
   section: sectionSchema,
-  type: z.enum(['upcoming', 'new', 'story-arcs']).default('upcoming').catch('upcoming'),
+  type: z.enum(['upcoming', 'new']).default('upcoming').catch('upcoming'),
   q: cleanQuery,
 });
 
@@ -172,7 +172,7 @@ export function legacyDiscoveryToCanonical(rawSearch: unknown) {
   const search = legacyDiscoverySearchSchema.parse(rawSearch);
   return discoverySearchSchema.parse({
     section: search.section,
-    category: search.type === 'story-arcs' ? 'upcoming' : search.type,
+    category: search.type,
     q: search.q,
   });
 }

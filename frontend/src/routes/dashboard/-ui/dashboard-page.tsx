@@ -100,10 +100,10 @@ export function DashboardPage() {
             and shelves worth checking after the queue settles.
           </p>
           <div className={styles.heroActions}>
-            <Link className={`${styles.actionLink} ${styles.actionPrimary}`} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }}>
+            <Link className={`${styles.actionLink} ${styles.actionPrimary}`} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }}>
               Comics missing
             </Link>
-            <Link className={`${styles.actionLink} ${styles.actionSecondary}`} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }}>
+            <Link className={`${styles.actionLink} ${styles.actionSecondary}`} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }}>
               Manga missing
             </Link>
             <Link className={`${styles.actionLink} ${styles.actionGhost}`} to="/activity/queue">Open queue</Link>
@@ -136,7 +136,7 @@ export function DashboardPage() {
       <div className={styles.dashboardBody}>
         <div className={styles.mainColumn}>
           <div className={styles.commandGrid}>
-            <MetricCard label="Missing monitored" value={missingTotal} meta="Issues ready for wanted triage" tone="danger" to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
+            <MetricCard label="Missing monitored" value={missingTotal} meta="Issues ready for wanted triage" tone="danger" to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
             <MetricCard label="Upcoming monitored" value={upcomingTotal} meta="Recently released or expected soon" tone="info" to="/comics" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
             <MetricCard label="Active downloads" value={activeDownloads} meta="Queue items moving now" tone="success" to="/activity/queue" />
             <MetricCard label="Failed downloads" value={failedDownloads} meta="History entries needing recovery" tone="warning" to="/activity/history" search={{ page: 1, status: 'failed', section: 'all' }} />
@@ -154,8 +154,8 @@ export function DashboardPage() {
             </Link>
           </div>
           <Card className={styles.triageCard}>
-            <TriageRow label="Comics missing" value={comicStats?.missing_monitored ?? null} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
-            <TriageRow label="Manga missing" value={mangaStats?.missing_monitored ?? null} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
+            <TriageRow label="Comics missing" value={comicStats?.missing_monitored ?? null} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
+            <TriageRow label="Manga missing" value={mangaStats?.missing_monitored ?? null} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
             <TriageRow label="Comics unmonitored" value={comicStats?.unmonitored_issues ?? null} to="/comics" search={{ status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
             <TriageRow label="Manga unmonitored" value={mangaStats?.unmonitored_issues ?? null} to="/manga" search={{ status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
             <TriageRow label="Comic mismatches" value={comicStats?.mismatches ?? null} to="/activity/mismatches" search={{ section: 'comic' }} />

@@ -183,7 +183,7 @@ const workflowRoutes = [
   { route: '/volumes/1/files', evidence: 'Volume Notes.pdf' },
   { route: '/volumes/1/history', evidence: 'Volume bundle release' },
   { route: '/activity/blocklist', evidence: 'Blocklist' },
-  { route: '/discover?section=comic&category=story-arcs', evidence: 'Story Arcs' },
+  { route: '/discover/add/comicvine/501?section=comic&title=Acceptance', evidence: 'Acceptance Search Result' },
 ] as const;
 
 for (const { route, evidence } of workflowRoutes) {

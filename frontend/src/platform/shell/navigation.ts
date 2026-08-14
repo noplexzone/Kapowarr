@@ -35,7 +35,7 @@ export function getActivePrimary(pathname: string): PrimaryNavLabel | undefined 
 }
 
 
-const SORT_OPTIONS = new Set(['title', 'volume_number', 'year', 'recently_added', 'recently_released', 'publisher', 'wanted']);
+const SORT_OPTIONS = new Set(['title', 'volume_number', 'year', 'recently_added', 'recently_released', 'publisher', 'completion']);
 const VIEW_OPTIONS = new Set(['posters', 'table']);
 const FILTER_OPTIONS = new Set(['', 'wanted', 'upcoming', 'unmonitored', 'monitored']);
 

@@ -1352,8 +1352,130 @@ def _migrate_add_saved_filters():
     return
 
 
+_METRON_TABLE_DEFINITIONS = {
+    'volume_provider_links': """
+        CREATE TABLE volume_provider_links(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            match_method TEXT NOT NULL DEFAULT '',
+            match_confidence REAL,
+            review_status TEXT NOT NULL DEFAULT 'linked',
+            linked_at INTEGER NOT NULL,
+            last_successful_enrichment INTEGER,
+            last_checked INTEGER,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            UNIQUE(volume_id, provider, resource_type)
+        );
+    """,
+    'provider_cache': """
+        CREATE TABLE provider_cache(
+            provider TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            etag TEXT,
+            last_modified TEXT,
+            fetched_at INTEGER NOT NULL,
+            expires_at INTEGER,
+            PRIMARY KEY(provider, resource_type, external_id)
+        );
+    """,
+    'volume_enrichment_terms': """
+        CREATE TABLE volume_enrichment_terms(
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            term_type TEXT NOT NULL,
+            external_id TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            UNIQUE(volume_id, provider, term_type, external_id, name)
+        );
+    """,
+    'metron_backfill_state': """
+        CREATE TABLE metron_backfill_state(
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            status TEXT NOT NULL,
+            total INTEGER NOT NULL DEFAULT 0,
+            processed INTEGER NOT NULL DEFAULT 0,
+            matched INTEGER NOT NULL DEFAULT 0,
+            unmatched INTEGER NOT NULL DEFAULT 0,
+            review_required INTEGER NOT NULL DEFAULT 0,
+            failed INTEGER NOT NULL DEFAULT 0,
+            current_volume_id INTEGER,
+            rate_limit_paused_until INTEGER,
+            cancel_requested BOOL NOT NULL DEFAULT 0,
+            started_at INTEGER,
+            updated_at INTEGER,
+            completed_at INTEGER
+        );
+    """,
+}
+
+_METRON_TABLE_COLUMNS = {
+    'volume_provider_links': ('id', 'volume_id', 'provider', 'resource_type', 'external_id', 'match_method', 'match_confidence', 'review_status', 'linked_at', 'last_successful_enrichment', 'last_checked'),
+    'provider_cache': ('provider', 'resource_type', 'external_id', 'payload', 'etag', 'last_modified', 'fetched_at', 'expires_at'),
+    'volume_enrichment_terms': ('volume_id', 'provider', 'term_type', 'external_id', 'name'),
+    'metron_backfill_state': ('id', 'status', 'total', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'current_volume_id', 'rate_limit_paused_until', 'cancel_requested', 'started_at', 'updated_at', 'completed_at'),
+}
+
+
+def _table_exists(cursor, table_name: str) -> bool:
+    return cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (table_name,)).fetchone() is not None
+
+
+def _table_columns(cursor, table_name: str) -> List[str]:
+    return [row[1] for row in cursor.execute(f"PRAGMA table_info({table_name});")]
+
+
+def _normalize_metron_table(cursor, table_name: str) -> None:
+    required_columns = set(_METRON_TABLE_COLUMNS[table_name])
+    existing_columns = set(_table_columns(cursor, table_name)) if _table_exists(cursor, table_name) else set()
+    if required_columns <= existing_columns:
+        return
+    old_table_name = f"{table_name}_migration_58_backup"
+    if _table_exists(cursor, old_table_name):
+        cursor.execute(f'DROP TABLE "{old_table_name}";')
+    if _table_exists(cursor, table_name):
+        cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{old_table_name}";')
+    cursor.execute(_METRON_TABLE_DEFINITIONS[table_name])
+    if _table_exists(cursor, old_table_name):
+        source_columns = set(_table_columns(cursor, old_table_name))
+        copy_columns = [c for c in _METRON_TABLE_COLUMNS[table_name] if c in source_columns]
+        if copy_columns:
+            column_sql = ', '.join(copy_columns)
+            cursor.execute(f'INSERT OR IGNORE INTO "{table_name}" ({column_sql}) SELECT {column_sql} FROM "{old_table_name}";')
+        cursor.execute(f'DROP TABLE "{old_table_name}";')
+
+
+def _ensure_metron_base_schema(cursor) -> None:
+    for table_name in _METRON_TABLE_DEFINITIONS:
+        _normalize_metron_table(cursor, table_name)
+    cursor.executescript("""
+        CREATE UNIQUE INDEX IF NOT EXISTS volume_provider_links_provider_external_unique_idx
+            ON volume_provider_links(provider, resource_type, external_id)
+            WHERE external_id != '';
+        CREATE INDEX IF NOT EXISTS volume_provider_links_provider_external_idx
+            ON volume_provider_links(provider, resource_type, external_id);
+        CREATE INDEX IF NOT EXISTS volume_enrichment_terms_type_name_idx
+            ON volume_enrichment_terms(term_type, name);
+        CREATE INDEX IF NOT EXISTS volume_enrichment_terms_provider_external_idx
+            ON volume_enrichment_terms(provider, external_id);
+    """)
+
+
 @DatabaseMigrationHandler.register_handler(57)
 def _migrate_drop_saved_filters():
     cursor = get_db()
     cursor.execute('DROP TABLE IF EXISTS saved_filters;')
+    return
+
+
+@DatabaseMigrationHandler.register_handler(58)
+def _migrate_normalize_metron_schema_after_version_collision():
+    cursor = get_db()
+    cursor.execute('DROP TABLE IF EXISTS saved_filters;')
+    _ensure_metron_base_schema(cursor)
     return

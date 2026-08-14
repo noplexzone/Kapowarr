@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from flask import Flask
-from backend.internals.db import DB_SCHEMA, DBConnection, close_db, setup_db
+from backend.internals.db import DB_SCHEMA, DBConnection, DBConnectionManager, close_db, setup_db
 from backend.internals.db_migration import DatabaseMigrationHandler
 from backend.internals.settings import Settings
 
@@ -23,12 +23,14 @@ class Phase123MigrationTests(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmpdir.name) / 'Kapowarr.db'
         self.app = Flask(__name__)
+        DBConnectionManager.instances.clear()
         DBConnection.file = str(self.db_path)
         Settings._instances.clear()
 
     def tearDown(self):
         with self.app.app_context():
             close_db(None)
+        DBConnectionManager.instances.clear()
         Settings._instances.clear()
         self.tmpdir.cleanup()
 
@@ -44,10 +46,12 @@ class Phase123MigrationTests(unittest.TestCase):
                 con.commit()
 
     def _run_setup(self):
+        DBConnectionManager.instances.clear()
         Settings._instances.clear()
         with self.app.app_context():
             setup_db()
             close_db(None)
+        DBConnectionManager.instances.clear()
         Settings._instances.clear()
 
     def _seed_schema(self, version):

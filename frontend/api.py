@@ -450,11 +450,6 @@ def extract_key(request, key: str, check_existence: bool = True) -> Any:
             value = LibrarySorting.TITLE
 
         elif key == 'direction':
-            value = str(value).lower()
-            if value not in ('asc', 'desc'):
-                raise InvalidKeyValue(key, value)
-
-        elif key == 'direction':
             value = 'asc'
 
         elif key == 'filter':

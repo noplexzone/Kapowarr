@@ -33,7 +33,7 @@ class PaginationApiDefaultsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()['result'], volumes)
         get_all.assert_called_once_with(
-            api_mod.LibrarySorting.TITLE, None, 'comic'
+            api_mod.LibrarySorting.TITLE, None, 'comic', 'asc'
         )
 
     def test_volumes_paginated_mode_defaults_to_first_page(self):
@@ -46,7 +46,7 @@ class PaginationApiDefaultsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()['result']['items'], [])
         get_page.assert_called_once_with(
-            api_mod.LibrarySorting.TITLE, None, 'comic', 0, 60
+            api_mod.LibrarySorting.TITLE, None, 'comic', 0, 60, 'asc'
         )
 
     def test_volumes_paginated_retries_transient_database_locks(self):

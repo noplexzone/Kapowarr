@@ -85,6 +85,11 @@ async function mockApi(route: Route) {
   else if (pathname.includes('/api/activity/history') && searchParams.has('volume_id')) result = [{ web_link: 'https://example.invalid/volume', web_title: 'Volume bundle release', web_sub_title: null, file_title: null, volume_id: 1, issue_id: null, source: 'test', source_name: 'Test Source', downloaded_at: 101, success: true }];
   else if (pathname.endsWith('/api/activity/history')) result = { entries: [{ id: 71, title: 'Acceptance Volume #1', source: 'Test Source', state: 'failed', downloaded_at: 100, failure_reason: 'Network timeout', volume_id: 1 }], total: 1, offset: 0, page_size: 50 };
   else if (pathname.endsWith('/api/blocklist')) result = { entries: [], total: 0, offset: 0, page_size: 50 };
+  else if (pathname.endsWith('/api/discovery/capabilities')) result = { section: searchParams.get('section') ?? 'comic', filters: ['publisher', 'decade'], deferred_filters: ['character', 'genre'], shelves: ['recently_started', 'browse_all'], source_notes: {}, publishers: [{ value: 'Test Publisher', label: 'Test Publisher', count: 2 }], decades: [{ value: '2020', label: '2020s', count: 2 }] };
+  else if (pathname.endsWith('/api/discovery/browse')) result = { items: [
+    { comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result', year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null, description: null, aliases: null, issue_count: 5, already_added: null },
+    { comicvine_id: 101, metadata_source: 'comicvine', metadata_id: '101', title: 'Acceptance Volume', year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null, description: null, aliases: null, issue_count: null, already_added: 1, id: 1 },
+  ], total: 2, offset: 0, page_size: 30, has_more: false, source_note: 'acceptance' };
   else if (pathname.includes('/api/discovery')) result = [];
   else if (pathname.includes('/api/volumes/recent')) result = searchParams.get('section') === 'manga' ? mangaVolumes : comicVolumes;
   else if (pathname.includes('/api/rootfolder')) result = [{ id: 1, folder: '/comics', section: 'comic' }, { id: 2, folder: '/manga', section: 'manga' }];
@@ -184,6 +189,7 @@ const workflowRoutes = [
   { route: '/volumes/1/history', evidence: 'Volume bundle release' },
   { route: '/activity/blocklist', evidence: 'Blocklist' },
   { route: '/discover/add/comicvine/501?section=comic&title=Acceptance', evidence: 'Acceptance Search Result' },
+  { route: '/discover/browse?section=comic&publisher=Test%20Publisher', evidence: 'Acceptance Search Result' },
 ] as const;
 
 for (const { route, evidence } of workflowRoutes) {
@@ -222,6 +228,15 @@ test('Discover combobox opens exact review and full results without leaving Disc
   await expect(page).toHaveURL(/\/discover\/search\?section=comic&q=Acceptance/);
   await expect(page.getByText('5 issues')).toBeVisible();
   await expect(page.getByText('Issue count unavailable')).toBeVisible();
+  await page.getByRole('button', { name: 'Add' }).first().click();
+  await expect(page).toHaveURL(/\/discover\/add\/comicvine\/501/);
+  await expect(page.getByRole('dialog')).toBeVisible();
+});
+
+test('Browse Add navigates to exact review', async ({ page }) => {
+  await page.route('**/*', injectProductionBase);
+  await page.route('**/api/**', mockApi);
+  await page.goto('/discover/browse?section=comic&publisher=Test%20Publisher');
   await page.getByRole('button', { name: 'Add' }).first().click();
   await expect(page).toHaveURL(/\/discover\/add\/comicvine\/501/);
   await expect(page.getByRole('dialog')).toBeVisible();

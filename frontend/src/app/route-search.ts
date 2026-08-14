@@ -87,6 +87,22 @@ export const discoverAddSearchSchema = z.object({
   language: z.string().min(2).max(16).optional().catch(undefined),
 });
 
+export const discoveryBrowseSearchSchema = z.object({
+  section: sectionSchema,
+  q: cleanQuery,
+  publisher: cleanQuery,
+  decade: z.string().regex(/^\d{4}$/).optional().catch(undefined),
+  status: cleanQuery,
+  tags: cleanQuery,
+  demographic: z.enum(['shounen', 'shoujo', 'josei', 'seinen']).optional().catch(undefined),
+  original_language: cleanQuery,
+  year: z.string().regex(/^\d{4}$/).optional().catch(undefined),
+  author: cleanQuery,
+  artist: cleanQuery,
+  content_rating: cleanQuery,
+  sort: z.enum(['trending', 'title', 'year', 'recently_started', 'recently_updated']).default('trending').catch('trending'),
+});
+
 export const legacyDiscoverySearchSchema = z.object({
   section: sectionSchema,
   type: z.enum(['upcoming', 'new']).default('upcoming').catch('upcoming'),

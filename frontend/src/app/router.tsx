@@ -31,6 +31,7 @@ import {
   blocklistSearchSchema,
   discoverySearchSchema,
   discoverAddSearchSchema,
+  discoveryBrowseSearchSchema,
   discoverResultsSearchSchema,
   historySearchSchema,
   searchHistorySearchSchema,
@@ -56,6 +57,7 @@ const SettingsPage = lazy(() => import('@/routes/settings/-ui/settings-page').th
 const DiscoveryPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoveryPage })));
 const DiscoverSearchResultsPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoverSearchResultsPage })));
 const DiscoverExactAddPage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoverExactAddPage })));
+const DiscoveryBrowsePage = lazy(() => import('@/routes/discovery/-ui/discovery-page').then((module) => ({ default: module.DiscoveryBrowsePage })));
 const ImportPage = lazy(() => import('@/routes/import/-ui/import-page').then((module) => ({ default: module.ImportPage })));
 const VolumeDetailPage = lazy(() => import('@/routes/volumes/-ui/volume-detail-page').then((module) => ({ default: module.VolumeDetailPage })));
 
@@ -192,6 +194,13 @@ const discoverAddRoute = createRoute({
     const source = params.source === 'mangadex' ? 'mangadex' : 'comicvine';
     return <DiscoverExactAddPage section={search.section} source={source} metadataId={params.metadataId} title={search.title} language={search.language} />;
   },
+});
+
+const discoverBrowseRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: 'discover/browse',
+  validateSearch: discoveryBrowseSearchSchema,
+  component: () => <DiscoveryBrowsePage search={discoverBrowseRoute.useSearch()} />,
 });
 
 const activityRedirectRoute = createRoute({
@@ -468,6 +477,7 @@ export const routeTree = rootRoute.addChildren([
     discoverRoute,
     discoverSearchRoute,
     discoverAddRoute,
+    discoverBrowseRoute,
     discoveryRedirectRoute,
     activityRedirectRoute,
     queueRoute,

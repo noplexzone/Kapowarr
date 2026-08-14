@@ -50,18 +50,19 @@ it('hydrates exact add selections without generic search fallback', () => {
   expect(source).toContain('searchFallbackTo="/discover/search"');
 });
 
-it('refreshes discover and library queries after adding', () => {
+it('refreshes Discover shelves from the toolbar without generic Add state', () => {
   expect(source).toContain("invalidateQueries({ queryKey: ['discovery'] })");
-  expect(source).toContain('void queryClient.invalidateQueries({ queryKey: VOLUMES_KEY });');
+  expect(source).not.toContain('onAction={() => undefined}');
+  expect(source).not.toContain('onAddVolume={() => undefined}');
 });
 
 
-it('lazy-reveals discover volume results as the user scrolls', () => {
-  expect(source).toContain('const DISCOVERY_BATCH_SIZE = 50;');
-  expect(source).toContain('fetchDiscoveryVolumePage(type, section, pageOffset, DISCOVERY_BATCH_SIZE)');
-  expect(source).toContain('volumes.map((vol) => (');
-  expect(source).toContain("window.addEventListener('scroll', onScroll, { passive: true })");
-  expect(source).toContain('Load more titles');
+it('hybrid-loads Browse with an IntersectionObserver and three automatic pages', () => {
+  expect(source).toContain('DISCOVER_AUTOMATIC_PAGE_LIMIT');
+  expect(source).toContain('new IntersectionObserver');
+  expect(source).toContain("root: ref.current.closest('[data-app-scroller]') ?? null");
+  expect(source).toContain('requestedOffsets.current.has(nextOffset)');
+  expect(source).toContain('Load More');
 });
 
 

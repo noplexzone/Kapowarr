@@ -1237,6 +1237,86 @@ class ComicVine:
 
         return formatted
 
+
+    async def browse_catalog_volumes(
+        self,
+        *,
+        query: str = '',
+        publisher: str = '',
+        decade: str = '',
+        year: str = '',
+        offset: int = 0,
+        limit: int = 30,
+        sort: str = 'recently_updated'
+    ) -> Dict[str, Any]:
+        """Browse ComicVine comic volumes with provider-backed filters.
+
+        Fetches limit+1 so has_more is based on an actual extra provider row,
+        and deduplicates by ComicVine volume ID rather than title.
+        """
+        filters = []
+        if query:
+            filters.append(f'name:{query}')
+        if publisher:
+            filters.append(f'publisher:{publisher}')
+        selected_year = None
+        if year:
+            try:
+                selected_year = int(year)
+            except (TypeError, ValueError):
+                selected_year = None
+        elif decade:
+            try:
+                selected_year = int(decade)
+            except (TypeError, ValueError):
+                selected_year = None
+        if selected_year:
+            if year:
+                filters.append(f'start_year:{selected_year}')
+            else:
+                filters.append(f'start_year:{selected_year}|{selected_year + 9}')
+        order = {
+            'title': 'name:asc',
+            'year': 'start_year:desc',
+            'recently_started': 'start_year:desc',
+            'recently_updated': 'date_last_updated:desc',
+            'trending': 'date_last_updated:desc',
+        }.get(sort, 'date_last_updated:desc')
+        params = {
+            'field_list': 'id,name,deck,description,publisher,start_year,image,site_detail_url,count_of_issues,date_added,date_last_updated',
+            'sort': order,
+            'offset': offset,
+            'limit': limit + 1,
+        }
+        if filters:
+            params['filter'] = ','.join(filters)
+        async with AsyncSession() as session:
+            page = await self.__call_api(session, '/volumes', params, {'results': [], 'number_of_total_results': 0})
+        seen = set()
+        raw_items = []
+        for item in page.get('results') or []:
+            key = str(item.get('id') or '')
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            if not _is_comic_discovery_candidate_volume(item):
+                continue
+            raw_items.append(item)
+        has_more = len(raw_items) > limit
+        formatted = self.__format_search_output(raw_items[:limit])
+        for item in formatted:
+            item['metadata_source_label'] = 'ComicVine'
+            if sort == 'trending':
+                item['status'] = 'Recently active'
+        return {
+            'items': formatted,
+            'total': int(page.get('number_of_total_results') or offset + len(formatted) + (1 if has_more else 0)),
+            'offset': offset,
+            'page_size': limit,
+            'has_more': has_more,
+            'source_note': 'Recently Active uses ComicVine date_last_updated; it is not a global popularity score.',
+        }
+
     async def get_upcoming_releases_manga(
         self,
         days: int = 60,

@@ -54,6 +54,7 @@ from backend.implementations.blocklist import (add_to_blocklist,
                                                get_blocklist_count,
                                                get_blocklist_entry)
 from backend.implementations.comicvine import ComicVine
+from backend.implementations.mangadex import browse_mangadex_catalog
 from backend.implementations.conversion import preview_mass_convert
 from backend.implementations.converters import ConvertersManager
 from backend.implementations.credentials import Credentials
@@ -1123,17 +1124,98 @@ def api_discovery():
 
     if paginated:
         items = results[offset:offset + limit]
-        total = offset + len(items)
-        if len(results) >= offset + limit:
-            total += 1
+        has_more = len(results) > offset + limit
+        total = offset + len(items) + (1 if has_more else 0)
         return return_api({
             'items': items,
             'total': total,
             'offset': offset,
-            'page_size': limit
+            'page_size': limit,
+            'has_more': has_more,
         })
 
     return return_api(results)
+
+
+@api.route('/discovery/capabilities', methods=['GET'])
+@error_handler
+@auth
+def api_discovery_capabilities():
+    section = extract_key(request, 'section', False) or 'comic'
+    if section not in ('comic', 'manga'):
+        raise InvalidKeyValue('section', section)
+    if section == 'comic':
+        facets = Library.get_facets('comic')
+        return return_api({
+            'section': 'comic',
+            'filters': ['publisher', 'decade'],
+            'deferred_filters': ['character', 'genre', 'creator', 'imprint', 'format'],
+            'shelves': ['recently_started', 'upcoming_launches', 'recently_active', 'browse_publishers', 'browse_by_decade', 'browse_all_comics'],
+            'source_notes': {'trending': 'Recently Active uses ComicVine date_last_updated, not a global popularity score.'},
+            'publishers': [{'value': f['value'], 'label': f['value'], 'count': f.get('count', 0)} for f in facets.get('publishers', [])],
+            'decades': [{'value': str((int(f['value']) // 10) * 10), 'label': f"{(int(f['value']) // 10) * 10}s", 'count': f.get('count', 0)} for f in facets.get('years', []) if str(f.get('value', '')).isdigit()],
+        })
+    return return_api({
+        'section': 'manga',
+        'filters': ['tags', 'demographic', 'status', 'original_language', 'year', 'author', 'artist', 'content_rating'],
+        'deferred_filters': ['publisher', 'character', 'imprint', 'format'],
+        'shelves': ['recently_updated', 'browse_all_manga'],
+        'source_notes': {'mangadex': 'Manga Browse uses MangaDex directly. Chapter counts are not shown as comic issue counts.'},
+        'statuses': [{'value': v, 'label': v.replace('_', ' ').title()} for v in ['ongoing', 'completed', 'hiatus', 'cancelled']],
+        'original_languages': [{'value': v, 'label': v.upper()} for v in ['ja', 'ko', 'zh', 'en']],
+        'demographics': [{'value': v, 'label': v.title()} for v in ['shounen', 'shoujo', 'josei', 'seinen']],
+    })
+
+
+@api.route('/discovery/browse', methods=['GET'])
+@error_handler
+@auth
+def api_discovery_browse():
+    section = extract_key(request, 'section', False) or 'comic'
+    if section not in ('comic', 'manga'):
+        raise InvalidKeyValue('section', section)
+    offset = extract_key(request, 'offset', False) or 0
+    limit = extract_key(request, 'limit', False) or 30
+    if offset < 0 or limit < 1 or limit > 100:
+        raise InvalidKeyValue('limit', limit)
+    query = request.values.get('q', '').strip()
+    sort = request.values.get('sort', 'recently_updated' if section == 'manga' else 'trending')
+    if section == 'manga':
+        unsupported = {'publisher', 'character', 'creator', 'imprint', 'format'} & set(request.values.keys())
+        if unsupported:
+            raise InvalidKeyValue(next(iter(unsupported)), request.values.get(next(iter(unsupported))))
+        try:
+            page = browse_mangadex_catalog(
+                query=query,
+                offset=offset,
+                limit=limit,
+                sort=sort,
+                status=request.values.get('status', ''),
+                original_language=request.values.get('original_language', ''),
+                demographic=request.values.get('demographic', ''),
+                content_rating=request.values.get('content_rating', ''),
+                year=request.values.get('year', ''),
+                decade=request.values.get('decade', ''),
+                author=request.values.get('author', ''),
+                artist=request.values.get('artist', ''),
+                tags=request.values.get('tags', ''),
+            )
+        except ValueError as exc:
+            raise InvalidKeyValue('filter', str(exc))
+        return return_api(page)
+    unsupported = {'tags', 'demographic', 'original_language', 'author', 'artist', 'content_rating'} & set(request.values.keys())
+    if unsupported:
+        raise InvalidKeyValue(next(iter(unsupported)), request.values.get(next(iter(unsupported))))
+    page = run(ComicVine().browse_catalog_volumes(
+        query=query,
+        publisher=request.values.get('publisher', ''),
+        decade=request.values.get('decade', ''),
+        year=request.values.get('year', ''),
+        offset=offset,
+        limit=limit,
+        sort=sort,
+    ))
+    return return_api(page)
 
 
 # =====================

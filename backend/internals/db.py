@@ -358,7 +358,8 @@ CREATE TABLE IF NOT EXISTS config(
 );
 CREATE TABLE IF NOT EXISTS root_folders(
     id INTEGER PRIMARY KEY,
-    folder VARCHAR(254) UNIQUE NOT NULL
+    folder VARCHAR(254) UNIQUE NOT NULL,
+    section VARCHAR(10) NOT NULL DEFAULT 'comic'
 );
 CREATE TABLE IF NOT EXISTS volumes(
     id INTEGER PRIMARY KEY,
@@ -599,17 +600,71 @@ CREATE TABLE IF NOT EXISTS metron_backfill_state(
     id INTEGER PRIMARY KEY CHECK(id = 1),
     status TEXT NOT NULL,
     total INTEGER NOT NULL DEFAULT 0,
+    total_estimate INTEGER NOT NULL DEFAULT 0,
     processed INTEGER NOT NULL DEFAULT 0,
     matched INTEGER NOT NULL DEFAULT 0,
     unmatched INTEGER NOT NULL DEFAULT 0,
     review_required INTEGER NOT NULL DEFAULT 0,
     failed INTEGER NOT NULL DEFAULT 0,
+    skipped INTEGER NOT NULL DEFAULT 0,
     current_volume_id INTEGER,
+    last_terminal_volume_id INTEGER NOT NULL DEFAULT 0,
     rate_limit_paused_until INTEGER,
+    last_error TEXT,
+    resume_time INTEGER,
     cancel_requested BOOL NOT NULL DEFAULT 0,
     started_at INTEGER,
     updated_at INTEGER,
     completed_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS provider_match_candidates(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    volume_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    candidate_external_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    year INTEGER,
+    publisher TEXT,
+    cover_url TEXT,
+    summary TEXT,
+    confidence REAL,
+    match_reason TEXT NOT NULL DEFAULT '',
+    review_group_id TEXT NOT NULL,
+    review_status TEXT NOT NULL DEFAULT 'review_required',
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS provider_match_candidates_unresolved_idx
+    ON provider_match_candidates(provider, review_status, volume_id, created_at);
+CREATE TABLE IF NOT EXISTS volume_metadata_enrichment(
+    volume_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    normalized_value TEXT NOT NULL,
+    external_provider_id TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL,
+    active BOOL NOT NULL DEFAULT 1,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+    PRIMARY KEY(volume_id, provider, field_name)
+);
+CREATE INDEX IF NOT EXISTS volume_metadata_enrichment_active_idx
+    ON volume_metadata_enrichment(volume_id, provider, active);
+CREATE TABLE IF NOT EXISTS provider_rate_limit_state(
+    provider TEXT PRIMARY KEY,
+    burst_limit INTEGER,
+    burst_remaining INTEGER,
+    burst_reset INTEGER,
+    sustained_limit INTEGER,
+    sustained_remaining INTEGER,
+    sustained_reset INTEGER,
+    retry_after INTEGER,
+    resume_at INTEGER,
+    last_status TEXT,
+    auth_blocked BOOL NOT NULL DEFAULT 0,
+    updated_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS nzb_indexers(
     id INTEGER PRIMARY KEY,

@@ -49,6 +49,11 @@ export interface AllSettings {
   suwayomi_password: string;
   suwayomi_source_ids: string[];
   comicvine_api_key: string;
+  metron_enabled: boolean;
+  metron_api_token: string;
+  metron_last_successful_connection: number;
+  metron_last_enrichment_run: number;
+  metron?: { enabled: boolean; token_configured: boolean; token_masked: string; last_successful_connection: number | null; last_enrichment: number | null; rate_limit?: Record<string, unknown>; backfill?: Record<string, unknown> };
   date_type: string;
   [key: string]: unknown;
 }

@@ -1587,6 +1587,12 @@ class Library:
             task = AutoSearchVolume(volume_id)
             TaskHandler().add(task)
 
+        try:
+            from backend.features.metron_enrichment import queue_metron_enrichment
+            queue_metron_enrichment(volume_id)
+        except Exception:
+            LOGGER.exception('Failed to queue optional Metron enrichment for volume %d', volume_id)
+
         LOGGER.info(
             f'Added volume with CV ID {comicvine_id} and ID {volume_id}'
         )

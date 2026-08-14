@@ -36,6 +36,9 @@ import {
   fetchCoverOptions,
   addCoverPage,
   manualSuwayomiBundleSearch,
+  refreshMetronVolume,
+  unlinkMetronVolume,
+  relinkMetronVolume,
 } from '../-volumes.api';
 import type {
   IssueDetail,
@@ -93,7 +96,7 @@ interface DownloadedStatusPayload {
   not_downloaded_issues?: number[];
 }
 
-const VOLUME_REFRESH_ACTIONS = new Set(['refresh_and_scan', 'import_files_volume', 'mass_rename', 'mass_convert']);
+const VOLUME_REFRESH_ACTIONS = new Set(['refresh_and_scan', 'import_files_volume', 'mass_rename', 'mass_convert', 'metron_enrich_volume']);
 const IMPORT_FILE_ACCEPT = '.cbz,.cbr,.cb7,.cbt,.cba,.zip,.rar,.7z,.7zip,.tar.gz,.epub,.pdf,.mobi';
 
 const MONITORING_SCHEMES = [
@@ -278,6 +281,37 @@ export function VolumeDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ['volumes', 'history', id] });
     }
   }, [historyTabActive, id, queryClient]);
+
+
+  useEffect(() => {
+    const refresh = () => {
+      refreshMetronVolume(id).then((result) => {
+        setActionMsg(result.duplicate ? 'Metron enrichment is already queued.' : `Metron enrichment queued${result.task_id ? ` as task ${result.task_id}` : ''}.`);
+      }).catch((error) => setActionMsg(String(error)));
+    };
+    const relink = () => {
+      const seriesId = window.prompt('Metron series ID');
+      if (!seriesId) return;
+      relinkMetronVolume(id, seriesId).then((result) => {
+        setActionMsg(result.duplicate ? 'Metron relink saved; enrichment is already queued.' : `Metron relink queued${result.task_id ? ` as task ${result.task_id}` : ''}.`);
+      }).catch((error) => setActionMsg(String(error)));
+    };
+    const unlink = () => {
+      if (!window.confirm('Remove visible Metron enrichment for this volume? ComicVine data will be preserved.')) return;
+      unlinkMetronVolume(id).then(() => {
+        setActionMsg('Metron link removed.');
+        refreshVolumeData();
+      }).catch((error) => setActionMsg(String(error)));
+    };
+    window.addEventListener('kapowarr:metron-refresh', refresh);
+    window.addEventListener('kapowarr:metron-relink', relink);
+    window.addEventListener('kapowarr:metron-unlink', unlink);
+    return () => {
+      window.removeEventListener('kapowarr:metron-refresh', refresh);
+      window.removeEventListener('kapowarr:metron-relink', relink);
+      window.removeEventListener('kapowarr:metron-unlink', unlink);
+    };
+  }, [id, refreshVolumeData]);
 
   useSocketEvent<TaskEndedPayload>('task_ended', useCallback((payload) => {
     if (payload.volume_id !== id || !VOLUME_REFRESH_ACTIONS.has(payload.action ?? '')) return;

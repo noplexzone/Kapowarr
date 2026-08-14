@@ -817,6 +817,11 @@ def api_settings():
     settings = Settings()
     if request.method == 'GET':
         result = settings.get_public_settings().todict()
+        try:
+            from backend.features.metron_enrichment import metron_settings_status
+            result['metron'] = metron_settings_status()
+        except Exception:
+            LOGGER.exception('Failed to load Metron settings status')
         return return_api(result)
 
     elif request.method == 'PUT':
@@ -1263,8 +1268,8 @@ def api_discovery_capabilities():
         facets = Library.get_facets('comic')
         return return_api({
             'section': 'comic',
-            'filters': ['publisher', 'decade'],
-            'deferred_filters': ['character', 'genre', 'creator', 'imprint', 'format'],
+            'filters': ['publisher', 'decade', 'character', 'genre'],
+            'deferred_filters': ['creator', 'imprint', 'format'],
             'shelves': ['recently_started', 'upcoming_launches', 'recently_active', 'browse_publishers', 'browse_by_decade', 'browse_all_comics'],
             'source_notes': {'trending': 'Recently Active uses ComicVine date_last_updated, not a global popularity score.'},
             'publishers': [{'value': f['value'], 'label': f['value'], 'count': f.get('count', 0)} for f in facets.get('publishers', [])],
@@ -1321,6 +1326,21 @@ def api_discovery_browse():
     unsupported = {'tags', 'demographic', 'original_language', 'author', 'artist', 'content_rating'} & set(request.values.keys())
     if unsupported:
         raise InvalidKeyValue(next(iter(unsupported)), request.values.get(next(iter(unsupported))))
+    character = request.values.get('character', '').strip()
+    genre = request.values.get('genre', '').strip()
+    if character or genre:
+        from backend.features.metron_enrichment import browse_enriched_volumes
+        if character and genre:
+            raise InvalidKeyValue('filter', 'Use either character or genre, not both')
+        page = browse_enriched_volumes(
+            'character' if character else 'genre',
+            character or genre,
+            query=query,
+            offset=offset,
+            limit=limit,
+            sort=sort,
+        )
+        return return_api(page)
     page = run(ComicVine().browse_catalog_volumes(
         query=query,
         publisher=request.values.get('publisher', ''),
@@ -1786,6 +1806,11 @@ def api_volume(id: int):
 
     if request.method == 'GET':
         volume_info = volume.get_public_data()
+        try:
+            from backend.features.metron_enrichment import MetronEnrichmentService
+            volume_info['metadata_provenance'] = MetronEnrichmentService.get_volume_provenance(id)
+        except Exception:
+            LOGGER.exception('Failed to load Metron provenance for volume %d', id)
         return return_api(volume_info)
 
     elif request.method == 'PUT':
@@ -2934,3 +2959,95 @@ def api_nzb_indexer(id: int):
     elif request.method == 'DELETE':
         NZBIndexers.delete(id)
         return return_api({})
+
+
+# =====================
+# Metron enrichment
+# =====================
+
+@api.route('/metadata/metron/status', methods=['GET'])
+@error_handler
+@auth
+def api_metron_status():
+    from backend.features.metron_enrichment import metron_settings_status
+    return return_api(metron_settings_status())
+
+
+@api.route('/metadata/metron/test', methods=['POST'])
+@error_handler
+@auth
+def api_metron_test():
+    from backend.features.metron_enrichment import safe_test_connection
+    return return_api(safe_test_connection())
+
+
+@api.route('/metadata/metron/backfill', methods=['POST'])
+@error_handler
+@auth
+def api_metron_backfill():
+    from backend.features.tasks import MetronBackfillTask, TaskHandler
+    task_id = TaskHandler().add(MetronBackfillTask())
+    return return_api({'task_id': task_id}, code=202)
+
+
+@api.route('/metadata/metron/reviews', methods=['GET'])
+@error_handler
+@auth
+def api_metron_reviews():
+    from backend.features.metron_enrichment import get_review_candidates
+    volume_id = request.values.get('volume_id')
+    return return_api(get_review_candidates(int(volume_id) if volume_id else None))
+
+
+@api.route('/volumes/<int:id>/metadata/metron/refresh', methods=['POST'])
+@error_handler
+@auth
+def api_volume_metron_refresh(id: int):
+    from backend.features.tasks import MetronEnrichmentTask, TaskHandler
+    if TaskHandler.task_for_volume_running(id):
+        return return_api({'task_id': None, 'duplicate': True}, code=202)
+    task_id = TaskHandler().add(MetronEnrichmentTask(id))
+    return return_api({'task_id': task_id}, code=202)
+
+
+@api.route('/volumes/<int:id>/metadata/metron/relink', methods=['POST'])
+@error_handler
+@auth
+def api_volume_metron_relink(id: int):
+    from backend.features.metron_enrichment import relink_pending
+    from backend.features.tasks import MetronEnrichmentTask, TaskHandler
+    data = request.get_json() or {}
+    series_id = str(data.get('series_id') or data.get('candidate_external_id') or '').strip()
+    candidate_id = data.get('candidate_id')
+    relink_pending(id, series_id, int(candidate_id) if candidate_id is not None else None)
+    if TaskHandler.task_for_volume_running(id):
+        return return_api({'task_id': None, 'status': 'pending', 'duplicate': True}, code=202)
+    task_id = TaskHandler().add(MetronEnrichmentTask(id))
+    return return_api({'task_id': task_id, 'status': 'pending'}, code=202)
+
+
+@api.route('/volumes/<int:id>/metadata/metron/unlink', methods=['POST', 'DELETE'])
+@error_handler
+@auth
+def api_volume_metron_unlink(id: int):
+    from backend.features.metron_enrichment import MetronEnrichmentService
+    return return_api(MetronEnrichmentService.unlink(id))
+
+
+@api.route('/volumes/<int:id>/metadata/metron/review/dismiss', methods=['POST'])
+@error_handler
+@auth
+def api_volume_metron_review_dismiss(id: int):
+    from backend.features.metron_enrichment import dismiss_review
+    return return_api(dismiss_review(id))
+
+
+@api.route('/discover/metron/<term_type>', methods=['GET'])
+@error_handler
+@auth
+def api_discover_metron_terms(term_type: str):
+    from backend.features.metron_enrichment import browse_enriched_terms
+    q = request.values.get('q') or ''
+    page = int(request.values.get('page') or 1)
+    page_size = int(request.values.get('page_size') or 50)
+    return return_api(browse_enriched_terms(term_type, q, page, page_size))

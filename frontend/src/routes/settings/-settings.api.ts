@@ -153,3 +153,12 @@ export async function deleteRootFolder(id: number): Promise<void> {
   const response = await apiClient.delete(`rootfolder/${id}`);
   await readJson<unknown>(response);
 }
+
+
+export async function testMetronConnection(): Promise<{success: boolean; status: string; description: string | null; rate_limit?: Record<string, unknown> | null}> {
+  return apiClient.post('metadata/metron/test').then(res => readJson<{success: boolean; status: string; description: string | null; rate_limit?: Record<string, unknown> | null}>(res));
+}
+
+export async function startMetronBackfill(): Promise<{task_id: number | null}> {
+  return apiClient.post('metadata/metron/backfill').then(res => readJson<{task_id: number | null}>(res));
+}

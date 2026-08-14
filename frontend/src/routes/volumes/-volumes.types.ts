@@ -45,6 +45,14 @@ export interface VolumeDetailFull {
   cover?: string;
   issues: IssueDetail[];
   general_files: GeneralFileDetail[];
+  metadata_provenance?: {
+    canonical_provider: string;
+    enriched_by: string[];
+    provider_badges: { provider: string; label: string; role: string }[];
+    metron?: { series_id?: string | null; match_status?: string | null; last_successful_enrichment?: number | null; last_checked?: number | null };
+    scalar_fallbacks?: { field_name: string; normalized_value: string; provider: string }[];
+    enrichment_terms?: { term_type: string; name: string; provider: string }[];
+  };
 }
 
 export interface ManualSearchResult {

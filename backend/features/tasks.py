@@ -908,6 +908,79 @@ class BulkLibraryImport(Task):
         return None
 
 
+
+
+class MetronEnrichmentTask(Task):
+    action = 'metron_enrich_volume'
+    display_title = 'Metron enrichment'
+    category = 'metadata'
+
+    def __init__(self, volume_id: int) -> None:
+        self.volume_id = volume_id
+        self.issue_id = None
+        self.message = f'Enriching volume {volume_id} with Metron'
+        self.details = {'provider': 'metron', 'volume_id': volume_id}
+        self.stop = False
+
+    def run(self):
+        from backend.features.metron_enrichment import MetronEnrichmentService
+        _emit_task_event(TaskStatusEvent(self.message))
+        result = MetronEnrichmentService().refresh_volume(self.volume_id)
+        self.details = {'provider': 'metron', 'volume_id': self.volume_id, 'status': result.get('status')}
+        self.message = f'Metron enrichment {result.get("status", "finished")} for volume {self.volume_id}'
+        _emit_task_event(TaskStatusEvent(self.message))
+        return None
+
+
+class MetronBackfillTask(Task):
+    action = 'metron_backfill'
+    display_title = 'Metron backfill'
+    category = 'metadata'
+    volume_id = None
+    issue_id = None
+
+    def __init__(self) -> None:
+        self.message = 'Backfilling existing comics with Metron'
+        self.details = {'provider': 'metron'}
+        self.stop = False
+
+    def run(self):
+        from backend.implementations.metron import MetronPausedError, MetronRateLimitedError
+        from backend.features.metron_enrichment import MetronEnrichmentService, update_backfill_terminal, now_ts
+        db = get_db()
+        state = db.execute('SELECT * FROM metron_backfill_state WHERE id = 1;').fetchonedict() or {}
+        cursor = int(state.get('last_terminal_volume_id') or 0)
+        total = db.execute("""SELECT COUNT(*) FROM volumes v INNER JOIN root_folders rf ON rf.id = v.root_folder
+            WHERE rf.section = 'comic' AND v.metadata_source = 'comicvine' AND v.id > ?;""", (cursor,)).fetchone()[0]
+        db.execute("""INSERT INTO metron_backfill_state(id,status,total,total_estimate,started_at,updated_at,last_terminal_volume_id)
+            VALUES(1,'running',?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET status='running', total=excluded.total, total_estimate=excluded.total_estimate, updated_at=excluded.updated_at;""",
+            (total, total, now_ts(), now_ts(), cursor))
+        commit()
+        service = MetronEnrichmentService()
+        rows = db.execute("""SELECT v.id, v.comicvine_id FROM volumes v INNER JOIN root_folders rf ON rf.id = v.root_folder
+            WHERE rf.section = 'comic' AND v.metadata_source = 'comicvine' AND v.id > ? ORDER BY v.id;""", (cursor,)).fetchalldict()
+        for row in rows:
+            if self.stop:
+                break
+            volume_id = int(row['id'])
+            self.message = f'Metron backfill volume {volume_id}'
+            _emit_task_event(TaskStatusEvent(self.message))
+            try:
+                result = service.refresh_volume(volume_id)
+                status = result.get('status')
+                key = 'matched' if status == 'linked' else 'unmatched' if status == 'unavailable' else 'review_required' if status == 'review_required' else 'skipped'
+                update_backfill_terminal(status, volume_id, {key: 1})
+            except (MetronPausedError, MetronRateLimitedError) as exc:
+                pause_until = exc.rate_limit.pause_until if getattr(exc, 'rate_limit', None) else None
+                db.execute("UPDATE metron_backfill_state SET status='rate_limit_paused', rate_limit_paused_until=?, resume_time=?, last_error=?, updated_at=? WHERE id=1;",
+                           (pause_until, pause_until, str(exc), now_ts()))
+                commit(); break
+            except Exception as exc:
+                LOGGER.exception('Metron backfill failed for volume %s', volume_id)
+                update_backfill_terminal('failed', volume_id, {'failed': 1}, str(exc))
+        return None
+
 # =====================
 # Task handling
 # =====================

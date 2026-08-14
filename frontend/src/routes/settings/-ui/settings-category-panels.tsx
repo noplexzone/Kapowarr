@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { AllSettings, SuwayomiSource } from '../-settings.types';
+import { startMetronBackfill, testMetronConnection } from '../-settings.api';
 import { SettingsField as Field, SettingsSection as Section, ToggleField } from './settings-field';
 import styles from './settings-page.module.css';
 
@@ -52,7 +54,31 @@ export function SettingsCategoryPanel({ category, ...props }: Props & { category
     {toggle('delete_completed_downloads','Delete Completed Downloads')}{text('suwayomi_base_url','Suwayomi Base URL')}{text('suwayomi_username','Suwayomi Username')}{text('suwayomi_password','Suwayomi Password',undefined,'password')}
     <Field id="setting-suwayomi_source_ids" label="Suwayomi Source Priority" help={props.suwayomiSourcesLoading ? 'Loading Suwayomi sources…' : 'Comma-separated Suwayomi source IDs in preferred order.'}><input className={styles.input} value={arr(form,'suwayomi_source_ids').join(', ')} onChange={e=>set('suwayomi_source_ids',e.target.value.split(',').map(s=>s.trim()))}/></Field>
   </Section>;
-  if (category === 'metadata') return <Section title="Metadata">{text('comicvine_api_key','ComicVine API Key','API key used to retrieve comic metadata.')}</Section>;
+  if (category === 'metadata') {
+    const [metronStatus, setMetronStatus] = useState<string>('');
+    const metron = form.metron;
+    return <Section title="Metadata">
+      {text('comicvine_api_key','ComicVine API Key','API key used to retrieve canonical comic metadata.')}
+      <div className={styles.card}>
+        <h3>Metadata / Integrations — Metron</h3>
+        <p>Metron enriches Comics only. ComicVine remains canonical; Manga is unchanged.</p>
+        {toggle('metron_enabled','Enable Metron','Allow optional asynchronous comic enrichment after ComicVine adds and refreshes.')}
+        {text('metron_api_token','Metron API token','Write-only bearer token. Saved settings return only a masked value.','password')}
+        <div className={styles.actions}>
+          <button className={styles.secondaryButton} type="button" onClick={() => testMetronConnection().then(r => setMetronStatus(`${r.success ? 'Connection successful' : 'Connection failed'}: ${r.status}`)).catch(e => setMetronStatus(String(e)))}>Test Connection</button>
+          <button className={styles.secondaryButton} type="button" onClick={() => startMetronBackfill().then(r => setMetronStatus(`Backfill queued${r.task_id ? ` as task ${r.task_id}` : ''}`)).catch(e => setMetronStatus(String(e)))}>Backfill Existing Comics</button>
+        </div>
+        <dl className={styles.metaList}>
+          <div><dt>Token</dt><dd>{metron?.token_configured ? 'Configured (masked)' : 'Not configured'}</dd></div>
+          <div><dt>Last successful connection</dt><dd>{(metron?.last_successful_connection ?? form.metron_last_successful_connection) || 'Never'}</dd></div>
+          <div><dt>Last enrichment</dt><dd>{(metron?.last_enrichment ?? form.metron_last_enrichment_run) || 'Never'}</dd></div>
+          <div><dt>Rate status</dt><dd>{String((metron?.rate_limit?.last_status as string | undefined) ?? 'Unknown')}</dd></div>
+          <div><dt>Backfill progress</dt><dd>{String((metron?.backfill?.status as string | undefined) ?? 'Idle')}</dd></div>
+        </dl>
+        {metronStatus && <p role="status">{metronStatus}</p>}
+      </div>
+    </Section>;
+  }
   if (category === 'proxy') return <Section title="Proxy">
     <Field id="setting-proxy_type" label="Proxy Type" help="Proxy protocol. Proxy hosting changes require a restart."><select className={styles.select} value={str(form,'proxy_type')} onChange={e=>set('proxy_type',e.target.value)}><option value="">None</option><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option><option value="socks5h">SOCKS5H</option></select></Field>
     {text('proxy_host','Proxy Host','Changing proxy hosting settings requires a restart.')}{text('proxy_port','Proxy Port','Changing proxy hosting settings requires a restart.','number')}{text('proxy_username','Proxy Username')}{text('proxy_password','Proxy Password',undefined,'password')}

@@ -85,6 +85,7 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
             : [],
         }))
       : [],
+    metadata_provenance: raw.metadata_provenance,
     general_files: Array.isArray(raw.general_files)
       ? raw.general_files.map((file: Record<string, any>) => {
           const filepath = String(file.filepath ?? '');
@@ -426,4 +427,20 @@ export async function addCoverPage(
     timeout: 300000,
   });
   return readJson<AddCoverResult>(response);
+}
+
+
+export async function refreshMetronVolume(id: number): Promise<{task_id: number | null; duplicate?: boolean}> {
+  const response = await apiClient.post(`volumes/${id}/metadata/metron/refresh`);
+  return readJson<{task_id: number | null; duplicate?: boolean}>(response);
+}
+
+export async function unlinkMetronVolume(id: number): Promise<{status: string}> {
+  const response = await apiClient.post(`volumes/${id}/metadata/metron/unlink`);
+  return readJson<{status: string}>(response);
+}
+
+export async function relinkMetronVolume(id: number, seriesId: string, candidateId?: number): Promise<{task_id: number | null; status: string; duplicate?: boolean}> {
+  const response = await apiClient.post(`volumes/${id}/metadata/metron/relink`, { json: { series_id: seriesId, candidate_id: candidateId } });
+  return readJson<{task_id: number | null; status: string; duplicate?: boolean}>(response);
 }

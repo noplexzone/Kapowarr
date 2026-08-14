@@ -1399,13 +1399,18 @@ _METRON_TABLE_DEFINITIONS = {
             id INTEGER PRIMARY KEY CHECK(id = 1),
             status TEXT NOT NULL,
             total INTEGER NOT NULL DEFAULT 0,
+            total_estimate INTEGER NOT NULL DEFAULT 0,
             processed INTEGER NOT NULL DEFAULT 0,
             matched INTEGER NOT NULL DEFAULT 0,
             unmatched INTEGER NOT NULL DEFAULT 0,
             review_required INTEGER NOT NULL DEFAULT 0,
             failed INTEGER NOT NULL DEFAULT 0,
+            skipped INTEGER NOT NULL DEFAULT 0,
             current_volume_id INTEGER,
+            last_terminal_volume_id INTEGER NOT NULL DEFAULT 0,
             rate_limit_paused_until INTEGER,
+            last_error TEXT,
+            resume_time INTEGER,
             cancel_requested BOOL NOT NULL DEFAULT 0,
             started_at INTEGER,
             updated_at INTEGER,
@@ -1418,7 +1423,7 @@ _METRON_TABLE_COLUMNS = {
     'volume_provider_links': ('id', 'volume_id', 'provider', 'resource_type', 'external_id', 'match_method', 'match_confidence', 'review_status', 'linked_at', 'last_successful_enrichment', 'last_checked'),
     'provider_cache': ('provider', 'resource_type', 'external_id', 'payload', 'etag', 'last_modified', 'fetched_at', 'expires_at'),
     'volume_enrichment_terms': ('volume_id', 'provider', 'term_type', 'external_id', 'name'),
-    'metron_backfill_state': ('id', 'status', 'total', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'current_volume_id', 'rate_limit_paused_until', 'cancel_requested', 'started_at', 'updated_at', 'completed_at'),
+    'metron_backfill_state': ('id', 'status', 'total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'current_volume_id', 'last_terminal_volume_id', 'rate_limit_paused_until', 'last_error', 'resume_time', 'cancel_requested', 'started_at', 'updated_at', 'completed_at'),
 }
 
 
@@ -1478,4 +1483,72 @@ def _migrate_normalize_metron_schema_after_version_collision():
     cursor = get_db()
     cursor.execute('DROP TABLE IF EXISTS saved_filters;')
     _ensure_metron_base_schema(cursor)
+    return
+
+
+@DatabaseMigrationHandler.register_handler(59)
+def _migrate_harden_metron_enrichment_state():
+    cursor = get_db()
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS provider_match_candidates(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            candidate_external_id TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            year INTEGER,
+            publisher TEXT,
+            cover_url TEXT,
+            summary TEXT,
+            confidence REAL,
+            match_reason TEXT NOT NULL DEFAULT '',
+            review_group_id TEXT NOT NULL,
+            review_status TEXT NOT NULL DEFAULT 'review_required',
+            payload TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS provider_match_candidates_unresolved_idx
+            ON provider_match_candidates(provider, review_status, volume_id, created_at);
+        CREATE TABLE IF NOT EXISTS volume_metadata_enrichment(
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            field_name TEXT NOT NULL,
+            normalized_value TEXT NOT NULL,
+            external_provider_id TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
+            active BOOL NOT NULL DEFAULT 1,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            PRIMARY KEY(volume_id, provider, field_name)
+        );
+        CREATE INDEX IF NOT EXISTS volume_metadata_enrichment_active_idx
+            ON volume_metadata_enrichment(volume_id, provider, active);
+        CREATE TABLE IF NOT EXISTS provider_rate_limit_state(
+            provider TEXT PRIMARY KEY,
+            burst_limit INTEGER,
+            burst_remaining INTEGER,
+            burst_reset INTEGER,
+            sustained_limit INTEGER,
+            sustained_remaining INTEGER,
+            sustained_reset INTEGER,
+            retry_after INTEGER,
+            resume_at INTEGER,
+            last_status TEXT,
+            auth_blocked BOOL NOT NULL DEFAULT 0,
+            updated_at INTEGER
+        );
+    """)
+    existing = [row[1] for row in cursor.execute('PRAGMA table_info(metron_backfill_state);')]
+    additions = {
+        'total_estimate': 'INTEGER NOT NULL DEFAULT 0',
+        'skipped': 'INTEGER NOT NULL DEFAULT 0',
+        'last_terminal_volume_id': 'INTEGER NOT NULL DEFAULT 0',
+        'last_error': 'TEXT',
+        'resume_time': 'INTEGER',
+    }
+    for column, ddl in additions.items():
+        if column not in existing:
+            cursor.execute(f'ALTER TABLE metron_backfill_state ADD COLUMN {column} {ddl};')
     return

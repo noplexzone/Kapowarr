@@ -181,6 +181,10 @@ export function VolumeHero({
         </div>
 
         <div className={styles.statusRow}>
+          {volume.metadata_provenance?.provider_badges?.map((badge) => (
+            <Badge key={`${badge.provider}-${badge.role}`} tone={badge.provider === 'metron' ? 'info' : 'neutral'}>{badge.label}</Badge>
+          ))}
+          {volume.metadata_provenance?.metron?.match_status && <Badge tone="neutral">Metron: {volume.metadata_provenance.metron.match_status}</Badge>}
           <Badge tone={volume.monitored ? 'success' : 'neutral'}>
             {volume.monitored ? 'Monitored' : 'Unmonitored'}
           </Badge>
@@ -209,6 +213,9 @@ export function VolumeHero({
           </Button>
           <Button variant="secondary" onClick={onImportFiles}>Import Files</Button>
           <Button variant="secondary" onClick={onManageIssues}>Manage Issues</Button>
+          {volume.section === 'comic' && <Button variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent('kapowarr:metron-refresh', { detail: { volumeId: volume.id } }))}>Refresh Metron</Button>}
+          {volume.section === 'comic' && <Button variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent('kapowarr:metron-relink', { detail: { volumeId: volume.id } }))}>Relink Metron</Button>}
+          {volume.section === 'comic' && <Button variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent('kapowarr:metron-unlink', { detail: { volumeId: volume.id } }))}>Remove Link</Button>}
         </div>
 
         <details className={styles.managementDrawer}>

@@ -179,7 +179,7 @@ for (const route of ['/home', '/comics', '/manga', '/discover?section=comic&cate
 
 const workflowRoutes = [
   { route: '/discover/search?section=comic&q=Acceptance', evidence: 'Acceptance Search Result' },
-  { route: '/settings/general', evidence: 'Service configuration' },
+  { route: '/settings/general', evidence: 'Hosting, authentication, theme, logs' },
   { route: '/volumes/1/files', evidence: 'Volume Notes.pdf' },
   { route: '/volumes/1/history', evidence: 'Volume bundle release' },
   { route: '/activity/blocklist', evidence: 'Blocklist' },
@@ -334,7 +334,7 @@ test('principal redesign flows remain usable at mobile acceptance width', async 
   await page.getByRole('link', { name: 'Activity', exact: true }).click();
   await expect(page).toHaveURL(/\/activity\//);
   await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await expect(page.getByText('Service configuration')).toBeVisible();
+  await expect(page.getByText('Hosting, authentication, theme, logs').first()).toBeVisible();
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);

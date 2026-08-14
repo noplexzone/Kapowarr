@@ -391,6 +391,7 @@ const addRoute = createRoute({
   },
 });
 
+// Temporary exact Add review route retained for Phase 2 replacement.
 const addReviewRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: 'add/review',

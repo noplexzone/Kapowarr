@@ -71,7 +71,7 @@ export const legacyLibrarySearchSchema = z.object({
 
 export const discoverySearchSchema = z.object({
   section: sectionSchema,
-  category: z.enum(['upcoming', 'new']).default('upcoming').catch('upcoming'),
+  category: z.enum(['recently-started', 'upcoming-launches', 'recently-active', 'recently-updated']).default('recently-started').catch('recently-started'),
   q: cleanQuery,
 });
 
@@ -91,6 +91,8 @@ export const discoveryBrowseSearchSchema = z.object({
   section: sectionSchema,
   q: cleanQuery,
   publisher: cleanQuery,
+  character: cleanQuery,
+  genre: cleanQuery,
   decade: z.string().regex(/^\d{4}$/).optional().catch(undefined),
   status: cleanQuery,
   tags: cleanQuery,
@@ -105,7 +107,7 @@ export const discoveryBrowseSearchSchema = z.object({
 
 export const legacyDiscoverySearchSchema = z.object({
   section: sectionSchema,
-  type: z.enum(['upcoming', 'new']).default('upcoming').catch('upcoming'),
+  type: z.enum(['upcoming', 'new', 'trending', 'recently-updated']).default('new').catch('new'),
   q: cleanQuery,
 });
 
@@ -188,7 +190,7 @@ export function legacyDiscoveryToCanonical(rawSearch: unknown) {
   const search = legacyDiscoverySearchSchema.parse(rawSearch);
   return discoverySearchSchema.parse({
     section: search.section,
-    category: search.type,
+    category: search.type === 'upcoming' ? 'upcoming-launches' : search.type === 'new' ? 'recently-started' : search.type === 'trending' ? 'recently-active' : 'recently-updated',
     q: search.q,
   });
 }

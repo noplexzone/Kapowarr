@@ -20,7 +20,7 @@ export const discoveryFacetSchema = z.object({ value: z.string(), label: z.strin
 export type DiscoveryFacet = z.infer<typeof discoveryFacetSchema>;
 export const discoveryCapabilitiesSchema = z.object({ section: discoverySectionSchema, filters: z.array(z.enum(['publisher', 'decade', 'character', 'genre', 'status', 'tags', 'demographic', 'original_language', 'year', 'author', 'artist', 'content_rating'])), deferred_filters: z.array(z.string()), shelves: z.array(z.string()), source_notes: z.record(z.string()), publishers: z.array(discoveryFacetSchema).optional(), decades: z.array(discoveryFacetSchema).optional(), statuses: z.array(discoveryFacetSchema).optional(), original_languages: z.array(discoveryFacetSchema).optional(), demographics: z.array(discoveryFacetSchema).optional() });
 export type DiscoveryCapabilities = z.infer<typeof discoveryCapabilitiesSchema>;
-export type DiscoveryType = 'upcoming' | 'new' | 'trending' | 'recently-updated';
+export type DiscoveryType = 'recently-started' | 'upcoming-launches' | 'recently-active' | 'recently-updated' | 'upcoming' | 'new' | 'trending';
 export interface BrowseFilters { section: DiscoverySection; q?: string; publisher?: string; decade?: string; character?: string; genre?: string; status?: string; tags?: string; demographic?: string; original_language?: string; year?: string; author?: string; artist?: string; content_rating?: string; sort: BrowseSort; }
 
 export function filterDiscoveryVolumes<T extends { already_added?: number | null }>(volumes: T[], hideAlreadyAdded: boolean): T[] { return hideAlreadyAdded ? volumes.filter((volume) => volume.already_added == null) : volumes; }

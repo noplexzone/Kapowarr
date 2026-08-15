@@ -1211,6 +1211,22 @@ def api_changelog():
 def api_discovery():
     discovery_type = extract_key(request, 'type')
     section = extract_key(request, 'section', False) or 'comic'
+    if section not in ('comic', 'manga'):
+        raise InvalidKeyValue('section', section)
+    aliases = {
+        'new': 'recently-started',
+        'upcoming': 'upcoming-launches',
+        'trending': 'recently-active',
+        'recently_updated': 'recently-updated',
+    }
+    discovery_type = aliases.get(discovery_type, discovery_type)
+    supported = {
+        'comic': {'recently-started', 'upcoming-launches', 'recently-active', 'recently-updated'},
+        'manga': {'recently-started', 'recently-updated'},
+    }
+    if discovery_type not in supported[section]:
+        raise InvalidKeyValue('type', discovery_type)
+
     paginated = request.values.get('paginated') == 'true'
     offset = extract_key(request, 'offset', False) or 0
     limit = (
@@ -1223,25 +1239,27 @@ def api_discovery():
     if limit < 1 or limit > 100:
         raise InvalidKeyValue('limit', limit)
 
-    cv = ComicVine()
+    if section == 'manga':
+        sort = 'recently_updated' if discovery_type == 'recently-updated' else 'recently_started'
+        page = browse_mangadex_catalog(offset=offset if paginated else 0, limit=limit if paginated else min(limit, 20), sort=sort)
+        if paginated:
+            return return_api(page)
+        return return_api(page['items'])
 
-    if discovery_type == 'upcoming':
-        fetch_limit = offset + limit if paginated else 200
-        if section == 'manga':
-            results = run(cv.get_upcoming_releases_manga(limit=fetch_limit))
-        else:
-            results = run(cv.get_upcoming_releases(limit=fetch_limit))
-    elif discovery_type == 'new':
-        fetch_limit = offset + limit if paginated else 200
-        if section == 'manga':
-            results = run(cv.get_new_volumes_manga(limit=fetch_limit))
-        else:
-            results = run(cv.get_new_volumes(limit=fetch_limit))
-        for r in results:
-            if 'cover' in r:
-                del r['cover']
+    cv = ComicVine()
+    if discovery_type == 'upcoming-launches':
+        fetch_limit = offset + limit + 1 if paginated else 20
+        results = run(cv.get_upcoming_releases(limit=fetch_limit))
     else:
-        raise InvalidKeyValue('type', discovery_type)
+        sort = {
+            'recently-started': 'recently_started',
+            'recently-active': 'trending',
+            'recently-updated': 'recently_updated',
+        }[discovery_type]
+        page = run(cv.browse_catalog_volumes(offset=offset if paginated else 0, limit=(limit if paginated else 20), sort=sort))
+        results = page.get('items', []) if isinstance(page, dict) else page
+        if paginated and isinstance(page, dict):
+            return return_api(page)
 
     if paginated:
         items = results[offset:offset + limit]
@@ -1256,6 +1274,7 @@ def api_discovery():
         })
 
     return return_api(results)
+
 
 
 @api.route('/discovery/capabilities', methods=['GET'])

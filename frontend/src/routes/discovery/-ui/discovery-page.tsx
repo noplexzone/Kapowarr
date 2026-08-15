@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useInfiniteQuery, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Badge, Button } from '@/components/primitives';
 import { ExactAddReview } from '@/routes/add/-ui/add-page';
@@ -35,39 +35,13 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
     to: canonical ? '/discover' : '/discovery',
     search: (previous: Record<string, unknown>) => ({ ...previous, section: nextSection }),
   });
-  const setType = (nextType: DiscoveryType) => navigate({
-    to: canonical ? '/discover' : '/discovery',
-    search: (previous: Record<string, unknown>) => canonical
-      ? ({ ...previous, category: nextType })
-      : ({ ...previous, type: nextType }),
-  });
-
   const heading = getDiscoveryHeading(section, type);
-  const subheading = getDiscoverySubheading(section, type);
 
   return (
     <div className={styles.page}>
-      <section className={styles.hero} aria-labelledby="discover-heading">
-        <p className={styles.kicker}>Discover</p>
-        <h1 id="discover-heading">{heading}</h1>
-        <p>{subheading}</p>
-      </section>
+      <h1 id="discover-heading" className={styles.srOnly}>{heading}</h1>
 
       <div className={styles.toolbar}>
-        <div className={styles.tabs}>
-          <button
-            className={`${styles.tab}${type === 'upcoming' ? ` ${styles.tabActive}` : ''}`}
-            onClick={() => setType('upcoming')}
-          >
-            Upcoming
-          </button>
-          <button
-            className={`${styles.tab}${type === 'new' ? ` ${styles.tabActive}` : ''}`}
-            onClick={() => setType('new')}
-          >
-            New
-          </button>
-        </div>
         <div className={styles.toolbarRight}>
           {            <label className={styles.hideAddedToggle}>
               <input
@@ -96,9 +70,9 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
             className={styles.refreshBtn}
             onClick={handleRefresh}
             disabled={refreshing}
-            title="Refresh from ComicVine"
+            title="Refresh Discover Data"
           >
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+            {refreshing ? 'Refreshing…' : 'Refresh Discover Data'}
           </button>
         </div>
       </div>
@@ -254,7 +228,7 @@ export function DiscoverSearchResultsPage({ section, q, page }: { section: Disco
     navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result) });
   };
   if (query.length < 2) return <div className={styles.searchPage}><div className={styles.empty}>Type at least 2 characters to search.</div></div>;
-  return <div className={styles.searchPage}><section className={styles.hero} aria-labelledby="discover-search-heading"><p className={styles.kicker}>Discover Search</p><h1 id="discover-search-heading">Results for “{query}”</h1><p>{section === 'manga' ? 'Manga' : 'Comic'} series and volumes from metadata providers.</p></section>{isError ? <div className={styles.empty} role="alert"><span>Could not load search results: {error.message}</span><Button onClick={() => void refetch()}>Retry</Button></div> : null}{!isError && isFetching && !data ? <div className={styles.empty} role="status">Loading results…</div> : null}{!isError && data && items.length === 0 ? <div className={styles.empty}>No results found for “{query}”.</div> : null}{!isError && items.length > 0 ? <div className={styles.searchResults}>{items.map((result) => <SearchResultCard key={getResultIdentity(result)} result={result} section={section} onOpen={openResult} />)}</div> : null}{data ? <div className={styles.paginationRow}><Button variant="secondary" disabled={page <= 1 || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page - 1 } })}>Previous</Button><span>{data.total} results</span><Button variant="secondary" disabled={!data.has_more || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page + 1 } })}>Next</Button></div> : null}{isFetching && data ? <div className={styles.inlineStatus} role="status">Refreshing results…</div> : null}</div>;
+  return <div className={styles.searchPage}><h1 id="discover-search-heading" className={styles.srOnly}>Results for “{query}”</h1>{isError ? <div className={styles.empty} role="alert"><span>Could not load search results: {error.message}</span><Button onClick={() => void refetch()}>Retry</Button></div> : null}{!isError && isFetching && !data ? <div className={styles.empty} role="status">Loading results…</div> : null}{!isError && data && items.length === 0 ? <div className={styles.empty}>No results found for “{query}”.</div> : null}{!isError && items.length > 0 ? <div className={styles.searchResults}>{items.map((result) => <SearchResultCard key={getResultIdentity(result)} result={result} section={section} onOpen={openResult} />)}</div> : null}{data ? <div className={styles.paginationRow}><Button variant="secondary" disabled={page <= 1 || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page - 1 } })}>Previous</Button><span>{data.total} results</span><Button variant="secondary" disabled={!data.has_more || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page + 1 } })}>Next</Button></div> : null}{isFetching && data ? <div className={styles.inlineStatus} role="status">Refreshing results…</div> : null}</div>;
 }
 
 export function DiscoverExactAddPage({ section, source, metadataId, title, language }: { section: DiscoverySection; source: 'comicvine' | 'mangadex'; metadataId: string; title?: string; language?: string }) {
@@ -278,28 +252,28 @@ function DiscoverLanding({ section }: { section: DiscoverySection; type: Discove
   const { data: capabilities } = useQuery(discoveryCapabilitiesQueryOptions(section));
   const shelves = section === 'comic'
     ? [
-        { title: 'Recently Started', description: 'Series whose first known issue date is inside the last 12 months.', type: 'new' as DiscoveryType, viewAll: '/discover/browse?section=comic&sort=recently_started' },
-        { title: 'Upcoming Series Launches', description: 'Future issue #1 releases only, not ordinary ongoing-series issues.', type: 'upcoming' as DiscoveryType, viewAll: '/discover/browse?section=comic&sort=year' },
-        { title: 'Recently Active', description: 'ComicVine recently-updated order; not a global popularity score.', type: 'trending' as DiscoveryType, viewAll: '/discover/browse?section=comic&sort=trending' },
+        { title: 'Recently Started', description: 'Series whose first known issue date is inside the last 12 months.', type: 'recently-started' as DiscoveryType, browseSearch: { section: 'comic' as const, sort: 'recently_started' as const } },
+        { title: 'Upcoming Series Launches', description: 'Future issue #1 releases only, not ordinary ongoing-series issues.', type: 'upcoming-launches' as DiscoveryType, browseSearch: { section: 'comic' as const, sort: 'year' as const } },
+        { title: 'Recently Active', description: 'ComicVine recently-updated order; not a global popularity score.', type: 'recently-active' as DiscoveryType, browseSearch: { section: 'comic' as const, sort: 'trending' as const } },
       ]
     : [
-        { title: 'Recently Updated Manga', description: 'MangaDex-backed catalog browsing keeps manga separate from ComicVine.', type: 'recently-updated' as DiscoveryType, viewAll: '/discover/browse?section=manga&sort=recently_updated' },
-        { title: 'Recently Started Manga', description: 'MangaDex year-sorted series; chapter counts are not shown as issues.', type: 'new' as DiscoveryType, viewAll: '/discover/browse?section=manga&sort=year' },
+        { title: 'Recently Updated Manga', description: 'MangaDex-backed catalog browsing keeps manga separate from ComicVine.', type: 'recently-updated' as DiscoveryType, browseSearch: { section: 'manga' as const, sort: 'recently_updated' as const } },
+        { title: 'Recently Started Manga', description: 'MangaDex year-sorted series; chapter counts are not shown as issues.', type: 'recently-started' as DiscoveryType, browseSearch: { section: 'manga' as const, sort: 'recently_started' as const } },
       ];
   return <main className={styles.discoverMain} aria-label="Discover curated shelves">{shelves.map((shelf) => <DiscoveryShelf key={shelf.title} section={section} {...shelf} />)}<BrowseShortcuts section={section} capabilities={capabilities} /></main>;
 }
 
-function DiscoveryShelf({ title, description, type, section, viewAll }: { title: string; description?: string; type: DiscoveryType; section: DiscoverySection; viewAll?: string }) {
+function DiscoveryShelf({ title, description, type, section, browseSearch }: { title: string; description?: string; type: DiscoveryType; section: DiscoverySection; browseSearch?: Partial<BrowseFilters> & { section: DiscoverySection } }) {
   const navigate = useNavigate();
   const query = useInfiniteQuery(discoveryShelfInfiniteQueryOptions(type, section, 12));
   const items = dedupeDiscoveryItems((query.data?.pages ?? []).flatMap(page => page.items)).slice(0, 12);
-  return <section className={styles.shelf} aria-labelledby={`${section}-${type}-heading`}><header className={styles.shelfHeader}><div><h2 id={`${section}-${type}-heading`}>{title}</h2>{description && <p>{description}</p>}</div>{viewAll && <a className={styles.viewAllLink} href={viewAll}>View All</a>}</header>{query.isPending ? <div className={styles.empty}>Loading…</div> : query.isError ? <div className={styles.empty}>Could not load shelf <Button onClick={() => void query.refetch()}>Retry</Button></div> : items.length === 0 ? <div className={styles.empty}>No {title.toLowerCase()} found.</div> : <div className={styles.shelfScroller}>{items.map(volume => <DiscoveryCatalogCard key={getDiscoveryCardKey(volume)} section={section} volume={volume} onOpen={() => openDiscoveryAdd(navigate, section, volume)} />)}</div>}</section>;
+  return <section className={styles.shelf} aria-labelledby={`${section}-${type}-heading`}><header className={styles.shelfHeader}><div><h2 id={`${section}-${type}-heading`}>{title}</h2>{description && <p>{description}</p>}</div>{browseSearch && <Link className={styles.viewAllLink} to="/discover/browse" search={browseSearch as never}>View All</Link>}</header>{query.isPending ? <div className={styles.empty}>Loading…</div> : query.isError ? <div className={styles.empty}>Could not load shelf <Button onClick={() => void query.refetch()}>Retry</Button></div> : items.length === 0 ? <div className={styles.empty}>No {title.toLowerCase()} found.</div> : <div className={styles.shelfScroller}>{items.map(volume => <DiscoveryCatalogCard key={getDiscoveryCardKey(volume)} section={section} volume={volume} onOpen={() => openDiscoveryAdd(navigate, section, volume)} />)}</div>}</section>;
 }
 
 function BrowseShortcuts({ section, capabilities }: { section: DiscoverySection; capabilities?: DiscoveryCapabilities }) {
   const decades = capabilities?.decades ?? [];
   const publishers = section === 'comic' ? capabilities?.publishers ?? [] : [];
-  return <section className={styles.browsePanel} aria-label={`Browse ${section === 'manga' ? 'manga' : 'comics'}`}><header className={styles.shelfHeader}><div><h2>Browse All {section === 'manga' ? 'Manga' : 'Comics'}</h2><p>Only filters backed by current provider behavior are shown.</p></div><a className={styles.viewAllLink} href={`/discover/browse?section=${section}`}>Open Catalog</a></header>{publishers.length > 0 && <div className={styles.shortcutGroup}><h3>Browse Publishers</h3><div className={styles.shortcutChips}>{publishers.slice(0, 8).map(item => <a key={item.value} className={styles.modeChip} href={`/discover/browse?section=comic&publisher=${encodeURIComponent(item.value)}`}>{item.label}</a>)}</div></div>}<div className={styles.shortcutGroup}><h3>{section === 'manga' ? 'Browse Manga Filters' : 'Browse by Decade'}</h3><div className={styles.shortcutChips}>{section === 'manga' ? ['ongoing','completed','hiatus','cancelled'].map(status => <a key={status} className={styles.modeChip} href={`/discover/browse?section=manga&status=${status}`}>{status}</a>) : decades.slice(0, 8).map(item => <a key={item.value} className={styles.modeChip} href={`/discover/browse?section=${section}&decade=${item.value}`}>{item.label}</a>)}</div></div><p className={styles.sourceFinePrint}>{capabilities?.deferred_filters.join(', ') || 'Unsupported'} filters are absent rather than accepted and ignored.</p></section>;
+  return <section className={styles.browsePanel} aria-label={`Browse ${section === 'manga' ? 'manga' : 'comics'}`}><header className={styles.shelfHeader}><div><h2>Browse All {section === 'manga' ? 'Manga' : 'Comics'}</h2><p>Only filters backed by current provider behavior are shown.</p></div><Link className={styles.viewAllLink} to="/discover/browse" search={{ section } as never}>Open Catalog</Link></header>{publishers.length > 0 && <div className={styles.shortcutGroup}><h3>Browse Publishers</h3><div className={styles.shortcutChips}>{publishers.slice(0, 8).map(item => <Link key={item.value} className={styles.modeChip} to="/discover/browse" search={{ section: 'comic', publisher: item.value } as never}>{item.label}</Link>)}</div></div>}<div className={styles.shortcutGroup}><h3>{section === 'manga' ? 'Browse Manga Filters' : 'Browse by Decade'}</h3><div className={styles.shortcutChips}>{section === 'manga' ? ['ongoing','completed','hiatus','cancelled'].map(status => <Link key={status} className={styles.modeChip} to="/discover/browse" search={{ section: 'manga', status } as never}>{status}</Link>) : decades.slice(0, 8).map(item => <Link key={item.value} className={styles.modeChip} to="/discover/browse" search={{ section, decade: item.value } as never}>{item.label}</Link>)}</div></div><p className={styles.sourceFinePrint}>{capabilities?.deferred_filters.join(', ') || 'Unsupported'} filters are absent rather than accepted and ignored.</p></section>;
 }
 
 function DiscoveryCatalogCard({ volume, section, onOpen }: { volume: DiscoveryVolume; section: DiscoverySection; onOpen: () => void }) {
@@ -339,14 +313,6 @@ function LoadMoreTrigger({ hasMore, isFetching, autoPages, onLoadMore }: { hasMo
   return <div ref={ref} className={styles.loadMoreWrap}>{shouldAutoLoad ? <span>{isFetching ? 'Loading more…' : 'More results load automatically'}</span> : <button className={styles.loadMoreSentinel} disabled={isFetching} onClick={() => onLoadMore(false)}>{isFetching ? 'Loading more…' : 'Load More'}</button>}</div>;
 }
 
-export function getDiscoveryHeading(section: DiscoverySection, type: DiscoveryType): string {
-  const media = section === 'manga' ? 'Manga' : 'Comics';
-  if (type === 'new') return `New ${media}`;
-  return `Upcoming ${media}`;
-}
-
-export function getDiscoverySubheading(section: DiscoverySection, type: DiscoveryType): string {
-  const media = section === 'manga' ? 'manga' : 'comics';
-  if (type === 'new') return `Browse newly indexed ${media}, keep library-owned titles visible, and add from verified metadata.`;
-  return `Review upcoming ${media} releases with poster-first actions and direct add/open controls.`;
+export function getDiscoveryHeading(section: DiscoverySection, _type: DiscoveryType): string {
+  return `Discover ${section === 'manga' ? 'Manga' : 'Comics'}`;
 }

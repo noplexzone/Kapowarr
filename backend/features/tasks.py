@@ -923,9 +923,14 @@ class MetronEnrichmentTask(Task):
         self.stop = False
 
     def run(self):
-        from backend.features.metron_enrichment import MetronEnrichmentService
+        from backend.features.metron_enrichment import MetronEnrichmentService, mark_candidate_enrichment_result
         _emit_task_event(TaskStatusEvent(self.message))
-        result = MetronEnrichmentService().refresh_volume(self.volume_id)
+        try:
+            result = MetronEnrichmentService().refresh_volume(self.volume_id)
+            mark_candidate_enrichment_result(self.volume_id, result.get('status'))
+        except Exception as exc:
+            mark_candidate_enrichment_result(self.volume_id, 'failed', str(exc))
+            raise
         self.details = {'provider': 'metron', 'volume_id': self.volume_id, 'status': result.get('status')}
         self.message = f'Metron enrichment {result.get("status", "finished")} for volume {self.volume_id}'
         _emit_task_event(TaskStatusEvent(self.message))
@@ -947,6 +952,7 @@ class MetronBackfillTask(Task):
     def run(self):
         from backend.implementations.metron import MetronPausedError, MetronRateLimitedError
         from backend.features.metron_enrichment import MetronEnrichmentService, update_backfill_terminal, now_ts
+        from backend.implementations.metron import get_rate_limit_state
         db = get_db()
         state = db.execute('SELECT * FROM metron_backfill_state WHERE id = 1;').fetchonedict() or {}
         cursor = int(state.get('last_terminal_volume_id') or 0)
@@ -960,6 +966,8 @@ class MetronBackfillTask(Task):
         service = MetronEnrichmentService()
         rows = db.execute("""SELECT v.id, v.comicvine_id FROM volumes v INNER JOIN root_folders rf ON rf.id = v.root_folder
             WHERE rf.section = 'comic' AND v.metadata_source = 'comicvine' AND v.id > ? ORDER BY v.id;""", (cursor,)).fetchalldict()
+        paused = False
+        failed_fatally = False
         for row in rows:
             if self.stop:
                 break
@@ -973,12 +981,22 @@ class MetronBackfillTask(Task):
                 update_backfill_terminal(status, volume_id, {key: 1})
             except (MetronPausedError, MetronRateLimitedError) as exc:
                 pause_until = exc.rate_limit.pause_until if getattr(exc, 'rate_limit', None) else None
+                if pause_until is None:
+                    try:
+                        pause_until = get_rate_limit_state().get('resume_at')
+                    except Exception:
+                        pause_until = None
                 db.execute("UPDATE metron_backfill_state SET status='rate_limit_paused', rate_limit_paused_until=?, resume_time=?, last_error=?, updated_at=? WHERE id=1;",
                            (pause_until, pause_until, str(exc), now_ts()))
-                commit(); break
+                commit(); paused = True; break
             except Exception as exc:
                 LOGGER.exception('Metron backfill failed for volume %s', volume_id)
                 update_backfill_terminal('failed', volume_id, {'failed': 1}, str(exc))
+        if not paused:
+            final_status = 'cancelled' if self.stop else 'completed'
+            db.execute("UPDATE metron_backfill_state SET status=?, completed_at=?, updated_at=? WHERE id=1 AND status='running';",
+                       (final_status, now_ts(), now_ts()))
+            commit()
         return None
 
 # =====================

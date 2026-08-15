@@ -198,10 +198,10 @@ class MetronEnrichmentPersistenceTests(unittest.TestCase):
             pending = get_review_candidates(1)['candidates']
             self.assertEqual(len(pending), 1)
             result = resolve_candidate(int(pending[0]['id']))
-            self.assertEqual(result['status'], 'pending')
+            self.assertEqual(result['status'], 'enrichment_pending')
             link = db.execute("SELECT external_id, review_status FROM volume_provider_links WHERE volume_id = 1 AND provider = 'metron';").fetchonedict()
             self.assertEqual(link['external_id'], 'm-candidate')
-            self.assertEqual(link['review_status'], 'pending')
+            self.assertEqual(link['review_status'], 'enrichment_pending')
             self.assertEqual(get_review_candidates(1)['total'], 0)
 
 

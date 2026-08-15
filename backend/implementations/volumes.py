@@ -67,6 +67,48 @@ vol_regex = compile(r'^v(?:ol(?:ume)?)?\.?\s(?:\d+|(?:(?:one|two|three|four|five
 # autopep8: on
 
 
+
+
+_EFFECTIVE_METADATA_FIELDS = ('title', 'year', 'publisher', 'volume_number', 'description')
+
+def _has_canonical_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+def _apply_effective_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply active Metron scalar fallbacks without mutating canonical fields."""
+    volume_id = row.get('id')
+    if not volume_id:
+        return row
+    try:
+        fallback_rows = get_db().execute(
+            """SELECT field_name, normalized_value, provider
+            FROM volume_metadata_enrichment
+            WHERE volume_id = ? AND active = 1;""",
+            (volume_id,)
+        ).fetchalldict()
+    except Exception:
+        fallback_rows = []
+    if not fallback_rows:
+        return row
+    fallbacks = {r['field_name']: r['normalized_value'] for r in fallback_rows}
+    effective = {}
+    for field in _EFFECTIVE_METADATA_FIELDS:
+        canonical = row.get(field)
+        fallback = fallbacks.get(field)
+        if _has_canonical_value(canonical):
+            effective[field] = {'value': canonical, 'source': 'comicvine'}
+        elif _has_canonical_value(fallback):
+            row[field] = fallback
+            effective[field] = {'value': fallback, 'source': 'metron'}
+        else:
+            effective[field] = {'value': canonical, 'source': None}
+    row['effective_metadata'] = effective
+    return row
+
 # region Issue
 class Issue:
     def __init__(self, issue_id: int, check_existence: bool = False) -> None:
@@ -320,10 +362,11 @@ class Volume:
                     WHERE volume_id = v.id
                 ) AS issue_count,
                 (
-                    SELECT COUNT(DISTINCT issue_id)
+                    SELECT COUNT(DISTINCT if.issue_id)
                     FROM issues i
                     INNER JOIN issues_files if
                     ON i.id = if.issue_id
+                    INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1
                     WHERE volume_id = v.id
                 ) AS issues_downloaded,
                 (
@@ -334,6 +377,7 @@ class Volume:
                         INNER JOIN files f
                         ON i.id = if.issue_id
                             AND if.file_id = f.id
+                            AND f.exists_on_disk = 1
                         WHERE volume_id = v.id
                     )
                 ) AS total_size
@@ -352,6 +396,7 @@ class Volume:
         )
         del volume_info['root_folder_path']
 
+        _apply_effective_metadata(volume_info)
         volume_info['issues'] = [i.todict() for i in self.get_issues()]
         volume_info['general_files'] = self.get_general_files()
 
@@ -465,6 +510,7 @@ class Volume:
                 INNER JOIN issues i
                     ON if.issue_id = i.id
                 WHERE i.volume_id = ?
+                    AND f.exists_on_disk = 1
                 ORDER BY filepath;
                 """,
                 (self.id,)
@@ -993,8 +1039,10 @@ class Library:
                     {sql_filter}
                 ),
                 linked_issues AS (
-                    SELECT DISTINCT issue_id
-                    FROM issues_files
+                    SELECT DISTINCT issue_links.issue_id
+                    FROM issues_files issue_links
+                    INNER JOIN files f ON f.id = issue_links.file_id
+                    WHERE f.exists_on_disk = 1
                 ),
                 issue_stats AS (
                     SELECT
@@ -1040,6 +1088,7 @@ class Library:
                     INNER JOIN scoped_volumes sv ON sv.id = i.volume_id
                     INNER JOIN issues_files issue_links ON i.id = issue_links.issue_id
                     INNER JOIN files f ON issue_links.file_id = f.id
+                    WHERE f.exists_on_disk = 1
                 ),
                 file_stats AS (
                     SELECT volume_id, SUM(size) AS total_size
@@ -1095,6 +1144,7 @@ class Library:
         rows = cls._get_public_volume_rows(sort, filter, section, direction=direction)
         for row in rows:
             row.pop('_total_count', None)
+            _apply_effective_metadata(row)
         return rows
 
     @classmethod
@@ -1121,6 +1171,7 @@ class Library:
 
         for row in rows:
             row.pop('_total_count', None)
+            _apply_effective_metadata(row)
         return rows, total
 
     @classmethod
@@ -1203,8 +1254,9 @@ class Library:
                         WHERE rf.section = :section
                     )
                 ) AS issues,
-                (SELECT COUNT(DISTINCT issue_id) FROM issues_files
-                    WHERE issue_id IN (
+                (SELECT COUNT(DISTINCT if.issue_id) FROM issues_files if
+                    INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1
+                    WHERE if.issue_id IN (
                         SELECT i.id FROM issues i
                         INNER JOIN volumes vol ON vol.id = i.volume_id
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
@@ -1219,6 +1271,7 @@ class Library:
                         AND i.date <= date('now')
                 ) AS released_issues,
                 (SELECT COUNT(DISTINCT if.issue_id) FROM issues_files if
+                    INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1
                     INNER JOIN issues i ON i.id = if.issue_id
                     INNER JOIN volumes vol ON vol.id = i.volume_id
                     INNER JOIN root_folders rf ON rf.id = vol.root_folder
@@ -1228,12 +1281,12 @@ class Library:
                 ) AS downloaded_released_issues,
                 (SELECT COUNT(*) FROM issues i
                     WHERE i.monitored = 1 AND i.date IS NOT NULL AND i.date <= date('now')
-                    AND NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.issue_id = i.id)
+                    AND NOT EXISTS (SELECT 1 FROM issues_files if INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1 WHERE if.issue_id = i.id)
                     AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = :section)
                 ) AS missing_monitored,
                 (SELECT COUNT(*) FROM issues i
                     WHERE i.monitored = 1 AND i.date > date('now')
-                    AND NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.issue_id = i.id)
+                    AND NOT EXISTS (SELECT 1 FROM issues_files if INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1 WHERE if.issue_id = i.id)
                     AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = :section)
                 ) AS upcoming_monitored,
                 (SELECT COUNT(*) FROM issues i
@@ -1248,12 +1301,14 @@ class Library:
                 ) AS import_problems,
                 (SELECT COUNT(*) FROM (
                     SELECT if.file_id FROM issues_files if
+                    INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1
                     INNER JOIN issues i ON i.id = if.issue_id
                     INNER JOIN volumes vol ON vol.id = i.volume_id
                     INNER JOIN root_folders rf ON rf.id = vol.root_folder
                     WHERE rf.section = :section
                     UNION
                     SELECT vf.file_id FROM volume_files vf
+                    INNER JOIN files f ON f.id = vf.file_id AND f.exists_on_disk = 1
                     INNER JOIN volumes vol ON vol.id = vf.volume_id
                     INNER JOIN root_folders rf ON rf.id = vol.root_folder
                     WHERE rf.section = :section
@@ -1261,12 +1316,14 @@ class Library:
                 (SELECT IFNULL(SUM(f.size), 0) FROM files f
                     WHERE f.id IN (
                         SELECT if.file_id FROM issues_files if
+                        INNER JOIN files linked_f ON linked_f.id = if.file_id AND linked_f.exists_on_disk = 1
                         INNER JOIN issues i ON i.id = if.issue_id
                         INNER JOIN volumes vol ON vol.id = i.volume_id
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
                         WHERE rf.section = :section
                         UNION
                         SELECT vf.file_id FROM volume_files vf
+                        INNER JOIN files linked_f ON linked_f.id = vf.file_id AND linked_f.exists_on_disk = 1
                         INNER JOIN volumes vol ON vol.id = vf.volume_id
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
                         WHERE rf.section = :section

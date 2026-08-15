@@ -41,7 +41,7 @@ class DashboardStatsTests(unittest.TestCase):
                 publisher TEXT
             );
             CREATE TABLE issues (id INTEGER PRIMARY KEY, volume_id INTEGER, monitored INTEGER, date TEXT);
-            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER, exists_on_disk INTEGER DEFAULT 1);
             CREATE TABLE issues_files (issue_id INTEGER, file_id INTEGER);
             CREATE TABLE volume_files (volume_id INTEGER, file_id INTEGER);
             CREATE TABLE download_history (id INTEGER PRIMARY KEY, success INTEGER);
@@ -61,7 +61,7 @@ class DashboardStatsTests(unittest.TestCase):
             (105, 10, 1, None),
             (201, 20, 1, '2020-01-01'),
         ])
-        self.db.executemany('INSERT INTO files VALUES (?, ?)', [(1, 100), (2, 200), (3, 300), (4, 400)])
+        self.db.executemany('INSERT INTO files(id, size) VALUES (?, ?)', [(1, 100), (2, 200), (3, 300), (4, 400)])
         self.db.executemany('INSERT INTO issues_files VALUES (?, ?)', [(104, 1), (201, 3)])
         self.db.execute('INSERT INTO volume_files VALUES (10, 2)')
         self.db.executemany('INSERT INTO download_history VALUES (?, ?)', [(1, 0), (2, 1)])
@@ -87,6 +87,20 @@ class DashboardStatsTests(unittest.TestCase):
         self.assertEqual(stats['mismatches'], 1)
         self.assertEqual(stats['files'], 2)
         self.assertEqual(stats['total_file_size'], 300)
+
+
+    def test_missing_file_state_excludes_invalid_files_from_completion_and_counts(self):
+        self.db.execute('UPDATE files SET exists_on_disk = 0 WHERE id = 1')
+        self.db.commit()
+        cursor = _Cursor(self.db)
+        with patch('backend.implementations.volumes.get_db', return_value=cursor):
+            stats = Library.get_stats('comic')
+
+        self.assertEqual(stats['missing_monitored'], 2)
+        self.assertEqual(stats['downloaded_released_issues'], 0)
+        self.assertEqual(stats['completion_percentage'], 0.0)
+        self.assertEqual(stats['files'], 1)
+        self.assertEqual(stats['total_file_size'], 200)
 
     def test_empty_section_returns_numeric_zero_counts(self):
         cursor = _Cursor(self.db)

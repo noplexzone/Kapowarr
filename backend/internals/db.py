@@ -414,7 +414,9 @@ CREATE INDEX IF NOT EXISTS issues_volume_index
 CREATE TABLE IF NOT EXISTS files(
     id INTEGER PRIMARY KEY,
     filepath TEXT UNIQUE NOT NULL,
-    size INTEGER
+    size INTEGER,
+    exists_on_disk BOOL NOT NULL DEFAULT 1,
+    missing_since INTEGER
 );
 CREATE TABLE IF NOT EXISTS issues_files(
     file_id INTEGER NOT NULL,

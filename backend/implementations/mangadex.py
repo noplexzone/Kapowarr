@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from hashlib import blake2b
+import re
 from typing import Dict, Iterable, List, Optional, Union
 
 from requests import Session
@@ -147,6 +148,20 @@ class MangaDexClient:
         resp = self._ssn.get(cover_url, timeout=Constants.REQUEST_TIMEOUT)
         resp.raise_for_status()
         return resp.content
+
+    def get_tags(self) -> List[dict]:
+        resp = self._ssn.get(f"{self._base_url}/manga/tag", timeout=Constants.REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json().get("data") or []
+
+    def search_author(self, name: str, limit: int = 10) -> List[dict]:
+        resp = self._ssn.get(
+            f"{self._base_url}/author",
+            params=[("name", name), ("limit", str(limit))],
+            timeout=Constants.REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json().get("data") or []
 
 
 def mangadex_surrogate_id(*parts: str) -> int:
@@ -530,6 +545,7 @@ def browse_mangadex_catalog(
     author: str = '',
     artist: str = '',
     tags: str = '',
+    translated_language: str = '',
 ) -> dict:
     """Browse MangaDex directly. Never falls back to ComicVine."""
     client = MangaDexClient()
@@ -537,8 +553,9 @@ def browse_mangadex_catalog(
         ('limit', str(limit + 1)),
         ('offset', str(offset)),
         ('includes[]', 'cover_art'),
-        ('availableTranslatedLanguage[]', 'en'),
     ]
+    if translated_language:
+        params.append(('availableTranslatedLanguage[]', translated_language))
     if query:
         params.append(('title', query))
     order_key = {
@@ -567,38 +584,94 @@ def browse_mangadex_catalog(
             params.append(('contentRating[]', rating))
     if tags:
         for tag in [t.strip() for t in tags.split(',') if t.strip()]:
-            params.append(('includedTags[]', tag))
+            params.append(('includedTags[]', _resolve_tag_id(client, tag)))
     if author:
-        params.append(('authors[]', author))
+        params.append(('authors[]', _resolve_author_id(client, author)))
     if artist:
-        params.append(('artists[]', artist))
+        params.append(('artists[]', _resolve_author_id(client, artist)))
     selected_year = None
     if year:
         try:
             selected_year = int(year)
         except ValueError:
             raise ValueError(f'Unsupported MangaDex year: {year}')
+    years_to_fetch = []
+    if selected_year:
+        years_to_fetch = [selected_year]
     elif decade:
         try:
-            selected_year = int(decade)
+            decade_start = int(decade)
         except ValueError:
             raise ValueError(f'Unsupported MangaDex decade: {decade}')
-    if selected_year:
-        params.append(('year', str(selected_year)))
-    resp = client._ssn.get(f'{client._base_url}/manga', params=params, timeout=Constants.REQUEST_TIMEOUT)
-    resp.raise_for_status()
-    payload = resp.json()
-    raw_items = payload.get('data') or []
+        if decade_start % 10 != 0:
+            raise ValueError(f'Unsupported MangaDex decade: {decade}')
+        years_to_fetch = list(range(decade_start, decade_start + 10))
+    payload_total = 0
+    raw_items = []
+    seen_ids = set()
+    year_values = years_to_fetch or [None]
+    for selected in year_values:
+        request_params = list(params)
+        if selected:
+            request_params.append(('year', str(selected)))
+        resp = client._ssn.get(f'{client._base_url}/manga', params=request_params, timeout=Constants.REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        payload = resp.json()
+        payload_total += int(payload.get('total') or 0)
+        for item in payload.get('data') or []:
+            item_id = str(item.get('id') or '')
+            if item_id and item_id in seen_ids:
+                continue
+            if item_id:
+                seen_ids.add(item_id)
+            raw_items.append(item)
+            if len(raw_items) > limit:
+                break
+        if len(raw_items) > limit:
+            break
     items = [format_mangadex_catalog_result(manga) for manga in raw_items[:limit]]
     return {
         'items': items,
-        'total': int(payload.get('total') or offset + len(items)),
+        'total': int(payload_total or offset + len(items)),
         'offset': offset,
         'page_size': limit,
-        'has_more': len(raw_items) > limit or offset + len(items) < int(payload.get('total') or 0),
+        'has_more': len(raw_items) > limit or offset + len(items) < int(payload_total or 0),
         'source_note': 'Manga catalog results come from MangaDex. Chapter counts are intentionally not shown as comic issue counts.',
     }
 
+
+_UUID_RE = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+
+def _is_uuid(value: str) -> bool:
+    return bool(_UUID_RE.match(value.strip()))
+
+def _localized_name(item: dict) -> str:
+    attrs = item.get('attributes') or {}
+    name = attrs.get('name') or {}
+    if isinstance(name, dict):
+        return str(name.get('en') or next((v for v in name.values() if v), '')).strip()
+    return str(name or '').strip()
+
+def _resolve_tag_id(client: MangaDexClient, value: str) -> str:
+    value = value.strip()
+    if _is_uuid(value):
+        return value
+    needle = value.casefold()
+    for tag in client.get_tags():
+        if _localized_name(tag).casefold() == needle:
+            return str(tag.get('id') or '')
+    raise ValueError(f'Unsupported MangaDex tag: {value}')
+
+def _resolve_author_id(client: MangaDexClient, value: str) -> str:
+    value = value.strip()
+    if _is_uuid(value):
+        return value
+    needle = value.casefold()
+    for item in client.search_author(value):
+        attrs = item.get('attributes') or {}
+        if str(attrs.get('name') or '').strip().casefold() == needle:
+            return str(item.get('id') or '')
+    raise ValueError(f'Unsupported MangaDex creator: {value}')
 
 def _iter_titles(manga: dict) -> Iterable[str]:
     attrs = manga.get("attributes") or {}

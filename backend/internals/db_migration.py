@@ -1435,10 +1435,38 @@ def _table_columns(cursor, table_name: str) -> List[str]:
     return [row[1] for row in cursor.execute(f"PRAGMA table_info({table_name});")]
 
 
+def _metron_table_compatible(cursor, table_name: str) -> bool:
+    if not _table_exists(cursor, table_name):
+        return False
+    info = cursor.execute(f"PRAGMA table_info({table_name});").fetchall()
+    columns = {row[1]: {'type': str(row[2] or '').upper(), 'notnull': int(row[3] or 0), 'pk': int(row[5] or 0)} for row in info}
+    if set(_METRON_TABLE_COLUMNS[table_name]) - set(columns):
+        return False
+    required_types = {
+        'volume_provider_links': {'id': 'INTEGER', 'volume_id': 'INTEGER', 'provider': 'TEXT', 'resource_type': 'TEXT', 'external_id': 'TEXT'},
+        'provider_cache': {'provider': 'TEXT', 'resource_type': 'TEXT', 'external_id': 'TEXT', 'payload': 'TEXT'},
+        'volume_enrichment_terms': {'volume_id': 'INTEGER', 'provider': 'TEXT', 'term_type': 'TEXT', 'external_id': 'TEXT', 'name': 'TEXT'},
+        'metron_backfill_state': {'id': 'INTEGER', 'status': 'TEXT'},
+    }
+    for column, expected in required_types.get(table_name, {}).items():
+        if expected not in columns[column]['type']:
+            return False
+    if table_name == 'provider_cache':
+        if not all(columns[c]['pk'] for c in ('provider', 'resource_type', 'external_id')):
+            return False
+    if table_name == 'volume_provider_links':
+        fk_tables = {row[2] for row in cursor.execute('PRAGMA foreign_key_list(volume_provider_links);')}
+        if 'volumes' not in fk_tables:
+            return False
+    if table_name == 'volume_enrichment_terms':
+        fk_tables = {row[2] for row in cursor.execute('PRAGMA foreign_key_list(volume_enrichment_terms);')}
+        if 'volumes' not in fk_tables:
+            return False
+    return True
+
+
 def _normalize_metron_table(cursor, table_name: str) -> None:
-    required_columns = set(_METRON_TABLE_COLUMNS[table_name])
-    existing_columns = set(_table_columns(cursor, table_name)) if _table_exists(cursor, table_name) else set()
-    if required_columns <= existing_columns:
+    if _metron_table_compatible(cursor, table_name):
         return
     old_table_name = f"{table_name}_migration_58_backup"
     if _table_exists(cursor, old_table_name):
@@ -1458,6 +1486,12 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
 def _ensure_metron_base_schema(cursor) -> None:
     for table_name in _METRON_TABLE_DEFINITIONS:
         _normalize_metron_table(cursor, table_name)
+    if _table_exists(cursor, 'volumes'):
+        cursor.execute("""DELETE FROM volume_provider_links
+            WHERE id NOT IN (
+                SELECT MIN(id) FROM volume_provider_links
+                GROUP BY provider, resource_type, external_id
+            ) AND external_id != '';""")
     cursor.executescript("""
         CREATE UNIQUE INDEX IF NOT EXISTS volume_provider_links_provider_external_unique_idx
             ON volume_provider_links(provider, resource_type, external_id)
@@ -1552,3 +1586,15 @@ def _migrate_harden_metron_enrichment_state():
         if column not in existing:
             cursor.execute(f'ALTER TABLE metron_backfill_state ADD COLUMN {column} {ddl};')
     return
+
+@DatabaseMigrationHandler.register_handler(60)
+def _migrate_add_file_validity_state():
+    cursor = get_db()
+    existing = [row[1] for row in cursor.execute('PRAGMA table_info(files);')]
+    if 'exists_on_disk' not in existing:
+        cursor.execute('ALTER TABLE files ADD COLUMN exists_on_disk BOOL NOT NULL DEFAULT 1;')
+    if 'missing_since' not in existing:
+        cursor.execute('ALTER TABLE files ADD COLUMN missing_since INTEGER;')
+    cursor.execute('CREATE INDEX IF NOT EXISTS files_exists_on_disk_idx ON files(exists_on_disk);')
+    return
+

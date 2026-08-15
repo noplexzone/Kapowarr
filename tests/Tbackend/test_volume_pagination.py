@@ -137,7 +137,7 @@ class VolumePaginationTests(unittest.TestCase):
                 monitored INTEGER,
                 date TEXT
             );
-            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER, exists_on_disk INTEGER DEFAULT 1);
             CREATE TABLE issues_files (file_id INTEGER, issue_id INTEGER);
         """)
         db_conn.executemany(
@@ -166,7 +166,7 @@ class VolumePaginationTests(unittest.TestCase):
             ]
         )
         db_conn.executemany(
-            'INSERT INTO files VALUES (?, ?)',
+            'INSERT INTO files(id, size) VALUES (?, ?)',
             [(1, 100), (2, 50), (3, 300)]
         )
         db_conn.executemany(
@@ -233,7 +233,7 @@ class VolumePaginationTests(unittest.TestCase):
                 monitored INTEGER, monitor_new_issues INTEGER, root_folder INTEGER, folder TEXT
             );
             CREATE TABLE issues (id INTEGER PRIMARY KEY, volume_id INTEGER, monitored INTEGER, date TEXT);
-            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER, exists_on_disk INTEGER DEFAULT 1);
             CREATE TABLE issues_files (file_id INTEGER, issue_id INTEGER);
         """)
         db_conn.execute("INSERT INTO root_folders VALUES (1, 'comic')")
@@ -246,7 +246,7 @@ class VolumePaginationTests(unittest.TestCase):
             (21, 2, '2020-01-01'), (22, 2, '2020-02-01'),
             (31, 3, None),
         ])
-        db_conn.executemany('INSERT INTO files VALUES (?, 100)', [(101,), (102,), (201,), (202,)])
+        db_conn.executemany('INSERT INTO files(id, size) VALUES (?, 100)', [(101,), (102,), (201,), (202,)])
         db_conn.executemany('INSERT INTO issues_files VALUES (?, ?)', [(101, 11), (102, 11), (201, 21), (202, 22)])
         db_conn.commit()
         try:

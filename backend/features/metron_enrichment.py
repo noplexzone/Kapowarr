@@ -325,7 +325,10 @@ def safe_test_connection() -> Dict[str, Any]:
 from uuid import uuid4
 from backend.implementations.metron import get_rate_limit_state
 
-STATUS_PENDING = 'pending'
+STATUS_SELECTED = 'selected'
+STATUS_ENRICHMENT_PENDING = 'enrichment_pending'
+STATUS_FAILED = 'failed'
+STATUS_PENDING = STATUS_ENRICHMENT_PENDING
 STATUS_DISMISSED = 'dismissed'
 SCALAR_FALLBACK_FIELDS = {
     'title': ('name', 'title'),
@@ -534,12 +537,34 @@ def relink_pending(volume_id: int, series_id: str, candidate_id: Optional[int] =
 
 
 def resolve_candidate(candidate_id: int) -> Dict[str, Any]:
-    candidate = get_db().execute('SELECT * FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
+    db = get_db()
+    candidate = db.execute('SELECT * FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
     if not candidate:
         raise ValueError('Candidate not found')
-    result = relink_pending(int(candidate['volume_id']), str(candidate['candidate_external_id']), candidate_id)
-    get_db().execute("UPDATE provider_match_candidates SET review_status = 'resolved', updated_at = ? WHERE volume_id = ? AND provider = ?;", (now_ts(), candidate['volume_id'], METRON_PROVIDER))
-    commit(); return {'volume_id': int(candidate['volume_id']), **result}
+    if candidate.get('provider') != METRON_PROVIDER or candidate.get('review_status') not in (STATUS_REVIEW, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING, STATUS_FAILED):
+        raise ValueError('Candidate is not selectable')
+    volume_id = int(candidate['volume_id'])
+    series_id = str(candidate['candidate_external_id'])
+    result = relink_pending(volume_id, series_id, candidate_id)
+    ts = now_ts()
+    db.execute("UPDATE provider_match_candidates SET review_status = ? , updated_at = ? WHERE id = ?;", (STATUS_SELECTED, ts, candidate_id))
+    db.execute("UPDATE provider_match_candidates SET review_status = ? , updated_at = ? WHERE volume_id = ? AND provider = ? AND id != ? AND review_status IN (?, ?, ?);",
+               (STATUS_DISMISSED, ts, volume_id, METRON_PROVIDER, candidate_id, STATUS_REVIEW, STATUS_SELECTED, STATUS_FAILED))
+    task_id = queue_metron_enrichment(volume_id)
+    db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;", (STATUS_ENRICHMENT_PENDING, ts, candidate_id))
+    commit()
+    return {'volume_id': volume_id, 'task_id': task_id, **result}
+
+
+def mark_candidate_enrichment_result(volume_id: int, status: str, error: str = '') -> None:
+    ts = now_ts()
+    if status == STATUS_LINKED:
+        get_db().execute("UPDATE provider_match_candidates SET review_status = 'resolved', updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);",
+                         (ts, volume_id, METRON_PROVIDER, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING))
+    else:
+        get_db().execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);",
+                         (STATUS_FAILED, ts, volume_id, METRON_PROVIDER, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING))
+    commit()
 
 
 def dismiss_review(volume_id: int) -> Dict[str, Any]:

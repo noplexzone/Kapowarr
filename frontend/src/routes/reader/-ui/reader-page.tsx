@@ -136,7 +136,7 @@ export function ReaderPage() {
       {!isLoading && (error || !fileInfo) && (
         <div className={styles.centered}>
           <p>File not found or failed to load.</p>
-          <Link to="/comics" className={styles.backLink}>
+          <Link to="/library" search={{ section: 'comic' }} className={styles.backLink}>
             ← Back to Library
           </Link>
         </div>

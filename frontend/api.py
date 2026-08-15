@@ -1339,6 +1339,7 @@ def api_discovery_browse():
                 author=request.values.get('author', ''),
                 artist=request.values.get('artist', ''),
                 tags=request.values.get('tags', ''),
+                translated_language=request.values.get('translated_language', ''),
             )
         except ValueError as exc:
             raise InvalidKeyValue('filter', str(exc))

@@ -129,8 +129,8 @@ test('canonical internal navigation preserves the application shell and browser 
   let documentRequests = 0;
   page.on('request', request => { if (request.resourceType() === 'document') documentRequests += 1; });
 
-  await page.getByRole('link', { name: 'Comics', exact: true }).click();
-  await expect(page).toHaveURL(/\/comics/);
+  await page.getByRole('link', { name: 'Library', exact: true }).click();
+  await expect(page).toHaveURL(/\/library/);
   await page.getByRole('link', { name: 'Discover', exact: true }).click();
   await expect(page).toHaveURL(/\/discover/);
   await page.getByRole('link', { name: 'Activity', exact: true }).click();
@@ -150,7 +150,7 @@ test('mobile shell exposes six safe primary destinations without root overflow',
   await boot(page, 390);
   const navigation = page.getByRole('navigation', { name: /primary/i });
   await expect(navigation).toBeVisible();
-  for (const label of ['Home', 'Comics', 'Manga', 'Discover', 'Activity', 'Settings']) {
+  for (const label of ['Home', 'Library', 'Discover', 'Activity', 'Settings']) {
     const link = navigation.getByRole('link', { name: label, exact: true });
     await expect(link).toBeVisible();
     const box = await link.boundingBox();
@@ -162,7 +162,7 @@ test('mobile shell exposes six safe primary destinations without root overflow',
   expect(navRows).toBe(1);
 });
 
-for (const route of ['/home', '/comics', '/manga', '/discover?section=comic&category=upcoming', '/activity/queue']) {
+for (const route of ['/home', '/library?section=comic', '/library?section=manga', '/discover?section=comic&category=recently-started', '/activity/queue']) {
   test(`canonical route ${route} exposes one current destination and no axe violations`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.route('**/*', injectProductionBase);
@@ -328,7 +328,7 @@ test('principal redesign flows remain usable at mobile acceptance width', async 
   await expect(page.getByRole('link', { name: 'Comics missing', exact: true })).toBeVisible();
   await expect(page.getByText('Acceptance Volume').first()).toBeVisible();
 
-  await page.getByRole('link', { name: 'Comics', exact: true }).click();
+  await page.getByRole('link', { name: 'Library', exact: true }).click();
   const acceptanceVolume = page.getByRole('link', { name: 'Acceptance Volume' }).first();
   await expect(acceptanceVolume).toBeVisible();
   await acceptanceVolume.click();
@@ -337,13 +337,14 @@ test('principal redesign flows remain usable at mobile acceptance width', async 
   await page.getByRole('link', { name: 'Files' }).click();
   await expect(page.getByText('Volume Notes.pdf')).toBeVisible();
 
-  await page.getByRole('navigation', { name: /primary/i }).getByRole('link', { name: 'Comics', exact: true }).click();
+  await page.getByRole('navigation', { name: /primary/i }).getByRole('link', { name: 'Library', exact: true }).click();
   await page.getByRole('button', { name: 'Manage' }).click();
   await page.getByRole('checkbox', { name: 'Select Acceptance Volume' }).check();
   await expect(page.getByTestId('bulk-toolbar')).toContainText('1 selected');
   await expect(page.getByRole('button', { name: 'Search Missing Selected' })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Manga', exact: true }).click();
+  await page.goto('/library?section=manga');
+  await expect(page).toHaveURL(/\/library.*section=manga/);
   await expect(page.getByRole('link', { name: 'Acceptance Manga' }).first()).toBeVisible();
 
   await page.getByRole('link', { name: 'Activity', exact: true }).click();

@@ -48,7 +48,7 @@ it('refreshes dashboard data from live operation events', () => {
 
 it('presents Home as a hybrid command center before shelf rows', () => {
   const hero = source.indexOf('Kapowarr command center');
-  const triage = source.indexOf('Wanted / Missing Triage');
+  const triage = source.indexOf('Missing Issue Triage');
   const liveOps = source.indexOf('Live Operations');
   const shelves = source.indexOf('Recently Added');
   expect(source).toContain('home-command-center-title');
@@ -59,11 +59,12 @@ it('presents Home as a hybrid command center before shelf rows', () => {
 });
 
 it('routes command-center triage into separated Comics and Manga libraries', () => {
-  expect(source).toContain('to="/comics"');
-  expect(source).toContain('to="/manga"');
+  expect(source).toContain('to="/library"');
+  expect(source).toContain("section: 'manga'");
   expect(source).toContain('Comics missing');
   expect(source).toContain('Manga missing');
-  expect(source).not.toContain('to="/library"');
+  expect(source).not.toContain('to="/comics"');
+  expect(source).not.toContain('to="/manga"');
 });
 
 it('keeps partial-data resilience and live refresh affordances visible', () => {

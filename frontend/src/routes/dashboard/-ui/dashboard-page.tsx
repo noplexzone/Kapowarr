@@ -99,10 +99,10 @@ export function DashboardPage() {
             and shelves worth checking after the queue settles.
           </p>
           <div className={styles.heroActions}>
-            <Link className={`${styles.actionLink} ${styles.actionPrimary}`} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }}>
+            <Link className={`${styles.actionLink} ${styles.actionPrimary}`} to="/library" search={{ section: 'comic', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }}>
               Comics missing
             </Link>
-            <Link className={`${styles.actionLink} ${styles.actionSecondary}`} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }}>
+            <Link className={`${styles.actionLink} ${styles.actionSecondary}`} to="/library" search={{ section: 'manga', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }}>
               Manga missing
             </Link>
             <Link className={`${styles.actionLink} ${styles.actionGhost}`} to="/activity/queue">Open queue</Link>
@@ -135,28 +135,28 @@ export function DashboardPage() {
       <div className={styles.dashboardBody}>
         <div className={styles.mainColumn}>
           <div className={styles.commandGrid}>
-            <MetricCard label="Missing monitored" value={missingTotal} meta="Issues ready for wanted triage" tone="danger" to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
-            <MetricCard label="Upcoming monitored" value={upcomingTotal} meta="Recently released or expected soon" tone="info" to="/comics" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
+            <MetricCard label="Missing monitored" value={missingTotal} meta="Missing released issues ready for triage" tone="danger" to="/library" search={{ section: 'comic', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
+            <MetricCard label="Upcoming monitored" value={upcomingTotal} meta="Recently released or expected soon" tone="info" to="/library" search={{ section: 'comic', status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
             <MetricCard label="Active downloads" value={activeDownloads} meta="Queue items moving now" tone="success" to="/activity/queue" />
             <MetricCard label="Failed downloads" value={failedDownloads} meta="History entries needing recovery" tone="warning" to="/activity/history" search={{ page: 1, status: 'failed', section: 'all' }} />
           </div>
 
           <div className={styles.operationalGrid}>
-        <section className={styles.section} aria-labelledby="wanted-triage-heading">
+        <section className={styles.section} aria-labelledby="missing-triage-heading">
           <div className={styles.sectionHeader}>
             <div>
               <span className={styles.sectionKicker}>Triage</span>
-              <h2 id="wanted-triage-heading" className={styles.sectionTitle}>Wanted / Missing Triage</h2>
+              <h2 id="missing-triage-heading" className={styles.sectionTitle}>Missing Issue Triage</h2>
             </div>
             <Link to="/activity/history" search={{ page: 1, status: 'failed', section: 'all' }} className={styles.sectionLink}>
               Failure history
             </Link>
           </div>
           <Card className={styles.triageCard}>
-            <TriageRow label="Comics missing" value={summary?.sections.comic.missing_monitored ?? null} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
-            <TriageRow label="Manga missing" value={summary?.sections.manga.missing_monitored ?? null} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
-            <TriageRow label="Comics unmonitored" value={null} to="/comics" search={{ status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
-            <TriageRow label="Manga unmonitored" value={null} to="/manga" search={{ status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
+            <TriageRow label="Comics missing" value={summary?.sections.comic.missing_monitored ?? null} to="/library" search={{ section: 'comic', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
+            <TriageRow label="Manga missing" value={summary?.sections.manga.missing_monitored ?? null} to="/library" search={{ section: 'manga', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
+            <TriageRow label="Comics unmonitored" value={null} to="/library" search={{ section: 'comic', status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
+            <TriageRow label="Manga unmonitored" value={null} to="/library" search={{ section: 'manga', status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
             <TriageRow label="Comic mismatches" value={summary?.sections.comic.mismatches ?? null} to="/activity/mismatches" search={{ section: 'comic' }} />
             <TriageRow label="Manga mismatches" value={summary?.sections.manga.mismatches ?? null} to="/activity/mismatches" search={{ section: 'manga' }} />
           </Card>
@@ -239,8 +239,8 @@ export function DashboardPage() {
         </div>
 
         <div className={styles.shelfGrid}>
-          <CoverShelf title="Comics Recently Added" badge="Comics" empty="No comics yet" volumes={(comicRecent ?? []).slice(0, 3)} to="/comics" />
-          <CoverShelf title="Manga Recently Added" badge="Manga" empty="No manga yet" volumes={(mangaRecent ?? []).slice(0, 3)} to="/manga" />
+          <CoverShelf title="Comics Recently Added" badge="Comics" empty="No comics yet" volumes={(comicRecent ?? []).slice(0, 3)} to="/library" section="comic" />
+          <CoverShelf title="Manga Recently Added" badge="Manga" empty="No manga yet" volumes={(mangaRecent ?? []).slice(0, 3)} to="/library" section="manga" />
         </div>
       </div>
     </div>
@@ -289,7 +289,7 @@ function OperationRow({ title, meta, tone, badge }: { title: string; meta: strin
   );
 }
 
-function CoverShelf({ title, badge, empty, volumes, to }: { title: string; badge: string; empty: string; volumes: VolumeCard[]; to: '/comics' | '/manga' }) {
+function CoverShelf({ title, badge, empty, volumes, to, section }: { title: string; badge: string; empty: string; volumes: VolumeCard[]; to: '/library'; section: 'comic' | 'manga' }) {
   return (
     <section className={styles.section}>
       <div className={styles.sectionHeader}>
@@ -297,7 +297,7 @@ function CoverShelf({ title, badge, empty, volumes, to }: { title: string; badge
           <span className={styles.sectionBadge}>{badge}</span>{' '}
           {title.replace(`${badge} `, '')}
         </h2>
-        <Link to={to} className={styles.sectionLink}>
+        <Link to={to} search={{ section } as never} className={styles.sectionLink}>
           View all
         </Link>
       </div>

@@ -106,13 +106,15 @@ const libraryRoute = createRoute({
   path: 'library',
   validateSearch: librarySearchSchema,
   loaderDeps: ({ search }) => search,
-  loader: ({ deps }) => {
-    const { section: _section, ...search } = legacyLibraryToCanonical(deps.section, deps);
-    throw redirect({
-      to: deps.section === 'manga' ? '/manga' : '/comics',
-      search,
-      replace: true,
-    });
+  loader: async ({ context, deps }) => {
+    const { section: _section, ...search } = deps;
+    await context.queryClient.ensureQueryData(
+      volumeListQueryOptions(1, mediaLibraryToLegacySearch(search), deps.section),
+    );
+  },
+  component: () => {
+    const search = libraryRoute.useSearch();
+    return <ComicsPage section={search.section} canonical />;
   },
 });
 
@@ -121,12 +123,10 @@ const comicsRoute = createRoute({
   path: 'comics',
   validateSearch: mediaLibrarySearchSchema,
   loaderDeps: ({ search }) => search,
-  loader: async ({ context, deps }) => {
-    await context.queryClient.ensureQueryData(
-      volumeListQueryOptions(1, mediaLibraryToLegacySearch(deps), 'comic'),
-    );
+  loader: ({ deps }) => {
+    const { section: _section, ...search } = legacyLibraryToCanonical('comic', deps);
+    throw redirect({ to: '/library', search: { section: 'comic', ...search }, replace: true });
   },
-  component: () => <ComicsPage section="comic" canonical />,
 });
 
 const mangaRoute = createRoute({
@@ -134,12 +134,10 @@ const mangaRoute = createRoute({
   path: 'manga',
   validateSearch: mediaLibrarySearchSchema,
   loaderDeps: ({ search }) => search,
-  loader: async ({ context, deps }) => {
-    await context.queryClient.ensureQueryData(
-      volumeListQueryOptions(1, mediaLibraryToLegacySearch(deps), 'manga'),
-    );
+  loader: ({ deps }) => {
+    const { section: _section, ...search } = legacyLibraryToCanonical('manga', deps);
+    throw redirect({ to: '/library', search: { section: 'manga', ...search }, replace: true });
   },
-  component: () => <ComicsPage section="manga" canonical />,
 });
 const comicsAddRedirectRoute = createRoute({
   getParentRoute: () => layoutRoute,

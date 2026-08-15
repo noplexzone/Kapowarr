@@ -1,6 +1,5 @@
 import { runtimeConfig } from '@/app/runtime-config';
 import { Link, useLocation } from '@tanstack/react-router';
-import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { systemAboutQueryOptions } from '@/routes/system/-system.api';
 import { NavIcon } from './nav-icons';
@@ -66,9 +65,6 @@ export function Sidebar() {
   const { pathname } = useLocation();
   const active = getActivePrimary(pathname);
 
-  useEffect(() => {
-    document.querySelectorAll('[data-brand-home][aria-current]').forEach((node) => node.removeAttribute('aria-current'));
-  }, [pathname]);
   const { data: about } = useQuery(systemAboutQueryOptions());
 
   return (
@@ -84,7 +80,7 @@ export function Sidebar() {
             <Link
               key={item.label}
               to={item.to as never}
-              search={(item.label === 'Comics' || item.label === 'Manga') ? getStoredLibrarySearch() as never : undefined}
+              search={item.label === 'Library' ? { section: 'comic', ...getStoredLibrarySearch() } as never : undefined}
               activeOptions={item.parent ? { exact: true } : undefined}
               className={styles.navItem}
               data-active={isActive || undefined}

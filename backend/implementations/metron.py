@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from json import JSONDecodeError
 from time import time
 from typing import Any, Dict, List, Mapping, Optional
-from urllib.parse import urljoin
+from urllib.parse import SplitResult, urljoin, urlsplit, urlunsplit
 
 import requests
 from requests import Response, Session
@@ -130,22 +130,73 @@ class MetronClient:
     def __init__(self, token: str, session: Optional[Session] = None, base_url: str = METRON_BASE_URL, timeout: int = 20) -> None:
         self.token = token.strip(); self.session = session or requests.Session(); self.base_url = base_url.rstrip('/') + '/'; self.timeout = timeout
         self.user_agent = f"Kapowarr/{get_about_data().get('version', 'unknown')} MetronEnrichment"
+        self._base_parts = urlsplit(self.base_url)
+        self._base_port = self._effective_port(self._base_parts)
+        if self._base_parts.scheme != 'https' or not self._base_parts.hostname:
+            raise ValueError('Metron API base URL must be an https origin')
+    @staticmethod
+    def _effective_port(parts: SplitResult) -> int:
+        if parts.port is not None:
+            return parts.port
+        return 443 if parts.scheme == 'https' else 80
     def _headers(self, extra: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
         headers = {'Accept': 'application/json', 'Authorization': f'Bearer {self.token}', 'User-Agent': self.user_agent}
         if extra: headers.update({k: v for k, v in extra.items() if v is not None})
         return headers
+    def _normalise_api_path(self, endpoint_or_url: str) -> str:
+        """Validate and normalize a Metron request target to a relative API path.
+
+        Authenticated Metron requests must never leave the configured HTTPS API
+        origin.  Same-origin absolute pagination or redirect targets are accepted
+        only after exact scheme/host/port/userinfo/path validation, then reduced
+        to the relative API path used by the configured base URL.
+        """
+        if not isinstance(endpoint_or_url, str) or not endpoint_or_url.strip():
+            raise MetronInvalidResponseError('Metron request target was empty')
+        target = endpoint_or_url.strip()
+        if target.startswith('//'):
+            raise MetronInvalidResponseError('Metron request target used a protocol-relative URL')
+        parts = urlsplit(target)
+        if parts.scheme or parts.netloc:
+            if parts.scheme != 'https':
+                raise MetronInvalidResponseError('Metron request target must use https')
+            if parts.username is not None or parts.password is not None:
+                raise MetronInvalidResponseError('Metron request target must not contain credentials')
+            if not parts.hostname or parts.hostname != self._base_parts.hostname:
+                raise MetronInvalidResponseError('Metron request target host is not approved')
+            if self._effective_port(parts) != self._base_port:
+                raise MetronInvalidResponseError('Metron request target port is not approved')
+            base_path = self._base_parts.path.rstrip('/') + '/'
+            if not parts.path.startswith(base_path):
+                raise MetronInvalidResponseError('Metron request target path is outside the API base')
+            relative_path = parts.path[len(base_path):]
+            return urlunsplit(('', '', relative_path, parts.query, ''))
+        return target.lstrip('/')
     def _url(self, endpoint_or_url: str) -> str:
-        if endpoint_or_url.startswith(('http://', 'https://')): return endpoint_or_url
-        return urljoin(self.base_url, endpoint_or_url.lstrip('/'))
-    def _request(self, method: str, endpoint_or_url: str, *, params: Optional[Mapping[str, Any]] = None, headers: Optional[Mapping[str, str]] = None) -> Response:
-        if not self.token: raise MetronAuthenticationError('Metron token is not configured')
-        check_rate_limit_available()
+        return urljoin(self.base_url, self._normalise_api_path(endpoint_or_url))
+    def _request_once(self, method: str, endpoint_or_url: str, *, params: Optional[Mapping[str, Any]], headers: Optional[Mapping[str, str]]) -> Response:
         try:
-            response = self.session.request(method, self._url(endpoint_or_url), params=params, headers=self._headers(headers), timeout=self.timeout)
+            return self.session.request(method, self._url(endpoint_or_url), params=params, headers=self._headers(headers), timeout=self.timeout, allow_redirects=False)
         except Timeout as exc:
             raise MetronTimeoutError('Metron request timed out') from exc
         except RequestException as exc:
             raise MetronNetworkError('Metron network request failed') from exc
+    def _request(self, method: str, endpoint_or_url: str, *, params: Optional[Mapping[str, Any]] = None, headers: Optional[Mapping[str, str]] = None) -> Response:
+        if not self.token: raise MetronAuthenticationError('Metron token is not configured')
+        check_rate_limit_available()
+        redirect_count = 0
+        response = self._request_once(method, endpoint_or_url, params=params, headers=headers)
+        while response.status_code in (301, 302, 303, 307, 308):
+            location = response.headers.get('Location')
+            if not location:
+                raise MetronInvalidResponseError('Metron redirect did not include a Location header')
+            endpoint_or_url = self._normalise_api_path(location)
+            redirect_count += 1
+            if redirect_count > 5:
+                raise MetronInvalidResponseError('Metron redirect chain was too long')
+            if response.status_code == 303:
+                method = 'GET'; params = None
+            response = self._request_once(method, endpoint_or_url, params=params, headers=headers)
         rate = parse_rate_limit_headers(response.headers); status = 'ok'
         try:
             if response.status_code == 401: status = 'authentication_failed'; raise MetronAuthenticationError('Metron token was rejected', rate)

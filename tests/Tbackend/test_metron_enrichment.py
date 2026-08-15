@@ -48,6 +48,59 @@ class MetronClientSecurityTests(unittest.TestCase):
         self.assertNotIn('TEST_METRON_TOKEN_REDACTED', session.calls[0][1])
         self.assertEqual(safe_headers(first_headers)['Authorization'], '[REDACTED]')
 
+    def test_rejects_unapproved_metron_targets_before_authorization(self):
+        blocked = [
+            'https://evil.example/steal',
+            'http://metron.cloud/api/series/',
+            'https://metron.cloud.evil.example/api/series/',
+            'https://evil-metron.cloud/api/series/',
+            'https://user:password@metron.cloud/api/series/',
+            '//evil.example/api/series/',
+            'https://metron.cloud:444/api/series/',
+        ]
+        for target in blocked:
+            with self.subTest(target=target):
+                session = FakeSession([FakeResponse(payload={'results': []})])
+                client = MetronClient('TEST_METRON_TOKEN_REDACTED', session=session)
+                with self.assertRaises(MetronInvalidResponseError):
+                    client.get_paginated(target)
+                self.assertEqual(session.calls, [])
+
+    def test_relative_and_same_origin_absolute_targets_are_normalized(self):
+        session = FakeSession([
+            FakeResponse(payload={'results': [{'id': 1}], 'next': 'https://metron.cloud/api/series/?page=2'}),
+            FakeResponse(payload={'results': [{'id': 2}], 'next': None}),
+        ])
+        client = MetronClient('TEST_METRON_TOKEN_REDACTED', session=session)
+        self.assertEqual(client.get_paginated('/series/', {'page_size': 1}), [{'id': 1}, {'id': 2}])
+        self.assertEqual(session.calls[0][1], 'https://metron.cloud/api/series/')
+        self.assertEqual(session.calls[1][1], 'https://metron.cloud/api/series/?page=2')
+        self.assertTrue(all(call[2]['headers']['Authorization'] == 'Bearer TEST_METRON_TOKEN_REDACTED' for call in session.calls))
+
+    def test_redirects_are_validated_before_following_with_authorization(self):
+        session = FakeSession([
+            FakeResponse(302, payload='', headers={'Location': 'https://evil.example/api/series/'}),
+            FakeResponse(payload={'results': [{'id': 'evil'}]}),
+        ])
+        client = MetronClient('TEST_METRON_TOKEN_REDACTED', session=session)
+        with self.assertRaises(MetronInvalidResponseError):
+            client.get_paginated('series/')
+        self.assertEqual(len(session.calls), 1)
+        self.assertEqual(session.calls[0][1], 'https://metron.cloud/api/series/')
+
+    def test_same_origin_redirect_is_followed_after_validation(self):
+        session = FakeSession([
+            FakeResponse(302, payload='', headers={'Location': 'https://metron.cloud/api/series/?page=2'}),
+            FakeResponse(payload={'results': [{'id': 2}], 'next': None}),
+        ])
+        client = MetronClient('TEST_METRON_TOKEN_REDACTED', session=session)
+        self.assertEqual(client.get_paginated('series/'), [{'id': 2}])
+        self.assertEqual([call[1] for call in session.calls], [
+            'https://metron.cloud/api/series/',
+            'https://metron.cloud/api/series/?page=2',
+        ])
+        self.assertTrue(all(call[2]['headers']['Authorization'] == 'Bearer TEST_METRON_TOKEN_REDACTED' for call in session.calls))
+
     def test_error_classes_and_rate_limit_headers(self):
         rate = parse_rate_limit_headers({'X-RateLimit-Burst-Remaining': '0', 'Retry-After': '42'})
         self.assertEqual(rate.burst_remaining, 0)

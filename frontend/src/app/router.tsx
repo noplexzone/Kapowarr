@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import {
   createRoute,
+  createRouteMask,
   createRootRouteWithContext,
   Outlet,
   redirect,
@@ -515,3 +516,14 @@ export const routeTree = rootRoute.addChildren([
     catchAllRoute,
   ]),
 ]);
+
+
+export const discoverExactAddRouteMasks = [
+  createRouteMask({
+    routeTree,
+    from: '/discover/add/$source/$metadataId',
+    to: '/discover',
+    search: { section: 'comic' },
+    unmaskOnReload: true,
+  }),
+];

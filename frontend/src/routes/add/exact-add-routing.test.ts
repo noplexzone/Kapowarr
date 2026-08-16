@@ -29,10 +29,14 @@ describe('exact Discovery to Add identity', () => {
     expect(source).not.toContain('returnTo as never');
   });
 
-  it('renders a Discover background route for exact Add return state', () => {
+  it('registers router-owned route masks for exact Add overlays', () => {
+    const router = require('node:fs').readFileSync('src/app/router.tsx', 'utf8');
+    const main = require('node:fs').readFileSync('src/app/main.tsx', 'utf8');
     const source = require('node:fs').readFileSync('src/routes/discovery/-ui/discovery-page.tsx', 'utf8');
-    expect(source).toContain('DiscoverBackgroundRoute');
-    expect(source).toContain('data-testid=\"discover-background-route\"');
+    expect(router).toContain('createRouteMask');
+    expect(router).toContain('discoverExactAddRouteMasks');
+    expect(main).toContain('routeMasks: discoverExactAddRouteMasks');
+    expect(source).toContain('mask: getDiscoverAddMask(section)');
     expect(source).toContain('<ExactAddReview');
   });
 });

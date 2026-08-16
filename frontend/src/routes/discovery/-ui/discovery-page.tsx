@@ -117,35 +117,22 @@ function getAddRouteSearch(section: DiscoverySection, result: SearchResult) {
 
 let exactAddReturnFocus: HTMLElement | null = null;
 
-function exactAddHref(section: DiscoverySection, result: SearchResult) {
+function navigateToExactAdd(_navigate: ReturnType<typeof useNavigate>, router: ReturnType<typeof useRouter>, section: DiscoverySection, result: SearchResult) {
+  exactAddReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const params = getAddRouteParams(result);
   const routeSearch = getAddRouteSearch(section, result);
-  const search = new URLSearchParams({ section: routeSearch.section });
-  if (routeSearch.title) search.set('title', routeSearch.title);
-  if (routeSearch.language) search.set('language', routeSearch.language);
-  return `/discover/add/${params.source}/${encodeURIComponent(params.metadataId)}?${search.toString()}`;
-}
-
-function navigateToExactAdd(router: ReturnType<typeof useRouter>, section: DiscoverySection, result: SearchResult) {
-  exactAddReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const current = router.state.location;
-  router.history.push(exactAddHref(section, result), {
-    ...router.history.location.state,
-    exactAddOverlayKey: Date.now(),
-    __tempLocation: {
-      href: current.href,
-      pathname: current.pathname,
-      search: current.searchStr,
-      hash: current.hash,
-      state: {
-        ...current.state,
-        __TSR_key: undefined,
-        __tempLocation: undefined,
-        key: undefined,
-      },
-    },
+  void router.navigate({
+    to: current.pathname as never,
+    search: current.search as never,
+    state: (previous) => ({ ...previous, exactAddOverlayKey: Date.now() }),
+    mask: {
+      to: '/discover/add/$source/$metadataId',
+      params,
+      search: routeSearch,
+      unmaskOnReload: true,
+    } as never,
   });
-  void router.load({ action: { type: 'PUSH' } } as never);
 }
 
 function parseExactAddMaskedLocation(maskedLocation: { pathname?: string; search?: Record<string, unknown> } | undefined) {
@@ -167,10 +154,8 @@ function useExactAddOverlay(defaultSection: DiscoverySection) {
   const maskedLocation = useRouterState({ select: (state) => state.location.maskedLocation });
   const exactAdd = parseExactAddMaskedLocation(maskedLocation as never);
   const close = () => {
-    const backgroundHref = router.state.location.href;
-    const { __tempLocation: _tempLocation, __tempKey: _tempKey, ...state } = router.history.location.state;
-    router.history.replace(backgroundHref, state);
-    void router.load({ action: { type: 'REPLACE' } } as never);
+    const current = router.state.location;
+    void router.navigate({ to: current.pathname as never, search: current.search as never, replace: true });
     window.requestAnimationFrame(() => {
       exactAddReturnFocus?.focus({ preventScroll: true });
       exactAddReturnFocus = null;
@@ -251,8 +236,8 @@ export function DiscoverSearchCombobox({ section, rawQuery, onQueryChange, hideA
 
   const openResult = useCallback((result: SearchResult) => {
     setOpen(false);
-    navigateToExactAdd(router, section, result)
-  }, [router, section]);
+    navigateToExactAdd(navigate, router, section, result)
+  }, [navigate, router, section]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(query.length >= 2); setActiveIndex((current) => Math.min(current + 1, Math.max(optionCount - 1, 0))); }
@@ -311,7 +296,7 @@ export function DiscoverSearchResultsPage({ section, q, page, cursor, hide_added
   const openResult = (result: SearchResult) => {
     const existingId = result.id ?? result.already_added;
     if (existingId != null) { navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } }); return; }
-    navigateToExactAdd(router, section, result)
+    navigateToExactAdd(navigate, router, section, result)
   };
   if (query.length < 2) return <><div className={styles.searchPage} data-testid="discover-origin-route" {...inertProps(overlayOpen)}><div className={styles.empty}>Type at least 2 characters to search.</div></div>{overlay}</>;
   return <><div className={styles.searchPage} data-testid="discover-origin-route" {...inertProps(overlayOpen)}><h1 id="discover-search-heading" className={styles.srOnly}>Results for “{query}”</h1>{isError ? <div className={styles.empty} role="alert"><span>Could not load search results: {error.message}</span><Button onClick={() => void refetch()}>Retry</Button></div> : null}{!isError && isFetching && !data ? <div className={styles.empty} role="status">Loading results…</div> : null}{!isError && data && items.length === 0 ? <div className={styles.empty}>No results found for “{query}”.</div> : null}{!isError && items.length > 0 ? <><label className={styles.hideAddedToggle}><input type="checkbox" checked={hide_added} onChange={(event) => navigate({ to: '/discover/search', search: { section, q: query, page: 1, cursor: undefined, hide_added: event.target.checked } })} /><span>Hide in library</span></label><div className={styles.searchResults}>{items.map((result) => <SearchResultCard key={getResultIdentity(result)} result={result} section={section} onOpen={openResult} />)}</div></> : null}{data ? <div className={styles.paginationRow}><Button variant="secondary" disabled={page <= 1 || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: Math.max(1, page - 1), cursor: undefined, hide_added } })}>Previous</Button><span>{data.total == null ? 'Filtered total unknown' : `${data.total} results`}</span><Button variant="secondary" disabled={!data.has_more || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page + 1, cursor: data.next_cursor ?? undefined, hide_added } })}>Next</Button></div> : null}{isFetching && data ? <div className={styles.inlineStatus} role="status">Refreshing results…</div> : null}</div>{overlay}</>;
@@ -327,7 +312,7 @@ function openDiscoveryAdd(navigate: ReturnType<typeof useNavigate>, router: Retu
     navigate({ to: '/volumes/$volumeId', params: { volumeId: String(volume.already_added) } });
     return;
   }
-  navigateToExactAdd(router, section, {
+  navigateToExactAdd(navigate, router, section, {
     metadata_source: volume.metadata_source ?? 'comicvine',
     metadata_id: volume.metadata_id ?? String(volume.comicvine_id),
     comicvine_id: volume.comicvine_id,

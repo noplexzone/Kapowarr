@@ -27,10 +27,11 @@ it('uses Enter and View all to open URL-backed complete results', () => {
 });
 
 it('opens highlighted suggestions by exact provider identity through a router-owned mask', () => {
-  expect(source).toContain('function exactAddHref');
-  expect(source).toContain("__tempLocation");
+  expect(source).toContain("mask: {");
+  expect(source).toContain("to: '/discover/add/$source/$metadataId'");
   expect(source).toContain('metadata_id ?? String(result.comicvine_id)');
-  expect(source).toContain('router.history.push(exactAddHref(section, result)');
+  expect(source).not.toContain('router.history');
+  expect(source).not.toContain('__tempLocation');
 });
 
 it('asks the all-source search endpoint so manga can aggregate MangaDex results', () => {

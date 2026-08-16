@@ -32,10 +32,14 @@ describe('exact Discovery to Add identity', () => {
   it('uses TanStack masked locations as the route-owned exact Add overlay', () => {
     const source = require('node:fs').readFileSync('src/routes/discovery/-ui/discovery-page.tsx', 'utf8');
     expect(source).toContain('useRouterState({ select: (state) => state.location.maskedLocation })');
-    expect(source).toContain("__tempLocation");
+    expect(source).toContain("mask: {");
+    expect(source).toContain("to: '/discover/add/$source/$metadataId'");
+    expect(source).toContain('unmaskOnReload: true');
     expect(source).toContain('data-testid=\"discover-origin-route\"');
     expect(source).toContain('inertProps(overlayOpen)');
     expect(source).toContain('exactAddReturnFocus?.focus({ preventScroll: true })');
+    expect(source).not.toContain('__tempLocation');
+    expect(source).not.toContain('router.history');
     expect(source).not.toContain('DiscoverBackgroundRoute');
     expect(source).not.toContain('data-testid=\"discover-background-route\"');
   });

@@ -923,10 +923,13 @@ class MetronEnrichmentTask(Task):
     def issue_id(self) -> None:
         return None
 
-    def __init__(self, volume_id: int) -> None:
+    def __init__(self, volume_id: int, reservation_id: int | None = None, candidate_id: int | None = None, review_group_id: str | None = None) -> None:
         self._volume_id = volume_id
+        self.reservation_id = reservation_id
+        self.candidate_id = candidate_id
+        self.review_group_id = review_group_id
         self.message = f'Enriching volume {volume_id} with Metron'
-        self.details = {'provider': 'metron', 'volume_id': volume_id}
+        self.details = {'provider': 'metron', 'volume_id': volume_id, 'reservation_id': reservation_id, 'candidate_id': candidate_id}
         self.stop = False
 
     def run(self):
@@ -934,11 +937,11 @@ class MetronEnrichmentTask(Task):
         _emit_task_event(TaskStatusEvent(self.message))
         try:
             result = MetronEnrichmentService().refresh_volume(self.volume_id)
-            mark_candidate_enrichment_result(self.volume_id, result.get('status'))
+            mark_candidate_enrichment_result(self.volume_id, result.get('status'), reservation_id=self.reservation_id, candidate_id=self.candidate_id, review_group_id=self.review_group_id)
         except Exception as exc:
-            mark_candidate_enrichment_result(self.volume_id, 'failed', str(exc))
+            mark_candidate_enrichment_result(self.volume_id, 'failed', str(exc), reservation_id=self.reservation_id, candidate_id=self.candidate_id, review_group_id=self.review_group_id)
             raise
-        self.details = {'provider': 'metron', 'volume_id': self.volume_id, 'status': result.get('status')}
+        self.details = {'provider': 'metron', 'volume_id': self.volume_id, 'status': result.get('status'), 'reservation_id': self.reservation_id, 'candidate_id': self.candidate_id}
         self.message = f'Metron enrichment {result.get("status", "finished")} for volume {self.volume_id}'
         _emit_task_event(TaskStatusEvent(self.message))
         return None

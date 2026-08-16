@@ -128,6 +128,29 @@ class Phase123MigrationTests(unittest.TestCase):
             self.assertEqual(con.execute("SELECT external_id FROM volume_provider_links;").fetchone()[0], 'm-123')
             self.assertEqual(con.execute("SELECT payload FROM provider_cache;").fetchone()[0], '{"id":"m-123"}')
 
+    def test_interrupted_normalization_preserves_final_and_backup_metron_rows(self):
+        self._seed_schema(58)
+        with self._connect() as con:
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Final Linked', 1);")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (2, 2, 'Backup Linked', 1);")
+            con.executescript("""
+                CREATE TABLE volume_provider_links_migration_58_backup(id INTEGER PRIMARY KEY AUTOINCREMENT, volume_id INTEGER NOT NULL, provider TEXT NOT NULL, resource_type TEXT NOT NULL, external_id TEXT NOT NULL, match_method TEXT NOT NULL DEFAULT '', match_confidence REAL, review_status TEXT NOT NULL DEFAULT 'linked', linked_at INTEGER NOT NULL, last_successful_enrichment INTEGER, last_checked INTEGER);
+                CREATE TABLE provider_cache_migration_58_backup(provider TEXT NOT NULL, resource_type TEXT NOT NULL, external_id TEXT NOT NULL, payload TEXT NOT NULL, fetched_at INTEGER NOT NULL, PRIMARY KEY(provider, resource_type, external_id));
+                INSERT INTO volume_provider_links(volume_id, provider, resource_type, external_id, linked_at) VALUES (1, 'metron', 'series', 'final-row', 10);
+                INSERT INTO volume_provider_links_migration_58_backup(volume_id, provider, resource_type, external_id, linked_at) VALUES (2, 'metron', 'series', 'backup-row', 20);
+                INSERT INTO provider_cache(provider, resource_type, external_id, payload, fetched_at) VALUES ('metron', 'series', 'final-row', '{"source":"final"}', 10);
+                INSERT INTO provider_cache_migration_58_backup(provider, resource_type, external_id, payload, fetched_at) VALUES ('metron', 'series', 'backup-row', '{"source":"backup"}', 20);
+            """)
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            links = con.execute("SELECT volume_id, external_id FROM volume_provider_links ORDER BY volume_id;").fetchall()
+            caches = con.execute("SELECT external_id, payload FROM provider_cache ORDER BY external_id;").fetchall()
+            self.assertEqual(links, [(1, 'final-row'), (2, 'backup-row')])
+            self.assertEqual(caches, [('backup-row', '{"source":"backup"}'), ('final-row', '{"source":"final"}')])
+            self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_backup'))
+            self.assertFalse(table_exists(con, 'provider_cache_migration_58_backup'))
+
     def test_partially_created_metron_schema_is_completed(self):
         self._seed_schema(58)
         with self._connect() as con:

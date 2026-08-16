@@ -1487,74 +1487,116 @@ def _metron_table_compatible(cursor, table_name: str) -> bool:
 
 
 def _normalize_metron_table(cursor, table_name: str) -> None:
-    """Normalize Metron tables with interrupted-migration recovery."""
+    """Normalize Metron tables with interrupted-migration recovery.
+
+    If both the final and backup tables are present, both are treated as
+    sources.  The final table is first renamed to a staging source so records
+    unique to either table can be reconciled before either source is dropped.
+    """
     backup_name = f"{table_name}_migration_58_backup"
+    final_staging = f"{table_name}_migration_58_final"
     final_exists = _table_exists(cursor, table_name)
     backup_exists = _table_exists(cursor, backup_name)
 
     if final_exists and not backup_exists and _metron_table_compatible(cursor, table_name):
         return
 
+    source_names: List[str] = []
+    if final_exists:
+        if _table_exists(cursor, final_staging):
+            cursor.execute(f'DROP TABLE "{final_staging}";')
+        cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{final_staging}";')
+        source_names.append(final_staging)
     if backup_exists:
-        source_name = backup_name
-        if final_exists:
-            cursor.execute(f'DROP TABLE "{table_name}";')
-    elif final_exists:
-        source_name = backup_name
-        cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{backup_name}";')
-    else:
-        cursor.execute(_METRON_TABLE_DEFINITIONS[table_name])
-        if not _metron_table_compatible(cursor, table_name):
-            raise RuntimeError(f'Failed to create normalized Metron table {table_name}')
-        return
+        source_names.append(backup_name)
 
-    source_count = cursor.execute(f'SELECT COUNT(*) FROM "{source_name}";').fetchone()[0]
-    source_columns = set(_table_columns(cursor, source_name))
-    copy_columns = [c for c in _METRON_TABLE_COLUMNS[table_name] if c in source_columns]
     cursor.execute(_METRON_TABLE_DEFINITIONS[table_name])
     if not _metron_table_compatible(cursor, table_name):
-        raise RuntimeError(f'Failed to normalize Metron table {table_name}')
+        raise RuntimeError(f'Failed to create normalized Metron table {table_name}')
+    if not source_names:
+        return
 
-    if copy_columns:
-        column_sql = ', '.join(copy_columns)
+    all_source_columns = {name: set(_table_columns(cursor, name)) for name in source_names}
+    copy_columns = list(_METRON_TABLE_COLUMNS[table_name])
+    if not any(all_source_columns.values()):
+        raise RuntimeError(f'No recoverable columns found for Metron table {table_name}')
+
+    def select_for_source(source_name: str) -> str:
+        source_columns = all_source_columns[source_name]
+        expressions = []
+        for column in copy_columns:
+            if column == 'id':
+                expressions.append('NULL AS id')
+            elif column in source_columns:
+                expressions.append(column)
+            elif column in ('match_confidence', 'last_successful_enrichment', 'last_checked', 'expires_at', 'year', 'current_volume_id', 'rate_limit_paused_until', 'resume_time', 'started_at', 'updated_at', 'completed_at'):
+                expressions.append(f'NULL AS {column}')
+            elif column in ('total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'last_terminal_volume_id', 'cancel_requested'):
+                expressions.append(f'0 AS {column}')
+            elif column in ('linked_at', 'fetched_at', 'created_at'):
+                expressions.append(f'0 AS {column}')
+            elif column == 'payload':
+                expressions.append("'{}' AS payload")
+            else:
+                expressions.append(f"'' AS {column}")
         volume_filter = ''
         if table_name in ('volume_provider_links', 'volume_enrichment_terms', 'volume_metadata_enrichment', 'provider_match_candidates') and _table_exists(cursor, 'volumes') and 'volume_id' in source_columns:
             volume_filter = ' WHERE volume_id IN (SELECT id FROM volumes)'
-        if table_name == 'volume_provider_links' and {'id', 'volume_id', 'provider', 'resource_type', 'external_id', 'last_successful_enrichment', 'linked_at'} <= source_columns:
-            cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
-                SELECT {column_sql}
-                FROM (
-                    SELECT *, ROW_NUMBER() OVER (
-                        PARTITION BY volume_id, provider, resource_type
-                        ORDER BY (external_id IS NOT NULL AND external_id != '') DESC,
-                                 COALESCE(last_successful_enrichment, 0) DESC,
-                                 COALESCE(linked_at, 0) DESC,
-                                 id DESC
-                    ) AS rn
-                    FROM "{source_name}"
-                    {volume_filter}
-                )
-                WHERE rn = 1;""")
-        elif table_name == 'provider_cache' and {'provider', 'resource_type', 'external_id', 'payload', 'fetched_at'} <= source_columns:
-            cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
-                SELECT {column_sql}
-                FROM (
-                    SELECT *, ROW_NUMBER() OVER (
-                        PARTITION BY provider, resource_type, external_id
-                        ORDER BY COALESCE(fetched_at, 0) DESC
-                    ) AS rn
-                    FROM "{source_name}"
-                )
-                WHERE rn = 1;""")
-        else:
-            cursor.execute(f'INSERT OR IGNORE INTO "{table_name}" ({column_sql}) SELECT DISTINCT {column_sql} FROM "{source_name}"{volume_filter};')
+        return f'SELECT {", ".join(expressions)} FROM "{source_name}"{volume_filter}'
+
+    union_sql = ' UNION ALL '.join(select_for_source(name) for name in source_names)
+    column_sql = ', '.join(copy_columns)
+    considered_count = sum(cursor.execute(f'SELECT COUNT(*) FROM "{name}";').fetchone()[0] for name in source_names)
+
+    if table_name == 'volume_provider_links' and {'volume_id', 'provider', 'resource_type', 'external_id'} <= set(copy_columns):
+        cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY volume_id, provider, resource_type
+                    ORDER BY (external_id IS NOT NULL AND external_id != '') DESC,
+                             (review_status = 'linked') DESC,
+                             COALESCE(last_successful_enrichment, 0) DESC,
+                             COALESCE(last_checked, 0) DESC,
+                             COALESCE(linked_at, 0) DESC,
+                             COALESCE(id, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'provider_cache' and {'provider', 'resource_type', 'external_id'} <= set(copy_columns):
+        cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY provider, resource_type, external_id
+                    ORDER BY COALESCE(fetched_at, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'metron_backfill_state' and 'id' in copy_columns:
+        cursor.execute(f"""INSERT OR REPLACE INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY id ORDER BY COALESCE(updated_at, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    else:
+        cursor.execute(f'INSERT OR IGNORE INTO "{table_name}" ({column_sql}) SELECT DISTINCT {column_sql} FROM ({union_sql});')
 
     dest_count = cursor.execute(f'SELECT COUNT(*) FROM "{table_name}";').fetchone()[0]
-    if dest_count != source_count:
-        LOGGER.warning('Normalized %s during migration: source_rows=%s destination_rows=%s merged_or_discarded=%s', table_name, source_count, dest_count, source_count - dest_count)
+    if dest_count > considered_count:
+        raise RuntimeError(f'Normalized Metron table {table_name} inserted more records than it considered')
+    if dest_count != considered_count:
+        LOGGER.warning('Normalized %s during migration: source_rows=%s destination_rows=%s merged_or_rejected=%s', table_name, considered_count, dest_count, considered_count - dest_count)
     if not _metron_table_compatible(cursor, table_name):
         raise RuntimeError(f'Normalized Metron table {table_name} failed schema validation')
-    cursor.execute(f'DROP TABLE "{backup_name}";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{final_staging}";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{backup_name}";')
 
 
 def _ensure_metron_base_schema(cursor) -> None:

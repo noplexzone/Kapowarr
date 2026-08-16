@@ -631,7 +631,7 @@ def select_candidate_and_queue_enrichment(candidate_id: int) -> Dict[str, Any]:
     from backend.features.tasks import MetronEnrichmentTask, TaskHandler
     volume_id = int(result['volume_id'])
     try:
-        task_id = TaskHandler().add(MetronEnrichmentTask(volume_id))
+        task_id = TaskHandler().add(MetronEnrichmentTask(volume_id, reservation_id=int(result['reservation_id']), candidate_id=candidate_id, review_group_id=result.get('review_group_id')))
     except Exception as exc:
         ts = now_ts()
         db = get_db()

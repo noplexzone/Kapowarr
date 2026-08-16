@@ -287,6 +287,36 @@ class MetronEnrichmentPersistenceTests(unittest.TestCase):
             self.assertEqual(reservations[0]['status'], 'failed')
             self.assertIn('queue unavailable', reservations[0]['safe_error'])
 
+    def test_candidate_selection_queues_task_with_reservation_scope(self):
+        from backend.features.metron_enrichment import select_candidate_and_queue_enrichment
+        with self.app.app_context():
+            db = get_db()
+            db.execute("""INSERT INTO provider_match_candidates(volume_id, provider, resource_type, candidate_external_id, title, review_group_id, review_status, created_at, updated_at)
+                VALUES(1, 'metron', 'series', 'm-candidate', 'Metron Candidate', 'grp', 'review_required', 1, 1);""")
+            commit()
+            candidate_id = db.execute('SELECT id FROM provider_match_candidates LIMIT 1;').fetchone()[0]
+            captured = {}
+            def capture_task(task):
+                captured['task'] = task
+                return 91
+            with patch('backend.features.tasks.TaskHandler.add', side_effect=capture_task):
+                result = select_candidate_and_queue_enrichment(candidate_id)
+            task = captured['task']
+            self.assertEqual(task.volume_id, 1)
+            self.assertEqual(task.reservation_id, result['reservation_id'])
+            self.assertEqual(task.candidate_id, candidate_id)
+            self.assertEqual(task.review_group_id, 'grp')
+            self.assertEqual(result['task_id'], 91)
+
+    def test_metron_task_completion_uses_exact_reservation_scope(self):
+        from backend.features.tasks import MetronEnrichmentTask
+        with self.app.app_context():
+            with patch('backend.features.metron_enrichment.MetronEnrichmentService.refresh_volume', return_value={'status': 'linked'}), \
+                 patch('backend.features.tasks._emit_task_event'), \
+                 patch('backend.features.metron_enrichment.mark_candidate_enrichment_result') as mark_result:
+                MetronEnrichmentTask(1, reservation_id=20, candidate_id=10, review_group_id='grp-a').run()
+        mark_result.assert_called_once_with(1, 'linked', reservation_id=20, candidate_id=10, review_group_id='grp-a')
+
     def test_completion_is_scoped_to_exact_reservation_candidate_and_group(self):
         from backend.features.metron_enrichment import mark_candidate_enrichment_result
         with self.app.app_context():

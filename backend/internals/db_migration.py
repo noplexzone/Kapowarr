@@ -1757,3 +1757,31 @@ def _migrate_add_metron_task_reservations():
     """)
     return
 
+
+
+@DatabaseMigrationHandler.register_handler(62)
+def _migrate_add_comic_discovery_facts():
+    cursor = get_db()
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS comic_series_discovery_facts(
+            comicvine_volume_id INTEGER PRIMARY KEY,
+            first_known_issue_id INTEGER,
+            first_known_issue_number TEXT NOT NULL DEFAULT '',
+            first_known_issue_date TEXT,
+            date_source TEXT NOT NULL DEFAULT '',
+            series_started_at TEXT,
+            is_upcoming_launch BOOL NOT NULL DEFAULT 0,
+            metadata_modified_at INTEGER,
+            derived_at INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_first_date_idx
+            ON comic_series_discovery_facts(first_known_issue_date);
+        CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_upcoming_idx
+            ON comic_series_discovery_facts(is_upcoming_launch, first_known_issue_date);
+        CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_derived_idx
+            ON comic_series_discovery_facts(derived_at);
+        CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_volume_idx
+            ON comic_series_discovery_facts(comicvine_volume_id);
+    """)
+    return

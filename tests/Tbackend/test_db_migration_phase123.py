@@ -268,6 +268,20 @@ class Phase123MigrationTests(unittest.TestCase):
         self.assertEqual(len(versions), len(set(versions)))
         self.assertIn(57, DatabaseMigrationHandler.handlers)
         self.assertIn(58, DatabaseMigrationHandler.handlers)
+        self.assertIn(62, DatabaseMigrationHandler.handlers)
+
+    def test_discovery_facts_schema_and_indexes_are_created(self):
+        self._seed_schema(61)
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            self.assertTrue(table_exists(con, 'comic_series_discovery_facts'))
+            cols = {row[1]: row for row in con.execute('PRAGMA table_info(comic_series_discovery_facts);')}
+            self.assertEqual(cols['comicvine_volume_id'][5], 1)
+            self.assertEqual(cols['is_upcoming_launch'][3], 1)
+            index_columns = {row[1]: tuple(info[2] for info in con.execute(f"PRAGMA index_info({row[1]});")) for row in con.execute('PRAGMA index_list(comic_series_discovery_facts);')}
+            self.assertIn(('first_known_issue_date',), index_columns.values())
+            self.assertIn(('derived_at',), index_columns.values())
+            self.assertIn(('comicvine_volume_id',), index_columns.values())
 
 if __name__ == '__main__':
     unittest.main()

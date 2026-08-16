@@ -157,23 +157,26 @@ class Phase123MigrationTests(unittest.TestCase):
 
     def test_metron_recovery_state_machine_reads_live_backup_and_staging_sources(self):
         cases = [
-            ('live_only', True, False, False, ['live-row']),
-            ('backup_only', False, True, False, ['backup-row']),
-            ('staging_only', False, False, True, ['staging-row']),
-            ('live_backup', True, True, False, ['live-row', 'backup-row']),
-            ('live_staging', True, False, True, ['live-row', 'staging-row']),
-            ('backup_staging', False, True, True, ['backup-row', 'staging-row']),
-            ('all_three', True, True, True, ['live-row', 'backup-row', 'staging-row']),
-            ('none', False, False, False, []),
+            ('live_only', True, False, False, False, ['live-row']),
+            ('backup_only', False, True, False, False, ['backup-row']),
+            ('staging_only', False, False, True, False, ['staging-row']),
+            ('current_live_only', False, False, False, True, ['current-live-row']),
+            ('live_backup', True, True, False, False, ['live-row', 'backup-row']),
+            ('live_current_live', True, False, False, True, ['live-row', 'current-live-row']),
+            ('live_staging', True, False, True, False, ['live-row', 'staging-row']),
+            ('backup_staging', False, True, True, False, ['backup-row', 'staging-row']),
+            ('backup_current_live', False, True, False, True, ['backup-row', 'current-live-row']),
+            ('all_four_source_variants', True, True, True, True, ['live-row', 'backup-row', 'staging-row', 'current-live-row']),
+            ('none', False, False, False, False, []),
         ]
-        for name, live, backup, staging, expected in cases:
+        for name, live, backup, staging, current_live, expected in cases:
             with self.subTest(name=name):
                 self.tearDown(); self.setUp()
                 self._seed_schema(58)
                 with self._connect() as con:
                     self._drop_metron_tables(con)
                     con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
-                    for idx in range(1, 4):
+                    for idx in range(1, 5):
                         con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (?, ?, ?, 1);", (idx, idx, f'Volume {idx}'))
                     if live:
                         self._create_link_variant(con, 'volume_provider_links', 1, 'live-row', 10)
@@ -181,6 +184,8 @@ class Phase123MigrationTests(unittest.TestCase):
                         self._create_link_variant(con, 'volume_provider_links_migration_58_backup', 2, 'backup-row', 20)
                     if staging:
                         self._create_link_variant(con, 'volume_provider_links_migration_58_final', 3, 'staging-row', 30)
+                    if current_live:
+                        self._create_link_variant(con, 'volume_provider_links_migration_58_current_live', 4, 'current-live-row', 40)
                 self._run_setup(); self._assert_normalized()
                 with self._connect() as con:
                     rows = [row[0] for row in con.execute("SELECT external_id FROM volume_provider_links ORDER BY external_id;").fetchall()]
@@ -188,6 +193,7 @@ class Phase123MigrationTests(unittest.TestCase):
                     self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_backup'))
                     self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_final'))
                     self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_live'))
+                    self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_current_live'))
 
     def test_metron_recovery_reads_preexisting_live_source_without_dropping_current_live(self):
         self._seed_schema(58)
@@ -204,6 +210,19 @@ class Phase123MigrationTests(unittest.TestCase):
             self.assertEqual([row[2] for row in rows], ['live-source-row', 'current-live-row'])
             self.assertTrue(all(row[0] is not None for row in rows))
             self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_current_live'))
+
+
+    def test_invalid_current_live_rows_are_explained_as_rejected(self):
+        self._seed_schema(58)
+        with self._connect() as con:
+            self._drop_metron_tables(con)
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("CREATE TABLE volume_provider_links_migration_58_current_live(id INTEGER PRIMARY KEY, volume_id INTEGER NOT NULL, provider TEXT NOT NULL, resource_type TEXT NOT NULL, external_id TEXT NOT NULL, linked_at INTEGER NOT NULL);")
+            con.execute("INSERT INTO volume_provider_links_migration_58_current_live(id, volume_id, provider, resource_type, external_id, linked_at) VALUES (10, 999, 'metron', 'series', 'orphan', 1);")
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_current_live'))
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM volume_provider_links WHERE external_id='orphan';").fetchone()[0], 0)
 
     def test_candidate_identity_keeps_separate_review_groups_and_reservations(self):
         self._seed_schema(61)

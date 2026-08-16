@@ -1594,18 +1594,22 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
     staging_exists = _table_exists(cursor, final_staging)
     live_source_exists = _table_exists(cursor, live_source)
     current_live_source = f"{table_name}_migration_58_current_live"
+    current_live_exists = _table_exists(cursor, current_live_source)
+    renamed_live_source = f"{table_name}_migration_58_current_live_source"
 
-    if final_exists and not backup_exists and not staging_exists and not live_source_exists and _metron_table_compatible(cursor, table_name):
+    if final_exists and not backup_exists and not staging_exists and not live_source_exists and not current_live_exists and _metron_table_compatible(cursor, table_name):
         return
 
     source_names: List[str] = []
     if live_source_exists:
         source_names.append(live_source)
+    if current_live_exists:
+        source_names.append(current_live_source)
     if final_exists:
-        if live_source_exists:
-            cursor.execute(f'DROP TABLE IF EXISTS "{current_live_source}";')
-            cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{current_live_source}";')
-            source_names.append(current_live_source)
+        if live_source_exists or current_live_exists:
+            cursor.execute(f'DROP TABLE IF EXISTS "{renamed_live_source}";')
+            cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{renamed_live_source}";')
+            source_names.append(renamed_live_source)
         else:
             cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{live_source}";')
             source_names.append(live_source)
@@ -1624,13 +1628,21 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
     copy_columns = list(_METRON_TABLE_COLUMNS[table_name])
     if not any(all_source_columns.values()):
         raise RuntimeError(f'No recoverable columns found for Metron table {table_name}')
+    source_id_rows = []
+    for name, columns in all_source_columns.items():
+        if 'id' in columns:
+            source_id_rows.extend(row[0] for row in cursor.execute(f'SELECT id FROM "{name}" WHERE id IS NOT NULL;').fetchall())
+    preserve_source_ids = len(source_id_rows) == len(set(source_id_rows))
 
     def select_for_source(source_name: str) -> str:
         source_columns = all_source_columns[source_name]
         expressions = []
         for column in copy_columns:
-            if column == 'id' and (column not in source_columns or table_name == 'volume_provider_links'):
-                expressions.append('NULL AS id')
+            if column == 'id':
+                if column in source_columns and preserve_source_ids:
+                    expressions.append(column)
+                else:
+                    expressions.append('NULL AS id')
             elif column in source_columns:
                 expressions.append(column)
             elif column in ('match_confidence', 'last_successful_enrichment', 'last_checked', 'expires_at', 'year', 'current_volume_id', 'rate_limit_paused_until', 'resume_time', 'started_at', 'completed_at', 'publisher', 'cover_url', 'summary', 'confidence', 'candidate_id', 'task_queue_id', 'safe_error', 'burst_limit', 'burst_remaining', 'burst_reset', 'sustained_limit', 'sustained_remaining', 'sustained_reset', 'retry_after', 'resume_at', 'last_status'):
@@ -1744,6 +1756,20 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
     dest_count = cursor.execute(f'SELECT COUNT(*) FROM "{table_name}";').fetchone()[0]
     if dest_count > considered_count:
         raise RuntimeError(f'Normalized Metron table {table_name} inserted more records than it considered')
+    expected_identity_sql = {
+        'volume_provider_links': "SELECT volume_id || ':' || provider || ':' || resource_type AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND provider != '' AND resource_type != ''",
+        'provider_cache': "SELECT provider || ':' || resource_type || ':' || external_id AS natural_id FROM ({union_sql}) WHERE provider != '' AND resource_type != '' AND external_id != ''",
+        'provider_match_candidates': "SELECT review_group_id || ':' || volume_id || ':' || provider || ':' || resource_type || ':' || candidate_external_id AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND provider != '' AND resource_type != '' AND candidate_external_id != '' AND review_group_id != ''",
+        'volume_metadata_enrichment': "SELECT volume_id || ':' || provider || ':' || field_name AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND provider != '' AND field_name != ''",
+        'volume_enrichment_terms': "SELECT volume_id || ':' || provider || ':' || term_type || ':' || external_id || ':' || name AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND provider != '' AND term_type != '' AND name != ''",
+        'provider_rate_limit_state': "SELECT provider AS natural_id FROM ({union_sql}) WHERE provider != ''",
+        'metron_enrichment_task_reservations': "SELECT CASE WHEN status IN ('reserved', 'queued', 'running') THEN 'active:' || volume_id || ':' || COALESCE(candidate_id, -1) || ':' || COALESCE(task_queue_id, -1) ELSE 'history:' || volume_id || ':' || COALESCE(candidate_id, -1) || ':' || status || ':' || COALESCE(created_at, 0) || ':' || COALESCE(updated_at, 0) || ':' || COALESCE(safe_error, '') END AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND status != ''",
+    }.get(table_name)
+    if expected_identity_sql:
+        expected_identity_sql = expected_identity_sql.format(union_sql=union_sql)
+        expected_identities = cursor.execute(f"SELECT COUNT(*) FROM (SELECT DISTINCT natural_id FROM ({expected_identity_sql}) WHERE natural_id IS NOT NULL);").fetchone()[0]
+        if dest_count < expected_identities:
+            raise RuntimeError(f'Unexplained row loss while normalizing {table_name}: destination_rows={dest_count} distinct_valid_source_identities={expected_identities}')
     if dest_count != considered_count:
         LOGGER.warning('Normalized %s during migration: source_rows=%s destination_rows=%s merged_or_rejected=%s', table_name, considered_count, dest_count, considered_count - dest_count)
     if not _metron_table_compatible(cursor, table_name):
@@ -1753,6 +1779,7 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
         raise RuntimeError(f'Foreign key validation failed while normalizing {table_name}: {fk_errors[:3]}')
     cursor.execute(f'DROP TABLE IF EXISTS "{live_source}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{current_live_source}";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{renamed_live_source}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{final_staging}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{backup_name}";')
 

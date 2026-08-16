@@ -109,7 +109,11 @@ class DiscoveryBrowseCatalogTests(unittest.TestCase):
         self.assertEqual(ids1, ['manga-1999', 'dup'])
         self.assertEqual(ids2, ['manga-1990'])
         self.assertFalse(set(ids1) & set(ids2))
-        self.assertEqual(page1['total'], 3)
+        self.assertIsNone(page1['total'])
+        self.assertFalse(page1['has_more'])
+        self.assertTrue(page1['is_bounded'])
+        self.assertEqual(page1['maximum_per_year'], 100)
+        self.assertEqual(page1['years_included'], list(range(1990, 2000)))
 
     def test_mangadex_catalog_rejects_unsupported_status(self):
         with self.assertRaises(ValueError):

@@ -642,14 +642,26 @@ def browse_mangadex_catalog(
     else:
         page_raw_items = raw_items[:limit]
     items = [format_mangadex_catalog_result(manga) for manga in page_raw_items]
-    total = len(raw_items) if decade_mode else int(payload_total or offset + len(items))
+    if decade_mode:
+        return {
+            'items': items,
+            'total': None,
+            'offset': offset,
+            'page_size': limit,
+            'has_more': False,
+            'is_bounded': True,
+            'maximum_per_year': 100,
+            'years_included': years_to_fetch,
+            'source_note': 'Showing a bounded MangaDex sample of up to 100 titles per year. Exhaustive decade pagination requires a future local catalog index.',
+        }
+    total = int(payload_total or offset + len(items))
     return {
         'items': items,
         'total': total,
         'offset': offset,
         'page_size': limit,
         'has_more': offset + len(items) < total,
-        'source_note': 'Manga catalog results come from MangaDex. Decade filters are deduplicated, sorted locally, and bounded to the fetched decade window.',
+        'source_note': 'Manga catalog results come from MangaDex.',
     }
 
 

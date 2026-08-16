@@ -12,9 +12,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Preserve Discover exact Add return state through validated internal routes and browser-backed overlay close behavior.
+- Recover interrupted Metron schema normalization safely, keep backups until validation succeeds, and log deterministic merge counts.
+- Preserve Discover exact Add return state through typed router destinations instead of browser-history guesses.
 - Derive Recently Started and Upcoming Launches from ComicVine first-known issue data instead of volume start-year/date-added approximations.
 - Add durable Metron enrichment task reservations so candidate selection and queued work have a single active owner per volume.
+- Apply Monitor Missing with the shared valid-file predicate so missing issues become monitored and downloaded issues are unmonitored.
+- Mark MangaDex decade Browse responses as bounded with unknown totals and no false pagination.
+- Apply Hide in Library on server-side provider IDs for Discover shelves, Browse, and full search.
 - Redirect legacy Add URLs into Discover and return paginated metadata-search envelopes for full result pages while keeping legacy search callers compatible.
 
 ### Removed

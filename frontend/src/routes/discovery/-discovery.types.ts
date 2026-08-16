@@ -13,7 +13,7 @@ export const discoveryVolumeSchema = z.object({
 }).passthrough();
 export type DiscoveryVolume = z.infer<typeof discoveryVolumeSchema>;
 
-export const discoveryPageSchema = z.object({ items: z.array(z.record(z.unknown())), total: z.number().int().nonnegative(), offset: z.number().int().nonnegative(), page_size: z.number().int().positive(), has_more: z.boolean().optional(), source_note: z.string().optional() });
+export const discoveryPageSchema = z.object({ items: z.array(z.record(z.unknown())), total: z.number().int().nonnegative().nullable(), offset: z.number().int().nonnegative(), page_size: z.number().int().positive(), has_more: z.boolean().optional(), source_note: z.string().optional(), is_bounded: z.boolean().optional(), maximum_per_year: z.number().int().positive().optional(), years_included: z.array(z.number().int()).optional() });
 export type DiscoveryPage = Omit<z.infer<typeof discoveryPageSchema>, 'items'> & { items: DiscoveryVolume[] };
 
 export const discoveryFacetSchema = z.object({ value: z.string(), label: z.string(), count: z.number().int().nonnegative().optional() });
@@ -21,7 +21,7 @@ export type DiscoveryFacet = z.infer<typeof discoveryFacetSchema>;
 export const discoveryCapabilitiesSchema = z.object({ section: discoverySectionSchema, filters: z.array(z.enum(['publisher', 'decade', 'character', 'genre', 'status', 'tags', 'demographic', 'original_language', 'year', 'author', 'artist', 'content_rating'])), deferred_filters: z.array(z.string()), shelves: z.array(z.string()), source_notes: z.record(z.string()), publishers: z.array(discoveryFacetSchema).optional(), decades: z.array(discoveryFacetSchema).optional(), statuses: z.array(discoveryFacetSchema).optional(), original_languages: z.array(discoveryFacetSchema).optional(), demographics: z.array(discoveryFacetSchema).optional() });
 export type DiscoveryCapabilities = z.infer<typeof discoveryCapabilitiesSchema>;
 export type DiscoveryType = 'recently-started' | 'upcoming-launches' | 'recently-active' | 'recently-updated' | 'upcoming' | 'new' | 'trending';
-export interface BrowseFilters { section: DiscoverySection; q?: string; publisher?: string; decade?: string; character?: string; genre?: string; status?: string; tags?: string; demographic?: string; original_language?: string; year?: string; author?: string; artist?: string; content_rating?: string; sort: BrowseSort; }
+export interface BrowseFilters { section: DiscoverySection; q?: string; publisher?: string; decade?: string; character?: string; genre?: string; status?: string; tags?: string; demographic?: string; original_language?: string; year?: string; author?: string; artist?: string; content_rating?: string; hide_added?: boolean; sort: BrowseSort; }
 
 export function filterDiscoveryVolumes<T extends { already_added?: number | null }>(volumes: T[], hideAlreadyAdded: boolean): T[] { return hideAlreadyAdded ? volumes.filter((volume) => volume.already_added == null) : volumes; }
 export interface DiscoveryAddSelection { metadata_source: 'comicvine' | 'mangadex'; metadata_id: string; title?: string; metadata_language?: string; }

@@ -121,6 +121,7 @@ export const discoveryBrowseSearchSchema = z.object({
   author: cleanQuery,
   artist: cleanQuery,
   content_rating: cleanQuery,
+  hide_added: z.coerce.boolean().default(false).catch(false),
   sort: z.enum(['trending', 'title', 'year', 'recently_started', 'recently_updated']).default('trending').catch('trending'),
 });
 

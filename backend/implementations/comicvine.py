@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup, Tag
 from backend.base.custom_exceptions import (CVRateLimitReached,
                                             InvalidComicVineApiKey,
                                             VolumeNotMatched)
-from backend.base.definitions import (Constants, FilenameData,
+from backend.base.definitions import (Constants, DateType, FilenameData,
                                       IssueMetadata, T, VolumeMetadata)
 from backend.base.file_extraction import (extract_issue_number,
                                           extract_volume_number, volume_regex)
@@ -326,29 +326,36 @@ def _parse_cv_date(value: Any):
     except (TypeError, ValueError):
         return None
 
-def _issue_date(issue: Dict[str, Any]):
-    return _parse_cv_date(issue.get('cover_date') or issue.get('store_date'))
+def issue_date(issue: Dict[str, Any], configured_date_type: Any = None):
+    configured = str(configured_date_type or DateType.COVER_DATE)
+    preferred = 'store_date' if configured.endswith('store_date') else 'cover_date'
+    fallback = 'cover_date' if preferred == 'store_date' else 'store_date'
+    return _parse_cv_date(issue.get(preferred)) or _parse_cv_date(issue.get(fallback))
+
+
+def _issue_date(issue: Dict[str, Any], configured_date_type: Any = None):
+    return issue_date(issue, configured_date_type)
 
 def _issue_number_value(issue: Dict[str, Any]) -> float:
     value = first_of_range(force_range(extract_issue_number(str(issue.get('issue_number') or ''))))
     return float(value) if value is not None else 0.0
 
-def _first_known_issue(volume: Dict[str, Any]) -> Union[Dict[str, Any], None]:
-    dated = [issue for issue in (volume.get('issues') or []) if _issue_date(issue)]
+def _first_known_issue(volume: Dict[str, Any], configured_date_type: Any = None) -> Union[Dict[str, Any], None]:
+    dated = [issue for issue in (volume.get('issues') or []) if _issue_date(issue, configured_date_type)]
     if not dated:
         return None
-    return sorted(dated, key=lambda issue: (_issue_date(issue), _issue_number_value(issue), str(issue.get('id') or '')))[0]
+    return sorted(dated, key=lambda issue: (_issue_date(issue, configured_date_type), _issue_number_value(issue), str(issue.get('id') or '')))[0]
 
-def _is_recently_started_volume(volume: Dict[str, Any], today: Union[_date, None] = None) -> bool:
+def _is_recently_started_volume(volume: Dict[str, Any], today: Union[_date, None] = None, configured_date_type: Any = None) -> bool:
     today = today or _date.today()
-    first = _first_known_issue(volume)
+    first = _first_known_issue(volume, configured_date_type)
     if not first:
         return False
-    first_date = _issue_date(first)
+    first_date = _issue_date(first, configured_date_type)
     return bool(first_date and first_date <= today and today - first_date <= timedelta(days=RECENT_SERIES_START_WINDOW_DAYS))
 
-def _is_launch_issue_for_volume(issue: Dict[str, Any], volume: Dict[str, Any]) -> bool:
-    first = _first_known_issue(volume)
+def _is_launch_issue_for_volume(issue: Dict[str, Any], volume: Dict[str, Any], configured_date_type: Any = None) -> bool:
+    first = _first_known_issue(volume, configured_date_type)
     if not first:
         return False
     return str(first.get('id') or '') == str(issue.get('id') or '') and _issue_number_value(issue) == 1.0
@@ -1038,7 +1045,7 @@ class ComicVine:
             if vol_cv_id and vol_cv_id in non_english_vol_ids:
                 continue
             details = volume_details.get(vol_cv_id or 0)
-            if not details or not _is_launch_issue_for_volume(item, details):
+            if not details or not _is_launch_issue_for_volume(item, details, Settings().sv.date_type):
                 continue
             upcoming.append({
                 'issue_id':     int(item['id']),
@@ -1094,14 +1101,14 @@ class ComicVine:
 
         pre_filtered = [
             v for v in all_results
-            if _is_recently_started_volume(v, today)
+            if _is_recently_started_volume(v, today, Settings().sv.date_type)
             and _is_comic_discovery_candidate_volume(v)
         ]
-        pre_filtered.sort(key=lambda v: (-(_issue_date(_first_known_issue(v)) or _date.min).toordinal(), str(v.get('name') or '').lower(), str(v.get('id') or '')))
+        pre_filtered.sort(key=lambda v: (-(_issue_date(_first_known_issue(v, Settings().sv.date_type), Settings().sv.date_type) or _date.min).toordinal(), str(v.get('name') or '').lower(), str(v.get('id') or '')))
         formatted = [self.__format_volume_output(v) for v in pre_filtered]
         for output, source in zip(formatted, pre_filtered):
-            first = _first_known_issue(source)
-            output['series_started_at'] = (_issue_date(first).isoformat() if first and _issue_date(first) else None)
+            first = _first_known_issue(source, Settings().sv.date_type)
+            output['series_started_at'] = (_issue_date(first, Settings().sv.date_type).isoformat() if first and _issue_date(first, Settings().sv.date_type) else None)
         filtered = [v for v in formatted if not v['translated']][:limit]
         self._mark_already_added(filtered)
         return filtered

@@ -17,13 +17,15 @@ describe('exact Discovery to Add identity', () => {
     expect(legacy).toEqual({ section: 'comic', source: 'comicvine', id: '4050-123', title: 'Saga' });
   });
 
-  it('exact add close prefers browser back for route-backed overlays with explicit fallback', () => {
+  it('exact add close uses router-validated discover return state', () => {
     // Source-level guard because this route is rendered through TanStack Router lazies in e2e.
     const source = require('node:fs').readFileSync('src/routes/add/-ui/add-page.tsx', 'utf8');
     expect(source).toContain('const closeReview = () =>');
     expect(source).toContain("navigate({ to: '/discover/search', search: { section, q: selection.title } })");
     expect(source).toContain("navigate({ to: '/discover', search: { section } })");
     expect(source).toContain('onClose={closeReview}');
-    expect(source).toContain('window.history.back()');
+    expect(source).toContain('navigateToDiscoverReturn');
+    expect(source).not.toContain('history.back()');
+    expect(source).not.toContain('returnTo as never');
   });
 });

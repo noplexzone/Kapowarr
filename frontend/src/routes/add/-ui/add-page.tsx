@@ -37,6 +37,19 @@ function getCoverSrc(result: SearchResult): string | null {
   return null;
 }
 
+function navigateToDiscoverReturn(navigate: ReturnType<typeof useNavigate>, returnTo: string, section: 'comic' | 'manga') {
+  const parsed = new URL(returnTo, 'http://kapowarr.local');
+  if (parsed.pathname === '/discover/search') {
+    navigate({ to: '/discover/search', search: { section, q: parsed.searchParams.get('q') || '', page: Number(parsed.searchParams.get('page') || '1'), hide_added: parsed.searchParams.get('hide_added') === 'true' } });
+    return;
+  }
+  if (parsed.pathname === '/discover/browse') {
+    navigate({ to: '/discover/browse', search: { section, sort: (parsed.searchParams.get('sort') || 'trending') as never, q: parsed.searchParams.get('q') || undefined, publisher: parsed.searchParams.get('publisher') || undefined, decade: parsed.searchParams.get('decade') || undefined, character: parsed.searchParams.get('character') || undefined, genre: parsed.searchParams.get('genre') || undefined, status: parsed.searchParams.get('status') || undefined, hide_added: parsed.searchParams.get('hide_added') === 'true' } as never });
+    return;
+  }
+  navigate({ to: '/discover', search: { section } });
+}
+
 export function ExactAddReview({ section, selection, searchFallbackTo = '/add', returnTo }: { section: 'comic' | 'manga'; selection: AddSelection; searchFallbackTo?: '/add' | '/discover/search'; returnTo?: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -44,11 +57,7 @@ export function ExactAddReview({ section, selection, searchFallbackTo = '/add', 
   const exact = useQuery(exactVolumeQueryOptions(selection, section));
   const closeReview = () => {
     if (returnTo) {
-      if (typeof window !== 'undefined' && window.history.length > 1) {
-        window.history.back();
-        return;
-      }
-      navigate({ to: returnTo as never });
+      navigateToDiscoverReturn(navigate, returnTo, section);
       return;
     }
     if (searchFallbackTo === '/discover/search' && selection.title) {

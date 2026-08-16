@@ -54,10 +54,10 @@ export function searchVolumesQueryOptions(query: string, section: string, metada
   });
 }
 
-export function searchVolumesPageQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine', offset = 0, limit = 30) {
+export function searchVolumesPageQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine', offset = 0, limit = 30, excludeAdded = false) {
   return queryOptions({
-    queryKey: ['volumes', 'search-page', query, section, metadataSource, offset, limit],
-    queryFn: () => searchVolumesPage(query, section, metadataSource, offset, limit),
+    queryKey: ['volumes', 'search-page', query, section, metadataSource, offset, limit, excludeAdded],
+    queryFn: () => searchVolumesPage(query, section, metadataSource, offset, limit, excludeAdded),
     enabled: query.length >= 2,
     staleTime: 5 * 60_000,
   });
@@ -69,8 +69,8 @@ async function searchVolumes(query: string, section: string, metadataSource: Met
   return readJson(response, z.array(searchResultSchema));
 }
 
-async function searchVolumesPage(query: string, section: string, metadataSource: MetadataSourceFilter, offset: number, limit: number): Promise<SearchResultsPage> {
-  const sp = new URLSearchParams({ query, section, metadata_source: metadataSource, paginated: 'true', offset: String(offset), limit: String(limit) });
+async function searchVolumesPage(query: string, section: string, metadataSource: MetadataSourceFilter, offset: number, limit: number, excludeAdded = false): Promise<SearchResultsPage> {
+  const sp = new URLSearchParams({ query, section, metadata_source: metadataSource, paginated: 'true', offset: String(offset), limit: String(limit) }); if (excludeAdded) sp.set('exclude_added', 'true');
   const response = await apiClient.get('volumes/search', { searchParams: sp });
   return readJson(response, searchPageSchema);
 }

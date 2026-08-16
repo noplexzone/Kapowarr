@@ -1662,8 +1662,8 @@ def api_discovery_browse():
 @auth
 def api_discovery_facts_refresh():
     task_id = TaskHandler().add(ComicDiscoveryFactSyncTask())
-    db = get_db()
     try:
+        db = get_db()
         db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference, last_started_at)
             VALUES(1, 'comic_series_discovery', 'partial', 0, 'cover_date', NULL)
             ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, last_error=NULL;""")

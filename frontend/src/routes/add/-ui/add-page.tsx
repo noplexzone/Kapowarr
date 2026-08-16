@@ -64,15 +64,11 @@ export function ExactAddReview({ section, selection, searchFallbackTo = '/add', 
       navigateToDiscoverReturn(navigate, returnTo, section);
       return;
     }
-    if (searchFallbackTo === '/discover/search' && selection.title) {
-      navigate({ to: '/discover/search', search: { section, q: selection.title } });
-      return;
-    }
     if (searchFallbackTo === '/discover/search') {
-      navigate({ to: '/discover', search: { section } });
+      navigate({ to: '/discover', search: { section }, replace: true });
       return;
     }
-    navigate({ to: '/discover', search: { section } });
+    navigate({ to: '/discover', search: { section }, replace: true });
   };
 
   if (exact.isPending) return <div className={styles.empty} role="status">Loading {selection.title ?? selection.metadata_id} from {selection.metadata_source}…</div>;

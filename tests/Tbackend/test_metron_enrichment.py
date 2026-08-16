@@ -249,6 +249,81 @@ class MetronEnrichmentPersistenceTests(unittest.TestCase):
             self.assertEqual(link['review_status'], 'enrichment_pending')
             self.assertEqual(get_review_candidates(1)['total'], 0)
 
+    def test_candidate_reservation_atomically_sets_link_candidate_and_reservation(self):
+        from backend.features.metron_enrichment import reserve_candidate_enrichment_task
+        with self.app.app_context():
+            db = get_db()
+            db.execute("""INSERT INTO provider_match_candidates(volume_id, provider, resource_type, candidate_external_id, title, review_group_id, review_status, created_at, updated_at)
+                VALUES(1, 'metron', 'series', 'm-candidate', 'Metron Candidate', 'grp', 'review_required', 1, 1);""")
+            commit()
+            candidate_id = db.execute('SELECT id FROM provider_match_candidates LIMIT 1;').fetchone()[0]
+            result = reserve_candidate_enrichment_task(candidate_id)
+            self.assertFalse(result['duplicate'])
+            candidate = db.execute('SELECT review_status FROM provider_match_candidates WHERE id = ?;', (candidate_id,)).fetchonedict()
+            link = db.execute("SELECT external_id, review_status FROM volume_provider_links WHERE volume_id = 1 AND provider = 'metron';").fetchonedict()
+            reservation = db.execute('SELECT volume_id, candidate_id, status FROM metron_enrichment_task_reservations WHERE id = ?;', (result['reservation_id'],)).fetchonedict()
+            self.assertEqual(candidate['review_status'], 'enrichment_pending')
+            self.assertEqual(link, {'external_id': 'm-candidate', 'review_status': 'enrichment_pending'})
+            self.assertEqual(reservation, {'volume_id': 1, 'candidate_id': candidate_id, 'status': 'reserved'})
+
+    def test_queue_failure_compensates_exact_reservation_and_link(self):
+        from backend.features.metron_enrichment import select_candidate_and_queue_enrichment
+        with self.app.app_context():
+            db = get_db()
+            db.execute("""INSERT INTO provider_match_candidates(volume_id, provider, resource_type, candidate_external_id, title, review_group_id, review_status, created_at, updated_at)
+                VALUES(1, 'metron', 'series', 'm-candidate', 'Metron Candidate', 'grp', 'review_required', 1, 1);""")
+            commit()
+            candidate_id = db.execute('SELECT id FROM provider_match_candidates LIMIT 1;').fetchone()[0]
+            with patch('backend.features.tasks.TaskHandler.add', side_effect=RuntimeError('queue unavailable')):
+                with self.assertRaises(RuntimeError):
+                    select_candidate_and_queue_enrichment(candidate_id)
+            candidate = db.execute('SELECT review_status FROM provider_match_candidates WHERE id = ?;', (candidate_id,)).fetchonedict()
+            link = db.execute("SELECT review_status FROM volume_provider_links WHERE volume_id = 1 AND provider = 'metron';").fetchonedict()
+            reservations = db.execute('SELECT id, candidate_id, status, safe_error FROM metron_enrichment_task_reservations;').fetchalldict()
+            self.assertEqual(candidate['review_status'], 'failed')
+            self.assertEqual(link['review_status'], 'review_required')
+            self.assertEqual(len(reservations), 1)
+            self.assertEqual(reservations[0]['candidate_id'], candidate_id)
+            self.assertEqual(reservations[0]['status'], 'failed')
+            self.assertIn('queue unavailable', reservations[0]['safe_error'])
+
+    def test_completion_is_scoped_to_exact_reservation_candidate_and_group(self):
+        from backend.features.metron_enrichment import mark_candidate_enrichment_result
+        with self.app.app_context():
+            db = get_db()
+            db.execute("""INSERT INTO provider_match_candidates(id, volume_id, provider, resource_type, candidate_external_id, title, review_group_id, review_status, created_at, updated_at)
+                VALUES(10, 1, 'metron', 'series', 'm-a', 'A', 'grp-a', 'enrichment_pending', 1, 1);""")
+            db.execute("""INSERT INTO provider_match_candidates(id, volume_id, provider, resource_type, candidate_external_id, title, review_group_id, review_status, created_at, updated_at)
+                VALUES(11, 1, 'metron', 'series', 'm-b', 'B', 'grp-b', 'review_required', 1, 1);""")
+            db.execute("""INSERT INTO metron_enrichment_task_reservations(id, volume_id, candidate_id, status, created_at, updated_at)
+                VALUES(20, 1, 10, 'running', 1, 1);""")
+            commit()
+            mark_candidate_enrichment_result(1, 'linked', reservation_id=20, candidate_id=10, review_group_id='grp-a')
+            rows = db.execute('SELECT id, review_status FROM provider_match_candidates ORDER BY id;').fetchalldict()
+            reservation = db.execute('SELECT status FROM metron_enrichment_task_reservations WHERE id = 20;').fetchonedict()
+            self.assertEqual(rows, [{'id': 10, 'review_status': 'resolved'}, {'id': 11, 'review_status': 'review_required'}])
+            self.assertEqual(reservation['status'], 'completed')
+
+    def test_restart_reconciliation_restores_pending_link_for_manual_retry(self):
+        from backend.features.metron_enrichment import reconcile_metron_task_reservations
+        with self.app.app_context():
+            db = get_db()
+            db.execute("""INSERT INTO provider_match_candidates(id, volume_id, provider, resource_type, candidate_external_id, title, review_group_id, review_status, created_at, updated_at)
+                VALUES(10, 1, 'metron', 'series', 'm-a', 'A', 'grp-a', 'enrichment_pending', 1, 1);""")
+            db.execute("""INSERT INTO volume_provider_links(volume_id, provider, resource_type, external_id, review_status, linked_at)
+                VALUES(1, 'metron', 'series', 'm-a', 'enrichment_pending', 1);""")
+            db.execute("""INSERT INTO metron_enrichment_task_reservations(id, volume_id, candidate_id, status, created_at, updated_at)
+                VALUES(20, 1, 10, 'queued', 1, 1);""")
+            commit()
+            self.assertEqual(reconcile_metron_task_reservations(), 1)
+            candidate = db.execute('SELECT review_status FROM provider_match_candidates WHERE id = 10;').fetchonedict()
+            link = db.execute("SELECT review_status FROM volume_provider_links WHERE volume_id = 1 AND provider = 'metron';").fetchonedict()
+            reservation = db.execute('SELECT status, safe_error FROM metron_enrichment_task_reservations WHERE id = 20;').fetchonedict()
+            self.assertEqual(candidate['review_status'], 'failed')
+            self.assertEqual(link['review_status'], 'review_required')
+            self.assertEqual(reservation['status'], 'interrupted')
+            self.assertIn('retry required', reservation['safe_error'])
+
 
 if __name__ == '__main__':
     unittest.main()

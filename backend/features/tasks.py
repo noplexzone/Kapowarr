@@ -915,9 +915,16 @@ class MetronEnrichmentTask(Task):
     display_title = 'Metron enrichment'
     category = 'metadata'
 
+    @property
+    def volume_id(self) -> int:
+        return self._volume_id
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
     def __init__(self, volume_id: int) -> None:
-        self.volume_id = volume_id
-        self.issue_id = None
+        self._volume_id = volume_id
         self.message = f'Enriching volume {volume_id} with Metron'
         self.details = {'provider': 'metron', 'volume_id': volume_id}
         self.stop = False

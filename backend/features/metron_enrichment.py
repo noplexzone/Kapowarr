@@ -557,22 +557,46 @@ def resolve_candidate(candidate_id: int) -> Dict[str, Any]:
 def reserve_candidate_enrichment_task(candidate_id: int) -> Dict[str, Any]:
     """Reserve exactly one active Metron enrichment task per volume."""
     db = get_db()
-    candidate = db.execute('SELECT * FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
-    if not candidate:
-        raise ValueError('Candidate not found')
-    volume_id = int(candidate['volume_id'])
-    existing = db.execute("""SELECT * FROM metron_enrichment_task_reservations
-        WHERE volume_id = ? AND status IN ('reserved', 'queued', 'running')
-        ORDER BY id DESC LIMIT 1;""", (volume_id,)).fetchonedict()
-    if existing:
-        return {'volume_id': volume_id, 'reservation_id': existing['id'], 'task_id': existing.get('task_queue_id'), 'duplicate': True, 'status': STATUS_ENRICHMENT_PENDING}
-    result = resolve_candidate(candidate_id)
-    ts = now_ts()
-    db.execute("""INSERT INTO metron_enrichment_task_reservations(volume_id, candidate_id, status, created_at, updated_at)
-        VALUES(?, ?, 'reserved', ?, ?);""", (volume_id, candidate_id, ts, ts))
-    reservation_id = db.execute('SELECT last_insert_rowid();').fetchone()[0]
-    commit()
-    return {'volume_id': volume_id, 'reservation_id': reservation_id, 'task_id': None, 'duplicate': False, **result}
+    connection = db.connection
+    try:
+        connection.execute('BEGIN IMMEDIATE;')
+        candidate = db.execute('SELECT * FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
+        if not candidate:
+            raise ValueError('Candidate not found')
+        volume_id = int(candidate['volume_id'])
+        review_group_id = str(candidate.get('review_group_id') or '')
+        series_id = str(candidate['candidate_external_id'])
+        existing = db.execute("""SELECT * FROM metron_enrichment_task_reservations
+            WHERE volume_id = ? AND status IN ('reserved', 'queued', 'running')
+            ORDER BY id DESC LIMIT 1;""", (volume_id,)).fetchonedict()
+        if existing:
+            connection.commit()
+            return {'volume_id': volume_id, 'reservation_id': existing['id'], 'task_id': existing.get('task_queue_id'), 'candidate_id': existing.get('candidate_id'), 'review_group_id': review_group_id, 'duplicate': True, 'status': STATUS_ENRICHMENT_PENDING}
+        if candidate.get('provider') != METRON_PROVIDER or candidate.get('review_status') not in (STATUS_REVIEW, STATUS_SELECTED, STATUS_FAILED):
+            raise ValueError('Candidate is not selectable')
+        ts = now_ts()
+        db.execute("""INSERT INTO volume_provider_links(
+                volume_id, provider, resource_type, external_id, match_method,
+                match_confidence, review_status, linked_at, last_checked
+            ) VALUES(?, ?, ?, ?, 'manual', 1.0, ?, ?, ?)
+            ON CONFLICT(volume_id, provider, resource_type) DO UPDATE SET
+                external_id = excluded.external_id,
+                match_method = excluded.match_method,
+                match_confidence = excluded.match_confidence,
+                review_status = excluded.review_status,
+                last_checked = excluded.last_checked;""",
+            (volume_id, METRON_PROVIDER, RESOURCE_SERIES, series_id, STATUS_PENDING, ts, ts),
+        )
+        db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;", (STATUS_ENRICHMENT_PENDING, ts, candidate_id))
+        db.execute("""INSERT INTO metron_enrichment_task_reservations(volume_id, candidate_id, status, created_at, updated_at)
+            VALUES(?, ?, 'reserved', ?, ?);""", (volume_id, candidate_id, ts, ts))
+        reservation_id = db.execute('SELECT last_insert_rowid();').fetchone()[0]
+        connection.commit()
+        return {'volume_id': volume_id, 'reservation_id': reservation_id, 'task_id': None, 'duplicate': False, 'status': STATUS_PENDING, 'series_id': series_id, 'candidate_id': candidate_id, 'review_group_id': review_group_id}
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
 
 
 def attach_metron_task_reservation(reservation_id: int, task_id: int) -> None:
@@ -582,11 +606,20 @@ def attach_metron_task_reservation(reservation_id: int, task_id: int) -> None:
     commit()
 
 
-def finish_metron_task_reservation(volume_id: int, success: bool, error: str = '') -> None:
+def finish_metron_task_reservation(volume_id: int, success: bool, error: str = '', reservation_id: Optional[int] = None, candidate_id: Optional[int] = None, review_group_id: Optional[str] = None) -> None:
     safe_error = (error or '')[:500] if error else None
-    get_db().execute("""UPDATE metron_enrichment_task_reservations
+    db = get_db()
+    params: List[Any] = ['completed' if success else 'failed', safe_error, now_ts()]
+    where = "status IN ('reserved', 'queued', 'running')"
+    if reservation_id is not None:
+        where += ' AND id = ?'; params.append(reservation_id)
+    else:
+        where += ' AND volume_id = ?'; params.append(volume_id)
+    if candidate_id is not None:
+        where += ' AND candidate_id = ?'; params.append(candidate_id)
+    db.execute(f"""UPDATE metron_enrichment_task_reservations
         SET status = ?, safe_error = ?, updated_at = ?
-        WHERE volume_id = ? AND status IN ('reserved', 'queued', 'running');""", ('completed' if success else 'failed', safe_error, now_ts(), volume_id))
+        WHERE {where};""", tuple(params))
     commit()
 
 
@@ -601,8 +634,10 @@ def select_candidate_and_queue_enrichment(candidate_id: int) -> Dict[str, Any]:
         task_id = TaskHandler().add(MetronEnrichmentTask(volume_id))
     except Exception as exc:
         ts = now_ts()
-        get_db().execute("""UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;""", (STATUS_FAILED, ts, candidate_id))
-        finish_metron_task_reservation(volume_id, False, str(exc))
+        db = get_db()
+        db.execute("""UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;""", (STATUS_FAILED, ts, candidate_id))
+        db.execute("""UPDATE volume_provider_links SET review_status = ?, last_checked = ? WHERE volume_id = ? AND provider = ? AND resource_type = ?;""", (STATUS_REVIEW, ts, volume_id, METRON_PROVIDER, RESOURCE_SERIES))
+        finish_metron_task_reservation(volume_id, False, str(exc), int(result['reservation_id']), candidate_id, result.get('review_group_id'))
         raise
     attach_metron_task_reservation(int(result['reservation_id']), task_id)
     return {**result, 'task_id': task_id, 'duplicate': False, 'candidate_state': STATUS_ENRICHMENT_PENDING, 'provider_link_state': STATUS_PENDING}
@@ -617,21 +652,37 @@ def reconcile_metron_task_reservations() -> int:
         db.execute("""UPDATE metron_enrichment_task_reservations SET status = 'interrupted', updated_at = ?, safe_error = ? WHERE id = ?;""", (ts, 'Interrupted before completion; user retry required.', row['id']))
         if row.get('candidate_id'):
             db.execute("""UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ? AND review_status = ?;""", (STATUS_FAILED, ts, row['candidate_id'], STATUS_ENRICHMENT_PENDING))
+        db.execute("""UPDATE volume_provider_links SET review_status = ?, last_checked = ? WHERE volume_id = ? AND provider = ? AND resource_type = ? AND review_status = ?;""", (STATUS_REVIEW, ts, row['volume_id'], METRON_PROVIDER, RESOURCE_SERIES, STATUS_PENDING))
     commit()
     return len(rows)
 
-def mark_candidate_enrichment_result(volume_id: int, status: str, error: str = '') -> None:
+def mark_candidate_enrichment_result(volume_id: int, status: str, error: str = '', reservation_id: Optional[int] = None, candidate_id: Optional[int] = None, review_group_id: Optional[str] = None) -> None:
     ts = now_ts()
+    db = get_db()
+    if reservation_id is not None:
+        reservation = db.execute('SELECT * FROM metron_enrichment_task_reservations WHERE id = ? LIMIT 1;', (reservation_id,)).fetchonedict()
+        if reservation:
+            candidate_id = candidate_id or reservation.get('candidate_id')
+    if candidate_id is not None:
+        candidate = db.execute('SELECT * FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
+        if candidate:
+            review_group_id = review_group_id or candidate.get('review_group_id')
     if status == STATUS_LINKED:
-        get_db().execute("UPDATE provider_match_candidates SET review_status = 'resolved', updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);",
-                         (ts, volume_id, METRON_PROVIDER, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING))
-        get_db().execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status = ?;",
-                         (STATUS_DISMISSED, ts, volume_id, METRON_PROVIDER, STATUS_REVIEW))
-        finish_metron_task_reservation(volume_id, True)
+        if candidate_id is not None:
+            db.execute("UPDATE provider_match_candidates SET review_status = 'resolved', updated_at = ? WHERE id = ?;", (ts, candidate_id))
+            if review_group_id:
+                db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_group_id = ? AND id != ? AND review_status = ?;", (STATUS_DISMISSED, ts, volume_id, METRON_PROVIDER, review_group_id, candidate_id, STATUS_REVIEW))
+        else:
+            db.execute("UPDATE provider_match_candidates SET review_status = 'resolved', updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);", (ts, volume_id, METRON_PROVIDER, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING))
+            db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status = ?;", (STATUS_DISMISSED, ts, volume_id, METRON_PROVIDER, STATUS_REVIEW))
+        finish_metron_task_reservation(volume_id, True, reservation_id=reservation_id, candidate_id=candidate_id, review_group_id=review_group_id)
     else:
-        get_db().execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);",
-                         (STATUS_FAILED, ts, volume_id, METRON_PROVIDER, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING))
-        finish_metron_task_reservation(volume_id, False, error)
+        if candidate_id is not None:
+            db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;", (STATUS_FAILED, ts, candidate_id))
+        else:
+            db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);", (STATUS_FAILED, ts, volume_id, METRON_PROVIDER, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING))
+        db.execute("UPDATE volume_provider_links SET review_status = ?, last_checked = ? WHERE volume_id = ? AND provider = ? AND resource_type = ?;", (STATUS_REVIEW, ts, volume_id, METRON_PROVIDER, RESOURCE_SERIES))
+        finish_metron_task_reservation(volume_id, False, error, reservation_id=reservation_id, candidate_id=candidate_id, review_group_id=review_group_id)
     commit()
 
 

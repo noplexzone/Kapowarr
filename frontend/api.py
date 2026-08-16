@@ -1206,6 +1206,13 @@ def _truthy_request_flag(name: str) -> bool:
     return str(request.values.get(name) or '').lower() in ('1', 'true', 'yes', 'on')
 
 
+DISCOVERY_SHELF_TYPES = ('recently-started', 'upcoming-launches', 'recently-active', 'recently-updated')
+DISCOVERY_SHELVES_BY_SECTION = {
+    'comic': {'recently-started', 'upcoming-launches', 'recently-active'},
+    'manga': {'recently-started', 'recently-updated'},
+}
+
+
 def _exclude_added_provider_results(items: List[dict]) -> List[dict]:
     if not items:
         return []
@@ -1236,6 +1243,7 @@ def _exclude_added_provider_results(items: List[dict]) -> List[dict]:
 @auth
 def api_discovery():
     discovery_type = extract_key(request, 'type')
+    exclude_added = _truthy_request_flag('exclude_added')
     section = extract_key(request, 'section', False) or 'comic'
     if section not in ('comic', 'manga'):
         raise InvalidKeyValue('section', section)
@@ -1246,10 +1254,7 @@ def api_discovery():
         'recently_updated': 'recently-updated',
     }
     discovery_type = aliases.get(discovery_type, discovery_type)
-    supported = {
-        'comic': {'recently-started', 'upcoming-launches', 'recently-active', 'recently-updated'},
-        'manga': {'recently-started', 'recently-updated'},
-    }
+    supported = DISCOVERY_SHELVES_BY_SECTION
     if discovery_type not in supported[section]:
         raise InvalidKeyValue('type', discovery_type)
 

@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.base.definitions import LibraryFilter, LibrarySorting
-from backend.implementations.volumes import Library
+from backend.implementations.volumes import Library, Volume
 
 
 class _Result:
@@ -221,6 +221,25 @@ class VolumePaginationTests(unittest.TestCase):
         self.assertEqual(unmonitored_total, 1)
         self.assertEqual([row['id'] for row in manga_wanted], [20])
         self.assertEqual(manga_total, 1)
+
+
+    def test_open_issues_use_valid_file_state(self):
+        db_conn = sqlite3.connect(':memory:')
+        db_conn.row_factory = sqlite3.Row
+        db_conn.executescript("""
+            CREATE TABLE issues (id INTEGER PRIMARY KEY, volume_id INTEGER, monitored INTEGER, calculated_issue_number REAL);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER, exists_on_disk INTEGER DEFAULT 1);
+            CREATE TABLE issues_files (file_id INTEGER, issue_id INTEGER);
+        """)
+        db_conn.executemany('INSERT INTO issues VALUES (?, 10, ?, ?)', [(1, 1, 1.0), (2, 1, 2.0), (3, 1, 3.0), (4, 0, 4.0)])
+        db_conn.executemany('INSERT INTO files(id, size, exists_on_disk) VALUES (?, 100, ?)', [(10, 1), (20, 0), (30, 1)])
+        db_conn.executemany('INSERT INTO issues_files VALUES (?, ?)', [(10, 1), (20, 2), (20, 3), (30, 3)])
+        db_conn.commit()
+        try:
+            with patch('backend.implementations.volumes.get_db', return_value=db_conn):
+                self.assertEqual([tuple(row) for row in Volume(10).get_open_issues()], [(2, 2.0)])
+        finally:
+            db_conn.close()
 
     def test_completion_sort_uses_released_issue_counts_and_nulls_last(self):
         db_conn = sqlite3.connect(':memory:')

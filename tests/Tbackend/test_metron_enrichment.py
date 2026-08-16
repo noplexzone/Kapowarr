@@ -77,6 +77,25 @@ class MetronClientSecurityTests(unittest.TestCase):
         self.assertEqual(session.calls[1][1], 'https://metron.cloud/api/series/?page=2')
         self.assertTrue(all(call[2]['headers']['Authorization'] == 'Bearer TEST_METRON_TOKEN_REDACTED' for call in session.calls))
 
+
+    def test_rejects_relative_metron_path_escape_before_authorization(self):
+        blocked = [
+            '../admin',
+            '%2e%2e/admin',
+            '..%2fadmin',
+            '.%2e/admin',
+            r'\..\admin',
+            'api/../../admin',
+            'series/%252e%252e/admin',
+        ]
+        for target in blocked:
+            with self.subTest(target=target):
+                session = FakeSession([FakeResponse(payload={'results': []})])
+                client = MetronClient('TEST_METRON_TOKEN_REDACTED', session=session)
+                with self.assertRaises(MetronInvalidResponseError):
+                    client.get_paginated(target)
+                self.assertEqual(session.calls, [])
+
     def test_redirects_are_validated_before_following_with_authorization(self):
         session = FakeSession([
             FakeResponse(302, payload='', headers={'Location': 'https://evil.example/api/series/'}),

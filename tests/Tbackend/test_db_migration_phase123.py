@@ -171,6 +171,37 @@ class Phase123MigrationTests(unittest.TestCase):
             self.assertEqual(con.execute("SELECT COUNT(*) FROM volume_provider_links;").fetchone()[0], 1)
             self.assertEqual(con.execute("SELECT name FROM volume_enrichment_terms;").fetchone()[0], 'Noir')
 
+
+    def test_metron_schema_with_wrong_nullability_is_rebuilt_and_preserves_rows(self):
+        self._seed_schema(58)
+        with self._connect() as con:
+            self._drop_metron_tables(con)
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Linked', 1);")
+            con.execute("CREATE TABLE volume_provider_links(id INTEGER PRIMARY KEY, volume_id INTEGER, provider TEXT, resource_type TEXT, external_id TEXT, linked_at INTEGER);")
+            con.execute("INSERT INTO volume_provider_links(id, volume_id, provider, resource_type, external_id, linked_at) VALUES (4, 1, 'metron', 'series', 'old', 5);")
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            cols = {row[1]: row for row in con.execute('PRAGMA table_info(volume_provider_links);')}
+            self.assertEqual(cols['provider'][3], 1)
+            self.assertEqual(con.execute('SELECT external_id FROM volume_provider_links;').fetchone()[0], 'old')
+
+    def test_duplicate_provider_links_are_merged_deterministically(self):
+        self._seed_schema(58)
+        with self._connect() as con:
+            self._drop_metron_tables(con)
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Linked', 1);")
+            con.executescript("""
+                CREATE TABLE volume_provider_links(id INTEGER PRIMARY KEY AUTOINCREMENT, volume_id INTEGER NOT NULL, provider TEXT NOT NULL, resource_type TEXT NOT NULL, external_id TEXT NOT NULL, match_method TEXT NOT NULL DEFAULT '', match_confidence REAL, review_status TEXT NOT NULL DEFAULT 'linked', linked_at INTEGER NOT NULL, last_successful_enrichment INTEGER, last_checked INTEGER);
+                INSERT INTO volume_provider_links(id, volume_id, provider, resource_type, external_id, linked_at, last_successful_enrichment) VALUES (1, 1, 'metron', 'series', 'older', 1, 10);
+                INSERT INTO volume_provider_links(id, volume_id, provider, resource_type, external_id, linked_at, last_successful_enrichment) VALUES (2, 1, 'metron', 'series', 'newer', 2, 20);
+            """)
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            rows = con.execute('SELECT external_id FROM volume_provider_links;').fetchall()
+            self.assertEqual(rows, [('newer',)])
+
     def test_only_one_handler_registered_for_each_start_version(self):
         versions = list(DatabaseMigrationHandler.handlers)
         self.assertEqual(len(versions), len(set(versions)))

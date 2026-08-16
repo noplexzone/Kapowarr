@@ -610,8 +610,11 @@ def browse_mangadex_catalog(
     raw_items = []
     seen_ids = set()
     year_values = years_to_fetch or [None]
+    decade_mode = bool(decade and not year)
     for selected in year_values:
-        request_params = list(params)
+        request_params = [p for p in params if p[0] not in ('limit', 'offset')]
+        request_params.append(('limit', '100' if decade_mode else str(limit + 1)))
+        request_params.append(('offset', '0' if decade_mode else str(offset)))
         if selected:
             request_params.append(('year', str(selected)))
         resp = client._ssn.get(f'{client._base_url}/manga', params=request_params, timeout=Constants.REQUEST_TIMEOUT)
@@ -625,18 +628,28 @@ def browse_mangadex_catalog(
             if item_id:
                 seen_ids.add(item_id)
             raw_items.append(item)
-            if len(raw_items) > limit:
+            if not decade_mode and len(raw_items) > limit:
                 break
-        if len(raw_items) > limit:
+        if not decade_mode and len(raw_items) > limit:
             break
-    items = [format_mangadex_catalog_result(manga) for manga in raw_items[:limit]]
+    if decade_mode:
+        raw_items.sort(key=lambda item: (
+            -int(((item.get('attributes') or {}).get('year') or 0)),
+            _first_title(item, str(item.get('id') or '')).casefold(),
+            str(item.get('id') or ''),
+        ))
+        page_raw_items = raw_items[offset:offset + limit]
+    else:
+        page_raw_items = raw_items[:limit]
+    items = [format_mangadex_catalog_result(manga) for manga in page_raw_items]
+    total = len(raw_items) if decade_mode else int(payload_total or offset + len(items))
     return {
         'items': items,
-        'total': int(payload_total or offset + len(items)),
+        'total': total,
         'offset': offset,
         'page_size': limit,
-        'has_more': len(raw_items) > limit or offset + len(items) < int(payload_total or 0),
-        'source_note': 'Manga catalog results come from MangaDex. Chapter counts are intentionally not shown as comic issue counts.',
+        'has_more': offset + len(items) < total,
+        'source_note': 'Manga catalog results come from MangaDex. Decade filters are deduplicated, sorted locally, and bounded to the fetched decade window.',
     }
 
 

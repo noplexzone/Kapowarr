@@ -5,8 +5,8 @@ import { Badge, Button } from '@/components/primitives';
 import { ExactAddReview } from '@/routes/add/-ui/add-page';
 import { searchVolumesPageQueryOptions, searchVolumesQueryOptions } from '@/routes/add/-add.api';
 import { getUrlBase } from '@/app/api-client';
-import { browseDiscoveryQueryOptions, discoveryCapabilitiesQueryOptions, discoveryShelfInfiniteQueryOptions } from '../-discovery.api';
-import { DISCOVER_AUTOMATIC_PAGE_LIMIT, DISCOVER_INITIAL_PAGE_SIZE, dedupeDiscoveryItems, getDiscoveryCardKey } from '../-discovery.types';
+import { browseDiscoveryQueryOptions, discoveryCapabilitiesQueryOptions, discoveryShelfQueryOptions } from '../-discovery.api';
+import { DISCOVER_AUTOMATIC_PAGE_LIMIT, DISCOVER_INITIAL_PAGE_SIZE, dedupeDiscoveryItems, filterDiscoveryVolumes, getDiscoveryCardKey } from '../-discovery.types';
 import type { SearchResult } from '@/routes/add/-add.types';
 import type { BrowseFilters, DiscoveryCapabilities, DiscoveryVolume, DiscoveryType, DiscoverySection } from '../-discovery.types';
 import styles from './discovery-page.module.css';
@@ -79,7 +79,7 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
 
       <DiscoverSearchCombobox section={section} rawQuery={rawAddSearch} onQueryChange={setRawAddSearch} />
 
-      <DiscoverLanding section={section} type={type} />
+      <DiscoverLanding section={section} type={type} hideAlreadyAdded={hideAlreadyAdded} />
 
     </div>
   );
@@ -104,8 +104,14 @@ function getAddRouteParams(result: SearchResult) {
   return { source: result.metadata_source ?? 'comicvine', metadataId: result.metadata_id ?? String(result.comicvine_id) } as const;
 }
 
+function currentDiscoverReturnTo(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const value = `${window.location.pathname}${window.location.search}`;
+  return value.startsWith('/discover') && !value.startsWith('//') ? value : undefined;
+}
+
 function getAddRouteSearch(section: DiscoverySection, result: SearchResult) {
-  return { section, title: result.title, language: result.metadata_language ?? undefined };
+  return { section, title: result.title, language: result.metadata_language ?? undefined, returnTo: currentDiscoverReturnTo() };
 }
 
 function formatIssueCount(result: { issue_count?: number | null }, section: DiscoverySection): string {
@@ -213,26 +219,26 @@ function getCoverSrc(result: SearchResult): string | null {
 function SearchResultCard({ result, section, onOpen }: { result: SearchResult; section: DiscoverySection; onOpen: (result: SearchResult) => void }) {
   const isAdded = (result.id ?? result.already_added) != null;
   const coverSrc = getCoverSrc(result);
-  return <article className={`${styles.searchResultCard}${isAdded ? ` ${styles.added}` : ''}`}><div className={styles.searchResultCoverWrap}>{coverSrc ? <img src={coverSrc} alt={result.title} className={styles.searchResultCover} loading="lazy" /> : <div className={styles.coverPlaceholder}>📚</div>}</div><div className={styles.searchResultBody}><div className={styles.searchResultTopline}><Badge tone="neutral">{result.metadata_source === 'mangadex' ? 'MangaDex' : 'ComicVine'}</Badge>{isAdded && <Badge tone="success">In Library</Badge>}</div><h2>{result.title}</h2><p className={styles.searchResultMeta}>{formatSearchMeta(result, section)}</p>{result.status && <p className={styles.searchResultMeta}>{String(result.status)}</p>}{result.completion && <p className={styles.searchResultMeta}>Completion: {String(result.completion)}</p>}</div><div className={styles.searchResultActions}><Button variant={isAdded ? 'secondary' : 'primary'} onClick={() => onOpen(result)}>{isAdded ? 'Open' : 'Add'}</Button></div></article>;
+  return <article className={`${styles.searchResultCard}${isAdded ? ` ${styles.added}` : ''}`}><div className={styles.searchResultCoverWrap}>{coverSrc ? <img src={coverSrc} alt={result.title} className={styles.searchResultCover} loading="lazy" /> : <div className={styles.coverPlaceholder}>📚</div>}</div><div className={styles.searchResultBody}><div className={styles.searchResultTopline}><Badge tone="neutral">{result.metadata_source === 'mangadex' ? 'MangaDex' : 'ComicVine'}</Badge>{isAdded && <Badge tone="success">In Library</Badge>}</div><h2>{result.title}</h2><p className={styles.searchResultMeta}>{formatSearchMeta(result, section)}</p>{result.status && <p className={styles.searchResultMeta}>{String(result.status)}</p>}{result.completion != null && <p className={styles.searchResultMeta}>Completion: {String(result.completion)}</p>}</div><div className={styles.searchResultActions}><Button variant={isAdded ? 'secondary' : 'primary'} onClick={() => onOpen(result)}>{isAdded ? 'Open' : 'Add'}</Button></div></article>;
 }
 
-export function DiscoverSearchResultsPage({ section, q, page }: { section: DiscoverySection; q: string; page: number }) {
+export function DiscoverSearchResultsPage({ section, q, page, hide_added = false }: { section: DiscoverySection; q: string; page: number; hide_added?: boolean }) {
   const navigate = useNavigate();
   const offset = (page - 1) * SEARCH_PAGE_SIZE;
   const query = q.trim();
   const { data, isFetching, isError, error, refetch } = useQuery({ ...searchVolumesPageQueryOptions(query, section, 'all', offset, SEARCH_PAGE_SIZE), enabled: query.length >= 2, placeholderData: keepPreviousData, staleTime: 5 * 60_000 });
-  const items = data?.items ?? [];
+  const items = filterDiscoveryVolumes((data?.items ?? []) as SearchResult[], hide_added);
   const openResult = (result: SearchResult) => {
     const existingId = result.id ?? result.already_added;
     if (existingId != null) { navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } }); return; }
     navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result) });
   };
   if (query.length < 2) return <div className={styles.searchPage}><div className={styles.empty}>Type at least 2 characters to search.</div></div>;
-  return <div className={styles.searchPage}><h1 id="discover-search-heading" className={styles.srOnly}>Results for “{query}”</h1>{isError ? <div className={styles.empty} role="alert"><span>Could not load search results: {error.message}</span><Button onClick={() => void refetch()}>Retry</Button></div> : null}{!isError && isFetching && !data ? <div className={styles.empty} role="status">Loading results…</div> : null}{!isError && data && items.length === 0 ? <div className={styles.empty}>No results found for “{query}”.</div> : null}{!isError && items.length > 0 ? <div className={styles.searchResults}>{items.map((result) => <SearchResultCard key={getResultIdentity(result)} result={result} section={section} onOpen={openResult} />)}</div> : null}{data ? <div className={styles.paginationRow}><Button variant="secondary" disabled={page <= 1 || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page - 1 } })}>Previous</Button><span>{data.total} results</span><Button variant="secondary" disabled={!data.has_more || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page + 1 } })}>Next</Button></div> : null}{isFetching && data ? <div className={styles.inlineStatus} role="status">Refreshing results…</div> : null}</div>;
+  return <div className={styles.searchPage}><h1 id="discover-search-heading" className={styles.srOnly}>Results for “{query}”</h1>{isError ? <div className={styles.empty} role="alert"><span>Could not load search results: {error.message}</span><Button onClick={() => void refetch()}>Retry</Button></div> : null}{!isError && isFetching && !data ? <div className={styles.empty} role="status">Loading results…</div> : null}{!isError && data && items.length === 0 ? <div className={styles.empty}>No results found for “{query}”.</div> : null}{!isError && items.length > 0 ? <><label className={styles.hideAddedToggle}><input type="checkbox" checked={hide_added} onChange={(event) => navigate({ to: '/discover/search', search: { section, q: query, page: 1, hide_added: event.target.checked } })} /><span>Hide in library</span></label><div className={styles.searchResults}>{items.map((result) => <SearchResultCard key={getResultIdentity(result)} result={result} section={section} onOpen={openResult} />)}</div></> : null}{data ? <div className={styles.paginationRow}><Button variant="secondary" disabled={page <= 1 || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page - 1, hide_added } })}>Previous</Button><span>{data.total} results</span><Button variant="secondary" disabled={!data.has_more || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page + 1, hide_added } })}>Next</Button></div> : null}{isFetching && data ? <div className={styles.inlineStatus} role="status">Refreshing results…</div> : null}</div>;
 }
 
-export function DiscoverExactAddPage({ section, source, metadataId, title, language }: { section: DiscoverySection; source: 'comicvine' | 'mangadex'; metadataId: string; title?: string; language?: string }) {
-  return <ExactAddReview section={section} selection={{ metadata_source: source, metadata_id: metadataId, title, metadata_language: language }} searchFallbackTo="/discover/search" />;
+export function DiscoverExactAddPage({ section, source, metadataId, title, language, returnTo }: { section: DiscoverySection; source: 'comicvine' | 'mangadex'; metadataId: string; title?: string; language?: string; returnTo?: string }) {
+  return <ExactAddReview section={section} selection={{ metadata_source: source, metadata_id: metadataId, title, metadata_language: language }} searchFallbackTo="/discover/search" returnTo={returnTo} />;
 }
 
 
@@ -244,11 +250,11 @@ function openDiscoveryAdd(navigate: ReturnType<typeof useNavigate>, section: Dis
   navigate({
     to: '/discover/add/$source/$metadataId',
     params: { source: volume.metadata_source ?? 'comicvine', metadataId: volume.metadata_id ?? String(volume.comicvine_id) },
-    search: { section, title: volume.title, language: volume.metadata_language ?? undefined },
+    search: { section, title: volume.title, language: volume.metadata_language ?? undefined, returnTo: currentDiscoverReturnTo() },
   });
 }
 
-function DiscoverLanding({ section }: { section: DiscoverySection; type: DiscoveryType }) {
+function DiscoverLanding({ section, hideAlreadyAdded }: { section: DiscoverySection; type: DiscoveryType; hideAlreadyAdded: boolean }) {
   const { data: capabilities } = useQuery(discoveryCapabilitiesQueryOptions(section));
   const shelves = section === 'comic'
     ? [
@@ -260,13 +266,13 @@ function DiscoverLanding({ section }: { section: DiscoverySection; type: Discove
         { title: 'Recently Updated Manga', description: 'MangaDex-backed catalog browsing keeps manga separate from ComicVine.', type: 'recently-updated' as DiscoveryType, browseSearch: { section: 'manga' as const, sort: 'recently_updated' as const } },
         { title: 'Recently Started Manga', description: 'MangaDex year-sorted series; chapter counts are not shown as issues.', type: 'recently-started' as DiscoveryType, browseSearch: { section: 'manga' as const, sort: 'recently_started' as const } },
       ];
-  return <main className={styles.discoverMain} aria-label="Discover curated shelves">{shelves.map((shelf) => <DiscoveryShelf key={shelf.title} section={section} {...shelf} />)}<BrowseShortcuts section={section} capabilities={capabilities} /></main>;
+  return <main className={styles.discoverMain} aria-label="Discover curated shelves">{shelves.map((shelf) => <DiscoveryShelf key={shelf.title} section={section} hideAlreadyAdded={hideAlreadyAdded} {...shelf} />)}<BrowseShortcuts section={section} capabilities={capabilities} /></main>;
 }
 
-function DiscoveryShelf({ title, description, type, section, browseSearch }: { title: string; description?: string; type: DiscoveryType; section: DiscoverySection; browseSearch?: Partial<BrowseFilters> & { section: DiscoverySection } }) {
+function DiscoveryShelf({ title, description, type, section, browseSearch, hideAlreadyAdded }: { title: string; description?: string; type: DiscoveryType; section: DiscoverySection; hideAlreadyAdded: boolean; browseSearch?: Partial<BrowseFilters> & { section: DiscoverySection } }) {
   const navigate = useNavigate();
-  const query = useInfiniteQuery(discoveryShelfInfiniteQueryOptions(type, section, 12));
-  const items = dedupeDiscoveryItems((query.data?.pages ?? []).flatMap(page => page.items)).slice(0, 12);
+  const query = useQuery(discoveryShelfQueryOptions(type, section, 12));
+  const items = filterDiscoveryVolumes(dedupeDiscoveryItems(query.data?.items ?? []), hideAlreadyAdded).slice(0, 12);
   return <section className={styles.shelf} aria-labelledby={`${section}-${type}-heading`}><header className={styles.shelfHeader}><div><h2 id={`${section}-${type}-heading`}>{title}</h2>{description && <p>{description}</p>}</div>{browseSearch && <Link className={styles.viewAllLink} to="/discover/browse" search={browseSearch as never}>View All</Link>}</header>{query.isPending ? <div className={styles.empty}>Loading…</div> : query.isError ? <div className={styles.empty}>Could not load shelf <Button onClick={() => void query.refetch()}>Retry</Button></div> : items.length === 0 ? <div className={styles.empty}>No {title.toLowerCase()} found.</div> : <div className={styles.shelfScroller}>{items.map(volume => <DiscoveryCatalogCard key={getDiscoveryCardKey(volume)} section={section} volume={volume} onOpen={() => openDiscoveryAdd(navigate, section, volume)} />)}</div>}</section>;
 }
 
@@ -292,17 +298,58 @@ export function DiscoveryBrowsePage({ search }: { search: BrowseFilters }) {
   const requestedOffsets = useRef(new Set<number>());
   const query = useInfiniteQuery(browseDiscoveryQueryOptions(search, DISCOVER_INITIAL_PAGE_SIZE));
   const items = dedupeDiscoveryItems((query.data?.pages ?? []).flatMap(page => page.items));
-  useEffect(() => { setLocalQuery(search.q ?? ''); setAutoPages(0); requestedOffsets.current = new Set([0]); }, [search.section, search.q, search.publisher, search.decade, search.status, search.tags, search.demographic, search.original_language, search.year, search.author, search.artist, search.content_rating, search.sort]);
+  useEffect(() => { setLocalQuery(search.q ?? ''); setAutoPages(0); requestedOffsets.current = new Set([0]); }, [search.section, search.q, search.publisher, search.decade, search.character, search.genre, search.status, search.tags, search.demographic, search.original_language, search.year, search.author, search.artist, search.content_rating, search.sort]);
   useEffect(() => { const timer = window.setTimeout(() => { if ((search.q ?? '') !== localQuery.trim()) navigate({ to: '/discover/browse' as never, search: { ...search, q: localQuery.trim() || undefined } as never }); }, 350); return () => window.clearTimeout(timer); }, [localQuery, navigate, search]);
   useEffect(() => { if (items.length) setAnnouncement(`${items.length} Discover results loaded`); }, [items.length]);
   const update = useCallback((patch: Partial<BrowseFilters>) => navigate({ to: '/discover/browse' as never, search: { ...search, ...patch } as never }), [navigate, search]);
   const fetchNext = useCallback(async (auto = false) => { const pages = query.data?.pages ?? []; const lastPage = pages[pages.length - 1]; const nextOffset = lastPage ? lastPage.offset + lastPage.page_size : 0; if (requestedOffsets.current.has(nextOffset) || query.isFetchingNextPage || !query.hasNextPage) return; requestedOffsets.current.add(nextOffset); try { await query.fetchNextPage(); if (auto) setAutoPages(v => v + 1); } catch { requestedOffsets.current.delete(nextOffset); } }, [query]);
-  return <div className={styles.page}><section className={styles.searchFirst}><h1>Browse All {search.section === 'manga' ? 'Manga' : 'Comics'}</h1><div className={styles.searchRow}><input className={styles.floatingSearchInput} type="search" aria-label="Search catalog" value={localQuery} onChange={e => setLocalQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') update({ q: localQuery.trim() || undefined }); }} placeholder={`Search all ${search.section === 'manga' ? 'manga' : 'comics'}…`} /><select className={styles.select} aria-label="Sort catalog" value={search.sort} onChange={e => update({ sort: e.target.value as BrowseFilters['sort'] })}><option value="trending">Recently Active</option><option value="title">Title</option><option value="year">Year</option><option value="recently_started">Recently Started</option><option value="recently_updated">Recently Updated</option></select></div></section><BrowseFilters search={search} onChange={update} />{query.isPending ? <div className={styles.empty}>Loading catalog…</div> : query.isError ? <div className={styles.empty}>Could not load catalog: {query.error.message}<Button onClick={() => void query.refetch()}>Retry</Button></div> : <div className={styles.grid}>{items.map(volume => <DiscoveryCatalogCard key={getDiscoveryCardKey(volume)} section={search.section} volume={volume} onOpen={() => openDiscoveryAdd(navigate, search.section, volume)} />)}</div>}<LoadMoreTrigger hasMore={Boolean(query.hasNextPage)} isFetching={query.isFetchingNextPage} autoPages={autoPages} onLoadMore={fetchNext} /><div aria-live="polite" className={styles.srOnly}>{announcement}</div></div>;
+  return <div className={styles.page}><section className={styles.searchFirst}><h1 className={styles.srOnly}>Browse All {search.section === 'manga' ? 'Manga' : 'Comics'}</h1><div className={styles.compactBrowseLabel}>Browse All {search.section === 'manga' ? 'Manga' : 'Comics'}</div><div className={styles.searchRow}><input className={styles.floatingSearchInput} type="search" aria-label="Search catalog" value={localQuery} onChange={e => setLocalQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') update({ q: localQuery.trim() || undefined }); }} placeholder={`Search all ${search.section === 'manga' ? 'manga' : 'comics'}…`} /><select className={styles.select} aria-label="Sort catalog" value={search.sort} onChange={e => update({ sort: e.target.value as BrowseFilters['sort'] })}><option value="trending">Recently Active</option><option value="title">Title</option><option value="year">Year</option><option value="recently_started">Recently Started</option><option value="recently_updated">Recently Updated</option></select></div></section><BrowseFilters search={search} onChange={update} />{query.isPending ? <div className={styles.empty}>Loading catalog…</div> : query.isError ? <div className={styles.empty}>Could not load catalog: {query.error.message}<Button onClick={() => void query.refetch()}>Retry</Button></div> : <div className={styles.grid}>{items.map(volume => <DiscoveryCatalogCard key={getDiscoveryCardKey(volume)} section={search.section} volume={volume} onOpen={() => openDiscoveryAdd(navigate, search.section, volume)} />)}</div>}<LoadMoreTrigger hasMore={Boolean(query.hasNextPage)} isFetching={query.isFetchingNextPage} autoPages={autoPages} onLoadMore={fetchNext} /><div aria-live="polite" className={styles.srOnly}>{announcement}</div></div>;
 }
 
 function BrowseFilters({ search, onChange }: { search: BrowseFilters; onChange: (patch: Partial<BrowseFilters>) => void }) {
   const active = Object.entries(search).filter(([key, value]) => !['section', 'sort', 'q'].includes(key) && value);
-  return <div className={styles.filters}><span>Filters</span>{search.section === 'comic' ? <><input className={styles.filterInput} value={search.publisher ?? ''} onChange={e => onChange({ publisher: e.target.value || undefined })} placeholder="Publisher" /><input className={styles.filterInput} value={search.decade ?? ''} onChange={e => onChange({ decade: e.target.value || undefined })} placeholder="Decade, e.g. 2020" /><input className={styles.filterInput} value={search.character ?? ''} onChange={e => onChange({ character: e.target.value || undefined, genre: undefined })} placeholder="Character" /><input className={styles.filterInput} value={search.genre ?? ''} onChange={e => onChange({ genre: e.target.value || undefined, character: undefined })} placeholder="Genre" /></> : <><select className={styles.filterInput} aria-label="Manga status" value={search.status ?? ''} onChange={e => onChange({ status: e.target.value || undefined })}><option value="">Any status</option><option value="ongoing">Ongoing</option><option value="completed">Completed</option><option value="hiatus">Hiatus</option><option value="cancelled">Cancelled</option></select><select className={styles.filterInput} aria-label="Manga demographic" value={search.demographic ?? ''} onChange={e => onChange({ demographic: e.target.value || undefined })}><option value="">Any demographic</option><option value="shounen">Shounen</option><option value="shoujo">Shoujo</option><option value="josei">Josei</option><option value="seinen">Seinen</option></select><input className={styles.filterInput} value={search.original_language ?? ''} onChange={e => onChange({ original_language: e.target.value || undefined })} placeholder="Original language, e.g. ja" /><input className={styles.filterInput} value={search.year ?? ''} onChange={e => onChange({ year: e.target.value || undefined })} placeholder="Year" /></>}{active.map(([key, value]) => <button key={key} className={styles.filterChip} onClick={() => onChange({ [key]: undefined } as Partial<BrowseFilters>)}>{key}: {String(value)} ×</button>)}</div>;
+  const [draft, setDraft] = useState({
+    publisher: search.publisher ?? '',
+    decade: search.decade ?? '',
+    character: search.character ?? '',
+    genre: search.genre ?? '',
+    original_language: search.original_language ?? '',
+    year: search.year ?? '',
+  });
+  useEffect(() => {
+    setDraft({
+      publisher: search.publisher ?? '',
+      decade: search.decade ?? '',
+      character: search.character ?? '',
+      genre: search.genre ?? '',
+      original_language: search.original_language ?? '',
+      year: search.year ?? '',
+    });
+  }, [search.publisher, search.decade, search.character, search.genre, search.original_language, search.year]);
+  const commit = (key: keyof BrowseFilters, value: string, extra: Partial<BrowseFilters> = {}) => {
+    onChange({ ...extra, [key]: value.trim() || undefined });
+  };
+  const freeText = (key: keyof typeof draft, placeholder: string, extra: Partial<BrowseFilters> = {}) => (
+    <input
+      className={styles.filterInput}
+      value={draft[key]}
+      onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
+      onBlur={() => commit(key as keyof BrowseFilters, draft[key], extra)}
+      onKeyDown={(event) => { if (event.key === 'Enter') commit(key as keyof BrowseFilters, draft[key], extra); }}
+      placeholder={placeholder}
+    />
+  );
+  return <div className={styles.filters}><span>Filters</span>{search.section === 'comic' ? <>
+    {freeText('publisher', 'Publisher')}
+    {freeText('decade', 'Decade, e.g. 2020')}
+    {freeText('character', 'Character', { genre: undefined })}
+    {freeText('genre', 'Genre', { character: undefined })}
+  </> : <>
+    <select className={styles.filterInput} aria-label="Manga status" value={search.status ?? ''} onChange={e => onChange({ status: e.target.value || undefined })}><option value="">Any status</option><option value="ongoing">Ongoing</option><option value="completed">Completed</option><option value="hiatus">Hiatus</option><option value="cancelled">Cancelled</option></select>
+    <select className={styles.filterInput} aria-label="Manga demographic" value={search.demographic ?? ''} onChange={e => onChange({ demographic: e.target.value || undefined })}><option value="">Any demographic</option><option value="shounen">Shounen</option><option value="shoujo">Shoujo</option><option value="josei">Josei</option><option value="seinen">Seinen</option></select>
+    {freeText('original_language', 'Original language, e.g. ja')}
+    {freeText('year', 'Year')}
+  </>}{active.map(([key, value]) => <button key={key} className={styles.filterChip} onClick={() => onChange({ [key]: undefined } as Partial<BrowseFilters>)}>{key}: {String(value)} ×</button>)}</div>;
 }
 
 function LoadMoreTrigger({ hasMore, isFetching, autoPages, onLoadMore }: { hasMore: boolean; isFetching: boolean; autoPages: number; onLoadMore: (auto?: boolean) => void }) {

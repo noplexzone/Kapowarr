@@ -174,7 +174,14 @@ for (const route of ['/home', '/library?section=comic', '/library?section=manga'
     } catch {
       throw new Error(`${route}: ${await page.locator('body').innerText()}`);
     }
-    await expect(page.locator('nav:visible [aria-current="page"]')).toHaveCount(1);
+    const primaryNav = page.getByRole('navigation', { name: /primary/i }).first();
+    await expect(primaryNav.locator('[aria-current="page"]')).toHaveCount(1);
+    if (route.startsWith('/activity/')) {
+      const activityNav = page.getByRole('navigation', { name: /activity/i });
+      await expect(activityNav.locator('[aria-current="page"]')).toHaveCount(1);
+    } else {
+      await expect(page.locator('nav:visible [aria-current="page"]')).toHaveCount(1);
+    }
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();

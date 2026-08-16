@@ -78,3 +78,11 @@ it('ignores invalid stored media nav preferences', () => {
     monitoring: 'all',
   });
 });
+
+
+it('Activity parent remains current for primary navigation semantics', async () => {
+  const sidebar = await import('./sidebar?raw');
+  const mobile = await import('./mobile-navigation?raw');
+  expect(sidebar.default).toContain("aria-current={isActive ? 'page' : undefined}");
+  expect(mobile.default).toContain("aria-current={isActive ? 'page' : undefined}");
+});

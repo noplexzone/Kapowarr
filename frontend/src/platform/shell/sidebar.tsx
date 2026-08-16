@@ -84,7 +84,7 @@ export function Sidebar() {
               activeOptions={item.parent ? { exact: true } : undefined}
               className={styles.navItem}
               data-active={isActive || undefined}
-              aria-current={isActive && !item.parent ? 'page' : undefined}
+              aria-current={isActive ? 'page' : undefined}
             >
               <NavIcon name={item.label} className={styles.navIcon} />
               <span>{item.label}</span>

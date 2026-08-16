@@ -109,6 +109,18 @@ def _apply_effective_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
     row['effective_metadata'] = effective
     return row
 
+
+VALID_ISSUE_FILE_EXISTS_SQL = """EXISTS (
+    SELECT 1
+    FROM issues_files issue_link
+    INNER JOIN files file ON file.id = issue_link.file_id
+    WHERE issue_link.issue_id = i.id
+      AND file.exists_on_disk = 1
+)"""
+
+def valid_issue_file_exists_sql(issue_alias: str = 'i') -> str:
+    return VALID_ISSUE_FILE_EXISTS_SQL.replace('i.id', f'{issue_alias}.id')
+
 # region Issue
 class Issue:
     def __init__(self, issue_id: int, check_existence: bool = False) -> None:
@@ -548,10 +560,14 @@ class Volume:
             """
             SELECT i.id, i.calculated_issue_number
             FROM issues i
-            LEFT JOIN issues_files if
-            ON i.id = if.issue_id
             WHERE
-                file_id IS NULL
+                NOT EXISTS (
+                    SELECT 1
+                    FROM issues_files issue_link
+                    INNER JOIN files file ON file.id = issue_link.file_id
+                    WHERE issue_link.issue_id = i.id
+                      AND file.exists_on_disk = 1
+                )
                 AND volume_id = ?
                 AND monitored = 1;
             """,
@@ -697,10 +713,14 @@ class Volume:
                 WITH missing_issues AS (
                     SELECT id
                     FROM issues i
-                    LEFT JOIN issues_files if
-                    ON i.id = if.issue_id
                     WHERE volume_id = ?
-                        AND if.issue_id IS NULL
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM issues_files issue_link
+                            INNER JOIN files file ON file.id = issue_link.file_id
+                            WHERE issue_link.issue_id = i.id
+                              AND file.exists_on_disk = 1
+                        )
                 )
                 UPDATE issues
                 SET monitored = 0

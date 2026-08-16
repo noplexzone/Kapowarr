@@ -1435,32 +1435,53 @@ def _table_columns(cursor, table_name: str) -> List[str]:
     return [row[1] for row in cursor.execute(f"PRAGMA table_info({table_name});")]
 
 
+def _index_columns(cursor, table_name: str, index_name: str) -> tuple:
+    return tuple(row[2] for row in cursor.execute(f'PRAGMA index_info({index_name});'))
+
+
+def _has_unique_index(cursor, table_name: str, expected_columns: tuple) -> bool:
+    for row in cursor.execute(f'PRAGMA index_list({table_name});'):
+        if int(row[2] or 0) and _index_columns(cursor, table_name, row[1]) == expected_columns:
+            return True
+    return False
+
+
+def _fk_matches(cursor, table_name: str, target_table: str, on_delete: str = 'CASCADE') -> bool:
+    return any(row[2] == target_table and str(row[6]).upper() == on_delete for row in cursor.execute(f'PRAGMA foreign_key_list({table_name});'))
+
+
 def _metron_table_compatible(cursor, table_name: str) -> bool:
     if not _table_exists(cursor, table_name):
         return False
     info = cursor.execute(f"PRAGMA table_info({table_name});").fetchall()
-    columns = {row[1]: {'type': str(row[2] or '').upper(), 'notnull': int(row[3] or 0), 'pk': int(row[5] or 0)} for row in info}
+    columns = {row[1]: {'type': str(row[2] or '').upper(), 'notnull': int(row[3] or 0), 'default': row[4], 'pk': int(row[5] or 0)} for row in info}
     if set(_METRON_TABLE_COLUMNS[table_name]) - set(columns):
         return False
     required_types = {
-        'volume_provider_links': {'id': 'INTEGER', 'volume_id': 'INTEGER', 'provider': 'TEXT', 'resource_type': 'TEXT', 'external_id': 'TEXT'},
-        'provider_cache': {'provider': 'TEXT', 'resource_type': 'TEXT', 'external_id': 'TEXT', 'payload': 'TEXT'},
+        'volume_provider_links': {'id': 'INTEGER', 'volume_id': 'INTEGER', 'provider': 'TEXT', 'resource_type': 'TEXT', 'external_id': 'TEXT', 'match_method': 'TEXT', 'review_status': 'TEXT', 'linked_at': 'INTEGER'},
+        'provider_cache': {'provider': 'TEXT', 'resource_type': 'TEXT', 'external_id': 'TEXT', 'payload': 'TEXT', 'fetched_at': 'INTEGER'},
         'volume_enrichment_terms': {'volume_id': 'INTEGER', 'provider': 'TEXT', 'term_type': 'TEXT', 'external_id': 'TEXT', 'name': 'TEXT'},
-        'metron_backfill_state': {'id': 'INTEGER', 'status': 'TEXT'},
+        'metron_backfill_state': {'id': 'INTEGER', 'status': 'TEXT', 'total': 'INTEGER', 'processed': 'INTEGER', 'cancel_requested': 'BOOL'},
     }
     for column, expected in required_types.get(table_name, {}).items():
         if expected not in columns[column]['type']:
             return False
+    required_notnull = {
+        'volume_provider_links': ('volume_id', 'provider', 'resource_type', 'external_id', 'match_method', 'review_status', 'linked_at'),
+        'provider_cache': ('provider', 'resource_type', 'external_id', 'payload', 'fetched_at'),
+        'volume_enrichment_terms': ('volume_id', 'provider', 'term_type', 'external_id', 'name'),
+        'metron_backfill_state': ('status', 'total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'last_terminal_volume_id', 'cancel_requested'),
+    }
+    if any(columns[column]['notnull'] != 1 for column in required_notnull.get(table_name, ())):
+        return False
     if table_name == 'provider_cache':
-        if not all(columns[c]['pk'] for c in ('provider', 'resource_type', 'external_id')):
+        if tuple(columns[c]['pk'] for c in ('provider', 'resource_type', 'external_id')) != (1, 2, 3):
             return False
     if table_name == 'volume_provider_links':
-        fk_tables = {row[2] for row in cursor.execute('PRAGMA foreign_key_list(volume_provider_links);')}
-        if 'volumes' not in fk_tables:
+        if columns['id']['pk'] != 1 or not _fk_matches(cursor, table_name, 'volumes'):
             return False
     if table_name == 'volume_enrichment_terms':
-        fk_tables = {row[2] for row in cursor.execute('PRAGMA foreign_key_list(volume_enrichment_terms);')}
-        if 'volumes' not in fk_tables:
+        if not _fk_matches(cursor, table_name, 'volumes') or not _has_unique_index(cursor, table_name, ('volume_id', 'provider', 'term_type', 'external_id', 'name')):
             return False
     return True
 
@@ -1479,7 +1500,33 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
         copy_columns = [c for c in _METRON_TABLE_COLUMNS[table_name] if c in source_columns]
         if copy_columns:
             column_sql = ', '.join(copy_columns)
-            cursor.execute(f'INSERT OR IGNORE INTO "{table_name}" ({column_sql}) SELECT {column_sql} FROM "{old_table_name}";')
+            if table_name == 'volume_provider_links' and {'id', 'volume_id', 'provider', 'resource_type', 'external_id', 'last_successful_enrichment', 'linked_at'} <= source_columns:
+                cursor.execute(f'''INSERT INTO "{table_name}" ({column_sql})
+                    SELECT {column_sql}
+                    FROM (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY volume_id, provider, resource_type
+                            ORDER BY (external_id IS NOT NULL AND external_id != '') DESC,
+                                     COALESCE(last_successful_enrichment, 0) DESC,
+                                     COALESCE(linked_at, 0) DESC,
+                                     id DESC
+                        ) AS rn
+                        FROM "{old_table_name}"
+                    )
+                    WHERE rn = 1;''')
+            elif table_name == 'provider_cache' and {'provider', 'resource_type', 'external_id', 'payload', 'fetched_at'} <= source_columns:
+                cursor.execute(f'''INSERT INTO "{table_name}" ({column_sql})
+                    SELECT {column_sql}
+                    FROM (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY provider, resource_type, external_id
+                            ORDER BY COALESCE(fetched_at, 0) DESC
+                        ) AS rn
+                        FROM "{old_table_name}"
+                    )
+                    WHERE rn = 1;''')
+            else:
+                cursor.execute(f'INSERT INTO "{table_name}" ({column_sql}) SELECT DISTINCT {column_sql} FROM "{old_table_name}";')
         cursor.execute(f'DROP TABLE "{old_table_name}";')
 
 
@@ -1489,8 +1536,16 @@ def _ensure_metron_base_schema(cursor) -> None:
     if _table_exists(cursor, 'volumes'):
         cursor.execute("""DELETE FROM volume_provider_links
             WHERE id NOT IN (
-                SELECT MIN(id) FROM volume_provider_links
-                GROUP BY provider, resource_type, external_id
+                SELECT id FROM (
+                    SELECT id, ROW_NUMBER() OVER (
+                        PARTITION BY provider, resource_type, external_id
+                        ORDER BY COALESCE(last_successful_enrichment, 0) DESC,
+                                 COALESCE(linked_at, 0) DESC,
+                                 id DESC
+                    ) AS rn
+                    FROM volume_provider_links
+                    WHERE external_id != ''
+                ) WHERE rn = 1
             ) AND external_id != '';""")
     cursor.executescript("""
         CREATE UNIQUE INDEX IF NOT EXISTS volume_provider_links_provider_external_unique_idx

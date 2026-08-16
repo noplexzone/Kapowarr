@@ -79,12 +79,31 @@ export const discoverResultsSearchSchema = z.object({
   section: sectionSchema,
   q: z.string().trim().min(2).max(200).catch(''),
   page: z.coerce.number().int().min(1).default(1).catch(1),
+  hide_added: z.coerce.boolean().default(false).catch(false),
+});
+
+const internalReturnToSchema = z.string().trim().max(1200).optional().catch(undefined).transform((value) => {
+  if (!value) return undefined;
+  let decoded = value;
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      return undefined;
+    }
+  }
+  if (!decoded.startsWith('/') || decoded.startsWith('//') || /[\\]/.test(decoded) || /:\/\//.test(decoded)) return undefined;
+  if (!decoded.startsWith('/discover')) return undefined;
+  return decoded;
 });
 
 export const discoverAddSearchSchema = z.object({
   section: sectionSchema,
   title: z.string().trim().min(1).max(200).optional().catch(undefined),
   language: z.string().min(2).max(16).optional().catch(undefined),
+  returnTo: internalReturnToSchema,
 });
 
 export const discoveryBrowseSearchSchema = z.object({

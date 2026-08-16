@@ -20,7 +20,7 @@ export function MobileNavigation() {
             activeOptions={item.parent ? { exact: true } : undefined}
             className={styles.link}
             data-active={isActive || undefined}
-            aria-current={isActive && !item.parent ? 'page' : undefined}
+            aria-current={isActive ? 'page' : undefined}
           >
             <NavIcon name={item.label} className={styles.icon} />
             <span>{item.label}</span>

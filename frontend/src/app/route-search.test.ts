@@ -122,8 +122,10 @@ describe('legacy route redirects', () => {
   });
 
   it('validates Discover result and exact-add route state', () => {
-    expect(discoverResultsSearchSchema.parse({ section: 'manga', q: '  Saga ', page: '2' })).toEqual({ section: 'manga', q: 'Saga', page: 2 });
-    expect(discoverAddSearchSchema.parse({ section: 'manga', title: '  Akira ', language: 'en' })).toEqual({ section: 'manga', title: 'Akira', language: 'en' });
+    expect(discoverResultsSearchSchema.parse({ section: 'manga', q: '  Saga ', page: '2' })).toEqual({ section: 'manga', q: 'Saga', page: 2, hide_added: false });
+    expect(discoverResultsSearchSchema.parse({ section: 'manga', q: '  Saga ', page: '2', hide_added: 'true' })).toMatchObject({ hide_added: true });
+    expect(discoverAddSearchSchema.parse({ section: 'manga', title: '  Akira ', language: 'en', returnTo: '/discover/browse?section=manga&status=ongoing' })).toEqual({ section: 'manga', title: 'Akira', language: 'en', returnTo: '/discover/browse?section=manga&status=ongoing' });
+    expect(discoverAddSearchSchema.parse({ section: 'manga', returnTo: 'https://evil.example/' }).returnTo).toBeUndefined();
   });
 
   it('preserves discovery section, category, and query', () => {

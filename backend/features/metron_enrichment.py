@@ -550,10 +550,9 @@ def resolve_candidate(candidate_id: int) -> Dict[str, Any]:
     db.execute("UPDATE provider_match_candidates SET review_status = ? , updated_at = ? WHERE id = ?;", (STATUS_SELECTED, ts, candidate_id))
     db.execute("UPDATE provider_match_candidates SET review_status = ? , updated_at = ? WHERE volume_id = ? AND provider = ? AND id != ? AND review_status IN (?, ?, ?);",
                (STATUS_DISMISSED, ts, volume_id, METRON_PROVIDER, candidate_id, STATUS_REVIEW, STATUS_SELECTED, STATUS_FAILED))
-    task_id = queue_metron_enrichment(volume_id)
     db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;", (STATUS_ENRICHMENT_PENDING, ts, candidate_id))
     commit()
-    return {'volume_id': volume_id, 'task_id': task_id, **result}
+    return {'volume_id': volume_id, **result}
 
 
 def mark_candidate_enrichment_result(volume_id: int, status: str, error: str = '') -> None:

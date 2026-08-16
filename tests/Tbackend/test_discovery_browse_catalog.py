@@ -82,6 +82,35 @@ class DiscoveryBrowseCatalogTests(unittest.TestCase):
         years = [dict(call[1]).get('year') for call in session.calls]
         self.assertEqual(years, [str(year) for year in range(1990, 2000)])
 
+
+    def test_mangadex_decade_pages_are_stable_and_non_overlapping(self):
+        class YearSession(FakeSession):
+            def get(self, url, params=None, timeout=None):
+                params = list(params or [])
+                self.calls.append((url, params, timeout))
+                year = dict(params).get('year')
+                data = []
+                if year in {'1990', '1999'}:
+                    data.append({'id': f'manga-{year}', 'attributes': {'title': {'en': f'Manga {year}'}, 'year': int(year), 'status': 'ongoing', 'originalLanguage': 'ja'}, 'relationships': []})
+                if year == '1995':
+                    data.extend([
+                        {'id': 'dup', 'attributes': {'title': {'en': 'Duplicate'}, 'year': 1995, 'status': 'ongoing', 'originalLanguage': 'ja'}, 'relationships': []},
+                        {'id': 'dup', 'attributes': {'title': {'en': 'Duplicate'}, 'year': 1995, 'status': 'ongoing', 'originalLanguage': 'ja'}, 'relationships': []},
+                    ])
+                if year in {'1989', '2000'}:
+                    data.append({'id': f'bad-{year}', 'attributes': {'title': {'en': f'Bad {year}'}, 'year': int(year)}, 'relationships': []})
+                return FakeResponse({'total': len(data), 'data': data})
+        session = YearSession(self._payload(0))
+        with patch.object(mangadex.MangaDexClient, '__init__', lambda self: (setattr(self, '_base_url', mangadex.MANGADEX_API_URL), setattr(self, '_ssn', session), None)[-1]):
+            page1 = mangadex.browse_mangadex_catalog(offset=0, limit=2, decade='1990')
+            page2 = mangadex.browse_mangadex_catalog(offset=2, limit=2, decade='1990')
+        ids1 = [item['metadata_id'] for item in page1['items']]
+        ids2 = [item['metadata_id'] for item in page2['items']]
+        self.assertEqual(ids1, ['manga-1999', 'dup'])
+        self.assertEqual(ids2, ['manga-1990'])
+        self.assertFalse(set(ids1) & set(ids2))
+        self.assertEqual(page1['total'], 3)
+
     def test_mangadex_catalog_rejects_unsupported_status(self):
         with self.assertRaises(ValueError):
             mangadex.browse_mangadex_catalog(status='publisher-like-filter')

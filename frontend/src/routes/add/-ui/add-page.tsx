@@ -37,12 +37,16 @@ function getCoverSrc(result: SearchResult): string | null {
   return null;
 }
 
-export function ExactAddReview({ section, selection, searchFallbackTo = '/add' }: { section: 'comic' | 'manga'; selection: AddSelection; searchFallbackTo?: '/add' | '/discover/search' }) {
+export function ExactAddReview({ section, selection, searchFallbackTo = '/add', returnTo }: { section: 'comic' | 'manga'; selection: AddSelection; searchFallbackTo?: '/add' | '/discover/search'; returnTo?: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
   const exact = useQuery(exactVolumeQueryOptions(selection, section));
   const closeReview = () => {
+    if (returnTo) {
+      navigate({ to: returnTo as never });
+      return;
+    }
     if (searchFallbackTo === '/discover/search' && selection.title) {
       navigate({ to: '/discover/search', search: { section, q: selection.title } });
       return;

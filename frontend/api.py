@@ -3036,12 +3036,17 @@ def api_metron_reviews():
 @auth
 def api_metron_review_select(candidate_id: int):
     from backend.features.metron_enrichment import resolve_candidate
+    from backend.internals.db import get_db
     from backend.features.tasks import MetronEnrichmentTask, TaskHandler
-    result = resolve_candidate(candidate_id)
     task_handler = TaskHandler()
-    volume_id = int(result['volume_id'])
-    if task_handler.task_for_volume_running(volume_id):
-        return return_api({**result, 'task_id': None, 'duplicate': True}, code=202)
+    candidate = get_db().execute('SELECT volume_id FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
+    if not candidate:
+        raise InvalidKeyValue('candidate_id', candidate_id)
+    volume_id = int(candidate['volume_id'])
+    existing_task_id = task_handler.active_task_id_for_volume(volume_id)
+    if existing_task_id is not None:
+        return return_api({'volume_id': volume_id, 'task_id': existing_task_id, 'duplicate': True, 'status': 'enrichment_pending'}, code=202)
+    result = resolve_candidate(candidate_id)
     task_id = task_handler.add(MetronEnrichmentTask(volume_id))
     return return_api({**result, 'task_id': task_id, 'duplicate': False}, code=202)
 

@@ -1483,6 +1483,14 @@ class TaskHandler(metaclass=Singleton):
         return id
 
     @staticmethod
+    def active_task_id_for_volume(volume_id: int) -> Union[int, None]:
+        for t in TaskHandler.queue:
+            task = t['task']
+            if isinstance(task, (UpdateAll, SearchAll)) or task.volume_id == volume_id:
+                return t['id']
+        return None
+
+    @staticmethod
     def task_for_volume_running(volume_id: int) -> bool:
         """Whether or not there is a task in the queue that targets the volume.
 
@@ -1492,12 +1500,7 @@ class TaskHandler(metaclass=Singleton):
         Returns:
             bool: Whether or not a task is in the queue targeting the volume.
         """
-        return any(
-            t
-            for t in TaskHandler.queue
-            if (isinstance(t['task'], (UpdateAll, SearchAll))
-                or t['task'].volume_id == volume_id)
-        )
+        return TaskHandler.active_task_id_for_volume(volume_id) is not None
 
     def __check_intervals(self) -> None:
         "Check if any interval task needs to be run and add to queue if so"

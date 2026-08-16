@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from json import JSONDecodeError
 from time import time
 from typing import Any, Dict, List, Mapping, Optional
-from urllib.parse import SplitResult, urljoin, urlsplit, urlunsplit
+from urllib.parse import SplitResult, unquote, urljoin, urlsplit, urlunsplit
 
 import requests
 from requests import Response, Session
@@ -143,20 +143,50 @@ class MetronClient:
         headers = {'Accept': 'application/json', 'Authorization': f'Bearer {self.token}', 'User-Agent': self.user_agent}
         if extra: headers.update({k: v for k, v in extra.items() if v is not None})
         return headers
+    @staticmethod
+    def _fully_unquote(value: str) -> str:
+        previous = value
+        for _ in range(3):
+            decoded = unquote(previous)
+            if decoded == previous:
+                return decoded
+            previous = decoded
+        return previous
+
+    @staticmethod
+    def _collapse_path(path: str) -> str:
+        stack: List[str] = []
+        trailing_slash = path.endswith('/')
+        for segment in path.split('/'):
+            if segment in ('', '.'):
+                continue
+            if segment == '..':
+                raise MetronInvalidResponseError('Metron request target path contained a dot-segment escape')
+            stack.append(segment)
+        collapsed = '/' + '/'.join(stack)
+        if trailing_slash and not collapsed.endswith('/'):
+            collapsed += '/'
+        return collapsed
+
     def _normalise_api_path(self, endpoint_or_url: str) -> str:
         """Validate and normalize a Metron request target to a relative API path.
 
-        Authenticated Metron requests must never leave the configured HTTPS API
-        origin.  Same-origin absolute pagination or redirect targets are accepted
-        only after exact scheme/host/port/userinfo/path validation, then reduced
-        to the relative API path used by the configured base URL.
+        Authenticated requests are contained to the configured HTTPS origin and
+        API base path. Relative pagination values are resolved against the base
+        and then revalidated after percent-decoding, dot-segment normalization,
+        and backslash rejection so bearer credentials cannot escape via tricks
+        like ``../admin`` or ``%2e%2e/admin``.
         """
         if not isinstance(endpoint_or_url, str) or not endpoint_or_url.strip():
             raise MetronInvalidResponseError('Metron request target was empty')
         target = endpoint_or_url.strip()
-        if target.startswith('//'):
+        decoded_target = self._fully_unquote(target)
+        if '\\' in target or '\\' in decoded_target:
+            raise MetronInvalidResponseError('Metron request target used a backslash path')
+        if target.startswith('//') or decoded_target.startswith('//'):
             raise MetronInvalidResponseError('Metron request target used a protocol-relative URL')
         parts = urlsplit(target)
+        base_path = self._base_parts.path.rstrip('/') + '/'
         if parts.scheme or parts.netloc:
             if parts.scheme != 'https':
                 raise MetronInvalidResponseError('Metron request target must use https')
@@ -166,12 +196,18 @@ class MetronClient:
                 raise MetronInvalidResponseError('Metron request target host is not approved')
             if self._effective_port(parts) != self._base_port:
                 raise MetronInvalidResponseError('Metron request target port is not approved')
-            base_path = self._base_parts.path.rstrip('/') + '/'
-            if not parts.path.startswith(base_path):
+            decoded_path = self._fully_unquote(parts.path)
+            collapsed = self._collapse_path(decoded_path)
+            if not (collapsed == base_path.rstrip('/') or collapsed.startswith(base_path)):
                 raise MetronInvalidResponseError('Metron request target path is outside the API base')
-            relative_path = parts.path[len(base_path):]
+            relative_path = collapsed[len(base_path):]
             return urlunsplit(('', '', relative_path, parts.query, ''))
-        return target.lstrip('/')
+        joined = urljoin(base_path, target.lstrip('/'))
+        decoded_path = self._fully_unquote(urlsplit(joined).path)
+        collapsed = self._collapse_path(decoded_path)
+        if not (collapsed == base_path.rstrip('/') or collapsed.startswith(base_path)):
+            raise MetronInvalidResponseError('Metron request target path is outside the API base')
+        return urlunsplit(('', '', collapsed[len(base_path):], parts.query, ''))
     def _url(self, endpoint_or_url: str) -> str:
         return urljoin(self.base_url, self._normalise_api_path(endpoint_or_url))
     def _request_once(self, method: str, endpoint_or_url: str, *, params: Optional[Mapping[str, Any]], headers: Optional[Mapping[str, str]]) -> Response:

@@ -1487,28 +1487,36 @@ def _metron_table_compatible(cursor, table_name: str) -> bool:
 
 
 def _normalize_metron_table(cursor, table_name: str) -> None:
-    """Normalize Metron tables with interrupted-migration recovery.
+    """Normalize Metron tables with source-preserving interrupted recovery.
 
-    If both the final and backup tables are present, both are treated as
-    sources.  The final table is first renamed to a staging source so records
-    unique to either table can be reconciled before either source is dropped.
+    The recovery state machine treats the live table, migration backup, and
+    migration final/staging table as independent possible sources.  None of the
+    source variants is dropped until the replacement table has been created,
+    populated, and validated.  A rollback therefore keeps the only copy of any
+    unreconciled records.
     """
     backup_name = f"{table_name}_migration_58_backup"
     final_staging = f"{table_name}_migration_58_final"
+    live_source = f"{table_name}_migration_58_live"
     final_exists = _table_exists(cursor, table_name)
     backup_exists = _table_exists(cursor, backup_name)
+    staging_exists = _table_exists(cursor, final_staging)
 
-    if final_exists and not backup_exists and _metron_table_compatible(cursor, table_name):
+    if final_exists and not backup_exists and not staging_exists and _metron_table_compatible(cursor, table_name):
         return
 
     source_names: List[str] = []
     if final_exists:
-        if _table_exists(cursor, final_staging):
-            cursor.execute(f'DROP TABLE "{final_staging}";')
-        cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{final_staging}";')
-        source_names.append(final_staging)
+        if _table_exists(cursor, live_source):
+            source_names.append(live_source)
+            cursor.execute(f'DROP TABLE "{table_name}";')
+        else:
+            cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{live_source}";')
+            source_names.append(live_source)
     if backup_exists:
         source_names.append(backup_name)
+    if staging_exists:
+        source_names.append(final_staging)
 
     cursor.execute(_METRON_TABLE_DEFINITIONS[table_name])
     if not _metron_table_compatible(cursor, table_name):
@@ -1595,6 +1603,7 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
         LOGGER.warning('Normalized %s during migration: source_rows=%s destination_rows=%s merged_or_rejected=%s', table_name, considered_count, dest_count, considered_count - dest_count)
     if not _metron_table_compatible(cursor, table_name):
         raise RuntimeError(f'Normalized Metron table {table_name} failed schema validation')
+    cursor.execute(f'DROP TABLE IF EXISTS "{live_source}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{final_staging}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{backup_name}";')
 

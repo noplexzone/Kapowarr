@@ -151,6 +151,44 @@ class Phase123MigrationTests(unittest.TestCase):
             self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_backup'))
             self.assertFalse(table_exists(con, 'provider_cache_migration_58_backup'))
 
+    def _create_link_variant(self, con, table_name, volume_id, external_id, fetched_at=10):
+        con.execute(f"""CREATE TABLE {table_name}(id INTEGER PRIMARY KEY AUTOINCREMENT, volume_id INTEGER NOT NULL, provider TEXT NOT NULL, resource_type TEXT NOT NULL, external_id TEXT NOT NULL, match_method TEXT NOT NULL DEFAULT '', match_confidence REAL, review_status TEXT NOT NULL DEFAULT 'linked', linked_at INTEGER NOT NULL, last_successful_enrichment INTEGER, last_checked INTEGER);""")
+        con.execute(f"INSERT INTO {table_name}(volume_id, provider, resource_type, external_id, linked_at, last_successful_enrichment) VALUES (?, 'metron', 'series', ?, ?, ?);", (volume_id, external_id, fetched_at, fetched_at))
+
+    def test_metron_recovery_state_machine_reads_live_backup_and_staging_sources(self):
+        cases = [
+            ('live_only', True, False, False, ['live-row']),
+            ('backup_only', False, True, False, ['backup-row']),
+            ('staging_only', False, False, True, ['staging-row']),
+            ('live_backup', True, True, False, ['live-row', 'backup-row']),
+            ('live_staging', True, False, True, ['live-row', 'staging-row']),
+            ('backup_staging', False, True, True, ['backup-row', 'staging-row']),
+            ('all_three', True, True, True, ['live-row', 'backup-row', 'staging-row']),
+            ('none', False, False, False, []),
+        ]
+        for name, live, backup, staging, expected in cases:
+            with self.subTest(name=name):
+                self.tearDown(); self.setUp()
+                self._seed_schema(58)
+                with self._connect() as con:
+                    self._drop_metron_tables(con)
+                    con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+                    for idx in range(1, 4):
+                        con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (?, ?, ?, 1);", (idx, idx, f'Volume {idx}'))
+                    if live:
+                        self._create_link_variant(con, 'volume_provider_links', 1, 'live-row', 10)
+                    if backup:
+                        self._create_link_variant(con, 'volume_provider_links_migration_58_backup', 2, 'backup-row', 20)
+                    if staging:
+                        self._create_link_variant(con, 'volume_provider_links_migration_58_final', 3, 'staging-row', 30)
+                self._run_setup(); self._assert_normalized()
+                with self._connect() as con:
+                    rows = [row[0] for row in con.execute("SELECT external_id FROM volume_provider_links ORDER BY external_id;").fetchall()]
+                    self.assertEqual(rows, sorted(expected))
+                    self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_backup'))
+                    self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_final'))
+                    self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_live'))
+
     def test_partially_created_metron_schema_is_completed(self):
         self._seed_schema(58)
         with self._connect() as con:

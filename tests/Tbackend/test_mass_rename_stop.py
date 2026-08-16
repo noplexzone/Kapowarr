@@ -82,8 +82,8 @@ def test_mass_rename_continues_when_stop_fn_returns_false():
 
         # stop_fn checked twice (once per file)
         assert len(calls) == 2
-        # both files renamed
-        assert mock_rename.call_count == 2
+        # two-phase safe rename: source -> temporary, then temporary -> destination
+        assert mock_rename.call_count == 4
 
 
 def test_mass_rename_no_stop_fn_renames_all():
@@ -100,6 +100,6 @@ def test_mass_rename_no_stop_fn_renames_all():
 
         result = mass_rename(1)
 
-        # all 3 files renamed
-        assert mock_rename.call_count == 3
+        # two-phase safe rename: source -> temporary, then temporary -> destination
+        assert mock_rename.call_count == 6
         assert len(result) == 3

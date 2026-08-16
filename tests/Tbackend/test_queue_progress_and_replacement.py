@@ -102,6 +102,8 @@ def test_replace_existing_issue_files_deletes_old_linked_file(monkeypatch):
     deleted_paths = []
     deleted_ids = []
     commits = []
+    rollbacks = []
+    renames = []
 
     class FakeFilesDB:
         @staticmethod
@@ -120,8 +122,20 @@ def test_replace_existing_issue_files_deletes_old_linked_file(monkeypatch):
         def delete_filepath(filepath):  # pragma: no cover - fallback path
             raise AssertionError(filepath)
 
+    class FakeConnection:
+        def commit(self):
+            commits.append(True)
+
+        def rollback(self):
+            rollbacks.append(True)
+
+    class FakeDB:
+        connection = FakeConnection()
+
     monkeypatch.setattr(post_processing, 'FilesDB', FakeFilesDB)
-    monkeypatch.setattr(post_processing, 'exists', lambda path: path.endswith('old.cbz'))
+    monkeypatch.setattr(post_processing, 'get_db', lambda: FakeDB())
+    monkeypatch.setattr(post_processing, 'exists', lambda path: path.endswith('old.cbz') or '.kapowarr-replaced-' in path)
+    monkeypatch.setattr(post_processing, 'rename_file', lambda source, dest: renames.append((source, dest)))
     monkeypatch.setattr(post_processing, 'delete_file_folder', deleted_paths.append)
     monkeypatch.setattr(post_processing, 'commit', lambda: commits.append(True))
 
@@ -133,9 +147,13 @@ def test_replace_existing_issue_files_deletes_old_linked_file(monkeypatch):
 
     post_processing.replace_existing_issue_files(download)
 
-    assert deleted_paths == ['/library/Jujutsu Kaisen old.cbz']
+    assert len(renames) == 1
+    assert renames[0][0] == '/library/Jujutsu Kaisen old.cbz'
+    assert renames[0][1].startswith('/library/Jujutsu Kaisen old.cbz.kapowarr-replaced-')
+    assert deleted_paths == [renames[0][1]]
     assert deleted_ids == [7]
     assert commits == [True]
+    assert rollbacks == []
 
 
 def test_suwayomi_queue_entry_exposes_source_detail_from_display_title():

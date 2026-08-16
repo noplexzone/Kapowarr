@@ -114,18 +114,6 @@ function getAddRouteSearch(section: DiscoverySection, result: SearchResult) {
   return { section, title: result.title, language: result.metadata_language ?? undefined, returnTo: currentDiscoverReturnTo() };
 }
 
-function getDiscoverAddMask(section: DiscoverySection): any {
-  if (typeof window === 'undefined') return { to: '/discover', search: { section }, unmaskOnReload: true };
-  const parsed = new URL(`${window.location.pathname}${window.location.search}`, 'http://kapowarr.local');
-  if (parsed.pathname === '/discover/search') {
-    return { to: '/discover/search', search: { section, q: parsed.searchParams.get('q') || '', page: Number(parsed.searchParams.get('page') || '1'), hide_added: parsed.searchParams.get('hide_added') === 'true' }, unmaskOnReload: true };
-  }
-  if (parsed.pathname === '/discover/browse') {
-    return { to: '/discover/browse', search: { section, sort: (parsed.searchParams.get('sort') || 'trending') as BrowseFilters['sort'], q: parsed.searchParams.get('q') || undefined, publisher: parsed.searchParams.get('publisher') || undefined, decade: parsed.searchParams.get('decade') || undefined, character: parsed.searchParams.get('character') || undefined, genre: parsed.searchParams.get('genre') || undefined, status: parsed.searchParams.get('status') || undefined, hide_added: parsed.searchParams.get('hide_added') === 'true' }, unmaskOnReload: true };
-  }
-  return { to: '/discover', search: { section }, unmaskOnReload: true };
-}
-
 function formatIssueCount(result: { issue_count?: number | null }, section: DiscoverySection): string {
   if (section === 'manga') return '';
   if (result.issue_count == null) return 'Issue count unavailable';
@@ -185,7 +173,7 @@ export function DiscoverSearchCombobox({ section, rawQuery, onQueryChange }: { s
 
   const openResult = useCallback((result: SearchResult) => {
     setOpen(false);
-    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result), mask: getDiscoverAddMask(section) });
+    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result) });
   }, [navigate, section]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -243,7 +231,7 @@ export function DiscoverSearchResultsPage({ section, q, page, hide_added = false
   const openResult = (result: SearchResult) => {
     const existingId = result.id ?? result.already_added;
     if (existingId != null) { navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } }); return; }
-    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result), mask: getDiscoverAddMask(section) });
+    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result) });
   };
   if (query.length < 2) return <div className={styles.searchPage}><div className={styles.empty}>Type at least 2 characters to search.</div></div>;
   return <div className={styles.searchPage}><h1 id="discover-search-heading" className={styles.srOnly}>Results for “{query}”</h1>{isError ? <div className={styles.empty} role="alert"><span>Could not load search results: {error.message}</span><Button onClick={() => void refetch()}>Retry</Button></div> : null}{!isError && isFetching && !data ? <div className={styles.empty} role="status">Loading results…</div> : null}{!isError && data && items.length === 0 ? <div className={styles.empty}>No results found for “{query}”.</div> : null}{!isError && items.length > 0 ? <><label className={styles.hideAddedToggle}><input type="checkbox" checked={hide_added} onChange={(event) => navigate({ to: '/discover/search', search: { section, q: query, page: 1, hide_added: event.target.checked } })} /><span>Hide in library</span></label><div className={styles.searchResults}>{items.map((result) => <SearchResultCard key={getResultIdentity(result)} result={result} section={section} onOpen={openResult} />)}</div></> : null}{data ? <div className={styles.paginationRow}><Button variant="secondary" disabled={page <= 1 || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page - 1, hide_added } })}>Previous</Button><span>{data.total == null ? 'Filtered total unknown' : `${data.total} results`}</span><Button variant="secondary" disabled={!data.has_more || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page + 1, hide_added } })}>Next</Button></div> : null}{isFetching && data ? <div className={styles.inlineStatus} role="status">Refreshing results…</div> : null}</div>;
@@ -278,7 +266,6 @@ function openDiscoveryAdd(navigate: ReturnType<typeof useNavigate>, section: Dis
     to: '/discover/add/$source/$metadataId',
     params: { source: volume.metadata_source ?? 'comicvine', metadataId: volume.metadata_id ?? String(volume.comicvine_id) },
     search: { section, title: volume.title, language: volume.metadata_language ?? undefined, returnTo: currentDiscoverReturnTo() },
-    mask: getDiscoverAddMask(section),
   });
 }
 

@@ -9,7 +9,7 @@ from datetime import date as _date, timedelta
 from time import time
 from json import JSONDecodeError
 from re import IGNORECASE, compile
-from typing import Any, AsyncGenerator, Dict, FrozenSet, Iterable, List, Sequence, Union
+from typing import Any, AsyncGenerator, Dict, FrozenSet, Iterable, List, Optional, Sequence, Union
 
 from aiohttp import ContentTypeError
 from aiohttp.client_exceptions import ClientError
@@ -361,7 +361,7 @@ def _is_launch_issue_for_volume(issue: Dict[str, Any], volume: Dict[str, Any], c
         return False
     return str(first.get('id') or '') == str(issue.get('id') or '')
 
-def _first_publication_fact_from_volume(volume: Dict[str, Any], configured_date_type: Any = None, *, upcoming_issue: Dict[str, Any] | None = None) -> Dict[str, Any] | None:
+def _first_publication_fact_from_volume(volume: Dict[str, Any], configured_date_type: Any = None, *, upcoming_issue: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     first = _first_known_issue(volume, configured_date_type)
     first_date = _issue_date(first, configured_date_type) if first else None
     try:
@@ -393,7 +393,7 @@ def _first_publication_fact_from_volume(volume: Dict[str, Any], configured_date_
         'last_error': None,
     }
 
-def _upsert_comic_series_discovery_fact(fact: Dict[str, Any] | None) -> None:
+def _upsert_comic_series_discovery_fact(fact: Optional[Dict[str, Any]]) -> None:
     if not fact:
         return
     get_db().execute(

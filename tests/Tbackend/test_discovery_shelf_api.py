@@ -90,6 +90,73 @@ class DiscoveryShelfApiTests(unittest.TestCase):
                     self.assertIn('items', result)
 
 
+
+    def test_shelf_exclusion_refills_from_later_provider_pages(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        comicvine.browse_catalog_volumes = AsyncMock(side_effect=[
+            {'items': [self._item('comicvine', '1'), self._item('comicvine', '2')], 'total': 4, 'offset': 0, 'page_size': 2, 'has_more': True},
+            {'items': [self._item('comicvine', '3'), self._item('comicvine', '4')], 'total': 4, 'offset': 2, 'page_size': 2, 'has_more': False},
+        ])
+        def exclude(items):
+            return [item for item in items if item['metadata_id'] in {'3', '4'}]
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine), patch.object(api_mod, '_exclude_added_provider_results', side_effect=exclude):
+            response = self._client().get('/api/discovery', query_string={
+                'section': 'comic',
+                'type': 'recently-active',
+                'paginated': 'true',
+                'limit': '2',
+                'exclude_added': 'true',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual([item['metadata_id'] for item in result['items']], ['3', '4'])
+        self.assertIsNone(result['total'])
+        self.assertFalse(result['total_is_exact'])
+        self.assertEqual(comicvine.browse_catalog_volumes.await_count, 2)
+
+    def test_comic_browse_exclusion_refills_from_later_provider_pages(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        comicvine.browse_catalog_volumes = AsyncMock(side_effect=[
+            {'items': [self._item('comicvine', '1'), self._item('comicvine', '2')], 'total': 4, 'offset': 0, 'page_size': 2, 'has_more': True},
+            {'items': [self._item('comicvine', '3'), self._item('comicvine', '4')], 'total': 4, 'offset': 2, 'page_size': 2, 'has_more': False},
+        ])
+        def exclude(items):
+            return [item for item in items if item['metadata_id'] in {'3', '4'}]
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine), patch.object(api_mod, '_exclude_added_provider_results', side_effect=exclude):
+            response = self._client().get('/api/discovery/browse', query_string={
+                'section': 'comic',
+                'sort': 'trending',
+                'limit': '2',
+                'exclude_added': 'true',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual([item['metadata_id'] for item in result['items']], ['3', '4'])
+        self.assertIsNone(result['total'])
+        self.assertFalse(result['total_is_exact'])
+        self.assertEqual(comicvine.browse_catalog_volumes.await_count, 2)
+
+    def test_manga_browse_exclusion_refills_from_later_provider_pages(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        pages = [
+            {'items': [self._item('mangadex', '1'), self._item('mangadex', '2')], 'total': 4, 'offset': 0, 'page_size': 2, 'has_more': True},
+            {'items': [self._item('mangadex', '3'), self._item('mangadex', '4')], 'total': 4, 'offset': 2, 'page_size': 2, 'has_more': False},
+        ]
+        def exclude(items):
+            return [item for item in items if item['metadata_id'] in {'3', '4'}]
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'browse_mangadex_catalog', side_effect=pages) as browse, patch.object(api_mod, '_exclude_added_provider_results', side_effect=exclude):
+            response = self._client().get('/api/discovery/browse', query_string={
+                'section': 'manga',
+                'sort': 'recently_updated',
+                'limit': '2',
+                'exclude_added': 'true',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual([item['metadata_id'] for item in result['items']], ['3', '4'])
+        self.assertIsNone(result['total'])
+        self.assertFalse(result['total_is_exact'])
+        self.assertEqual(browse.call_count, 2)
+
     def test_recently_started_uses_derived_new_volumes_service(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()

@@ -1233,6 +1233,34 @@ def _exclude_added_provider_results(items: List[dict]) -> List[dict]:
         visible.append(item)
     return visible
 
+
+def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages: int = 5) -> Dict[str, Any]:
+    filled: List[dict] = []
+    current_offset = offset
+    last_page: Dict[str, Any] = {
+        'items': [], 'total': 0, 'offset': offset, 'page_size': limit, 'has_more': False
+    }
+    provider_has_more = False
+    for _ in range(max(1, safety_pages)):
+        page = fetch_page(current_offset, limit)
+        last_page = page if isinstance(page, dict) else {'items': page or [], 'offset': current_offset, 'page_size': limit, 'has_more': False}
+        provider_items = last_page.get('items', []) if isinstance(last_page, dict) else []
+        filled.extend(_exclude_added_provider_results(list(provider_items)))
+        provider_has_more = bool(last_page.get('has_more'))
+        if len(filled) >= limit or not provider_has_more:
+            break
+        current_offset += int(last_page.get('page_size') or limit)
+    return {
+        **last_page,
+        'items': filled[:limit],
+        'total': None,
+        'total_is_exact': False,
+        'offset': offset,
+        'page_size': limit,
+        'has_more': bool(provider_has_more),
+        'filtered_total_unknown': True,
+    }
+
 # =====================
 # Discovery
 # =====================
@@ -1272,17 +1300,21 @@ def api_discovery():
 
     if section == 'manga':
         sort = 'recently_updated' if discovery_type == 'recently-updated' else 'recently_started'
+        if exclude_added and paginated:
+            return return_api(_refill_excluding_added(
+                lambda page_offset, page_limit: browse_mangadex_catalog(
+                    offset=page_offset, limit=page_limit, sort=sort
+                ),
+                offset=offset,
+                limit=limit,
+            ))
         page = browse_mangadex_catalog(offset=offset if paginated else 0, limit=limit if paginated else min(limit, 20), sort=sort)
         if exclude_added:
             page['items'] = _exclude_added_provider_results(page.get('items', []))
             page['total'] = None
+            page['total_is_exact'] = False
             page['has_more'] = False if page.get('is_bounded') else page.get('has_more', False)
         if paginated:
-            if exclude_added:
-                page['items'] = _exclude_added_provider_results(page.get('items', []))
-                page['total'] = None
-                page['has_more'] = False if page.get('is_bounded') else page.get('has_more', False)
-                page['filtered_total_unknown'] = True
             return return_api(page)
         return return_api(page['items'])
 
@@ -1298,18 +1330,13 @@ def api_discovery():
             'recently-active': 'trending',
         }[discovery_type]
         if exclude_added and paginated:
-            filled = []
-            next_offset = offset
-            page = None
-            for _ in range(5):
-                page = run(cv.browse_catalog_volumes(offset=next_offset, limit=limit, sort=sort))
-                batch = _exclude_added_provider_results(page.get('items', []) if isinstance(page, dict) else page)
-                filled.extend(batch)
-                if len(filled) >= limit or not (isinstance(page, dict) and page.get('has_more')):
-                    break
-                next_offset += limit
-            page = page or {'items': []}
-            return return_api({**page, 'items': filled[:limit], 'total': None, 'offset': offset, 'page_size': limit, 'has_more': bool(isinstance(page, dict) and page.get('has_more') and len(filled) < limit), 'filtered_total_unknown': True})
+            return return_api(_refill_excluding_added(
+                lambda page_offset, page_limit: run(cv.browse_catalog_volumes(
+                    offset=page_offset, limit=page_limit, sort=sort
+                )),
+                offset=offset,
+                limit=limit,
+            ))
         page = run(cv.browse_catalog_volumes(offset=offset if paginated else 0, limit=(limit if paginated else 20), sort=sort))
         results = page.get('items', []) if isinstance(page, dict) else page
         if paginated and isinstance(page, dict):
@@ -1404,6 +1431,27 @@ def api_discovery_browse():
             )
         except ValueError as exc:
             raise InvalidKeyValue('filter', str(exc))
+        if exclude_added:
+            page = _refill_excluding_added(
+                lambda page_offset, page_limit: browse_mangadex_catalog(
+                    query=query,
+                    offset=page_offset,
+                    limit=page_limit,
+                    sort=sort,
+                    status=request.values.get('status', ''),
+                    original_language=request.values.get('original_language', ''),
+                    demographic=request.values.get('demographic', ''),
+                    content_rating=request.values.get('content_rating', ''),
+                    year=request.values.get('year', ''),
+                    decade=request.values.get('decade', ''),
+                    author=request.values.get('author', ''),
+                    artist=request.values.get('artist', ''),
+                    tags=request.values.get('tags', ''),
+                    translated_language=request.values.get('translated_language', ''),
+                ),
+                offset=offset,
+                limit=limit,
+            )
         return return_api(page)
     unsupported = {'tags', 'demographic', 'original_language', 'author', 'artist', 'content_rating'} & set(request.values.keys())
     if unsupported:
@@ -1423,15 +1471,22 @@ def api_discovery_browse():
             sort=sort,
         )
         return return_api(page)
-    page = run(ComicVine().browse_catalog_volumes(
-        query=query,
-        publisher=request.values.get('publisher', ''),
-        decade=request.values.get('decade', ''),
-        year=request.values.get('year', ''),
-        offset=offset,
-        limit=limit,
-        sort=sort,
-    ))
+    cv = ComicVine()
+    def fetch_comic_page(page_offset: int, page_limit: int) -> Dict[str, Any]:
+        return run(cv.browse_catalog_volumes(
+            query=query,
+            publisher=request.values.get('publisher', ''),
+            decade=request.values.get('decade', ''),
+            year=request.values.get('year', ''),
+            offset=page_offset,
+            limit=page_limit,
+            sort=sort,
+        ))
+    page = (
+        _refill_excluding_added(fetch_comic_page, offset=offset, limit=limit)
+        if exclude_added
+        else fetch_comic_page(offset, limit)
+    )
     return return_api(page)
 
 

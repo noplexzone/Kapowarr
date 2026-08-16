@@ -244,7 +244,7 @@ class Phase123MigrationTests(unittest.TestCase):
             candidates = con.execute("SELECT id, review_group_id FROM provider_match_candidates ORDER BY id;").fetchall()
             reservations = con.execute("SELECT id, candidate_id, task_queue_id FROM metron_enrichment_task_reservations ORDER BY id;").fetchall()
             self.assertEqual(candidates, [(7, 'group-a'), (8, 'group-b')])
-            self.assertEqual(reservations, [(17, 7, 100), (18, 8, 101)])
+            self.assertEqual(reservations, [(18, 8, 101)])
             self.assertEqual(con.execute('PRAGMA foreign_key_check;').fetchall(), [])
 
     def test_partially_created_metron_schema_is_completed(self):
@@ -362,6 +362,10 @@ class Phase123MigrationTests(unittest.TestCase):
             self.assertEqual(rows, [('failed', 'historical'), ('queued', 'newer active')])
             idx = {row[1]: row for row in con.execute('PRAGMA index_list(metron_enrichment_task_reservations);')}
             self.assertIn('metron_enrichment_task_reservations_active_idx', idx)
+            active_idx_columns = tuple(row[2] for row in con.execute('PRAGMA index_info(metron_enrichment_task_reservations_active_idx);'))
+            self.assertEqual(active_idx_columns, ('volume_id',))
+            with self.assertRaises(sqlite3.IntegrityError):
+                con.execute("INSERT INTO metron_enrichment_task_reservations(volume_id, status, created_at, updated_at) VALUES (1, 'running', 30, 30);")
 
     def test_only_one_handler_registered_for_each_start_version(self):
         versions = list(DatabaseMigrationHandler.handlers)

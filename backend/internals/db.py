@@ -654,7 +654,7 @@ CREATE TABLE IF NOT EXISTS metron_enrichment_task_reservations(
     FOREIGN KEY (candidate_id) REFERENCES provider_match_candidates(id) ON DELETE SET NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS metron_enrichment_task_reservations_active_idx
-    ON metron_enrichment_task_reservations(volume_id)
+    ON metron_enrichment_task_reservations(volume_id, candidate_id, task_queue_id)
     WHERE status IN ('reserved', 'queued', 'running');
 CREATE TABLE IF NOT EXISTS volume_metadata_enrichment(
     volume_id INTEGER NOT NULL,

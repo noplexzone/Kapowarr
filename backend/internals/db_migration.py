@@ -1590,15 +1590,20 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
     final_exists = _table_exists(cursor, table_name)
     backup_exists = _table_exists(cursor, backup_name)
     staging_exists = _table_exists(cursor, final_staging)
+    live_source_exists = _table_exists(cursor, live_source)
+    current_live_source = f"{table_name}_migration_58_current_live"
 
-    if final_exists and not backup_exists and not staging_exists and _metron_table_compatible(cursor, table_name):
+    if final_exists and not backup_exists and not staging_exists and not live_source_exists and _metron_table_compatible(cursor, table_name):
         return
 
     source_names: List[str] = []
+    if live_source_exists:
+        source_names.append(live_source)
     if final_exists:
-        if _table_exists(cursor, live_source):
-            source_names.append(live_source)
-            cursor.execute(f'DROP TABLE "{table_name}";')
+        if live_source_exists:
+            cursor.execute(f'DROP TABLE IF EXISTS "{current_live_source}";')
+            cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{current_live_source}";')
+            source_names.append(current_live_source)
         else:
             cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{live_source}";')
             source_names.append(live_source)
@@ -1622,7 +1627,7 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
         source_columns = all_source_columns[source_name]
         expressions = []
         for column in copy_columns:
-            if column == 'id':
+            if column == 'id' and (column not in source_columns or table_name == 'volume_provider_links'):
                 expressions.append('NULL AS id')
             elif column in source_columns:
                 expressions.append(column)
@@ -1693,7 +1698,7 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
             SELECT {column_sql}
             FROM (
                 SELECT *, ROW_NUMBER() OVER (
-                    PARTITION BY volume_id, provider, resource_type, candidate_external_id
+                    PARTITION BY review_group_id, volume_id, provider, resource_type, candidate_external_id
                     ORDER BY COALESCE(updated_at, 0) DESC, COALESCE(created_at, 0) DESC, COALESCE(id, 0) DESC
                 ) AS rn
                 FROM ({union_sql})
@@ -1725,7 +1730,7 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
             SELECT {column_sql}
             FROM (
                 SELECT *, ROW_NUMBER() OVER (
-                    PARTITION BY CASE WHEN status IN ('reserved', 'queued', 'running') THEN 'active:' || volume_id ELSE 'history:' || volume_id || ':' || status || ':' || COALESCE(created_at, 0) || ':' || COALESCE(updated_at, 0) || ':' || COALESCE(safe_error, '') END
+                    PARTITION BY CASE WHEN status IN ('reserved', 'queued', 'running') THEN 'active:' || volume_id || ':' || COALESCE(candidate_id, -1) || ':' || COALESCE(task_queue_id, -1) ELSE 'history:' || volume_id || ':' || COALESCE(candidate_id, -1) || ':' || status || ':' || COALESCE(created_at, 0) || ':' || COALESCE(updated_at, 0) || ':' || COALESCE(safe_error, '') END
                     ORDER BY COALESCE(updated_at, 0) DESC, COALESCE(created_at, 0) DESC, COALESCE(id, 0) DESC
                 ) AS rn
                 FROM ({union_sql})
@@ -1741,7 +1746,11 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
         LOGGER.warning('Normalized %s during migration: source_rows=%s destination_rows=%s merged_or_rejected=%s', table_name, considered_count, dest_count, considered_count - dest_count)
     if not _metron_table_compatible(cursor, table_name):
         raise RuntimeError(f'Normalized Metron table {table_name} failed schema validation')
+    fk_errors = cursor.execute('PRAGMA foreign_key_check;').fetchall()
+    if fk_errors:
+        raise RuntimeError(f'Foreign key validation failed while normalizing {table_name}: {fk_errors[:3]}')
     cursor.execute(f'DROP TABLE IF EXISTS "{live_source}";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{current_live_source}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{final_staging}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{backup_name}";')
 
@@ -1782,7 +1791,7 @@ def _ensure_metron_base_schema(cursor) -> None:
         CREATE INDEX IF NOT EXISTS volume_metadata_enrichment_active_idx
             ON volume_metadata_enrichment(volume_id, provider, active);
         CREATE UNIQUE INDEX IF NOT EXISTS metron_enrichment_task_reservations_active_idx
-            ON metron_enrichment_task_reservations(volume_id)
+            ON metron_enrichment_task_reservations(volume_id, candidate_id, task_queue_id)
             WHERE status IN ('reserved', 'queued', 'running');
     """)
 
@@ -1897,7 +1906,7 @@ def _migrate_add_metron_task_reservations():
             FOREIGN KEY (candidate_id) REFERENCES provider_match_candidates(id) ON DELETE SET NULL
         );
         CREATE UNIQUE INDEX IF NOT EXISTS metron_enrichment_task_reservations_active_idx
-            ON metron_enrichment_task_reservations(volume_id)
+            ON metron_enrichment_task_reservations(volume_id, candidate_id, task_queue_id)
             WHERE status IN ('reserved', 'queued', 'running');
     """)
     return
@@ -1921,8 +1930,12 @@ def _migrate_add_comic_discovery_facts():
             year INTEGER,
             publisher TEXT,
             is_upcoming_launch BOOL NOT NULL DEFAULT 0,
+            provider_modified_at TEXT,
             metadata_modified_at INTEGER,
+            fetched_at INTEGER,
             derived_at INTEGER NOT NULL DEFAULT 0,
+            derivation_status TEXT NOT NULL DEFAULT 'valid',
+            date_preference TEXT NOT NULL DEFAULT 'cover_date',
             last_error TEXT
         );
         CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_first_date_idx
@@ -1933,5 +1946,19 @@ def _migrate_add_comic_discovery_facts():
             ON comic_series_discovery_facts(derived_at);
         CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_volume_idx
             ON comic_series_discovery_facts(comicvine_volume_id);
+        CREATE TABLE IF NOT EXISTS comic_discovery_fact_sync_state(
+            sync_id INTEGER PRIMARY KEY CHECK(sync_id = 1),
+            scope TEXT NOT NULL DEFAULT 'comic_series_discovery',
+            provider_cursor TEXT,
+            last_started_at INTEGER,
+            last_completed_at INTEGER,
+            coverage_state TEXT NOT NULL DEFAULT 'not_started',
+            coverage_complete BOOL NOT NULL DEFAULT 0,
+            date_preference TEXT NOT NULL DEFAULT 'cover_date',
+            last_error TEXT,
+            next_resume_at INTEGER
+        );
+        INSERT OR IGNORE INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference)
+            VALUES (1, 'comic_series_discovery', 'not_started', 0, 'cover_date');
     """)
     return

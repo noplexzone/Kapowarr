@@ -10,7 +10,7 @@ from backend.internals.db import DB_SCHEMA, DBConnection, DBConnectionManager, c
 from backend.internals.db_migration import DatabaseMigrationHandler
 from backend.internals.settings import Settings
 
-METRON_TABLES = {'volume_provider_links', 'provider_cache', 'volume_enrichment_terms', 'metron_backfill_state'}
+METRON_TABLES = {'volume_provider_links', 'provider_cache', 'volume_enrichment_terms', 'metron_backfill_state', 'provider_match_candidates', 'metron_enrichment_task_reservations', 'volume_metadata_enrichment', 'provider_rate_limit_state'}
 
 def table_columns(cursor, table):
     return {row[1] for row in cursor.execute(f'PRAGMA table_info({table});')}
@@ -189,6 +189,45 @@ class Phase123MigrationTests(unittest.TestCase):
                     self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_final'))
                     self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_live'))
 
+    def test_metron_recovery_reads_preexisting_live_source_without_dropping_current_live(self):
+        self._seed_schema(58)
+        with self._connect() as con:
+            self._drop_metron_tables(con)
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            for idx in range(1, 3):
+                con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (?, ?, ?, 1);", (idx, idx, f'Volume {idx}'))
+            self._create_link_variant(con, 'volume_provider_links_migration_58_live', 1, 'live-source-row', 10)
+            self._create_link_variant(con, 'volume_provider_links', 2, 'current-live-row', 20)
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            rows = con.execute("SELECT id, volume_id, external_id FROM volume_provider_links ORDER BY volume_id;").fetchall()
+            self.assertEqual([row[2] for row in rows], ['live-source-row', 'current-live-row'])
+            self.assertTrue(all(row[0] is not None for row in rows))
+            self.assertFalse(table_exists(con, 'volume_provider_links_migration_58_current_live'))
+
+    def test_candidate_identity_keeps_separate_review_groups_and_reservations(self):
+        self._seed_schema(61)
+        with self._connect() as con:
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Linked', 1);")
+            con.executescript("""
+                DROP TABLE provider_match_candidates;
+                DROP TABLE metron_enrichment_task_reservations;
+                CREATE TABLE provider_match_candidates(id INTEGER PRIMARY KEY, volume_id INTEGER, provider TEXT, resource_type TEXT, candidate_external_id TEXT, title TEXT, review_group_id TEXT, created_at INTEGER, updated_at INTEGER);
+                CREATE TABLE metron_enrichment_task_reservations(id INTEGER PRIMARY KEY, volume_id INTEGER, candidate_id INTEGER, task_queue_id INTEGER, status TEXT, created_at INTEGER, updated_at INTEGER);
+                INSERT INTO provider_match_candidates(id, volume_id, provider, resource_type, candidate_external_id, title, review_group_id, created_at, updated_at) VALUES (7, 1, 'metron', 'series', 'same', 'Candidate A', 'group-a', 10, 10);
+                INSERT INTO provider_match_candidates(id, volume_id, provider, resource_type, candidate_external_id, title, review_group_id, created_at, updated_at) VALUES (8, 1, 'metron', 'series', 'same', 'Candidate B', 'group-b', 11, 11);
+                INSERT INTO metron_enrichment_task_reservations(id, volume_id, candidate_id, task_queue_id, status, created_at, updated_at) VALUES (17, 1, 7, 100, 'reserved', 10, 10);
+                INSERT INTO metron_enrichment_task_reservations(id, volume_id, candidate_id, task_queue_id, status, created_at, updated_at) VALUES (18, 1, 8, 101, 'queued', 11, 11);
+            """)
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            candidates = con.execute("SELECT id, review_group_id FROM provider_match_candidates ORDER BY id;").fetchall()
+            reservations = con.execute("SELECT id, candidate_id, task_queue_id FROM metron_enrichment_task_reservations ORDER BY id;").fetchall()
+            self.assertEqual(candidates, [(7, 'group-a'), (8, 'group-b')])
+            self.assertEqual(reservations, [(17, 7, 100), (18, 8, 101)])
+            self.assertEqual(con.execute('PRAGMA foreign_key_check;').fetchall(), [])
+
     def test_partially_created_metron_schema_is_completed(self):
         self._seed_schema(58)
         with self._connect() as con:
@@ -320,7 +359,10 @@ class Phase123MigrationTests(unittest.TestCase):
             cols = {row[1]: row for row in con.execute('PRAGMA table_info(comic_series_discovery_facts);')}
             self.assertEqual(cols['comicvine_volume_id'][5], 1)
             self.assertEqual(cols['is_upcoming_launch'][3], 1)
-            self.assertTrue({'volume_title', 'cover_link', 'site_url', 'publisher'} <= set(cols))
+            self.assertTrue({'volume_title', 'cover_link', 'site_url', 'publisher', 'provider_modified_at', 'fetched_at', 'derivation_status', 'date_preference'} <= set(cols))
+            self.assertTrue(table_exists(con, 'comic_discovery_fact_sync_state'))
+            sync = con.execute('SELECT coverage_state, coverage_complete, date_preference FROM comic_discovery_fact_sync_state WHERE sync_id = 1;').fetchone()
+            self.assertEqual(sync, ('not_started', 0, 'cover_date'))
             index_columns = {row[1]: tuple(info[2] for info in con.execute(f"PRAGMA index_info({row[1]});")) for row in con.execute('PRAGMA index_list(comic_series_discovery_facts);')}
             self.assertIn(('first_known_issue_date',), index_columns.values())
             self.assertIn(('derived_at',), index_columns.values())

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useInfiniteQuery, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Badge, Button } from '@/components/primitives';
 import { ExactAddReview } from '@/routes/add/-ui/add-page';
@@ -111,7 +111,12 @@ function currentDiscoverReturnTo(): string | undefined {
 }
 
 function getAddRouteSearch(section: DiscoverySection, result: SearchResult) {
-  return { section, title: result.title, language: result.metadata_language ?? undefined, returnTo: currentDiscoverReturnTo() };
+  return { section, title: result.title, language: result.metadata_language ?? undefined };
+}
+
+function getDiscoverBackgroundState() {
+  const returnTo = currentDiscoverReturnTo();
+  return returnTo ? ((prev: Record<string, unknown>) => ({ ...prev, discoverBackground: returnTo })) : undefined;
 }
 
 function formatIssueCount(result: { issue_count?: number | null }, section: DiscoverySection): string {
@@ -173,7 +178,7 @@ export function DiscoverSearchCombobox({ section, rawQuery, onQueryChange }: { s
 
   const openResult = useCallback((result: SearchResult) => {
     setOpen(false);
-    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result) });
+    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result), state: getDiscoverBackgroundState() as never });
   }, [navigate, section]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -231,7 +236,7 @@ export function DiscoverSearchResultsPage({ section, q, page, hide_added = false
   const openResult = (result: SearchResult) => {
     const existingId = result.id ?? result.already_added;
     if (existingId != null) { navigate({ to: '/volumes/$volumeId', params: { volumeId: String(existingId) } }); return; }
-    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result) });
+    navigate({ to: '/discover/add/$source/$metadataId', params: getAddRouteParams(result), search: getAddRouteSearch(section, result), state: getDiscoverBackgroundState() as never });
   };
   if (query.length < 2) return <div className={styles.searchPage}><div className={styles.empty}>Type at least 2 characters to search.</div></div>;
   return <div className={styles.searchPage}><h1 id="discover-search-heading" className={styles.srOnly}>Results for “{query}”</h1>{isError ? <div className={styles.empty} role="alert"><span>Could not load search results: {error.message}</span><Button onClick={() => void refetch()}>Retry</Button></div> : null}{!isError && isFetching && !data ? <div className={styles.empty} role="status">Loading results…</div> : null}{!isError && data && items.length === 0 ? <div className={styles.empty}>No results found for “{query}”.</div> : null}{!isError && items.length > 0 ? <><label className={styles.hideAddedToggle}><input type="checkbox" checked={hide_added} onChange={(event) => navigate({ to: '/discover/search', search: { section, q: query, page: 1, hide_added: event.target.checked } })} /><span>Hide in library</span></label><div className={styles.searchResults}>{items.map((result) => <SearchResultCard key={getResultIdentity(result)} result={result} section={section} onOpen={openResult} />)}</div></> : null}{data ? <div className={styles.paginationRow}><Button variant="secondary" disabled={page <= 1 || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page - 1, hide_added } })}>Previous</Button><span>{data.total == null ? 'Filtered total unknown' : `${data.total} results`}</span><Button variant="secondary" disabled={!data.has_more || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page + 1, hide_added } })}>Next</Button></div> : null}{isFetching && data ? <div className={styles.inlineStatus} role="status">Refreshing results…</div> : null}</div>;
@@ -253,7 +258,11 @@ function DiscoverBackgroundRoute({ section, returnTo }: { section: DiscoverySect
 }
 
 export function DiscoverExactAddPage({ section, source, metadataId, title, language, returnTo }: { section: DiscoverySection; source: 'comicvine' | 'mangadex'; metadataId: string; title?: string; language?: string; returnTo?: string }) {
-  return <><DiscoverBackgroundRoute section={section} returnTo={returnTo} /><ExactAddReview section={section} selection={{ metadata_source: source, metadata_id: metadataId, title, metadata_language: language }} searchFallbackTo="/discover/search" returnTo={returnTo} /></>;
+  const location = useLocation();
+  const state = location.state as { discoverBackground?: unknown };
+  const routerBackground = typeof state.discoverBackground === 'string' ? state.discoverBackground : undefined;
+  const background = routerBackground || returnTo;
+  return <><DiscoverBackgroundRoute section={section} returnTo={background} /><ExactAddReview section={section} selection={{ metadata_source: source, metadata_id: metadataId, title, metadata_language: language }} searchFallbackTo="/discover/search" returnTo={background} /></>;
 }
 
 
@@ -265,7 +274,8 @@ function openDiscoveryAdd(navigate: ReturnType<typeof useNavigate>, section: Dis
   navigate({
     to: '/discover/add/$source/$metadataId',
     params: { source: volume.metadata_source ?? 'comicvine', metadataId: volume.metadata_id ?? String(volume.comicvine_id) },
-    search: { section, title: volume.title, language: volume.metadata_language ?? undefined, returnTo: currentDiscoverReturnTo() },
+    search: { section, title: volume.title, language: volume.metadata_language ?? undefined },
+    state: getDiscoverBackgroundState() as never,
   });
 }
 

@@ -2,7 +2,7 @@
 
 from asyncio import run
 from base64 import urlsafe_b64decode, urlsafe_b64encode
-from datetime import datetime, timezone
+from datetime import date as _date, datetime, timedelta, timezone
 from functools import lru_cache
 import re
 from hashlib import sha256
@@ -1308,6 +1308,53 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
         'filtered_total_unknown': True,
     }
 
+def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int) -> Dict[str, Any]:
+    today = _date.today()
+    if discovery_type == 'recently-started':
+        start = (today - timedelta(days=365)).isoformat()
+        where = "first_known_issue_date BETWEEN ? AND ?"
+        params: Tuple[Any, ...] = (start, today.isoformat())
+    elif discovery_type == 'upcoming-launches':
+        end = (today + timedelta(days=60)).isoformat()
+        where = "is_upcoming_launch = 1 AND first_known_issue_date BETWEEN ? AND ?"
+        params = (today.isoformat(), end)
+    else:
+        raise InvalidKeyValue('type', discovery_type)
+    order = 'ASC' if discovery_type == 'upcoming-launches' else 'DESC'
+    try:
+        db = get_db()
+        rows = db.execute(f"""
+            SELECT comicvine_volume_id, first_known_issue_id, first_known_issue_number,
+                first_known_issue_date, volume_title, cover_link, site_url, year, publisher
+            FROM comic_series_discovery_facts
+            WHERE {where}
+            ORDER BY first_known_issue_date {order}, volume_title COLLATE NOCASE, comicvine_volume_id
+            LIMIT ? OFFSET ?;
+        """, (*params, limit, offset)).fetchall()
+    except OperationalError:
+        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False}
+    if not rows:
+        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False}
+    volume_ids = tuple(int(row[0]) for row in rows)
+    already_added: Dict[int, int] = {}
+    if volume_ids:
+        placeholders = ','.join('?' * len(volume_ids))
+        already_added = dict(db.execute(f'SELECT comicvine_id, id FROM volumes WHERE comicvine_id IN ({placeholders})', volume_ids).fetchall())
+    items = []
+    for row in rows:
+        cv_id = int(row[0])
+        items.append({
+            'metadata_source': 'comicvine', 'metadata_id': str(cv_id), 'comicvine_id': cv_id,
+            'title': row[4] or '', 'volume_title': row[4] or '', 'cover_link': row[5] or '',
+            'site_url': row[6] or '', 'year': row[7], 'publisher': row[8] or '',
+            'issue_id': row[1], 'issue_number': row[2] or '', 'series_started_at': row[3],
+            'already_added': already_added.get(cv_id),
+        })
+    return {
+        'items': items, 'total': None, 'total_is_exact': False, 'offset': offset,
+        'page_size': limit, 'has_more': len(items) == limit, 'fact_index': True,
+    }
+
 # =====================
 # Discovery
 # =====================
@@ -1369,6 +1416,16 @@ def api_discovery():
         return return_api(page['items'])
 
     cv = ComicVine()
+    if discovery_type in ('upcoming-launches', 'recently-started'):
+        fact_limit = limit + 1 if paginated else min(limit, 20)
+        fact_page = _comic_discovery_facts_page(discovery_type, offset=offset if paginated else 0, limit=fact_limit)
+        if fact_page['items']:
+            if paginated:
+                fact_page['has_more'] = len(fact_page['items']) > limit
+                fact_page['items'] = fact_page['items'][:limit]
+                fact_page['page_size'] = limit
+                return return_api(fact_page)
+            return return_api(fact_page['items'][:limit])
     if discovery_type == 'upcoming-launches':
         fetch_limit = offset + limit + 1 if paginated else 20
         results = run(cv.get_upcoming_releases(limit=fetch_limit))

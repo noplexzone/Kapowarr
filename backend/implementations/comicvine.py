@@ -378,6 +378,11 @@ def _first_publication_fact_from_volume(volume: Dict[str, Any], configured_date_
         'first_known_issue_date': first_date.isoformat(),
         'date_source': date_basis,
         'series_started_at': first_date.isoformat(),
+        'volume_title': volume.get('name') or (upcoming_issue or {}).get('volume', {}).get('name') or '',
+        'cover_link': ((volume.get('image') or {}).get('small_url') or ((upcoming_issue or {}).get('image') or {}).get('small_url') or ''),
+        'site_url': volume.get('site_detail_url') or '',
+        'year': int(volume['start_year']) if str(volume.get('start_year') or '').isdigit() else None,
+        'publisher': (volume.get('publisher') or {}).get('name') or '',
         'is_upcoming_launch': bool(upcoming_issue and str(first.get('id') or '') == str(upcoming_issue.get('id') or '')),
         'metadata_modified_at': int(time()),
         'derived_at': int(time()),
@@ -392,14 +397,20 @@ def _upsert_comic_series_discovery_fact(fact: Dict[str, Any] | None) -> None:
         INSERT INTO comic_series_discovery_facts(
             comicvine_volume_id, first_known_issue_id, first_known_issue_number,
             first_known_issue_date, date_source, series_started_at,
+            volume_title, cover_link, site_url, year, publisher,
             is_upcoming_launch, metadata_modified_at, derived_at, last_error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(comicvine_volume_id) DO UPDATE SET
             first_known_issue_id = excluded.first_known_issue_id,
             first_known_issue_number = excluded.first_known_issue_number,
             first_known_issue_date = excluded.first_known_issue_date,
             date_source = excluded.date_source,
             series_started_at = excluded.series_started_at,
+            volume_title = excluded.volume_title,
+            cover_link = excluded.cover_link,
+            site_url = excluded.site_url,
+            year = excluded.year,
+            publisher = excluded.publisher,
             is_upcoming_launch = excluded.is_upcoming_launch,
             metadata_modified_at = excluded.metadata_modified_at,
             derived_at = excluded.derived_at,
@@ -409,8 +420,9 @@ def _upsert_comic_series_discovery_fact(fact: Dict[str, Any] | None) -> None:
             fact['comicvine_volume_id'], fact['first_known_issue_id'],
             fact['first_known_issue_number'], fact['first_known_issue_date'],
             fact['date_source'], fact['series_started_at'],
-            int(bool(fact['is_upcoming_launch'])), fact['metadata_modified_at'],
-            fact['derived_at'], fact['last_error'],
+            fact['volume_title'], fact['cover_link'], fact['site_url'],
+            fact['year'], fact['publisher'], int(bool(fact['is_upcoming_launch'])),
+            fact['metadata_modified_at'], fact['derived_at'], fact['last_error'],
         )
     )
 

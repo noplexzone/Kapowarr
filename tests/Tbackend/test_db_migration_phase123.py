@@ -320,6 +320,7 @@ class Phase123MigrationTests(unittest.TestCase):
             cols = {row[1]: row for row in con.execute('PRAGMA table_info(comic_series_discovery_facts);')}
             self.assertEqual(cols['comicvine_volume_id'][5], 1)
             self.assertEqual(cols['is_upcoming_launch'][3], 1)
+            self.assertTrue({'volume_title', 'cover_link', 'site_url', 'publisher'} <= set(cols))
             index_columns = {row[1]: tuple(info[2] for info in con.execute(f"PRAGMA index_info({row[1]});")) for row in con.execute('PRAGMA index_list(comic_series_discovery_facts);')}
             self.assertIn(('first_known_issue_date',), index_columns.values())
             self.assertIn(('derived_at',), index_columns.values())

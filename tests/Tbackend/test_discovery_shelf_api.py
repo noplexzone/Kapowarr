@@ -197,6 +197,31 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertFalse(result['total_is_exact'])
         self.assertEqual(browse.call_count, 2)
 
+    def test_recently_started_fact_index_returns_without_provider(self):
+        import sqlite3
+        con = sqlite3.connect(':memory:')
+        con.executescript("""
+            CREATE TABLE volumes(id INTEGER PRIMARY KEY, comicvine_id INTEGER);
+            CREATE TABLE comic_series_discovery_facts(
+                comicvine_volume_id INTEGER PRIMARY KEY, first_known_issue_id INTEGER,
+                first_known_issue_number TEXT, first_known_issue_date TEXT, date_source TEXT,
+                series_started_at TEXT, volume_title TEXT, cover_link TEXT, site_url TEXT,
+                year INTEGER, publisher TEXT, is_upcoming_launch BOOL, metadata_modified_at INTEGER,
+                derived_at INTEGER, last_error TEXT
+            );
+            INSERT INTO comic_series_discovery_facts(
+                comicvine_volume_id, first_known_issue_id, first_known_issue_number,
+                first_known_issue_date, date_source, series_started_at, volume_title,
+                cover_link, site_url, year, publisher, is_upcoming_launch, metadata_modified_at, derived_at
+            ) VALUES (501, 9001, '1', '2026-08-01', 'cover_date', '2026-08-01',
+                'Fact Indexed Series', 'cover.jpg', 'site', 2026, 'DC', 0, 1, 1);
+        """)
+        with patch.object(api_mod, 'get_db', return_value=con):
+            page = api_mod._comic_discovery_facts_page('recently-started', offset=0, limit=10)
+        self.assertTrue(page['fact_index'])
+        self.assertEqual(page['items'][0]['metadata_id'], '501')
+        self.assertEqual(page['items'][0]['volume_title'], 'Fact Indexed Series')
+
     def test_recently_started_uses_derived_new_volumes_service(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()

@@ -50,12 +50,16 @@ function navigateToDiscoverReturn(navigate: ReturnType<typeof useNavigate>, retu
   navigate({ to: '/discover', search: { section } });
 }
 
-export function ExactAddReview({ section, selection, searchFallbackTo = '/add', returnTo }: { section: 'comic' | 'manga'; selection: AddSelection; searchFallbackTo?: '/add' | '/discover/search'; returnTo?: string }) {
+export function ExactAddReview({ section, selection, searchFallbackTo = '/add', returnTo, onClose }: { section: 'comic' | 'manga'; selection: AddSelection; searchFallbackTo?: '/add' | '/discover/search'; returnTo?: string; onClose?: () => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: rootFolders = [] } = useSuspenseQuery(rootFoldersQueryOptions());
   const exact = useQuery(exactVolumeQueryOptions(selection, section));
   const closeReview = () => {
+    if (onClose) {
+      onClose();
+      return;
+    }
     if (returnTo) {
       navigateToDiscoverReturn(navigate, returnTo, section);
       return;

@@ -237,7 +237,14 @@ test('Discover combobox opens exact review and full results without leaving Disc
   await expect(page.getByText('Issue count unavailable')).toBeVisible();
   await page.getByRole('button', { name: 'Add' }).first().click();
   await expect(page).toHaveURL(/\/discover\/add\/comicvine\/501/);
+  await expect.poll(() => page.getByTestId('discover-origin-route').evaluate((node) => (node as HTMLElement).inert)).toBe(true);
+  await expect(page.getByTestId('discover-background-route')).toHaveCount(0);
   await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('button', { name: '✕' }).click();
+  await expect(page).toHaveURL(/\/discover\/search\?section=comic&q=Acceptance/);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect.poll(() => page.getByTestId('discover-origin-route').evaluate((node) => (node as HTMLElement).inert)).toBe(false);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.textContent?.includes('Add'))).toBe(true);
 });
 
 test('Browse Add navigates to exact review', async ({ page }) => {
@@ -246,6 +253,8 @@ test('Browse Add navigates to exact review', async ({ page }) => {
   await page.goto('/discover/browse?section=comic&publisher=Test%20Publisher');
   await page.getByRole('button', { name: 'Add' }).first().click();
   await expect(page).toHaveURL(/\/discover\/add\/comicvine\/501/);
+  await expect.poll(() => page.getByTestId('discover-origin-route').evaluate((node) => (node as HTMLElement).inert)).toBe(true);
+  await expect(page.getByTestId('discover-background-route')).toHaveCount(0);
   await expect(page.getByRole('dialog')).toBeVisible();
 });
 

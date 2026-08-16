@@ -29,13 +29,14 @@ describe('exact Discovery to Add identity', () => {
     expect(source).not.toContain('returnTo as never');
   });
 
-  it('uses router history state as the exact Add overlay background owner', () => {
+  it('uses TanStack masked locations as the route-owned exact Add overlay', () => {
     const source = require('node:fs').readFileSync('src/routes/discovery/-ui/discovery-page.tsx', 'utf8');
-    expect(source).toContain('state: getDiscoverBackgroundState() as never');
-    expect(source).toContain('useLocation');
-    expect(source).toContain('const state = location.state as');
-    expect(source).toContain('state.discoverBackground');
-    expect(source).toContain('data-testid=\"discover-background-route\"');
-    expect(source).toContain('<ExactAddReview');
+    expect(source).toContain('useRouterState({ select: (state) => state.location.maskedLocation })');
+    expect(source).toContain("__tempLocation");
+    expect(source).toContain('data-testid=\"discover-origin-route\"');
+    expect(source).toContain('inertProps(overlayOpen)');
+    expect(source).toContain('exactAddReturnFocus?.focus({ preventScroll: true })');
+    expect(source).not.toContain('DiscoverBackgroundRoute');
+    expect(source).not.toContain('data-testid=\"discover-background-route\"');
   });
 });

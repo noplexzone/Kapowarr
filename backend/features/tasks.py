@@ -26,11 +26,13 @@ from backend.implementations.conversion import mass_convert
 from backend.implementations.file_matching import scan_files
 from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.volumes import Volume, refresh_and_scan
+from backend.implementations.comicvine import ComicVine
 from os.path import basename
 from random import uniform
 from sqlite3 import OperationalError
 
 from backend.internals.db import close_db, commit, get_db
+from backend.internals.settings import Settings
 from backend.internals.db_models import FilesDB
 from backend.internals.server import (TaskAddedEvent, TaskEndedEvent,
                                       TaskStatusEvent, WebSocket)
@@ -1026,20 +1028,50 @@ class ComicDiscoveryFactSyncTask(Task):
     def run(self):
         ts = round(time())
         db = get_db()
-        row = db.execute("SELECT provider_cursor, records_processed FROM comic_discovery_fact_sync_state WHERE sync_id = 1;").fetchonedict() or {}
-        db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference, last_started_at, records_processed, facts_created, facts_updated)
-            VALUES(1, ?, 'partial', 0, 'cover_date', ?, 0, 0, 0)
-            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, last_started_at=excluded.last_started_at, last_error=NULL;""", (self.scope, ts))
-        commit()
+        date_preference = str(Settings().sv.date_type)
+        if date_preference.endswith('store_date'):
+            date_preference = 'store_date'
+        else:
+            date_preference = 'cover_date'
+        row = db.execute("SELECT provider_cursor, records_processed, facts_created, facts_updated FROM comic_discovery_fact_sync_state WHERE sync_id = 1;").fetchonedict() or {}
+        cursor = row.get('provider_cursor') or 'new'
         processed = int(row.get('records_processed') or 0)
-        next_state = 'partial' if row.get('provider_cursor') else 'complete'
-        db.execute("""UPDATE comic_discovery_fact_sync_state
-            SET coverage_state=?, coverage_complete=?, last_completed_at=?, last_successful_cursor=provider_cursor,
-                records_processed=?, next_resume_at=NULL
-            WHERE sync_id=1;""", (next_state, 1 if next_state == 'complete' else 0, round(time()), processed))
+        db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, provider_cursor, coverage_state, coverage_complete, date_preference, last_started_at, records_processed, facts_created, facts_updated)
+            VALUES(1, ?, ?, 'partial', 0, ?, ?, ?, 0, 0)
+            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, provider_cursor=excluded.provider_cursor, date_preference=excluded.date_preference, last_started_at=excluded.last_started_at, last_error=NULL;""", (self.scope, cursor, date_preference, ts, processed))
         commit()
-        self.message = 'Comic discovery fact sync complete' if next_state == 'complete' else 'Comic discovery fact sync paused with partial coverage'
-        self.details = {'scope': self.scope, 'coverage_state': next_state, 'records_processed': processed}
+        cv = ComicVine()
+        created_before = db.execute("SELECT COUNT(*) FROM comic_series_discovery_facts WHERE date_preference = ?;", (date_preference,)).fetchone()[0]
+        try:
+            if cursor in ('new', '', None):
+                _emit_task_event(TaskStatusEvent('Indexing recently started ComicVine discovery facts'))
+                recent = cv.get_new_volumes(limit=500)
+                from asyncio import run as asyncio_run
+                asyncio_run(recent)
+                processed += 1
+                cursor = 'upcoming'
+                db.execute("UPDATE comic_discovery_fact_sync_state SET provider_cursor=?, records_processed=?, last_successful_cursor=? WHERE sync_id=1;", (cursor, processed, cursor))
+                commit()
+            if cursor == 'upcoming' and not self.stop:
+                _emit_task_event(TaskStatusEvent('Indexing upcoming ComicVine discovery facts'))
+                from asyncio import run as asyncio_run
+                asyncio_run(cv.get_upcoming_releases(limit=500))
+                processed += 1
+                cursor = None
+            created_after = db.execute("SELECT COUNT(*) FROM comic_series_discovery_facts WHERE date_preference = ?;", (date_preference,)).fetchone()[0]
+            complete = cursor is None and not self.stop
+            state = 'complete' if complete else 'partial'
+            db.execute("""UPDATE comic_discovery_fact_sync_state
+                SET provider_cursor=?, coverage_state=?, coverage_complete=?, last_completed_at=?, last_successful_cursor=?,
+                    records_processed=?, facts_created=max(COALESCE(facts_created, 0), ?), facts_updated=max(COALESCE(facts_updated, 0), ?), next_resume_at=NULL, date_preference=?
+                WHERE sync_id=1;""", (cursor, state, 1 if complete else 0, round(time()), cursor, processed, max(0, created_after - created_before), created_after, date_preference))
+            commit()
+        except Exception as exc:
+            db.execute("UPDATE comic_discovery_fact_sync_state SET coverage_state='failed', coverage_complete=0, last_error=?, next_resume_at=? WHERE sync_id=1;", (str(exc), round(time()) + 300))
+            commit()
+            raise
+        self.message = 'Comic discovery fact sync complete' if complete else 'Comic discovery fact sync paused with partial coverage'
+        self.details = {'scope': self.scope, 'coverage_state': state, 'records_processed': processed, 'date_preference': date_preference}
         _emit_task_event(TaskStatusEvent(self.message))
         return None
 

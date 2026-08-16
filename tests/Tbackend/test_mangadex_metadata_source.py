@@ -380,7 +380,7 @@ def test_api_manga_search_defaults_to_comicvine(monkeypatch):
     assert payload['result'][0]['comicvine_id'] == 12345
 
 
-def test_api_manga_search_all_prefers_comicvine_when_available(monkeypatch):
+def test_api_manga_search_all_includes_mangadex_when_comicvine_available(monkeypatch):
     from flask import Flask
 
     api_mod = _install_search_route_fakes(monkeypatch)
@@ -399,8 +399,9 @@ def test_api_manga_search_all_prefers_comicvine_when_available(monkeypatch):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload['error'] is None
-    assert [r['metadata_source'] for r in payload['result']] == ['comicvine']
+    assert [r['metadata_source'] for r in payload['result']] == ['comicvine', 'mangadex']
     assert payload['result'][0]['comicvine_id'] == 12345
+    assert payload['result'][1]['metadata_id'] == 'f3f59f12-351a-4de7-bd51-696d0764d64e'
 
 
 def test_api_manga_search_all_falls_back_to_mangadex_when_comicvine_missing(monkeypatch):

@@ -1281,10 +1281,16 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
     retained_overflow: List[dict] = []
     seen: set[tuple[str, str]] = set()
     safety_exhausted = False
+    provider_has_more = False
+    previous_cursors = []
     if cursor:
         payload = _decode_discovery_cursor(cursor, cursor_identity, True)
         current_offset = int(payload.get('raw_offset') or 0)
         retained_overflow = [item for item in payload.get('overflow', []) if isinstance(item, dict)][:limit]
+        provider_has_more = bool(payload.get('provider_has_more'))
+        previous_cursors = [value for value in payload.get('previous_cursors', []) if isinstance(value, str)][-20:]
+        if cursor and cursor not in previous_cursors:
+            previous_cursors.append(cursor)
         for source, metadata_id in payload.get('seen', []):
             seen.add((str(source), str(metadata_id)))
 
@@ -1304,7 +1310,6 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
 
     overflow = append_visible(retained_overflow)
     last_page: Dict[str, Any] = {'items': [], 'total': None, 'offset': offset, 'page_size': limit, 'has_more': False}
-    provider_has_more = False
     pages_used = 0
     while len(filled) < limit and pages_used < max(1, safety_pages):
         page = fetch_page(current_offset, limit)
@@ -1329,6 +1334,8 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
             'seen': list(seen)[-200:],
             'safety_pages': safety_pages,
             'safety_exhausted': safety_exhausted,
+            'provider_has_more': provider_has_more,
+            'previous_cursors': previous_cursors[-20:],
         }
     return {
         **last_page,
@@ -1368,8 +1375,14 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int,
         fact_columns = {row[1] for row in db.execute('PRAGMA table_info(comic_series_discovery_facts);').fetchall()}
         if 'derivation_status' in fact_columns:
             where = f"({where}) AND derivation_status = 'valid'"
+        try:
+            configured_date = str(Settings().sv.date_type)
+        except (OperationalError, RuntimeError):
+            configured_date = 'cover_date'
+        date_preference = 'store_date' if configured_date.endswith('store_date') else 'cover_date'
         if 'date_preference' in fact_columns:
-            where = f"({where}) AND date_preference = 'cover_date'"
+            where = f"({where}) AND date_preference = ?"
+            params = (*params, date_preference)
         scan_limit = limit if not exclude_added else max(limit * 5, limit + 20)
         rows = db.execute(f"""
             SELECT comicvine_volume_id, first_known_issue_id, first_known_issue_number,
@@ -1468,7 +1481,16 @@ def api_discovery():
 
     if discovery_type in ('upcoming-launches', 'recently-started'):
         fact_limit = limit + 1 if paginated else min(limit, 20)
-        fact_page = _comic_discovery_facts_page(discovery_type, offset=offset if paginated else 0, limit=fact_limit, exclude_added=exclude_added)
+        if exclude_added and paginated:
+            fact_page = _refill_excluding_added(
+                lambda page_offset, page_limit: _comic_discovery_facts_page(discovery_type, offset=page_offset, limit=page_limit, exclude_added=False),
+                offset=offset,
+                limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('comicvine', section, 'fact-shelf', type=discovery_type),
+            )
+        else:
+            fact_page = _comic_discovery_facts_page(discovery_type, offset=offset if paginated else 0, limit=fact_limit, exclude_added=exclude_added)
         if paginated:
             fact_page['has_more'] = len(fact_page['items']) > limit
             fact_page['items'] = fact_page['items'][:limit]
@@ -1634,9 +1656,20 @@ def api_discovery_browse():
             sort=sort,
         )
         if exclude_added:
-            page['items'] = _exclude_added_provider_results(page.get('items', []))
-            page['total'] = None
-            page['total_is_exact'] = False
+            page = _refill_excluding_added(
+                lambda page_offset, page_limit: browse_enriched_volumes(
+                    'character' if character else 'genre',
+                    character or genre,
+                    query=query,
+                    offset=page_offset,
+                    limit=page_limit,
+                    sort=sort,
+                ),
+                offset=offset,
+                limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('comicvine', section, 'enriched-browse', q=query, sort=sort, character=character, genre=genre),
+            )
         return return_api(page)
     cv = ComicVine()
     def fetch_comic_page(page_offset: int, page_limit: int) -> Dict[str, Any]:
@@ -1664,9 +1697,10 @@ def api_discovery_facts_refresh():
     task_id = TaskHandler().add(ComicDiscoveryFactSyncTask())
     try:
         db = get_db()
+        date_preference = 'store_date' if str(Settings().sv.date_type).endswith('store_date') else 'cover_date'
         db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference, last_started_at)
-            VALUES(1, 'comic_series_discovery', 'partial', 0, 'cover_date', NULL)
-            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, last_error=NULL;""")
+            VALUES(1, 'comic_series_discovery', 'partial', 0, ?, NULL)
+            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, date_preference=excluded.date_preference, last_error=NULL;""", (date_preference,))
         commit()
     except OperationalError:
         pass
@@ -1811,7 +1845,7 @@ def api_volumes_search():
                 r['already_added'] = already_added[0] if already_added else None
             return results
 
-        if paginated and metadata_source in ('comicvine', 'all'):
+        if paginated and metadata_source == 'comicvine':
             identity = _cursor_identity('comicvine', section, 'volume-search', query=query, metadata_source=metadata_source)
             if exclude_added:
                 return return_api(_refill_excluding_added(search_comicvine_page, offset=offset, limit=limit, cursor=request.values.get('cursor', ''), cursor_identity=identity))

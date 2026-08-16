@@ -1577,6 +1577,28 @@ def _metron_table_compatible(cursor, table_name: str) -> bool:
     return True
 
 
+
+def _build_metron_source_union(cursor, table_name: str) -> str:
+    variants = [
+        f"{table_name}_migration_58_live",
+        f"{table_name}_migration_58_current_live",
+        f"{table_name}_migration_58_current_live_source",
+        f"{table_name}_migration_58_current_live_source_current",
+        f"{table_name}_migration_58_backup",
+        f"{table_name}_migration_58_final",
+    ]
+    if _table_exists(cursor, table_name):
+        variants.insert(0, table_name)
+    columns = list(_METRON_TABLE_COLUMNS[table_name])
+    selects = []
+    for name in variants:
+        if not _table_exists(cursor, name):
+            continue
+        source_columns = set(_table_columns(cursor, name))
+        exprs = [column if column in source_columns else f"NULL AS {column}" for column in columns]
+        selects.append(f'SELECT {", ".join(exprs)} FROM "{name}"')
+    return ' UNION ALL '.join(selects) if selects else 'SELECT ' + ', '.join(f'NULL AS {column}' for column in columns) + ' WHERE 0'
+
 def _normalize_metron_table(cursor, table_name: str) -> None:
     """Normalize Metron tables with source-preserving interrupted recovery.
 
@@ -1596,8 +1618,9 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
     current_live_source = f"{table_name}_migration_58_current_live"
     current_live_exists = _table_exists(cursor, current_live_source)
     renamed_live_source = f"{table_name}_migration_58_current_live_source"
+    renamed_live_exists = _table_exists(cursor, renamed_live_source)
 
-    if final_exists and not backup_exists and not staging_exists and not live_source_exists and not current_live_exists and _metron_table_compatible(cursor, table_name):
+    if final_exists and not backup_exists and not staging_exists and not live_source_exists and not current_live_exists and not renamed_live_exists and _metron_table_compatible(cursor, table_name):
         return
 
     source_names: List[str] = []
@@ -1605,11 +1628,19 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
         source_names.append(live_source)
     if current_live_exists:
         source_names.append(current_live_source)
+    if renamed_live_exists:
+        source_names.append(renamed_live_source)
     if final_exists:
-        if live_source_exists or current_live_exists:
-            cursor.execute(f'DROP TABLE IF EXISTS "{renamed_live_source}";')
-            cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{renamed_live_source}";')
-            source_names.append(renamed_live_source)
+        if live_source_exists or current_live_exists or renamed_live_exists:
+            if renamed_live_exists:
+                extra_live_source = f"{table_name}_migration_58_current_live_source_current"
+                cursor.execute(f'DROP TABLE IF EXISTS "{extra_live_source}";')
+                cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{extra_live_source}";')
+                source_names.append(extra_live_source)
+            else:
+                cursor.execute(f'DROP TABLE IF EXISTS "{renamed_live_source}";')
+                cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{renamed_live_source}";')
+                source_names.append(renamed_live_source)
         else:
             cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{live_source}";')
             source_names.append(live_source)
@@ -1740,14 +1771,33 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
             )
             WHERE rn = 1;""")
     elif table_name == 'metron_enrichment_task_reservations':
+        candidate_map_sql = """
+            SELECT old_id, new_id FROM (
+                SELECT source.id AS old_id, dest.id AS new_id,
+                    ROW_NUMBER() OVER (PARTITION BY source.id ORDER BY dest.id) AS rn
+                FROM (
+                    SELECT id, volume_id, provider, resource_type, candidate_external_id, review_group_id
+                    FROM (""" + _build_metron_source_union(cursor, 'provider_match_candidates') + """)
+                    WHERE id IS NOT NULL
+                ) AS source
+                JOIN provider_match_candidates AS dest
+                  ON dest.volume_id = source.volume_id
+                 AND dest.provider = source.provider
+                 AND dest.resource_type = source.resource_type
+                 AND dest.candidate_external_id = source.candidate_external_id
+                 AND dest.review_group_id = source.review_group_id
+            ) WHERE rn = 1
+        """ if _table_exists(cursor, 'provider_match_candidates') else "SELECT NULL AS old_id, NULL AS new_id WHERE 0"
+        remapped_columns = "source.id, source.volume_id, COALESCE(candidate_map.new_id, source.candidate_id) AS candidate_id, source.task_queue_id, source.status, source.safe_error, source.created_at, source.updated_at"
         cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
             SELECT {column_sql}
             FROM (
-                SELECT *, ROW_NUMBER() OVER (
-                    PARTITION BY CASE WHEN status IN ('reserved', 'queued', 'running') THEN 'active:' || volume_id || ':' || COALESCE(candidate_id, -1) || ':' || COALESCE(task_queue_id, -1) ELSE 'history:' || volume_id || ':' || COALESCE(candidate_id, -1) || ':' || status || ':' || COALESCE(created_at, 0) || ':' || COALESCE(updated_at, 0) || ':' || COALESCE(safe_error, '') END
-                    ORDER BY COALESCE(updated_at, 0) DESC, COALESCE(created_at, 0) DESC, COALESCE(id, 0) DESC
+                SELECT {remapped_columns}, ROW_NUMBER() OVER (
+                    PARTITION BY CASE WHEN source.status IN ('reserved', 'queued', 'running') THEN 'active:' || source.volume_id || ':' || COALESCE(candidate_map.new_id, source.candidate_id, -1) || ':' || COALESCE(source.task_queue_id, -1) ELSE 'history:' || source.volume_id || ':' || COALESCE(candidate_map.new_id, source.candidate_id, -1) || ':' || source.status || ':' || COALESCE(source.created_at, 0) || ':' || COALESCE(source.updated_at, 0) || ':' || COALESCE(source.safe_error, '') END
+                    ORDER BY COALESCE(source.updated_at, 0) DESC, COALESCE(source.created_at, 0) DESC, COALESCE(source.id, 0) DESC
                 ) AS rn
-                FROM ({union_sql})
+                FROM ({union_sql}) AS source
+                LEFT JOIN ({candidate_map_sql}) AS candidate_map ON candidate_map.old_id = source.candidate_id
             )
             WHERE status NOT IN ('reserved', 'queued', 'running') OR rn = 1;""")
     else:
@@ -1780,6 +1830,7 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
     cursor.execute(f'DROP TABLE IF EXISTS "{live_source}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{current_live_source}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{renamed_live_source}";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{table_name}_migration_58_current_live_source_current";')
     cursor.execute(f'DROP TABLE IF EXISTS "{final_staging}";')
     cursor.execute(f'DROP TABLE IF EXISTS "{backup_name}";')
 
@@ -1996,6 +2047,19 @@ def _migrate_add_comic_discovery_facts():
         INSERT OR IGNORE INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference)
             VALUES (1, 'comic_series_discovery', 'not_started', 0, 'cover_date');
     """)
+    existing_fact_columns = [row[1] for row in cursor.execute('PRAGMA table_info(comic_series_discovery_facts);')]
+    fact_additions = {
+        'provider_modified_at': 'TEXT',
+        'metadata_modified_at': 'INTEGER',
+        'fetched_at': 'INTEGER',
+        'derived_at': 'INTEGER NOT NULL DEFAULT 0',
+        'derivation_status': "TEXT NOT NULL DEFAULT 'valid'",
+        'date_preference': "TEXT NOT NULL DEFAULT 'cover_date'",
+        'last_error': 'TEXT',
+    }
+    for column, ddl in fact_additions.items():
+        if column not in existing_fact_columns:
+            cursor.execute(f'ALTER TABLE comic_series_discovery_facts ADD COLUMN {column} {ddl};')
     existing_sync_columns = [row[1] for row in cursor.execute('PRAGMA table_info(comic_discovery_fact_sync_state);')]
     sync_additions = {
         'last_successful_cursor': 'TEXT',

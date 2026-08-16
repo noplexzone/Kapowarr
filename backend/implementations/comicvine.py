@@ -6,6 +6,7 @@ Search for volumes/issues and fetch metadata for them on ComicVine
 
 from asyncio import gather, run, sleep
 from datetime import date as _date, timedelta
+from time import time
 from json import JSONDecodeError
 from re import IGNORECASE, compile
 from typing import Any, AsyncGenerator, Dict, FrozenSet, Iterable, List, Sequence, Union
@@ -359,6 +360,59 @@ def _is_launch_issue_for_volume(issue: Dict[str, Any], volume: Dict[str, Any], c
     if not first:
         return False
     return str(first.get('id') or '') == str(issue.get('id') or '')
+
+def _first_publication_fact_from_volume(volume: Dict[str, Any], configured_date_type: Any = None, *, upcoming_issue: Dict[str, Any] | None = None) -> Dict[str, Any] | None:
+    first = _first_known_issue(volume, configured_date_type)
+    first_date = _issue_date(first, configured_date_type) if first else None
+    try:
+        comicvine_volume_id = int(volume.get('id') or (upcoming_issue or {}).get('volume', {}).get('id'))
+    except (TypeError, ValueError):
+        return None
+    if not first or not first_date:
+        return None
+    date_basis = 'store_date' if str(configured_date_type or DateType.COVER_DATE).endswith('store_date') else 'cover_date'
+    return {
+        'comicvine_volume_id': comicvine_volume_id,
+        'first_known_issue_id': int(first['id']) if first.get('id') else None,
+        'first_known_issue_number': str(first.get('issue_number') or ''),
+        'first_known_issue_date': first_date.isoformat(),
+        'date_source': date_basis,
+        'series_started_at': first_date.isoformat(),
+        'is_upcoming_launch': bool(upcoming_issue and str(first.get('id') or '') == str(upcoming_issue.get('id') or '')),
+        'metadata_modified_at': int(time()),
+        'derived_at': int(time()),
+        'last_error': None,
+    }
+
+def _upsert_comic_series_discovery_fact(fact: Dict[str, Any] | None) -> None:
+    if not fact:
+        return
+    get_db().execute(
+        """
+        INSERT INTO comic_series_discovery_facts(
+            comicvine_volume_id, first_known_issue_id, first_known_issue_number,
+            first_known_issue_date, date_source, series_started_at,
+            is_upcoming_launch, metadata_modified_at, derived_at, last_error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(comicvine_volume_id) DO UPDATE SET
+            first_known_issue_id = excluded.first_known_issue_id,
+            first_known_issue_number = excluded.first_known_issue_number,
+            first_known_issue_date = excluded.first_known_issue_date,
+            date_source = excluded.date_source,
+            series_started_at = excluded.series_started_at,
+            is_upcoming_launch = excluded.is_upcoming_launch,
+            metadata_modified_at = excluded.metadata_modified_at,
+            derived_at = excluded.derived_at,
+            last_error = excluded.last_error;
+        """,
+        (
+            fact['comicvine_volume_id'], fact['first_known_issue_id'],
+            fact['first_known_issue_number'], fact['first_known_issue_date'],
+            fact['date_source'], fact['series_started_at'],
+            int(bool(fact['is_upcoming_launch'])), fact['metadata_modified_at'],
+            fact['derived_at'], fact['last_error'],
+        )
+    )
 
 class ComicVine:
     volume_field_list = ','.join((
@@ -1048,6 +1102,7 @@ class ComicVine:
             details = volume_details.get(vol_cv_id or 0)
             if not details or not _is_launch_issue_for_volume(item, details, Settings().sv.date_type):
                 continue
+            _upsert_comic_series_discovery_fact(_first_publication_fact_from_volume(details, Settings().sv.date_type, upcoming_issue=item))
             upcoming.append({
                 'issue_id':     int(item['id']),
                 'issue_number': item.get('issue_number') or '',
@@ -1111,6 +1166,7 @@ class ComicVine:
         for output, source in zip(formatted, pre_filtered):
             first = _first_known_issue(source, Settings().sv.date_type)
             output['series_started_at'] = (_issue_date(first, Settings().sv.date_type).isoformat() if first and _issue_date(first, Settings().sv.date_type) else None)
+            _upsert_comic_series_discovery_fact(_first_publication_fact_from_volume(source, Settings().sv.date_type))
         filtered = [v for v in formatted if not v['translated']][:limit]
         self._mark_already_added(filtered)
         return filtered

@@ -124,5 +124,18 @@ class ComicVineShelfSemanticsTests(unittest.TestCase):
         self.assertTrue(is_launch(volume['issues'][0], volume, 'store_date'))
         self.assertFalse(is_launch(volume['issues'][1], volume, 'store_date'))
 
+    def test_first_publication_fact_uses_persistent_volume_identity_and_date_basis(self):
+        from backend.implementations.comicvine import _first_publication_fact_from_volume
+        volume = {'id': 4050, 'issues': [
+            {'id': 2, 'issue_number': '2', 'cover_date': '2026-10-01', 'store_date': '2026-08-01'},
+            {'id': 1, 'issue_number': '1', 'cover_date': '2026-09-01', 'store_date': '2026-09-15'},
+        ]}
+        fact = _first_publication_fact_from_volume(volume, 'store_date', upcoming_issue=volume['issues'][0])
+        self.assertEqual(fact['comicvine_volume_id'], 4050)
+        self.assertEqual(fact['first_known_issue_id'], 2)
+        self.assertEqual(fact['first_known_issue_date'], '2026-08-01')
+        self.assertEqual(fact['date_source'], 'store_date')
+        self.assertTrue(fact['is_upcoming_launch'])
+
 if __name__ == '__main__':
     unittest.main()

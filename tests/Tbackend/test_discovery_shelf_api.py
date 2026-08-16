@@ -432,5 +432,83 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self._assert_envelope(response)
 
 
+    def test_completed_recently_started_shelf_still_does_not_fallback_to_provider(self):
+        import sqlite3
+        con = sqlite3.connect(':memory:')
+        con.executescript("""
+            CREATE TABLE volumes(id INTEGER PRIMARY KEY, comicvine_id INTEGER, metadata_source TEXT DEFAULT 'comicvine');
+            CREATE TABLE comic_series_discovery_facts(
+                comicvine_volume_id INTEGER PRIMARY KEY, first_known_issue_id INTEGER,
+                first_known_issue_number TEXT, first_known_issue_date TEXT, date_source TEXT,
+                series_started_at TEXT, volume_title TEXT, cover_link TEXT, site_url TEXT,
+                year INTEGER, publisher TEXT, is_upcoming_launch BOOL, provider_modified_at TEXT,
+                metadata_modified_at INTEGER, fetched_at INTEGER, derived_at INTEGER,
+                derivation_status TEXT, date_preference TEXT, last_error TEXT
+            );
+            CREATE TABLE comic_discovery_fact_sync_state(
+                sync_id INTEGER PRIMARY KEY, scope TEXT, provider_cursor TEXT, last_started_at INTEGER,
+                last_completed_at INTEGER, coverage_state TEXT, coverage_complete BOOL,
+                date_preference TEXT, last_error TEXT, next_resume_at INTEGER
+            );
+            INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference)
+            VALUES(1, 'recently_started', 'complete', 1, 'cover_date');
+        """)
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'get_db', return_value=con), patch.object(api_mod, 'ComicVine', return_value=comicvine):
+            response = self._client().get('/api/discovery', query_string={
+                'section': 'comic',
+                'type': 'recently-started',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual(result, [])
+        comicvine.get_new_volumes.assert_not_awaited()
+
+    def test_mangadex_full_search_uses_paginated_provider_path(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        page = {
+            'items': [self._item('mangadex', 'manga-1')],
+            'total': 9,
+            'offset': 30,
+            'page_size': 30,
+            'next_offset': 60,
+            'has_more': True,
+            'total_is_exact': True,
+        }
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'search_mangadex_volumes_page', return_value=page) as search_page:
+            response = self._client().get('/api/volumes/search', query_string={
+                'query': 'Berserk',
+                'section': 'manga',
+                'metadata_source': 'mangadex',
+                'paginated': 'true',
+                'offset': '30',
+                'limit': '30',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual(result['items'][0]['metadata_source'], 'mangadex')
+        search_page.assert_called_once_with('Berserk', offset=30, limit=30)
+
+    def test_hidden_library_search_cursor_exposes_previous_cursor_history(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        pages = [
+            {'items': [self._item('mangadex', '1'), self._item('mangadex', '2'), self._item('mangadex', '3')], 'total': 6, 'offset': 0, 'page_size': 3, 'has_more': True},
+            {'items': [self._item('mangadex', '4'), self._item('mangadex', '5'), self._item('mangadex', '6')], 'total': 6, 'offset': 3, 'page_size': 3, 'has_more': False},
+        ]
+        def exclude(items):
+            return [item for item in items if item['metadata_id'] != '1']
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'search_mangadex_volumes_page', side_effect=pages), patch.object(api_mod, '_exclude_added_provider_results', side_effect=exclude):
+            first = self._client().get('/api/volumes/search', query_string={
+                'query': 'Berserk', 'section': 'manga', 'metadata_source': 'mangadex', 'paginated': 'true', 'limit': '2', 'exclude_added': 'true',
+            })
+            first_result = self._assert_envelope(first)
+            self.assertIsNone(first_result.get('previous_cursor'))
+            second = self._client().get('/api/volumes/search', query_string={
+                'query': 'Berserk', 'section': 'manga', 'metadata_source': 'mangadex', 'paginated': 'true', 'limit': '2', 'exclude_added': 'true', 'cursor': first_result['next_cursor'],
+            })
+        second_result = self._assert_envelope(second)
+        self.assertIsNone(second_result.get('previous_cursor'))
+        self.assertIn(first_result['next_cursor'], second_result.get('cursor_history') or [])
+
+
 if __name__ == '__main__':
     unittest.main()

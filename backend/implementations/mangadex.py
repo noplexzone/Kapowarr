@@ -93,14 +93,23 @@ class MangaDexClient:
 
     def search_manga(self, title: str, limit: int = 10) -> List[dict]:
         """Search MangaDex for manga title candidates."""
+        payload = self.search_manga_page(title, offset=0, limit=limit)
+        return payload.get("data") or []
+
+    def search_manga_page(self, title: str, *, offset: int = 0, limit: int = 30) -> dict:
+        """Search MangaDex for one raw title-search page."""
         resp = self._ssn.get(
             f"{self._base_url}/manga",
-            params=[("title", title), ("limit", limit), ("includes[]", "cover_art")],
+            params=[
+                ("title", title),
+                ("offset", str(offset)),
+                ("limit", str(limit)),
+                ("includes[]", "cover_art"),
+            ],
             timeout=Constants.REQUEST_TIMEOUT,
         )
         resp.raise_for_status()
-        payload = resp.json()
-        return payload.get("data") or []
+        return resp.json()
 
     def get_manga(self, mangadex_id: str) -> dict:
         """Fetch one MangaDex manga by UUID."""
@@ -476,6 +485,46 @@ def search_mangadex_volumes(title: str, limit: int = 10) -> List[VolumeMetadata]
     except (KeyError, RequestException, ValueError) as e:
         LOGGER.warning("MangaDex volume search failed for %s: %s", title, e)
         return []
+
+
+def search_mangadex_volumes_page(title: str, *, offset: int = 0, limit: int = 30) -> dict:
+    """Search MangaDex titles with provider offset pagination.
+
+    Keep list pages lightweight. Exact Add hydrates the selected MangaDex record,
+    so the complete-results path should not perform aggregate/cover N+1 calls.
+    """
+    if not title:
+        return {
+            'items': [], 'total': 0, 'offset': offset, 'page_size': limit,
+            'next_offset': None, 'previous_offset': offset - limit if offset > 0 else None,
+            'has_more': False, 'total_is_exact': True, 'source_note': 'Manga title search uses MangaDex.',
+        }
+    client = MangaDexClient()
+    try:
+        payload = client.search_manga_page(title, offset=offset, limit=limit + 1)
+        raw_items = payload.get('data') or []
+        page_raw_items = raw_items[:limit]
+        items = [format_mangadex_catalog_result(manga) for manga in page_raw_items]
+        total = int(payload.get('total') or offset + len(items))
+        has_more = len(raw_items) > limit or offset + len(items) < total
+        return {
+            'items': items,
+            'total': total,
+            'offset': offset,
+            'page_size': limit,
+            'next_offset': offset + limit if has_more else None,
+            'previous_offset': max(0, offset - limit) if offset > 0 else None,
+            'has_more': has_more,
+            'total_is_exact': True,
+            'source_note': 'Manga title search uses MangaDex.',
+        }
+    except (KeyError, RequestException, ValueError) as e:
+        LOGGER.warning("MangaDex paginated volume search failed for %s: %s", title, e)
+        return {
+            'items': [], 'total': None, 'offset': offset, 'page_size': limit,
+            'next_offset': None, 'previous_offset': max(0, offset - limit) if offset > 0 else None,
+            'has_more': False, 'total_is_exact': False, 'source_note': 'MangaDex title search failed.',
+        }
 
 
 _MANGADEX_DEMOGRAPHICS = {'shounen', 'shoujo', 'josei', 'seinen', 'none'}

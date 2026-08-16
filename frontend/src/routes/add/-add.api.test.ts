@@ -47,3 +47,14 @@ it('requests paginated Discover search results without using the legacy unlimite
   expect(params.get('offset')).toBe('30');
   expect(params.get('limit')).toBe('30');
 });
+
+
+it('requests MangaDex for paginated manga complete search and forwards cursors', async () => {
+  vi.mocked(apiClient.get).mockResolvedValue({} as Response);
+  vi.mocked(readJson).mockResolvedValue({ items: [], total: null, offset: 0, page_size: 30, next_offset: null, previous_cursor: 'prev', cursor_history: ['prev'], has_more: false });
+  await searchVolumesPageQueryOptions('Berserk', 'manga', 'mangadex', 'cursor-token', 30, true).queryFn!({} as never);
+  const params = vi.mocked(apiClient.get).mock.calls[0]?.[1]?.searchParams as URLSearchParams;
+  expect(params.get('metadata_source')).toBe('mangadex');
+  expect(params.get('cursor')).toBe('cursor-token');
+  expect(params.get('exclude_added')).toBe('true');
+});

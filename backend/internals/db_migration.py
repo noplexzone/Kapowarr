@@ -1491,6 +1491,9 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
         return
     old_table_name = f"{table_name}_migration_58_backup"
     if _table_exists(cursor, old_table_name):
+        dest_count = cursor.execute(f'SELECT COUNT(*) FROM "{table_name}";').fetchone()[0]
+        if dest_count != source_count:
+            LOGGER.warning('Normalized %s during migration: source_rows=%s destination_rows=%s merged_or_discarded=%s', table_name, source_count, dest_count, source_count - dest_count)
         cursor.execute(f'DROP TABLE "{old_table_name}";')
     if _table_exists(cursor, table_name):
         cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{old_table_name}";')
@@ -1498,6 +1501,7 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
     if _table_exists(cursor, old_table_name):
         source_columns = set(_table_columns(cursor, old_table_name))
         copy_columns = [c for c in _METRON_TABLE_COLUMNS[table_name] if c in source_columns]
+        source_count = cursor.execute(f'SELECT COUNT(*) FROM "{old_table_name}";').fetchone()[0]
         if copy_columns:
             column_sql = ', '.join(copy_columns)
             if table_name == 'volume_provider_links' and {'id', 'volume_id', 'provider', 'resource_type', 'external_id', 'last_successful_enrichment', 'linked_at'} <= source_columns:
@@ -1534,6 +1538,7 @@ def _ensure_metron_base_schema(cursor) -> None:
     for table_name in _METRON_TABLE_DEFINITIONS:
         _normalize_metron_table(cursor, table_name)
     if _table_exists(cursor, 'volumes'):
+        duplicate_count = cursor.execute("""SELECT COUNT(*) FROM volume_provider_links WHERE external_id != ''""").fetchone()[0]
         cursor.execute("""DELETE FROM volume_provider_links
             WHERE id NOT IN (
                 SELECT id FROM (
@@ -1547,6 +1552,9 @@ def _ensure_metron_base_schema(cursor) -> None:
                     WHERE external_id != ''
                 ) WHERE rn = 1
             ) AND external_id != '';""")
+        remaining_count = cursor.execute("""SELECT COUNT(*) FROM volume_provider_links WHERE external_id != ''""").fetchone()[0]
+        if remaining_count != duplicate_count:
+            LOGGER.warning('Merged duplicate Metron provider links during migration: before=%s after=%s merged=%s', duplicate_count, remaining_count, duplicate_count - remaining_count)
     cursor.executescript("""
         CREATE UNIQUE INDEX IF NOT EXISTS volume_provider_links_provider_external_unique_idx
             ON volume_provider_links(provider, resource_type, external_id)
@@ -1651,5 +1659,27 @@ def _migrate_add_file_validity_state():
     if 'missing_since' not in existing:
         cursor.execute('ALTER TABLE files ADD COLUMN missing_since INTEGER;')
     cursor.execute('CREATE INDEX IF NOT EXISTS files_exists_on_disk_idx ON files(exists_on_disk);')
+    return
+
+@DatabaseMigrationHandler.register_handler(61)
+def _migrate_add_metron_task_reservations():
+    cursor = get_db()
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS metron_enrichment_task_reservations(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            candidate_id INTEGER,
+            task_queue_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'reserved',
+            safe_error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            FOREIGN KEY (candidate_id) REFERENCES provider_match_candidates(id) ON DELETE SET NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS metron_enrichment_task_reservations_active_idx
+            ON metron_enrichment_task_reservations(volume_id)
+            WHERE status IN ('reserved', 'queued', 'running');
+    """)
     return
 

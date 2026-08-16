@@ -5,6 +5,7 @@ Search for volumes/issues and fetch metadata for them on ComicVine
 """
 
 from asyncio import gather, run, sleep
+from datetime import date as _date, timedelta
 from json import JSONDecodeError
 from re import IGNORECASE, compile
 from typing import Any, AsyncGenerator, Dict, FrozenSet, Iterable, List, Sequence, Union
@@ -314,6 +315,43 @@ def _clean_description(description: str, short: bool = False) -> str:
     result = str(soup)
     return result
 
+
+RECENT_SERIES_START_WINDOW_DAYS = 365
+
+def _parse_cv_date(value: Any):
+    if not value:
+        return None
+    try:
+        return _date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+def _issue_date(issue: Dict[str, Any]):
+    return _parse_cv_date(issue.get('cover_date') or issue.get('store_date'))
+
+def _issue_number_value(issue: Dict[str, Any]) -> float:
+    value = first_of_range(force_range(extract_issue_number(str(issue.get('issue_number') or ''))))
+    return float(value) if value is not None else 0.0
+
+def _first_known_issue(volume: Dict[str, Any]) -> Union[Dict[str, Any], None]:
+    dated = [issue for issue in (volume.get('issues') or []) if _issue_date(issue)]
+    if not dated:
+        return None
+    return sorted(dated, key=lambda issue: (_issue_date(issue), _issue_number_value(issue), str(issue.get('id') or '')))[0]
+
+def _is_recently_started_volume(volume: Dict[str, Any], today: Union[_date, None] = None) -> bool:
+    today = today or _date.today()
+    first = _first_known_issue(volume)
+    if not first:
+        return False
+    first_date = _issue_date(first)
+    return bool(first_date and first_date <= today and today - first_date <= timedelta(days=RECENT_SERIES_START_WINDOW_DAYS))
+
+def _is_launch_issue_for_volume(issue: Dict[str, Any], volume: Dict[str, Any]) -> bool:
+    first = _first_known_issue(volume)
+    if not first:
+        return False
+    return str(first.get('id') or '') == str(issue.get('id') or '') and _issue_number_value(issue) == 1.0
 
 class ComicVine:
     volume_field_list = ','.join((
@@ -956,12 +994,13 @@ class ComicVine:
                 if (r.get('volume') or {}).get('id')
             })
             non_english_vol_ids: set = set()
+            volume_details: Dict[int, Dict[str, Any]] = {}
             if unique_vol_ids:
                 vol_tasks = [
                     self.__call_api(
                         session, '/volumes',
                         {
-                            'field_list': 'id,publisher',
+                            'field_list': 'id,publisher,issues',
                             'filter': f'id:{"|".join(unique_vol_ids[i:i + 100])}',
                             'limit': 100,
                         },
@@ -973,8 +1012,10 @@ class ComicVine:
                 for vol_page in vol_pages:
                     for v in (vol_page.get('results') or []):
                         pub = ((v.get('publisher') or {}).get('name') or '').lower()
+                        vid = int(v['id'])
+                        volume_details[vid] = v
                         if _is_comic_discovery_excluded_publisher(pub):
-                            non_english_vol_ids.add(int(v['id']))
+                            non_english_vol_ids.add(vid)
 
         vol_ids_int = tuple(
             int(r['volume']['id'])
@@ -995,6 +1036,9 @@ class ComicVine:
             vol = item.get('volume') or {}
             vol_cv_id = int(vol['id']) if vol.get('id') else None
             if vol_cv_id and vol_cv_id in non_english_vol_ids:
+                continue
+            details = volume_details.get(vol_cv_id or 0)
+            if not details or not _is_launch_issue_for_volume(item, details):
                 continue
             upcoming.append({
                 'issue_id':     int(item['id']),
@@ -1028,8 +1072,7 @@ class ComicVine:
         # date_added:desc avoids the NULL-first ordering that start_year:desc has.
         # Fetch a wider candidate pool so the Discover hide-library option still
         # has enough non-library comics left to show after local filtering.
-        from datetime import date as _date
-        cutoff = _date.today().year - 3          # 2023+ = "new"
+        today = _date.today()
         params = {
             'field_list': self.volume_field_list,
             'sort': 'date_added:desc',
@@ -1049,18 +1092,16 @@ class ComicVine:
             for result in (page.get('results') or [])
         ]
 
-        def _year(v: Dict[str, Any]) -> int:
-            try:
-                return int(v.get('start_year') or 0)
-            except (TypeError, ValueError):
-                return 0
-
         pre_filtered = [
             v for v in all_results
-            if _year(v) >= cutoff
+            if _is_recently_started_volume(v, today)
             and _is_comic_discovery_candidate_volume(v)
         ]
+        pre_filtered.sort(key=lambda v: (-(_issue_date(_first_known_issue(v)) or _date.min).toordinal(), str(v.get('name') or '').lower(), str(v.get('id') or '')))
         formatted = [self.__format_volume_output(v) for v in pre_filtered]
+        for output, source in zip(formatted, pre_filtered):
+            first = _first_known_issue(source)
+            output['series_started_at'] = (_issue_date(first).isoformat() if first and _issue_date(first) else None)
         filtered = [v for v in formatted if not v['translated']][:limit]
         self._mark_already_added(filtered)
         return filtered
@@ -1358,7 +1399,7 @@ class ComicVine:
                     self.__call_api(
                         session, '/volumes',
                         {
-                            'field_list': 'id,publisher',
+                            'field_list': 'id,publisher,issues',
                             'filter': f'id:{"|".join(unique_vol_ids[i:i + 100])}',
                             'limit': 100,
                         },

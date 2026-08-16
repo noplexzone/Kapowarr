@@ -180,7 +180,7 @@ const discoverSearchRoute = createRoute({
   validateSearch: discoverResultsSearchSchema,
   component: () => {
     const search = discoverSearchRoute.useSearch();
-    return <DiscoverSearchResultsPage section={search.section} q={search.q} page={search.page} />;
+    return <DiscoverSearchResultsPage section={search.section} q={search.q} page={search.page} hide_added={search.hide_added} />;
   },
 });
 
@@ -192,7 +192,7 @@ const discoverAddRoute = createRoute({
     const search = discoverAddRoute.useSearch();
     const params = discoverAddRoute.useParams();
     const source = params.source === 'mangadex' ? 'mangadex' : 'comicvine';
-    return <DiscoverExactAddPage section={search.section} source={source} metadataId={params.metadataId} title={search.title} language={search.language} />;
+    return <DiscoverExactAddPage section={search.section} source={source} metadataId={params.metadataId} title={search.title} language={search.language} returnTo={search.returnTo} />;
   },
 });
 

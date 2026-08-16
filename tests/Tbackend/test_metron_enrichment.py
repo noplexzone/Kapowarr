@@ -208,6 +208,26 @@ class MetronEnrichmentPersistenceTests(unittest.TestCase):
             terms = get_db().execute('SELECT term_type, name FROM volume_enrichment_terms WHERE volume_id = 1;').fetchalldict()
             self.assertIn({'term_type': 'character', 'name': 'Metron Person'}, terms)
 
+
+    def test_candidate_task_reservation_dedupes_active_volume_task(self):
+        from backend.features.metron_enrichment import attach_metron_task_reservation, reserve_candidate_enrichment_task, finish_metron_task_reservation
+        with self.app.app_context():
+            db = get_db()
+            db.execute("""INSERT INTO provider_match_candidates(volume_id, provider, resource_type, candidate_external_id, title, review_group_id, review_status, created_at, updated_at)
+                VALUES(1, 'metron', 'series', 'm-candidate', 'Metron Candidate', 'grp', 'review_required', 1, 1);""")
+            commit()
+            candidate_id = db.execute('SELECT id FROM provider_match_candidates LIMIT 1;').fetchone()[0]
+            first = reserve_candidate_enrichment_task(candidate_id)
+            self.assertFalse(first['duplicate'])
+            attach_metron_task_reservation(int(first['reservation_id']), 17)
+            second = reserve_candidate_enrichment_task(candidate_id)
+            self.assertTrue(second['duplicate'])
+            self.assertEqual(second['task_id'], 17)
+            finish_metron_task_reservation(1, False, 'provider exploded with token [REDACTED]')
+            row = db.execute('SELECT status, safe_error FROM metron_enrichment_task_reservations WHERE id = ?;', (first['reservation_id'],)).fetchonedict()
+            self.assertEqual(row['status'], 'failed')
+            self.assertIn('provider exploded', row['safe_error'])
+
     def test_candidate_selection_resolves_review_without_losing_candidates_before_task(self):
         with self.app.app_context():
             db = get_db()

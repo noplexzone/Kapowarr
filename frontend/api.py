@@ -3035,7 +3035,7 @@ def api_metron_reviews():
 @error_handler
 @auth
 def api_metron_review_select(candidate_id: int):
-    from backend.features.metron_enrichment import resolve_candidate
+    from backend.features.metron_enrichment import attach_metron_task_reservation, reserve_candidate_enrichment_task, finish_metron_task_reservation
     from backend.internals.db import get_db
     from backend.features.tasks import MetronEnrichmentTask, TaskHandler
     task_handler = TaskHandler()
@@ -3046,8 +3046,15 @@ def api_metron_review_select(candidate_id: int):
     existing_task_id = task_handler.active_task_id_for_volume(volume_id)
     if existing_task_id is not None:
         return return_api({'volume_id': volume_id, 'task_id': existing_task_id, 'duplicate': True, 'status': 'enrichment_pending'}, code=202)
-    result = resolve_candidate(candidate_id)
-    task_id = task_handler.add(MetronEnrichmentTask(volume_id))
+    result = reserve_candidate_enrichment_task(candidate_id)
+    if result.get('duplicate'):
+        return return_api(result, code=202)
+    try:
+        task_id = task_handler.add(MetronEnrichmentTask(volume_id))
+    except Exception as exc:
+        finish_metron_task_reservation(volume_id, False, str(exc))
+        raise
+    attach_metron_task_reservation(int(result['reservation_id']), task_id)
     return return_api({**result, 'task_id': task_id, 'duplicate': False}, code=202)
 
 

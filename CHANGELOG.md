@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Preserve Discover exact Add return state through validated internal routes and browser-backed overlay close behavior.
+- Derive Recently Started and Upcoming Launches from ComicVine first-known issue data instead of volume start-year/date-added approximations.
+- Add durable Metron enrichment task reservations so candidate selection and queued work have a single active owner per volume.
 - Redirect legacy Add URLs into Discover and return paginated metadata-search envelopes for full result pages while keeping legacy search callers compatible.
 
 ### Removed

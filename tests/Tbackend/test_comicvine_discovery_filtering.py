@@ -75,5 +75,22 @@ class ComicVineDiscoveryFilteringTests(unittest.TestCase):
         self.assertFalse(excluded('DC Comics'))
 
 
+class ComicVineShelfSemanticsTests(unittest.TestCase):
+    def test_recently_started_requires_earliest_known_issue_inside_window(self):
+        from datetime import date, timedelta
+        from backend.implementations.comicvine import _is_recently_started_volume
+        today = date(2026, 8, 15)
+        self.assertTrue(_is_recently_started_volume({'issues': [{'id': 1, 'issue_number': '1', 'cover_date': (today - timedelta(days=330)).isoformat()}]}, today))
+        self.assertFalse(_is_recently_started_volume({'issues': [{'id': 1, 'issue_number': '1', 'cover_date': (today - timedelta(days=400)).isoformat()}]}, today))
+        self.assertFalse(_is_recently_started_volume({'issues': [{'id': 1, 'issue_number': '1', 'cover_date': (today + timedelta(days=1)).isoformat()}]}, today))
+
+    def test_upcoming_launch_requires_issue_one_as_earliest_known_issue(self):
+        from backend.implementations.comicvine import _is_launch_issue_for_volume
+        issue_one = {'id': 10, 'issue_number': '1', 'cover_date': '2026-09-01'}
+        self.assertTrue(_is_launch_issue_for_volume(issue_one, {'issues': [issue_one]}))
+        self.assertFalse(_is_launch_issue_for_volume({'id': 11, 'issue_number': '15', 'cover_date': '2026-09-01'}, {'issues': [{'id': 1, 'issue_number': '1', 'cover_date': '2020-01-01'}, {'id': 11, 'issue_number': '15', 'cover_date': '2026-09-01'}]}))
+        self.assertFalse(_is_launch_issue_for_volume(issue_one, {'issues': [{'id': 9, 'issue_number': '0', 'cover_date': '2026-08-01'}, issue_one]}))
+
+
 if __name__ == '__main__':
     unittest.main()

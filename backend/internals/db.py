@@ -641,6 +641,21 @@ CREATE TABLE IF NOT EXISTS provider_match_candidates(
 );
 CREATE INDEX IF NOT EXISTS provider_match_candidates_unresolved_idx
     ON provider_match_candidates(provider, review_status, volume_id, created_at);
+CREATE TABLE IF NOT EXISTS metron_enrichment_task_reservations(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    volume_id INTEGER NOT NULL,
+    candidate_id INTEGER,
+    task_queue_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'reserved',
+    safe_error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+    FOREIGN KEY (candidate_id) REFERENCES provider_match_candidates(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS metron_enrichment_task_reservations_active_idx
+    ON metron_enrichment_task_reservations(volume_id)
+    WHERE status IN ('reserved', 'queued', 'running');
 CREATE TABLE IF NOT EXISTS volume_metadata_enrichment(
     volume_id INTEGER NOT NULL,
     provider TEXT NOT NULL,

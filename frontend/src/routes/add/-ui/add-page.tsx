@@ -44,6 +44,10 @@ export function ExactAddReview({ section, selection, searchFallbackTo = '/add', 
   const exact = useQuery(exactVolumeQueryOptions(selection, section));
   const closeReview = () => {
     if (returnTo) {
+      if (typeof window !== 'undefined' && window.history.length > 1) {
+        window.history.back();
+        return;
+      }
       navigate({ to: returnTo as never });
       return;
     }

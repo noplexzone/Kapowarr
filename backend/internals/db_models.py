@@ -5,6 +5,7 @@ Interacting with the database
 """
 
 from os import stat
+from time import time
 from typing import Dict, Iterable, List, Optional, Union
 from uuid import uuid4
 
@@ -136,16 +137,43 @@ class FilesDB:
         filepath: str
     ) -> int:
         cursor = get_db()
+        file_stat = stat(filepath)
         cursor.execute(
-            "INSERT OR IGNORE INTO files(filepath, size) VALUES (?,?)",
-            (filepath, stat(filepath).st_size)
+            "INSERT OR IGNORE INTO files(filepath, size, exists_on_disk, missing_since) VALUES (?,?,1,NULL)",
+            (filepath, file_stat.st_size)
         )
 
         if cursor.rowcount:
             LOGGER.debug(f'Added file to the database: {filepath}')
             return cursor.lastrowid
 
+        cursor.execute(
+            "UPDATE files SET size = ?, exists_on_disk = 1, missing_since = NULL WHERE filepath = ?;",
+            (file_stat.st_size, filepath)
+        )
         return FilesDB.fetch(filepath=filepath)[0]["id"]
+
+    @staticmethod
+    def mark_missing_file_ids(file_ids: Iterable[int]) -> None:
+        ids = list(file_ids)
+        if not ids:
+            return
+        get_db().executemany(
+            "UPDATE files SET exists_on_disk = 0, missing_since = COALESCE(missing_since, ?) WHERE id = ?;",
+            ((round(time()), file_id) for file_id in ids)
+        )
+        return
+
+    @staticmethod
+    def mark_present_file_ids(file_ids: Iterable[int]) -> None:
+        ids = list(file_ids)
+        if not ids:
+            return
+        get_db().executemany(
+            "UPDATE files SET exists_on_disk = 1, missing_since = NULL WHERE id = ?;",
+            ((file_id,) for file_id in ids)
+        )
+        return
 
     @staticmethod
     def update_filepaths(old_to_new_mapping: Dict[str, str]) -> None:

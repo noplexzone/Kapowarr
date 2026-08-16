@@ -25,18 +25,20 @@ const volume = {
 };
 
 describe('ComicCard actions', () => {
-  it('provides direct named select and poster search controls', () => {
+  it('provides compact named action tray controls in browse mode', () => {
     const onSelect = vi.fn();
     const onSearch = vi.fn();
+    const onMonitor = vi.fn();
     render(
-      <ComicCard volume={volume} selected={false} onSelect={onSelect} onSearch={onSearch} />,
+      <ComicCard volume={volume} selected={false} onSelect={onSelect} onSearch={onSearch} onMonitor={onMonitor} />,
     );
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Saga' }));
-    expect(screen.queryByRole('button', { name: 'Unmonitor Saga' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Select Saga' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Search missing issues for Saga' }));
-    expect(onSelect).toHaveBeenCalledWith(7);
+    fireEvent.click(screen.getByRole('button', { name: 'Unmonitor Saga' }));
+    expect(onSelect).not.toHaveBeenCalled();
     expect(onSearch).toHaveBeenCalledWith(7);
+    expect(onMonitor).toHaveBeenCalledWith(7, false);
   });
 
   it('keeps a compact indicator inside an accessible hit target', () => {

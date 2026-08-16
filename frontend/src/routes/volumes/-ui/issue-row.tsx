@@ -110,7 +110,7 @@ export function IssueRow({
             {issue.downloaded
               ? 'Downloaded'
               : issue.monitored
-                ? 'Wanted'
+                ? 'Missing Monitored'
                 : 'Unmonitored'}
           </Badge>
         )}

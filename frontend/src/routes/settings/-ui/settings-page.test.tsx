@@ -5,7 +5,7 @@ import type { AllSettings } from '../-settings.types';
 
 const { updateSettings, useBlocker } = vi.hoisted(() => ({ updateSettings: vi.fn(), useBlocker: vi.fn() }));
 const settings: AllSettings = {
-  host: '0.0.0.0', port: 5656, url_base: '', auth_password: '', auth_username: '', timezone: 'UTC', log_level: 'INFO', flaresolverr_base_url: '', proxy_ignored_addresses: [], proxy_type: '', proxy_host: '', proxy_port: 0, proxy_username: '', proxy_password: '', rename_downloaded_files: true, replace_illegal_characters: true, volume_folder_naming: '{series}', file_naming: '{series} #{issue_number}', file_naming_empty: '', file_naming_special_version: '', file_naming_vai: '', volume_as_issue: false, volume_as_issue_padding: 2, volume_regex: '', volume_regex_issue: '', long_special_version: false, volume_padding: 2, issue_padding: 3, create_empty_volume_folders: false, delete_empty_folders: false, unmonitor_deleted_issues: false, change_file_date: '', chmod_folder: '', chown_group: '', convert: false, extract_issue_ranges: false, format_preference: [], comic_source_priority: [], manga_source_priority: [], service_preference: [], download_folder: '/downloads', concurrent_direct_downloads: 1, failing_download_timeout: 0, seeding_handling: 'complete', delete_completed_downloads: false, suwayomi_base_url: '', suwayomi_username: '', suwayomi_password: '', suwayomi_source_ids: [], comicvine_api_key: '', date_type: 'cover_date',
+  host: '0.0.0.0', port: 5656, url_base: '', auth_password: '', auth_username: '', timezone: 'UTC', log_level: 'INFO', flaresolverr_base_url: '', proxy_ignored_addresses: [], proxy_type: '', proxy_host: '', proxy_port: 0, proxy_username: '', proxy_password: '', rename_downloaded_files: true, replace_illegal_characters: true, volume_folder_naming: '{series}', file_naming: '{series} #{issue_number}', file_naming_empty: '', file_naming_special_version: '', file_naming_vai: '', volume_as_issue: false, volume_as_issue_padding: 2, volume_regex: '', volume_regex_issue: '', long_special_version: false, volume_padding: 2, issue_padding: 3, create_empty_volume_folders: false, delete_empty_folders: false, unmonitor_deleted_issues: false, change_file_date: '', chmod_folder: '', chown_group: '', convert: false, extract_issue_ranges: false, format_preference: [], comic_source_priority: [], manga_source_priority: [], service_preference: [], download_folder: '/downloads', concurrent_direct_downloads: 1, failing_download_timeout: 0, seeding_handling: 'complete', delete_completed_downloads: false, suwayomi_base_url: '', suwayomi_username: '', suwayomi_password: '', suwayomi_source_ids: [], comicvine_api_key: '', metron_enabled: false, metron_api_token: '', metron_last_successful_connection: 0, metron_last_enrichment_run: 0, date_type: 'cover_date',
 };
 vi.mock('@tanstack/react-router', () => ({ useBlocker }));
 vi.mock('../-settings.api', async () => {
@@ -50,10 +50,10 @@ describe('SettingsPage', () => {
   });
   it('renders settings categories as descriptive service cards with the active category summary', async () => {
     renderPage();
-    expect(await screen.findByText('Service configuration')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeTruthy();
     expect(screen.getAllByText('Hosting, authentication, theme, logs, and local browser identity.').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Root Folders Storage locations/ })).toBeTruthy();
-    expect(screen.getByText('Active category')).toBeTruthy();
+    expect(screen.getByText('All changes saved')).toBeTruthy();
   });
   it('associates labels and help descriptions with controls', async () => {
     renderPage(); const host = await screen.findByLabelText('Host');

@@ -46,7 +46,7 @@ class DashboardChangelogApiTests(unittest.TestCase):
             ]) as stats, \
             patch.object(api_mod, 'TaskHandler') as task_handler, \
             patch.object(api_mod, 'DownloadHandler') as download_handler, \
-            patch.object(api_mod, 'get_download_history_count', return_value=7):
+            patch.object(api_mod, 'get_download_history_count', return_value=7) as history_count:
             task_handler.return_value.get_all.return_value = tasks
             download_handler.return_value.get_all.return_value = [{'id': 1}, {'id': 2}]
             response = self._client().get('/api/dashboard/summary')
@@ -60,6 +60,9 @@ class DashboardChangelogApiTests(unittest.TestCase):
         self.assertEqual(result['library']['upcoming_monitored'], 5)
         self.assertEqual(result['library']['mismatches'], 3)
         self.assertEqual(result['operations'], {'active_downloads': 2, 'failed_downloads': 7, 'active_searches': 2})
+        history_count.assert_called_once_with(state='failed')
+        self.assertEqual(result['sections']['comic']['missing_monitored'], 4)
+        self.assertEqual(result['sections']['manga']['mismatches'], 2)
         self.assertEqual([call.args[0] for call in stats.call_args_list], ['comic', 'manga'])
 
     def test_changelog_parses_versions_dates_unreleased_and_sections(self):

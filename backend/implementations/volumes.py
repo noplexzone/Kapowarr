@@ -67,6 +67,60 @@ vol_regex = compile(r'^v(?:ol(?:ume)?)?\.?\s(?:\d+|(?:(?:one|two|three|four|five
 # autopep8: on
 
 
+
+
+_EFFECTIVE_METADATA_FIELDS = ('title', 'year', 'publisher', 'volume_number', 'description')
+
+def _has_canonical_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+def _apply_effective_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply active Metron scalar fallbacks without mutating canonical fields."""
+    volume_id = row.get('id')
+    if not volume_id:
+        return row
+    try:
+        fallback_rows = get_db().execute(
+            """SELECT field_name, normalized_value, provider
+            FROM volume_metadata_enrichment
+            WHERE volume_id = ? AND active = 1;""",
+            (volume_id,)
+        ).fetchalldict()
+    except Exception:
+        fallback_rows = []
+    if not fallback_rows:
+        return row
+    fallbacks = {r['field_name']: r['normalized_value'] for r in fallback_rows}
+    effective = {}
+    for field in _EFFECTIVE_METADATA_FIELDS:
+        canonical = row.get(field)
+        fallback = fallbacks.get(field)
+        if _has_canonical_value(canonical):
+            effective[field] = {'value': canonical, 'source': 'comicvine'}
+        elif _has_canonical_value(fallback):
+            row[field] = fallback
+            effective[field] = {'value': fallback, 'source': 'metron'}
+        else:
+            effective[field] = {'value': canonical, 'source': None}
+    row['effective_metadata'] = effective
+    return row
+
+
+VALID_ISSUE_FILE_EXISTS_SQL = """EXISTS (
+    SELECT 1
+    FROM issues_files issue_link
+    INNER JOIN files file ON file.id = issue_link.file_id
+    WHERE issue_link.issue_id = i.id
+      AND file.exists_on_disk = 1
+)"""
+
+def valid_issue_file_exists_sql(issue_alias: str = 'i') -> str:
+    return VALID_ISSUE_FILE_EXISTS_SQL.replace('i.id', f'{issue_alias}.id')
+
 # region Issue
 class Issue:
     def __init__(self, issue_id: int, check_existence: bool = False) -> None:
@@ -320,10 +374,11 @@ class Volume:
                     WHERE volume_id = v.id
                 ) AS issue_count,
                 (
-                    SELECT COUNT(DISTINCT issue_id)
+                    SELECT COUNT(DISTINCT if.issue_id)
                     FROM issues i
                     INNER JOIN issues_files if
                     ON i.id = if.issue_id
+                    INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1
                     WHERE volume_id = v.id
                 ) AS issues_downloaded,
                 (
@@ -334,6 +389,7 @@ class Volume:
                         INNER JOIN files f
                         ON i.id = if.issue_id
                             AND if.file_id = f.id
+                            AND f.exists_on_disk = 1
                         WHERE volume_id = v.id
                     )
                 ) AS total_size
@@ -352,15 +408,9 @@ class Volume:
         )
         del volume_info['root_folder_path']
 
+        _apply_effective_metadata(volume_info)
         volume_info['issues'] = [i.todict() for i in self.get_issues()]
         volume_info['general_files'] = self.get_general_files()
-        if volume_info.get('section') == 'comic':
-            try:
-                from backend.features.metron_enrichment import MetronEnrichmentService
-                volume_info.update(MetronEnrichmentService.get_volume_provenance(self.id))
-            except Exception as exc:
-                LOGGER.debug('Metron provenance failed open for volume %s: %s', self.id, exc)
-
 
         return volume_info
 
@@ -472,6 +522,7 @@ class Volume:
                 INNER JOIN issues i
                     ON if.issue_id = i.id
                 WHERE i.volume_id = ?
+                    AND f.exists_on_disk = 1
                 ORDER BY filepath;
                 """,
                 (self.id,)
@@ -509,10 +560,14 @@ class Volume:
             """
             SELECT i.id, i.calculated_issue_number
             FROM issues i
-            LEFT JOIN issues_files if
-            ON i.id = if.issue_id
             WHERE
-                file_id IS NULL
+                NOT EXISTS (
+                    SELECT 1
+                    FROM issues_files issue_link
+                    INNER JOIN files file ON file.id = issue_link.file_id
+                    WHERE issue_link.issue_id = i.id
+                      AND file.exists_on_disk = 1
+                )
                 AND volume_id = ?
                 AND monitored = 1;
             """,
@@ -654,22 +709,16 @@ class Volume:
             )
 
         elif monitoring_scheme == MonitorScheme.MISSING:
-            cursor.execute("""
-                WITH missing_issues AS (
-                    SELECT id
-                    FROM issues i
-                    LEFT JOIN issues_files if
-                    ON i.id = if.issue_id
-                    WHERE volume_id = ?
-                        AND if.issue_id IS NULL
-                )
+            valid_file_exists = valid_issue_file_exists_sql('issues')
+            cursor.execute(f"""
                 UPDATE issues
-                SET monitored = 0
-                WHERE
-                    volume_id = ?
-                    AND id NOT IN missing_issues;
+                SET monitored = CASE
+                    WHEN NOT {valid_file_exists} THEN 1
+                    ELSE 0
+                END
+                WHERE volume_id = ?;
                 """,
-                (self.id, self.id)
+                (self.id,)
             )
 
         elif monitoring_scheme == MonitorScheme.ALL:
@@ -947,7 +996,8 @@ class Library:
         filter: Union[LibraryFilter, int, None],
         section: str,
         page: Union[int, None] = None,
-        page_size: Union[int, None] = None
+        page_size: Union[int, None] = None,
+        direction: str = 'asc'
     ) -> List[Dict[str, Any]]:
         """Run the public-volume query, optionally as a zero-based page."""
         if section not in ('comic', 'manga'):
@@ -977,11 +1027,18 @@ class Library:
             pagination = "LIMIT ? OFFSET ?"
             params.extend((page_size, page * page_size))
 
-        order_by = sort.value
-        if sort == LibrarySorting.RECENTLY_RELEASED:
-            order_by = "latest_issue_date DESC, title, year, volume_number"
-        if sort != LibrarySorting.RECENTLY_ADDED:
-            order_by = f'{order_by}, volumes.id'
+        direction_sql = 'DESC' if str(direction).lower() == 'desc' else 'ASC'
+        if sort == LibrarySorting.COMPLETION:
+            order_by = (
+                f"CASE WHEN completion_percentage IS NULL THEN 1 ELSE 0 END ASC, "
+                f"completion_percentage {direction_sql}, normalized_title ASC, volumes.id ASC"
+            )
+        elif sort == LibrarySorting.RECENTLY_RELEASED:
+            order_by = "latest_issue_date DESC, title, year, volume_number, volumes.id"
+        elif sort == LibrarySorting.RECENTLY_ADDED:
+            order_by = "volumes.id DESC, title, year, volume_number"
+        else:
+            order_by = f'{sort.value}, volumes.id'
 
         return get_db().execute(f"""
             WITH
@@ -992,8 +1049,10 @@ class Library:
                     {sql_filter}
                 ),
                 linked_issues AS (
-                    SELECT DISTINCT issue_id
-                    FROM issues_files
+                    SELECT DISTINCT issue_links.issue_id
+                    FROM issues_files issue_links
+                    INNER JOIN files f ON f.id = issue_links.file_id
+                    WHERE f.exists_on_disk = 1
                 ),
                 issue_stats AS (
                     SELECT
@@ -1013,12 +1072,14 @@ class Library:
                             AS upcoming_issue_count,
                         MAX(CASE
                             WHEN i.monitored = 1
-                                AND (i.date IS NULL OR i.date <= date('now'))
+                                AND i.date IS NOT NULL
+                                AND i.date <= date('now')
                                 AND li.issue_id IS NULL
                             THEN 1 ELSE 0
                         END) AS has_wanted,
                         MAX(CASE
                             WHEN i.monitored = 1
+                                AND i.date IS NOT NULL
                                 AND i.date > date('now')
                                 AND li.issue_id IS NULL
                             THEN 1 ELSE 0
@@ -1037,6 +1098,7 @@ class Library:
                     INNER JOIN scoped_volumes sv ON sv.id = i.volume_id
                     INNER JOIN issues_files issue_links ON i.id = issue_links.issue_id
                     INNER JOIN files f ON issue_links.file_id = f.id
+                    WHERE f.exists_on_disk = 1
                 ),
                 file_stats AS (
                     SELECT volume_id, SUM(size) AS total_size
@@ -1065,12 +1127,9 @@ class Library:
                     AS upcoming_issue_count,
                 CASE
                     WHEN COALESCE(issue_stats.released_issue_count, 0) = 0 THEN NULL
-                    ELSE ROUND(
-                        (CAST(COALESCE(issue_stats.released_issues_downloaded, 0) AS REAL)
-                        / issue_stats.released_issue_count) * 100,
-                        1
-                    )
+                    ELSE ROUND((COALESCE(issue_stats.released_issues_downloaded, 0) * 100.0) / issue_stats.released_issue_count, 1)
                 END AS completion_percentage,
+                LOWER(TRIM(title)) AS normalized_title,
                 COALESCE(file_stats.total_size, 0) AS total_size,
                 issue_stats.latest_issue_date,
                 COUNT(*) OVER () AS _total_count
@@ -1088,12 +1147,14 @@ class Library:
         cls,
         sort: LibrarySorting = LibrarySorting.TITLE,
         filter: Union[LibraryFilter, int, None] = None,
-        section: str = 'comic'
+        section: str = 'comic',
+        direction: str = 'asc'
     ) -> List[Dict[str, Any]]:
         """Get all public volumes while preserving the legacy list contract."""
-        rows = cls._get_public_volume_rows(sort, filter, section)
+        rows = cls._get_public_volume_rows(sort, filter, section, direction=direction)
         for row in rows:
             row.pop('_total_count', None)
+            _apply_effective_metadata(row)
         return rows
 
     @classmethod
@@ -1103,22 +1164,24 @@ class Library:
         filter: Union[LibraryFilter, int, None] = None,
         section: str = 'comic',
         page: int = 0,
-        page_size: int = 60
+        page_size: int = 60,
+        direction: str = 'asc'
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Get one zero-based page and the total matching volume count."""
         rows = cls._get_public_volume_rows(
-            sort, filter, section, page, page_size
+            sort, filter, section, page, page_size, direction
         )
         if rows:
             total = int(rows[0].get('_total_count') or 0)
         elif page:
-            first = cls._get_public_volume_rows(sort, filter, section, 0, 1)
+            first = cls._get_public_volume_rows(sort, filter, section, 0, 1, direction)
             total = int(first[0].get('_total_count') or 0) if first else 0
         else:
             total = 0
 
         for row in rows:
             row.pop('_total_count', None)
+            _apply_effective_metadata(row)
         return rows, total
 
     @classmethod
@@ -1127,7 +1190,8 @@ class Library:
         query: str,
         sort: LibrarySorting = LibrarySorting.TITLE,
         filter: Union[LibraryFilter, None] = None,
-        section: str = 'comic'
+        section: str = 'comic',
+        direction: str = 'asc'
     ) -> List[Dict[str, Any]]:
         """Search in the library with a query.
 
@@ -1151,7 +1215,7 @@ class Library:
         if query.startswith(('4050-', 'cv:')):
             try:
                 cv_id = to_number_cv_id((query,))[0]
-                volumes = cls.get_public_volumes(sort, cv_id, section)
+                volumes = cls.get_public_volumes(sort, cv_id, section, direction)
 
             except ValueError:
                 volumes = []
@@ -1159,7 +1223,7 @@ class Library:
         else:
             volumes = [
                 v
-                for v in cls.get_public_volumes(sort, filter, section)
+                for v in cls.get_public_volumes(sort, filter, section, direction)
                 if (
                     match_title(v['title'], query, allow_contains=True)
                     or match_title(v.get('publisher') or '', query, allow_contains=True)
@@ -1168,35 +1232,6 @@ class Library:
             ]
 
         return volumes
-
-    @classmethod
-    def get_released_issue_stats(cls, section: str = 'comic') -> Dict[str, Union[int, float, None]]:
-        """Return released-issue completion metrics for a library section."""
-        row = get_db().execute("""
-            WITH linked_issues AS (
-                SELECT DISTINCT issue_id FROM issues_files
-            )
-            SELECT
-                COUNT(i.id) AS released_issues,
-                COUNT(li.issue_id) AS downloaded_released_issues
-            FROM issues i
-            INNER JOIN volumes vol ON vol.id = i.volume_id
-            INNER JOIN root_folders rf ON rf.id = vol.root_folder
-            LEFT JOIN linked_issues li ON li.issue_id = i.id
-            WHERE rf.section = :section
-                AND i.date IS NOT NULL
-                AND i.date <= date('now');
-        """, {'section': section}).fetchonedict() or {}
-        released = int(row.get('released_issues') or 0)
-        downloaded = int(row.get('downloaded_released_issues') or 0)
-        return {
-            'released_issues': released,
-            'downloaded_released_issues': downloaded,
-            'completion_percentage': (
-                round((downloaded / released) * 100, 1)
-                if released else None
-            ),
-        }
 
     @classmethod
     def get_stats(cls, section: str = 'comic') -> Dict[str, int]:
@@ -1229,8 +1264,9 @@ class Library:
                         WHERE rf.section = :section
                     )
                 ) AS issues,
-                (SELECT COUNT(DISTINCT issue_id) FROM issues_files
-                    WHERE issue_id IN (
+                (SELECT COUNT(DISTINCT if.issue_id) FROM issues_files if
+                    INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1
+                    WHERE if.issue_id IN (
                         SELECT i.id FROM issues i
                         INNER JOIN volumes vol ON vol.id = i.volume_id
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
@@ -1238,13 +1274,29 @@ class Library:
                     )
                 ) AS downloaded_issues,
                 (SELECT COUNT(*) FROM issues i
-                    WHERE i.monitored = 1 AND (i.date IS NULL OR i.date <= date('now'))
-                    AND NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.issue_id = i.id)
+                    INNER JOIN volumes vol ON vol.id = i.volume_id
+                    INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                    WHERE rf.section = :section
+                        AND i.date IS NOT NULL
+                        AND i.date <= date('now')
+                ) AS released_issues,
+                (SELECT COUNT(DISTINCT if.issue_id) FROM issues_files if
+                    INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1
+                    INNER JOIN issues i ON i.id = if.issue_id
+                    INNER JOIN volumes vol ON vol.id = i.volume_id
+                    INNER JOIN root_folders rf ON rf.id = vol.root_folder
+                    WHERE rf.section = :section
+                        AND i.date IS NOT NULL
+                        AND i.date <= date('now')
+                ) AS downloaded_released_issues,
+                (SELECT COUNT(*) FROM issues i
+                    WHERE i.monitored = 1 AND i.date IS NOT NULL AND i.date <= date('now')
+                    AND NOT EXISTS (SELECT 1 FROM issues_files if INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1 WHERE if.issue_id = i.id)
                     AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = :section)
                 ) AS missing_monitored,
                 (SELECT COUNT(*) FROM issues i
                     WHERE i.monitored = 1 AND i.date > date('now')
-                    AND NOT EXISTS (SELECT 1 FROM issues_files if WHERE if.issue_id = i.id)
+                    AND NOT EXISTS (SELECT 1 FROM issues_files if INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1 WHERE if.issue_id = i.id)
                     AND i.volume_id IN (SELECT vol.id FROM volumes vol INNER JOIN root_folders rf ON rf.id = vol.root_folder WHERE rf.section = :section)
                 ) AS upcoming_monitored,
                 (SELECT COUNT(*) FROM issues i
@@ -1259,12 +1311,14 @@ class Library:
                 ) AS import_problems,
                 (SELECT COUNT(*) FROM (
                     SELECT if.file_id FROM issues_files if
+                    INNER JOIN files f ON f.id = if.file_id AND f.exists_on_disk = 1
                     INNER JOIN issues i ON i.id = if.issue_id
                     INNER JOIN volumes vol ON vol.id = i.volume_id
                     INNER JOIN root_folders rf ON rf.id = vol.root_folder
                     WHERE rf.section = :section
                     UNION
                     SELECT vf.file_id FROM volume_files vf
+                    INNER JOIN files f ON f.id = vf.file_id AND f.exists_on_disk = 1
                     INNER JOIN volumes vol ON vol.id = vf.volume_id
                     INNER JOIN root_folders rf ON rf.id = vol.root_folder
                     WHERE rf.section = :section
@@ -1272,12 +1326,14 @@ class Library:
                 (SELECT IFNULL(SUM(f.size), 0) FROM files f
                     WHERE f.id IN (
                         SELECT if.file_id FROM issues_files if
+                        INNER JOIN files linked_f ON linked_f.id = if.file_id AND linked_f.exists_on_disk = 1
                         INNER JOIN issues i ON i.id = if.issue_id
                         INNER JOIN volumes vol ON vol.id = i.volume_id
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
                         WHERE rf.section = :section
                         UNION
                         SELECT vf.file_id FROM volume_files vf
+                        INNER JOIN files linked_f ON linked_f.id = vf.file_id AND linked_f.exists_on_disk = 1
                         INNER JOIN volumes vol ON vol.id = vf.volume_id
                         INNER JOIN root_folders rf ON rf.id = vol.root_folder
                         WHERE rf.section = :section
@@ -1297,7 +1353,12 @@ class Library:
             for folder, title, publisher in mismatch_rows
             if _is_mismatch_volume(folder or '', title or '', publisher or '')
         )
-        result.update(cls.get_released_issue_stats(section))
+        released_issues = int(result.get('released_issues') or 0)
+        downloaded_released = int(result.get('downloaded_released_issues') or 0)
+        result['completion_percentage'] = (
+            None if released_issues == 0
+            else round((downloaded_released * 100.0) / released_issues, 1)
+        )
         return result
 
     @classmethod
@@ -1325,30 +1386,9 @@ class Library:
             ORDER BY vol.year DESC
             LIMIT 12;
         """, (section,)).fetchalldict()
-        characters = []
-        genres = []
-        if section == 'comic':
-            characters = db.execute("""
-                SELECT name AS value, name AS label, COUNT(DISTINCT volume_id) AS count
-                FROM volume_enrichment_terms
-                WHERE provider = 'metron' AND term_type = 'character'
-                GROUP BY name
-                ORDER BY count DESC, name COLLATE NOCASE
-                LIMIT 24;
-            """).fetchalldict()
-            genres = db.execute("""
-                SELECT name AS value, name AS label, COUNT(DISTINCT volume_id) AS count
-                FROM volume_enrichment_terms
-                WHERE provider = 'metron' AND term_type = 'genre'
-                GROUP BY name
-                ORDER BY count DESC, name COLLATE NOCASE
-                LIMIT 24;
-            """).fetchalldict()
         return {
             'publishers': publishers,
             'years': years,
-            'characters': characters,
-            'genres': genres,
             'status': [
                 {'value': 'missing', 'label': 'Missing', 'filter': 'wanted'},
                 {'value': 'upcoming', 'label': 'Upcoming', 'filter': 'upcoming'},
@@ -1615,12 +1655,10 @@ class Library:
             TaskHandler().add(task)
 
         try:
-            from backend.features.metron_enrichment import metron_configured
-            if metron_configured():
-                from backend.features.tasks import MetronEnrichVolume, TaskHandler
-                TaskHandler().add(MetronEnrichVolume(volume_id))
-        except Exception as exc:
-            LOGGER.debug('Metron enrich enqueue failed open for volume %s: %s', volume_id, exc)
+            from backend.features.metron_enrichment import queue_metron_enrichment
+            queue_metron_enrichment(volume_id)
+        except Exception:
+            LOGGER.exception('Failed to queue optional Metron enrichment for volume %d', volume_id)
 
         LOGGER.info(
             f'Added volume with CV ID {comicvine_id} and ID {volume_id}'
@@ -2375,16 +2413,6 @@ def refresh_and_scan(
 
     commit()
 
-    # Queue optional Metron enrichment after canonical ComicVine refresh.
-    try:
-        from backend.features.metron_enrichment import metron_configured
-        if metron_configured():
-            from backend.features.tasks import MetronEnrichVolume, TaskHandler
-            for local_id, _last_fetch in cv_to_id_fetch.values():
-                TaskHandler().add(MetronEnrichVolume(local_id))
-    except Exception as exc:
-        LOGGER.debug('Metron enrich enqueue failed open after refresh: %s', exc)
-
     # Scan for files
     if cancelled():
         return
@@ -2454,14 +2482,14 @@ def rematch_volume(volume_id: int, new_comicvine_id: int) -> None:
 
     conflict = cursor.execute(
         'SELECT id FROM volumes WHERE comicvine_id = ? AND id != ?;',
-        (new_comicvine_id, new_comicvine_id, volume_id)
+        (new_comicvine_id, volume_id)
     ).fetchone()
     if conflict:
         raise InvalidKeyValue('comicvine_id', new_comicvine_id)
 
     cursor.execute(
-        "UPDATE volumes SET comicvine_id = ?, metadata_id = CAST(? AS TEXT), last_cv_fetch = 0 WHERE id = ?;",
-        (new_comicvine_id, new_comicvine_id, volume_id)
+        'UPDATE volumes SET comicvine_id = ?, last_cv_fetch = 0 WHERE id = ?;',
+        (new_comicvine_id, volume_id)
     )
     cursor.execute(
         'DELETE FROM issues_files WHERE issue_id IN '
@@ -2469,11 +2497,6 @@ def rematch_volume(volume_id: int, new_comicvine_id: int) -> None:
         (volume_id,)
     )
     cursor.execute('DELETE FROM issues WHERE volume_id = ?;', (volume_id,))
-    try:
-        from backend.features.metron_enrichment import MetronEnrichmentService
-        MetronEnrichmentService.unlink(volume_id)
-    except Exception as exc:
-        LOGGER.debug('Metron link cleanup failed open during rematch: %s', exc)
     commit()
     LOGGER.info('Volume %d rematched to CV ID %d', volume_id, new_comicvine_id)
 

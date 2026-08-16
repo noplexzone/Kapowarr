@@ -2,8 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
 import type { ShouldBlockFn } from '@tanstack/react-router';
-import { Button, Notice } from '@/components/primitives';
 import { runtimeConfig } from '@/app/runtime-config';
+import { Button, Notice } from '@/components/primitives';
 import { DEFAULT_THEME, useShellStore } from '@/platform/shell/store';
 import { settingsQueryOptions, updateSettings, SETTINGS_KEY, suwayomiSourcesQueryOptions } from '../-settings.api';
 import type { AllSettings } from '../-settings.types';
@@ -99,21 +99,9 @@ function SettingsPageContent({ category = 'general', onCategoryChange }: { categ
   else content = <SettingsCategoryPanel category={category} form={form} set={set} errors={errors} theme={theme} setTheme={setTheme} suwayomiSources={suwayomiSourcesData?.sources ?? []} suwayomiSourcesLoading={suwayomiSourcesFetching} />;
 
   return <div className={styles.page}>
-    <header className={styles.hero}>
-      <div className={styles.heroCopy}>
-        <p className={styles.eyebrow}>Service configuration</p>
-        <h1 className={styles.pageTitle}>Settings</h1>
-        <p className={styles.heroText}>Manage Kapowarr services, paths, credentials, and host behavior from URL-backed categories. Saves are disabled until a category has real changes.</p>
-        <p className={styles.dirtyState} role="status">{dirtyCount ? `${dirtyCount} unsaved ${dirtyCount === 1 ? 'change' : 'changes'}` : 'All changes saved'}</p>
-      </div>
-      <div className={styles.heroStats} aria-label="Settings status">
-        <div><span>Active category</span><strong>{activeCategory.label}</strong></div>
-        <div><span>Unsaved drafts</span><strong>{dirtyCount}</strong></div>
-        <div><span>About</span><strong><a href={runtimeConfig.assetUrl('changelog')} className={styles.aboutLink}>Changelog</a></strong></div>
-      </div>
-    </header>
+    <h1 className={styles.srOnly}>Settings</h1>
     <div className={styles.toolbar}>
-      <div className={styles.currentCategory}><strong>{activeCategory.label}</strong><span>{activeCategory.description}</span></div>
+      <div className={styles.currentCategory}><strong>{activeCategory.label}</strong><span>{activeCategory.description}</span><em className={styles.dirtyState} role="status">{dirtyCount ? `${dirtyCount} unsaved ${dirtyCount === 1 ? 'change' : 'changes'}` : 'All changes saved'}</em></div>
       <div className={styles.toolbarRight}>
         <Button variant="secondary" onClick={discard} disabled={!topLevelDirtyCount || mutation.isPending}>Discard</Button>
         <Button variant="primary" onClick={handleSave} disabled={!topLevelDirtyCount || mutation.isPending}>{mutation.isPending ? 'Saving…' : 'Save Changes'}</Button>
@@ -126,7 +114,7 @@ function SettingsPageContent({ category = 'general', onCategoryChange }: { categ
     <nav className={styles.categoryNav} aria-label="Settings categories">
       {filteredCategories.map(item => {
         const dirtyLabel = dirtyByCategory.get(item.id);
-        return <button key={item.id} type="button" aria-current={item.id === category ? 'page' : undefined} className={item.id === category ? styles.categoryActive : styles.categoryButton} onClick={() => selectCategory(item.id)}>
+        return <button key={item.id} type="button" className={item.id === category ? styles.categoryActive : styles.categoryButton} onClick={() => selectCategory(item.id)}>
           <span>{item.label}</span>
           <small>{item.description}</small>
           {dirtyLabel && <em>Unsaved {dirtyLabel}</em>}
@@ -135,5 +123,9 @@ function SettingsPageContent({ category = 'general', onCategoryChange }: { categ
       {filteredCategories.length === 0 && <span className={styles.emptyList}>No settings match “{search}”.</span>}
     </nav>
     {content}
+    <SettingsSection title="About">
+      <p>Review packaged release notes and the running Kapowarr version.</p>
+      <a href={runtimeConfig.assetUrl('changelog')}>Open changelog</a>
+    </SettingsSection>
   </div>;
 }

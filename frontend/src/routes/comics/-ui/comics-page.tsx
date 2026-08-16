@@ -5,15 +5,11 @@ import { Button } from '@/components/primitives';
 import { Pagination } from '@/components/pagination/pagination';
 import { EmptyState, StatusBanner } from '@/components/patterns';
 import {
-  createSavedFilter,
   deleteLibraryVolume,
-  deleteSavedFilter,
   runLibraryTask,
-  savedFiltersQueryOptions,
   runVolumeTask,
   setVolumeMonitored,
   volumeListQueryOptions,
-  SAVED_FILTERS_KEY,
   VOLUMES_KEY,
 } from '../-comics.api';
 import { type ViewOption, type SectionType, type VolumesSearch } from '../-comics.types';
@@ -22,6 +18,8 @@ import {
   FILTER_OPTIONS,
   VIEW_OPTIONS,
   SORT_LABELS,
+  DIRECTION_LABELS,
+  COMPLETION_DIRECTION_LABELS,
   FILTER_LABELS,
   VIEW_LABELS,
   STORAGE_KEY_SORT,
@@ -57,9 +55,9 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
     view: rawSearch.view === 'list' ? 'table' : 'posters',
     search: rawSearch.q,
     offset: Math.max(0, (rawSearch.page ?? 1) - 1),
+    direction: rawSearch.direction === 'desc' ? 'desc' : 'asc',
   } : rawSearch as VolumesSearch;
   const { data } = useSuspenseQuery(volumeListQueryOptions(1, search, section));
-  const { data: savedFilters = [] } = useSuspenseQuery(savedFiltersQueryOptions(section));
 
   const [view, setView] = useState<ViewOption>(search.view);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -126,12 +124,13 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
       if ('filter' in patch) setStorageVal(STORAGE_KEY_FILTER, patch.filter);
       if ('search' in patch) setStorageVal(STORAGE_KEY_SEARCH, patch.search);
 
-      const resetsPage = ('sort' in patch || 'filter' in patch || 'search' in patch)
+      const resetsPage = ('sort' in patch || 'direction' in patch || 'filter' in patch || 'search' in patch)
         && !('offset' in patch);
       if (canonical) {
         const canonicalPatch: Record<string, unknown> = {};
         if ('sort' in patch) canonicalPatch.sort = patch.sort;
         if ('view' in patch) canonicalPatch.view = patch.view === 'table' ? 'list' : 'grid';
+        if ('direction' in patch) canonicalPatch.direction = patch.direction;
         if ('search' in patch) canonicalPatch.q = patch.search;
         if ('offset' in patch) canonicalPatch.page = Number(patch.offset) + 1;
         if ('filter' in patch) {
@@ -192,50 +191,8 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
   }, [performAction, selectedIds]);
 
 
-  const saveCurrentView = useCallback(async () => {
-    if (pendingAction) return;
-    const name = window.prompt('Name this smart filter');
-    if (!name?.trim()) return;
-    setPendingAction('save-filter');
-    setActionMessage('');
-    try {
-      await createSavedFilter(section, name.trim(), {
-        sort: search.sort,
-        filter: search.filter,
-        view: search.view,
-        search: search.search,
-      });
-      await queryClient.invalidateQueries({ queryKey: SAVED_FILTERS_KEY });
-      setActionMessage(`Saved smart filter ${name.trim()}.`);
-    } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : 'Saving the smart filter failed.');
-    } finally {
-      setPendingAction(null);
-    }
-  }, [pendingAction, queryClient, search.filter, search.search, search.sort, search.view, section]);
-
-  const applySavedFilter = useCallback((query: Partial<VolumesSearch>) => {
-    updateSearch({ ...query, offset: 0 });
-  }, [updateSearch]);
-
-  const removeSavedFilter = useCallback(async (id: number, name: string) => {
-    if (pendingAction) return;
-    setPendingAction(`delete-filter-${id}`);
-    setActionMessage('');
-    try {
-      await deleteSavedFilter(id);
-      await queryClient.invalidateQueries({ queryKey: SAVED_FILTERS_KEY });
-      setActionMessage(`Deleted smart filter ${name}.`);
-    } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : 'Deleting the smart filter failed.');
-    } finally {
-      setPendingAction(null);
-    }
-  }, [pendingAction, queryClient]);
-
   const volumes = data?.volumes ?? [];
   const total = data?.total ?? 0;
-  const visibleMissingVolumes = volumes.filter(hasMissingIssues);
   const selectedVolumes = volumes.filter((volume) => selectedIds.has(volume.id));
   const selectedMissingVolumes = selectedVolumes.filter(hasMissingIssues);
   const selectedMissingIds = selectedMissingVolumes.map((volume) => volume.id);
@@ -247,6 +204,7 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
 
   return (
     <div className={styles.page}>
+      <h1 className={styles.srOnly}>{section === 'comic' ? 'Comic Library' : 'Manga Library'}</h1>
       <div className={styles.libraryHeader}>
         <div className={styles.primaryControls}>
           <div className={styles.searchBar}>
@@ -333,49 +291,22 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
               </option>
             ))}
           </select>
-        </div>
 
-
-        <div className={styles.savedViewsRow} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} saved views`}>
-          <span className={styles.smartEyebrow}>Saved views</span>
-          {savedFilters.length > 0 ? (
-            <div className={styles.smartFilterChips}>
-              {savedFilters.map((filter) => (
-                <span key={filter.id} className={styles.smartFilterChip}>
-                  <button type="button" onClick={() => applySavedFilter(filter.query)}>
-                    {filter.name}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Delete smart filter ${filter.name}`}
-                    disabled={pendingAction !== null}
-                    onClick={() => void removeSavedFilter(filter.id, filter.name)}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <span className={styles.smartFilterEmpty}>No saved views yet.</span>
-          )}
-          <Button className={styles.saveViewButton} variant="secondary" disabled={pendingAction !== null} onClick={saveCurrentView}>
-            {pendingAction === 'save-filter' ? 'Saving…' : 'Save View'}
-          </Button>
-        </div>
-
-        {visibleMissingVolumes.length > 0 && (
-          <div className={styles.missingSummary} aria-label={`${section === 'comic' ? 'Comics' : 'Manga'} wanted and missing triage`}>
-            <span><strong>{visibleMissingVolumes.length}</strong> visible volume{visibleMissingVolumes.length === 1 ? '' : 's'} need attention.</span>
-            <Button
-              variant={search.filter === 'wanted' ? 'primary' : 'secondary'}
-              aria-pressed={search.filter === 'wanted'}
-              onClick={() => updateSearch({ filter: 'wanted' })}
-            >
-              Show Missing
-            </Button>
+          <div className={styles.directionGroup} aria-label="Sort direction">
+            {(['asc', 'desc'] as const).map((direction) => (
+              <Button
+                key={direction}
+                variant={search.direction === direction ? 'primary' : 'ghost'}
+                aria-pressed={search.direction === direction}
+                title={search.sort === 'completion' ? COMPLETION_DIRECTION_LABELS[direction] : DIRECTION_LABELS[direction]}
+                onClick={() => updateSearch({ direction })}
+              >
+                {direction === 'asc' ? 'Ascending' : 'Descending'}
+              </Button>
+            ))}
           </div>
-        )}
+        </div>
+
       </div>
 
       {actionMessage && <StatusBanner>{actionMessage}</StatusBanner>}
@@ -464,9 +395,15 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
               key={v.id}
               volume={v}
               selected={selectedIds.has(v.id)}
+              manageMode={manageMode}
               selectionVisible={manageMode || selectedIds.size > 0}
               pending={pendingAction === `search-${v.id}`}
               onSelect={toggleSelect}
+              onMonitor={(id, monitored) => performAction(
+                `monitor-${id}`,
+                () => setVolumeMonitored(id, monitored),
+                `${monitored ? 'Monitored' : 'Unmonitored'} ${v.title}.`,
+              )}
               onSearch={(id) => performAction(
                 `search-${id}`,
                 () => runVolumeTask(id, 'auto_search'),

@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { apiClient, readJson } from '@/app/api-client';
-import type { AllSettings, NZBIndexer, ExternalClient, ClientOption, RemoteMapping, SuwayomiSource, MetronStatus, MetronTestResult } from './-settings.types';
+import type { AllSettings, MetronReviewCandidate, MetronReviewsResponse, NZBIndexer, ExternalClient, ClientOption, RemoteMapping, SuwayomiSource } from './-settings.types';
 
 export const SETTINGS_KEY = ['settings'] as const;
 
@@ -20,20 +20,6 @@ export async function updateSettings(data: Partial<AllSettings>): Promise<void> 
 export async function resetKeys(keys: string[]): Promise<void> {
   const response = await apiClient.delete('settings', { json: { reset_keys: keys } });
   await readJson<unknown>(response);
-}
-
-export const METRON_STATUS_KEY = ['metron-status'] as const;
-export function metronStatusQueryOptions() {
-  return queryOptions({ queryKey: METRON_STATUS_KEY, queryFn: () => apiClient.get('metron/status').then(res => readJson<MetronStatus>(res)), staleTime: 15_000 });
-}
-export async function testMetronConnection(): Promise<MetronTestResult> {
-  return apiClient.post('settings/metron/test').then(res => readJson<MetronTestResult>(res));
-}
-export async function startMetronBackfill(): Promise<{ task_id: number; backfill: Record<string, unknown> }> {
-  return apiClient.post('metron/backfill').then(res => readJson<{ task_id: number; backfill: Record<string, unknown> }>(res));
-}
-export async function cancelMetronBackfill(): Promise<Record<string, unknown>> {
-  return apiClient.delete('metron/backfill').then(res => readJson<Record<string, unknown>>(res));
 }
 
 export const SUWAYOMI_SOURCES_KEY = ['suwayomi-sources'] as const;
@@ -167,3 +153,26 @@ export async function deleteRootFolder(id: number): Promise<void> {
   const response = await apiClient.delete(`rootfolder/${id}`);
   await readJson<unknown>(response);
 }
+
+
+export async function testMetronConnection(): Promise<{success: boolean; status: string; description: string | null; rate_limit?: Record<string, unknown> | null}> {
+  return apiClient.post('metadata/metron/test').then(res => readJson<{success: boolean; status: string; description: string | null; rate_limit?: Record<string, unknown> | null}>(res));
+}
+
+export async function startMetronBackfill(): Promise<{task_id: number | null; status?: string; duplicate?: boolean}> {
+  return apiClient.post('metadata/metron/backfill').then(res => readJson<{task_id: number | null; status?: string; duplicate?: boolean}>(res));
+}
+
+export async function fetchMetronReviews(): Promise<MetronReviewsResponse> {
+  return apiClient.get('metadata/metron/reviews').then(res => readJson<MetronReviewsResponse>(res));
+}
+
+export async function selectMetronCandidate(candidateId: number): Promise<{volume_id: number; task_id: number | null; duplicate?: boolean; status: string}> {
+  return apiClient.post(`metadata/metron/reviews/${candidateId}/select`).then(res => readJson<{volume_id: number; task_id: number | null; duplicate?: boolean; status: string}>(res));
+}
+
+export async function dismissMetronReview(volumeId: number): Promise<{status: string}> {
+  return apiClient.post(`volumes/${volumeId}/metadata/metron/review/dismiss`).then(res => readJson<{status: string}>(res));
+}
+
+export type { MetronReviewCandidate };

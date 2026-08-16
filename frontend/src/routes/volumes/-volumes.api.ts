@@ -51,6 +51,10 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
     root_folder_path: raw.root_folder_path ?? '',
     issue_count: raw.issue_count ?? 0,
     issues_downloaded: raw.issues_downloaded ?? 0,
+    released_issue_count: raw.released_issue_count ?? raw.issue_count ?? 0,
+    released_issues_downloaded: raw.released_issues_downloaded ?? raw.issues_downloaded ?? 0,
+    upcoming_issue_count: raw.upcoming_issue_count ?? 0,
+    completion_percentage: raw.completion_percentage ?? null,
     cover: raw.cover ?? undefined,
     issues: Array.isArray(raw.issues)
       ? raw.issues.map((i: Record<string, any>) => ({
@@ -81,6 +85,7 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
             : [],
         }))
       : [],
+    metadata_provenance: raw.metadata_provenance,
     general_files: Array.isArray(raw.general_files)
       ? raw.general_files.map((file: Record<string, any>) => {
           const filepath = String(file.filepath ?? '');
@@ -93,11 +98,6 @@ function toVolumeDetailFull(raw: Record<string, any>): VolumeDetailFull {
           };
         })
       : [],
-    canonical_provider: raw.canonical_provider ?? raw.metadata_provenance?.canonical_provider ?? undefined,
-    enriched_by: Array.isArray(raw.enriched_by) ? raw.enriched_by.map(String) : Array.isArray(raw.metadata_provenance?.enriched_by) ? raw.metadata_provenance.enriched_by.map(String) : [],
-    provider_badges: Array.isArray(raw.provider_badges) ? raw.provider_badges : Array.isArray(raw.metadata_provenance?.provider_badges) ? raw.metadata_provenance.provider_badges : [],
-    metron: raw.metron ?? raw.metadata_provenance?.metron ?? undefined,
-    enrichment_terms: Array.isArray(raw.enrichment_terms) ? raw.enrichment_terms : Array.isArray(raw.metadata_provenance?.enrichment_terms) ? raw.metadata_provenance.enrichment_terms : [],
   };
 }
 
@@ -429,15 +429,18 @@ export async function addCoverPage(
   return readJson<AddCoverResult>(response);
 }
 
-export async function refreshMetronVolume(id: number): Promise<{ task_id: number }> {
-  const response = await apiClient.post(`volumes/${id}/metron/refresh`);
-  return readJson<{ task_id: number }>(response);
+
+export async function refreshMetronVolume(id: number): Promise<{task_id: number | null; duplicate?: boolean}> {
+  const response = await apiClient.post(`volumes/${id}/metadata/metron/refresh`);
+  return readJson<{task_id: number | null; duplicate?: boolean}>(response);
 }
-export async function relinkMetronVolume(id: number, externalId: string): Promise<Record<string, unknown>> {
-  const response = await apiClient.post(`volumes/${id}/metron/relink`, { json: { external_id: externalId } });
-  return readJson<Record<string, unknown>>(response);
+
+export async function unlinkMetronVolume(id: number): Promise<{status: string}> {
+  const response = await apiClient.post(`volumes/${id}/metadata/metron/unlink`);
+  return readJson<{status: string}>(response);
 }
-export async function removeMetronVolume(id: number): Promise<Record<string, unknown>> {
-  const response = await apiClient.delete(`volumes/${id}/metron`);
-  return readJson<Record<string, unknown>>(response);
+
+export async function relinkMetronVolume(id: number, seriesId: string, candidateId?: number): Promise<{task_id: number | null; status: string; duplicate?: boolean}> {
+  const response = await apiClient.post(`volumes/${id}/metadata/metron/relink`, { json: { series_id: seriesId, candidate_id: candidateId } });
+  return readJson<{task_id: number | null; status: string; duplicate?: boolean}>(response);
 }

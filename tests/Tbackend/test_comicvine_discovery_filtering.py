@@ -3,7 +3,11 @@
 import ast
 import unittest
 from pathlib import Path
-from typing import FrozenSet
+from typing import Any, Dict, FrozenSet, Union
+from datetime import date as _date
+from backend.base.definitions import DateType
+from backend.base.file_extraction import extract_issue_number
+from backend.base.helpers import first_of_range, force_range
 from unicodedata import normalize
 
 
@@ -25,6 +29,12 @@ def _load_discovery_filter_symbols():
         '_publisher_matches',
         '_is_comic_discovery_excluded_publisher',
         '_has_manga_discovery_title_keyword',
+        '_parse_cv_date',
+        'issue_date',
+        '_issue_date',
+        '_issue_number_value',
+        '_first_known_issue',
+        '_is_launch_issue_for_volume',
     }
     selected = [
         node
@@ -37,7 +47,7 @@ def _load_discovery_filter_symbols():
             and node.name in names
         )
     ]
-    namespace = {'frozenset': frozenset, 'FrozenSet': FrozenSet, 'str': str, 'bool': bool, 'any': any, 'normalise_query_string': _normalise_query_string}
+    namespace = {'frozenset': frozenset, 'FrozenSet': FrozenSet, 'Any': Any, 'Dict': Dict, 'Union': Union, '_date': _date, 'DateType': DateType, 'first_of_range': first_of_range, 'force_range': force_range, 'extract_issue_number': extract_issue_number, 'str': str, 'bool': bool, 'any': any, 'normalise_query_string': _normalise_query_string}
     exec(compile(ast.Module(body=selected, type_ignores=[]), str(source_path), 'exec'), namespace)
     return namespace
 
@@ -74,6 +84,61 @@ class ComicVineDiscoveryFilteringTests(unittest.TestCase):
         self.assertFalse(excluded('Marvel'))
         self.assertFalse(excluded('DC Comics'))
 
+
+class ComicVineShelfSemanticsTests(unittest.TestCase):
+    def test_recently_started_requires_earliest_known_issue_inside_window(self):
+        from datetime import date, timedelta
+        from backend.implementations.comicvine import _is_recently_started_volume
+        today = date(2026, 8, 15)
+        self.assertTrue(_is_recently_started_volume({'issues': [{'id': 1, 'issue_number': '1', 'cover_date': (today - timedelta(days=330)).isoformat()}]}, today))
+        self.assertFalse(_is_recently_started_volume({'issues': [{'id': 1, 'issue_number': '1', 'cover_date': (today - timedelta(days=400)).isoformat()}]}, today))
+        self.assertFalse(_is_recently_started_volume({'issues': [{'id': 1, 'issue_number': '1', 'cover_date': (today + timedelta(days=1)).isoformat()}]}, today))
+
+    def test_upcoming_launch_requires_issue_one_as_earliest_known_issue(self):
+        from backend.implementations.comicvine import _is_launch_issue_for_volume
+        issue_one = {'id': 10, 'issue_number': '1', 'cover_date': '2026-09-01'}
+        self.assertTrue(_is_launch_issue_for_volume(issue_one, {'issues': [issue_one]}))
+        self.assertFalse(_is_launch_issue_for_volume({'id': 11, 'issue_number': '15', 'cover_date': '2026-09-01'}, {'issues': [{'id': 1, 'issue_number': '1', 'cover_date': '2020-01-01'}, {'id': 11, 'issue_number': '15', 'cover_date': '2026-09-01'}]}))
+        self.assertFalse(_is_launch_issue_for_volume(issue_one, {'issues': [{'id': 9, 'issue_number': '0', 'cover_date': '2026-08-01'}, issue_one]}))
+
+
+    def test_upcoming_launch_allows_issue_zero_special_or_annual_as_first_issue(self):
+        is_launch = _SYMBOLS['_is_launch_issue_for_volume']
+        volume = {
+            'issues': [
+                {'id': 1, 'issue_number': '0', 'cover_date': '2026-09-01'},
+                {'id': 2, 'issue_number': '1', 'cover_date': '2026-10-01'},
+            ]
+        }
+        self.assertTrue(is_launch(volume['issues'][0], volume))
+        self.assertFalse(is_launch(volume['issues'][1], volume))
+
+    def test_upcoming_launch_uses_configured_store_date_when_preferred(self):
+        is_launch = _SYMBOLS['_is_launch_issue_for_volume']
+        volume = {
+            'issues': [
+                {'id': 1, 'issue_number': '1', 'cover_date': '2026-12-01', 'store_date': '2026-09-01'},
+                {'id': 2, 'issue_number': '0', 'cover_date': '2026-09-01', 'store_date': '2026-10-01'},
+            ]
+        }
+        self.assertTrue(is_launch(volume['issues'][0], volume, 'store_date'))
+        self.assertFalse(is_launch(volume['issues'][1], volume, 'store_date'))
+
+    def test_first_publication_fact_uses_persistent_volume_identity_and_date_basis(self):
+        from backend.implementations.comicvine import _first_publication_fact_from_volume
+        volume = {'id': 4050, 'name': 'Fact Series', 'image': {'small_url': 'cover.jpg'}, 'site_detail_url': 'site', 'start_year': '2026', 'publisher': {'name': 'DC'}, 'issues': [
+            {'id': 2, 'issue_number': '2', 'cover_date': '2026-10-01', 'store_date': '2026-08-01'},
+            {'id': 1, 'issue_number': '1', 'cover_date': '2026-09-01', 'store_date': '2026-09-15'},
+        ]}
+        fact = _first_publication_fact_from_volume(volume, 'store_date', upcoming_issue=volume['issues'][0])
+        self.assertEqual(fact['comicvine_volume_id'], 4050)
+        self.assertEqual(fact['first_known_issue_id'], 2)
+        self.assertEqual(fact['first_known_issue_date'], '2026-08-01')
+        self.assertEqual(fact['date_source'], 'store_date')
+        self.assertTrue(fact['is_upcoming_launch'])
+        self.assertEqual(fact['volume_title'], 'Fact Series')
+        self.assertEqual(fact['cover_link'], 'cover.jpg')
+        self.assertEqual(fact['publisher'], 'DC')
 
 if __name__ == '__main__':
     unittest.main()

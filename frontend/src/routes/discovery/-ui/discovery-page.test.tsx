@@ -1,38 +1,77 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { DISCOVER_AUTOMATIC_PAGE_LIMIT, DISCOVER_INITIAL_PAGE_SIZE, dedupeDiscoveryItems } from '../-discovery.types';
 
 const source = readFileSync('src/routes/discovery/-ui/discovery-page.tsx', 'utf8');
 
-it('uses separate comic and manga feature-level discover pages', () => {
-  expect(source).toContain('export function ComicDiscoverPage');
-  expect(source).toContain('export function MangaDiscoverPage');
-  expect(source).toContain('function DiscoverSearch');
-  expect(source).toContain('function DiscoveryShelf');
-  expect(source).not.toContain('StoryArcsView');
+it('renders a title-only combobox below the input with keyboard semantics', () => {
+  expect(source).toContain('role="combobox"');
+  expect(source).toContain('aria-expanded={open}');
+  expect(source).toContain('aria-controls={listboxId}');
+  expect(source).toContain('aria-activedescendant={activeDescendant}');
+  expect(source).toContain('role="listbox"');
+  expect(source).toContain('role="option"');
+  const css = readFileSync('src/routes/discovery/-ui/discovery-page.module.css', 'utf8');
+  expect(css).toContain('top: calc(100% + 0.25rem)');
+  expect(css).not.toContain('bottom: calc(100% + 0.5rem)');
 });
 
-it('starts with search and section controls rather than a giant title panel', () => {
-  expect(source).toContain('DiscoverSearch section={section}');
-  expect(source).toContain('aria-label="Discover search and media section"');
-  expect(source).not.toContain('className={styles.hero}');
+it('closes suggestions on outside click, escape, and clearing input', () => {
+  expect(source).toContain("document.addEventListener('pointerdown', onPointerDown)");
+  expect(source).toContain("event.key === 'Escape'");
+  expect(source).toContain("event.target.value.trim().length < 2");
 });
 
-it('uses IntersectionObserver hybrid loading with a centralized automatic limit', () => {
-  expect(DISCOVER_INITIAL_PAGE_SIZE).toBeGreaterThanOrEqual(24);
-  expect(DISCOVER_INITIAL_PAGE_SIZE).toBeLessThanOrEqual(30);
-  expect(DISCOVER_AUTOMATIC_PAGE_LIMIT).toBe(3);
+it('uses Enter and View all to open URL-backed complete results', () => {
+  expect(source).toContain("navigate({ to: '/discover/search', search: { section, q: query, page: 1, hide_added: hideAlreadyAdded } })");
+  expect(source).toContain('View all results for “{query}”');
+});
+
+it('opens highlighted suggestions by exact provider identity through a router-owned mask', () => {
+  expect(source).toContain("mask: {");
+  expect(source).toContain("to: '/discover/add/$source/$metadataId'");
+  expect(source).toContain('metadata_id ?? String(result.comicvine_id)');
+  expect(source).not.toContain('router.history');
+  expect(source).not.toContain('__tempLocation');
+});
+
+it('asks the all-source search endpoint so manga can aggregate MangaDex results', () => {
+  expect(source).toContain("searchVolumesQueryOptions(debouncedQuery, section, 'all', hideAlreadyAdded)");
+  expect(source).toContain("searchVolumesPageQueryOptions(query, section, 'comicvine'");
+});
+
+it('shows comic issue counts and unknown fallback in search metadata', () => {
+  expect(source).toContain("Issue count unavailable");
+  expect(source).toContain("`${result.issue_count} issue${result.issue_count === 1 ? '' : 's'}`");
+  expect(source).not.toContain('0 issues');
+});
+
+it('hydrates exact add selections without generic search fallback', () => {
+  expect(source).toContain('export function DiscoverExactAddPage');
+  expect(source).toContain('ExactAddReview section={section}');
+  expect(source).toContain('metadata_source: source');
+  expect(source).toContain('searchFallbackTo="/discover/search"');
+});
+
+it('refreshes Discover shelves from the toolbar without generic Add state', () => {
+  expect(source).toContain('refreshDiscoveryFacts()');
+  expect(source).toContain("invalidateQueries({ queryKey: ['discovery'] })");
+  expect(source).not.toContain('onAction={() => undefined}');
+  expect(source).not.toContain('onAddVolume={() => undefined}');
+});
+
+
+it('hybrid-loads Browse with an IntersectionObserver and three automatic pages', () => {
+  expect(source).toContain('DISCOVER_AUTOMATIC_PAGE_LIMIT');
   expect(source).toContain('new IntersectionObserver');
+  expect(source).toContain("root: ref.current.closest('[data-app-scroller]') ?? null");
+  expect(source).toContain('requestedCursorIds.current.has(nextCursor)');
   expect(source).toContain('Load More');
-  expect(source).not.toContain("window.addEventListener('scroll'");
 });
 
-it('deduplicates discovery items by provider identity and omits fake filters', () => {
-  const items = dedupeDiscoveryItems([
-    { comicvine_id: 1, metadata_source: 'comicvine', metadata_id: '1', title: 'One' },
-    { comicvine_id: 1, metadata_source: 'comicvine', metadata_id: '1', title: 'Duplicate' },
-    { comicvine_id: -2, metadata_source: 'mangadex', metadata_id: 'md-2', title: 'Two' },
-  ]);
-  expect(items.map(item => item.title)).toEqual(['One', 'Two']);
-  expect(source).toContain('Character and Genre not shown');
+
+it('keeps Discover add as title-only rather than publisher or genre modes', () => {
+  expect(source).toContain("Add new {section === 'manga' ? 'manga' : 'comics'}");
+  expect(source).not.toContain("(['title', 'publisher', 'genre'] as const)");
+  expect(source).not.toContain('Search ComicVine by title, publisher, or genre keyword.');
+  expect(source).not.toContain('heroRail');
 });

@@ -89,6 +89,15 @@ def _main(
 
         s = Settings()
 
+        try:
+            from backend.features.metron_enrichment import reconcile_metron_task_reservations
+            interrupted_metron_tasks = reconcile_metron_task_reservations()
+            if interrupted_metron_tasks:
+                LOGGER.warning('Marked %s interrupted Metron enrichment reservation(s) for user retry after startup.', interrupted_metron_tasks)
+        except Exception:
+            LOGGER.exception('Failed to reconcile Metron enrichment task reservations during startup')
+
+
         if host:
             try:
                 s.update({"host": host})

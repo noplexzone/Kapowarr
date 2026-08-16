@@ -56,17 +56,7 @@ export function BlocklistPage({ offset }: BlocklistPageProps) {
 
   return (
     <div className={styles.page}>
-      <div className={styles.hero}>
-        <div>
-          <p className={styles.kicker}>Recovery Blocklist</p>
-          <h1>Blocklist</h1>
-          <p>Rejected download candidates with source links, reasons, and explicit unblock controls.</p>
-        </div>
-        <div className={styles.summary} aria-label="Blocklist summary">
-          <strong>{total}</strong>
-          <span>entr{total !== 1 ? 'ies' : 'y'}</span>
-        </div>
-      </div>
+      <h1 className={styles.srOnly}>Blocklist</h1>
 
       <div className={styles.toolbar}>
         <span className={styles.toolbarTitle}>{total} entr{total !== 1 ? 'ies' : 'y'}</span>

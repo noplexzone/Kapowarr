@@ -6,14 +6,13 @@ import { Card, Badge, Button, Progress } from '@/components/primitives';
 import { useSocketEvent } from '@/platform/socketio/socket';
 import { StatusBanner } from '@/components/patterns';
 import {
-  DASHBOARD_SUMMARY_KEY,
   dashboardSummaryQueryOptions,
   recentlyAddedQueryOptions,
   dashboardActiveSearchesQueryOptions,
   dashboardQueueQueryOptions,
   dashboardHistoryQueryOptions,
 } from '../-dashboard.api';
-import type { DashboardSearchTask, DashboardSummary, VolumeCard } from '../-dashboard.types';
+import type { DashboardSearchTask, VolumeCard } from '../-dashboard.types';
 import styles from './dashboard-page.module.css';
 
 interface QueueSummaryEntry {
@@ -43,7 +42,6 @@ export function DashboardPage() {
   const dashboardQueries = [summaryQuery, comicRecentQuery, mangaRecentQuery, activeSearchesQuery, queueQuery, historyQuery];
   const hasError = dashboardQueries.some((query) => query.isError);
   const isRefreshing = dashboardQueries.some((query) => query.isFetching);
-  const isSummaryUpdating = summaryQuery.isFetching && Boolean(summary);
 
   const activeSearches = Array.isArray(activeSearchesData) ? activeSearchesData : [];
   const queueItems = Array.isArray(queueData) ? queueData as QueueSummaryEntry[] : [];
@@ -51,12 +49,10 @@ export function DashboardPage() {
   const missingTotal = summary?.library.missing_monitored ?? null;
   const upcomingTotal = summary?.library.upcoming_monitored ?? null;
   const failedDownloads = summary?.operations.failed_downloads ?? null;
-  const activeDownloads = summary ? Math.max(summary.operations.active_downloads, queueItems.length) : null;
-  const activeSearchCount = summary ? Math.max(summary.operations.active_searches, activeSearches.length) : null;
-  const mismatchTotal = summary?.library.mismatches ?? null;
-  const totalIssues = summary?.library.released_issues ?? 0;
-  const downloadedIssues = summary?.library.downloaded_released_issues ?? 0;
-  const completionPercent = Math.round(summary?.library.completion_percentage ?? 0);
+  const activeDownloads = Math.max(summary?.operations.active_downloads ?? 0, queueItems.length);
+  const totalIssues = summary?.library.released_issues ?? null;
+  const downloadedIssues = summary?.library.downloaded_released_issues ?? null;
+  const completionPercent = summary?.library.completion_percentage ?? null;
 
   const refreshLiveOperations = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['system', 'tasks', 'dashboard', 'active-searches'] });
@@ -64,29 +60,22 @@ export function DashboardPage() {
   }, [queryClient]);
 
   const refreshCompletedWork = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: DASHBOARD_SUMMARY_KEY });
-    void queryClient.invalidateQueries({ queryKey: ['activity', 'queue', 'dashboard'] });
-    void queryClient.invalidateQueries({ queryKey: ['activity', 'history', 'dashboard'] });
-    void queryClient.invalidateQueries({ queryKey: ['volumes', 'recently-added'] });
-    void queryClient.invalidateQueries({ queryKey: ['nav', 'badges'] });
-  }, [queryClient]);
-
-  const refreshDownloadedStatus = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: DASHBOARD_SUMMARY_KEY });
+    void queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] });
+    void queryClient.invalidateQueries({ queryKey: ['volumes', 'list'] });
     void queryClient.invalidateQueries({ queryKey: ['volumes', 'recently-added'] });
     void queryClient.invalidateQueries({ queryKey: ['nav', 'badges'] });
   }, [queryClient]);
 
   useSocketEvent('task_added', refreshLiveOperations);
   useSocketEvent('task_status', refreshLiveOperations);
-  useSocketEvent('task_ended', refreshCompletedWork);
   useSocketEvent('queue_added', refreshLiveOperations);
   useSocketEvent('queue_status', refreshLiveOperations);
-  useSocketEvent('queue_ended', refreshCompletedWork);
-  useSocketEvent('downloaded_status', refreshDownloadedStatus);
+  useSocketEvent('queue_ended', refreshLiveOperations);
+  useSocketEvent('task_ended', refreshCompletedWork);
+  useSocketEvent('downloaded_status', refreshCompletedWork);
 
   const refreshHome = () => Promise.all([
-    DASHBOARD_SUMMARY_KEY,
+    ['dashboard', 'summary'],
     ['volumes', 'recently-added'],
     ['system', 'tasks', 'dashboard', 'active-searches'],
     ['activity', 'queue', 'dashboard'],
@@ -95,12 +84,6 @@ export function DashboardPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.topActions}>
-        {isSummaryUpdating && <span className={styles.updatingIndicator}>Updating KPIs…</span>}
-        <Button variant="secondary" disabled={isRefreshing} onClick={refreshHome}>
-          {isRefreshing ? 'Refreshing…' : 'Refresh Home'}
-        </Button>
-      </div>
       {hasError && (
         <StatusBanner error>
           Some Home data could not be loaded. Preserve successful sections while retrying stale panels.
@@ -116,31 +99,34 @@ export function DashboardPage() {
             and shelves worth checking after the queue settles.
           </p>
           <div className={styles.heroActions}>
-            <Link className={`${styles.actionLink} ${styles.actionPrimary}`} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }}>
+            <Link className={`${styles.actionLink} ${styles.actionPrimary}`} to="/library" search={{ section: 'comic', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }}>
               Comics missing
             </Link>
-            <Link className={`${styles.actionLink} ${styles.actionSecondary}`} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }}>
+            <Link className={`${styles.actionLink} ${styles.actionSecondary}`} to="/library" search={{ section: 'manga', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }}>
               Manga missing
             </Link>
             <Link className={`${styles.actionLink} ${styles.actionGhost}`} to="/activity/queue">Open queue</Link>
+            <Button variant="secondary" disabled={isRefreshing} onClick={refreshHome}>
+              {isRefreshing ? 'Refreshing…' : 'Refresh Home'}
+            </Button>
           </div>
         </div>
         <Card className={styles.heroPanel}>
           <div className={styles.panelLabel}>Library completion</div>
-          <div className={styles.completionValue}>{summary ? `${completionPercent}%` : <MetricSkeleton label="Library completion" />}</div>
-          <Progress value={completionPercent} tone={completionPercent >= 90 ? 'success' : 'accent'} aria-label="Library completion" />
+          <div className={styles.completionValue}>{formatPercent(completionPercent)}</div>
+          <Progress value={completionPercent ?? 0} tone={(completionPercent ?? 0) >= 90 ? 'success' : 'accent'} aria-label="Library completion" />
           <dl className={styles.heroStats}>
             <div>
               <dt>Downloaded</dt>
-              <dd>{summary ? formatCount(downloadedIssues) : <MetricSkeleton label="Downloaded released issues" />}</dd>
+              <dd>{formatOptionalCount(downloadedIssues)}</dd>
             </div>
             <div>
-              <dt>Released</dt>
-              <dd>{summary ? formatCount(totalIssues) : <MetricSkeleton label="Released issues" />}</dd>
+              <dt>Tracked</dt>
+              <dd>{formatOptionalCount(totalIssues)}</dd>
             </div>
             <div>
               <dt>Missing</dt>
-              <dd>{summary ? formatCount(missingTotal ?? 0) : <MetricSkeleton label="Missing monitored" />}</dd>
+              <dd>{formatOptionalCount(missingTotal)}</dd>
             </div>
           </dl>
         </Card>
@@ -149,31 +135,30 @@ export function DashboardPage() {
       <div className={styles.dashboardBody}>
         <div className={styles.mainColumn}>
           <div className={styles.commandGrid}>
-            <MetricCard label="Missing monitored" value={missingTotal} meta="Released monitored missing issues" tone="danger" to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
-            <MetricCard label="Upcoming monitored" value={upcomingTotal} meta="Monitored issues not released yet" tone="info" to="/comics" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
-            <MetricCard label="Mismatches" value={mismatchTotal} meta="Import records needing review" tone="warning" to="/activity/mismatches" search={{ section: 'comic' }} />
+            <MetricCard label="Missing monitored" value={missingTotal} meta="Missing released issues ready for triage" tone="danger" to="/library" search={{ section: 'comic', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
+            <MetricCard label="Upcoming monitored" value={upcomingTotal} meta="Recently released or expected soon" tone="info" to="/library" search={{ section: 'comic', status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
             <MetricCard label="Active downloads" value={activeDownloads} meta="Queue items moving now" tone="success" to="/activity/queue" />
             <MetricCard label="Failed downloads" value={failedDownloads} meta="History entries needing recovery" tone="warning" to="/activity/history" search={{ page: 1, status: 'failed', section: 'all' }} />
           </div>
 
           <div className={styles.operationalGrid}>
-        <section className={styles.section} aria-labelledby="wanted-triage-heading">
+        <section className={styles.section} aria-labelledby="missing-triage-heading">
           <div className={styles.sectionHeader}>
             <div>
               <span className={styles.sectionKicker}>Triage</span>
-              <h2 id="wanted-triage-heading" className={styles.sectionTitle}>Wanted / Missing Triage</h2>
+              <h2 id="missing-triage-heading" className={styles.sectionTitle}>Missing Issue Triage</h2>
             </div>
             <Link to="/activity/history" search={{ page: 1, status: 'failed', section: 'all' }} className={styles.sectionLink}>
               Failure history
             </Link>
           </div>
           <Card className={styles.triageCard}>
-            <TriageRow label="Comics missing" value={sectionMetric(summary, 'comic', 'missing_monitored')} to="/comics" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
-            <TriageRow label="Manga missing" value={sectionMetric(summary, 'manga', 'missing_monitored')} to="/manga" search={{ status: 'missing', monitoring: 'all', sort: 'wanted', view: 'grid', page: 1 }} />
-            <TriageRow label="Comics upcoming" value={sectionMetric(summary, 'comic', 'upcoming_monitored')} to="/comics" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
-            <TriageRow label="Manga upcoming" value={sectionMetric(summary, 'manga', 'upcoming_monitored')} to="/manga" search={{ status: 'upcoming', monitoring: 'all', sort: 'recently_released', view: 'grid', page: 1 }} />
-            <TriageRow label="Comic mismatches" value={sectionMetric(summary, 'comic', 'mismatches')} to="/activity/mismatches" search={{ section: 'comic' }} />
-            <TriageRow label="Manga mismatches" value={sectionMetric(summary, 'manga', 'mismatches')} to="/activity/mismatches" search={{ section: 'manga' }} />
+            <TriageRow label="Comics missing" value={summary?.sections.comic.missing_monitored ?? null} to="/library" search={{ section: 'comic', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
+            <TriageRow label="Manga missing" value={summary?.sections.manga.missing_monitored ?? null} to="/library" search={{ section: 'manga', status: 'missing', monitoring: 'all', sort: 'completion', view: 'grid', page: 1 }} />
+            <TriageRow label="Comics unmonitored" value={null} to="/library" search={{ section: 'comic', status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
+            <TriageRow label="Manga unmonitored" value={null} to="/library" search={{ section: 'manga', status: 'all', monitoring: 'unmonitored', sort: 'title', view: 'grid', page: 1 }} />
+            <TriageRow label="Comic mismatches" value={summary?.sections.comic.mismatches ?? null} to="/activity/mismatches" search={{ section: 'comic' }} />
+            <TriageRow label="Manga mismatches" value={summary?.sections.manga.mismatches ?? null} to="/activity/mismatches" search={{ section: 'manga' }} />
           </Card>
         </section>
 
@@ -188,7 +173,6 @@ export function DashboardPage() {
             </Link>
           </div>
           <Card className={styles.sectionCard}>
-            <MetricCard label="Active searches" value={activeSearchCount} meta="Search tasks running or queued" tone="info" to="/activity/search-history" search={{ page: 1 }} />
             <OperationList
               title="Active Searches"
               empty="No active searches"
@@ -255,8 +239,8 @@ export function DashboardPage() {
         </div>
 
         <div className={styles.shelfGrid}>
-          <CoverShelf title="Comics Recently Added" badge="Comics" empty="No comics yet" volumes={(comicRecent ?? []).slice(0, 3)} to="/comics" />
-          <CoverShelf title="Manga Recently Added" badge="Manga" empty="No manga yet" volumes={(mangaRecent ?? []).slice(0, 3)} to="/manga" />
+          <CoverShelf title="Comics Recently Added" badge="Comics" empty="No comics yet" volumes={(comicRecent ?? []).slice(0, 3)} to="/library" section="comic" />
+          <CoverShelf title="Manga Recently Added" badge="Manga" empty="No manga yet" volumes={(mangaRecent ?? []).slice(0, 3)} to="/library" section="manga" />
         </div>
       </div>
     </div>
@@ -267,7 +251,7 @@ function MetricCard({ label, value, meta, tone, to, search }: { label: string; v
   return (
     <Link to={to} search={search as never} className={styles.metricLink}>
       <Card className={`${styles.metricCard} ${styles[`metric-${tone}`]}`}>
-        <span className={styles.metricValue}>{value === null ? <MetricSkeleton label={label} /> : value}</span>
+        <span className={styles.metricValue}>{value ?? '—'}</span>
         <span className={styles.metricLabel}>{label}</span>
         <span className={styles.metricMeta}>{meta}</span>
       </Card>
@@ -305,7 +289,7 @@ function OperationRow({ title, meta, tone, badge }: { title: string; meta: strin
   );
 }
 
-function CoverShelf({ title, badge, empty, volumes, to }: { title: string; badge: string; empty: string; volumes: VolumeCard[]; to: '/comics' | '/manga' }) {
+function CoverShelf({ title, badge, empty, volumes, to, section }: { title: string; badge: string; empty: string; volumes: VolumeCard[]; to: '/library'; section: 'comic' | 'manga' }) {
   return (
     <section className={styles.section}>
       <div className={styles.sectionHeader}>
@@ -313,7 +297,7 @@ function CoverShelf({ title, badge, empty, volumes, to }: { title: string; badge
           <span className={styles.sectionBadge}>{badge}</span>{' '}
           {title.replace(`${badge} `, '')}
         </h2>
-        <Link to={to} className={styles.sectionLink}>
+        <Link to={to} search={{ section } as never} className={styles.sectionLink}>
           View all
         </Link>
       </div>
@@ -361,14 +345,14 @@ function progressLabel(entry: QueueSummaryEntry) {
   return 'Download queued';
 }
 
-function sectionMetric(summary: DashboardSummary | undefined, section: 'comic' | 'manga', key: keyof DashboardSummary['library']['sections']['comic']) {
-  return summary?.library.sections[section][key] ?? null;
-}
-
-function MetricSkeleton({ label }: { label: string }) {
-  return <span className={styles.metricSkeleton} aria-label={`Loading ${label}`} />;
-}
-
 function formatCount(value: number) {
   return new Intl.NumberFormat().format(value);
+}
+
+function formatOptionalCount(value: number | null | undefined) {
+  return value == null ? '—' : formatCount(value);
+}
+
+function formatPercent(value: number | null | undefined) {
+  return value == null ? '—' : `${Math.round(value)}%`;
 }

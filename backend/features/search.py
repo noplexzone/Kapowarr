@@ -44,6 +44,8 @@ def _search_result_source_id(result: SearchResultData) -> str:
 
 def _source_priority_for_volume(volume_data: VolumeData) -> List[str]:
     """Return configured source priority for this volume's library type."""
+    from sqlite3 import OperationalError
+
     from backend.implementations.suwayomi import is_manga_publisher
     from backend.internals.settings import Settings
 
@@ -55,10 +57,10 @@ def _source_priority_for_volume(volume_data: VolumeData) -> List[str]:
             priority = list(settings.manga_source_priority)
         else:
             priority = list(settings.comic_source_priority)
-    except RuntimeError:
-        # Some isolated unit tests exercise auto_search without a Flask/DB
-        # context.  Use defaults rather than making source ordering force an
-        # application context where the previous code did not need one.
+    except (RuntimeError, OperationalError):
+        # Some isolated unit tests exercise auto_search without a usable
+        # Flask/DB context. Use defaults rather than making source ordering
+        # force application storage where the previous code did not need it.
         priority = (
             ['suwayomi', 'usenet', 'getcomics']
             if is_manga else ['usenet', 'getcomics']

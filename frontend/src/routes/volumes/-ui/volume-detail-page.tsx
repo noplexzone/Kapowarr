@@ -37,8 +37,8 @@ import {
   addCoverPage,
   manualSuwayomiBundleSearch,
   refreshMetronVolume,
+  unlinkMetronVolume,
   relinkMetronVolume,
-  removeMetronVolume,
 } from '../-volumes.api';
 import type {
   IssueDetail,
@@ -96,7 +96,7 @@ interface DownloadedStatusPayload {
   not_downloaded_issues?: number[];
 }
 
-const VOLUME_REFRESH_ACTIONS = new Set(['refresh_and_scan', 'import_files_volume', 'mass_rename', 'mass_convert']);
+const VOLUME_REFRESH_ACTIONS = new Set(['refresh_and_scan', 'import_files_volume', 'mass_rename', 'mass_convert', 'metron_enrich_volume']);
 const IMPORT_FILE_ACCEPT = '.cbz,.cbr,.cb7,.cbt,.cba,.zip,.rar,.7z,.7zip,.tar.gz,.epub,.pdf,.mobi';
 
 const MONITORING_SCHEMES = [
@@ -138,8 +138,6 @@ export function VolumeDetailPage() {
   const [actionMsg, setActionMsg] = useState('');
   const [queueEntries, setQueueEntries] = useState<Map<number, QueueEntry>>(new Map());
   const [refreshTaskId, setRefreshTaskId] = useState<number | null>(null);
-  const [metronRelinkOpen, setMetronRelinkOpen] = useState(false);
-  const [metronExternalId, setMetronExternalId] = useState('');
 
 
   // Issue manual search dialog
@@ -284,6 +282,37 @@ export function VolumeDetailPage() {
     }
   }, [historyTabActive, id, queryClient]);
 
+
+  useEffect(() => {
+    const refresh = () => {
+      refreshMetronVolume(id).then((result) => {
+        setActionMsg(result.duplicate ? 'Metron enrichment is already queued.' : `Metron enrichment queued${result.task_id ? ` as task ${result.task_id}` : ''}.`);
+      }).catch((error) => setActionMsg(String(error)));
+    };
+    const relink = () => {
+      const seriesId = window.prompt('Metron series ID');
+      if (!seriesId) return;
+      relinkMetronVolume(id, seriesId).then((result) => {
+        setActionMsg(result.duplicate ? 'Metron relink saved; enrichment is already queued.' : `Metron relink queued${result.task_id ? ` as task ${result.task_id}` : ''}.`);
+      }).catch((error) => setActionMsg(String(error)));
+    };
+    const unlink = () => {
+      if (!window.confirm('Remove visible Metron enrichment for this volume? ComicVine data will be preserved.')) return;
+      unlinkMetronVolume(id).then(() => {
+        setActionMsg('Metron link removed.');
+        refreshVolumeData();
+      }).catch((error) => setActionMsg(String(error)));
+    };
+    window.addEventListener('kapowarr:metron-refresh', refresh);
+    window.addEventListener('kapowarr:metron-relink', relink);
+    window.addEventListener('kapowarr:metron-unlink', unlink);
+    return () => {
+      window.removeEventListener('kapowarr:metron-refresh', refresh);
+      window.removeEventListener('kapowarr:metron-relink', relink);
+      window.removeEventListener('kapowarr:metron-unlink', unlink);
+    };
+  }, [id, refreshVolumeData]);
+
   useSocketEvent<TaskEndedPayload>('task_ended', useCallback((payload) => {
     if (payload.volume_id !== id || !VOLUME_REFRESH_ACTIONS.has(payload.action ?? '')) return;
     setRefreshTaskId(null);
@@ -426,22 +455,6 @@ export function VolumeDetailPage() {
       queryClient.invalidateQueries({ queryKey: VOLUME_FULL_KEY(id) });
     },
     onError: (err) => setActionMsg('Update failed: ' + (err as Error).message),
-  });
-
-  const metronRefreshMutation = useMutation({
-    mutationFn: () => refreshMetronVolume(id),
-    onSuccess: (data) => { setRefreshTaskId(data.task_id); setActionMsg('Metron enrichment refresh started.'); refreshVolumeData(); },
-    onError: (err) => setActionMsg('Metron refresh failed: ' + (err as Error).message),
-  });
-  const metronRelinkMutation = useMutation({
-    mutationFn: () => relinkMetronVolume(id, metronExternalId),
-    onSuccess: () => { setMetronRelinkOpen(false); setActionMsg('Metron link updated.'); refreshVolumeData(); },
-    onError: (err) => setActionMsg('Metron relink failed: ' + (err as Error).message),
-  });
-  const metronRemoveMutation = useMutation({
-    mutationFn: () => removeMetronVolume(id),
-    onSuccess: () => { setActionMsg('Metron link removed.'); refreshVolumeData(); },
-    onError: (err) => setActionMsg('Metron remove failed: ' + (err as Error).message),
   });
 
   const refreshMutation = useMutation({
@@ -1132,10 +1145,9 @@ export function VolumeDetailPage() {
     );
   }
 
-  const progressPct =
-    volume.issue_count > 0
-      ? Math.round((volume.issues_downloaded / volume.issue_count) * 100)
-      : 0;
+  const progressPct = volume.completion_percentage != null
+    ? Math.round(volume.completion_percentage)
+    : 0;
   const progressTone = progressPct >= 100 ? 'success' : 'danger';
   const selectedManualSearchIssue = volume.issues.find(
     (issue) => issue.id === manualSearchIssueId,
@@ -1149,21 +1161,6 @@ export function VolumeDetailPage() {
   return (
     <div className={styles.page}>
       <VolumeHero volume={volume} actionMsg={actionMsg} progressPct={progressPct} progressTone={progressTone} refreshPending={refreshMutation.isPending} autoSearchPending={autoSearchMutation.isPending} manualSearchPending={volManualSearching} onRefresh={() => refreshMutation.mutate()} onAutoSearch={() => autoSearchMutation.mutate()} onManualSearch={handleVolumeManualSearch} onEdit={openEdit} onFixMatch={openFixMatch} onPreviewRename={handleOpenRename} onManageIssues={openManageIssues} onImportFiles={() => setImportOpen(true)} />
-
-      {volume.section === 'comic' && <section className={styles.volumeCard} aria-label="Metadata providers">
-        <h2>Metadata Providers</h2>
-        <div className={styles.inlineActions}>{(volume.provider_badges ?? [{ provider: 'comicvine', label: 'Canonical: ComicVine', role: 'canonical' }]).map(badge => <Badge key={`${badge.provider}:${badge.role}`}>{badge.label}</Badge>)}</div>
-        <p>Metron match: {volume.metron?.match_status ?? 'not linked'}{volume.metron?.series_id ? ` · Series ${volume.metron.series_id}` : ''}</p>
-        <p>Last enriched: {volume.metron?.last_successful_enrichment ? new Date(volume.metron.last_successful_enrichment * 1000).toLocaleString() : 'Never'}</p>
-        <div className={styles.inlineActions}>
-          <Button variant="secondary" onClick={() => metronRefreshMutation.mutate()} disabled={metronRefreshMutation.isPending}>Refresh Metron Enrichment</Button>
-          <Button variant="secondary" onClick={() => { setMetronExternalId(volume.metron?.series_id ?? ''); setMetronRelinkOpen(true); }}>Relink Metron Match</Button>
-          <Button variant="secondary" onClick={() => { if (window.confirm('Remove the Metron link and visible Metron-only enrichment for this volume? ComicVine data is preserved.')) metronRemoveMutation.mutate(); }}>Remove Metron Link</Button>
-        </div>
-        {(volume.enrichment_terms ?? []).length > 0 && <p>Enrichment: {(volume.enrichment_terms ?? []).slice(0, 8).map(t => `${t.term_type}: ${t.name}`).join(' · ')}</p>}
-      </section>}
-
-      {metronRelinkOpen && <DialogFrame open onOpenChange={(open) => !open && setMetronRelinkOpen(false)}><DialogHeader title="Relink Metron Match" onClose={() => setMetronRelinkOpen(false)} /><DialogBody><p>Enter a Metron series ID. ComicVine remains canonical.</p><label htmlFor="metron-series-id">Metron series id</label><input id="metron-series-id" className={styles.fixSearchInput} value={metronExternalId} onChange={e => setMetronExternalId(e.target.value)} /><Button variant="primary" onClick={() => metronRelinkMutation.mutate()} disabled={!metronExternalId.trim() || metronRelinkMutation.isPending}>Save Metron Link</Button></DialogBody></DialogFrame>}
 
       <nav aria-label="Volume sections" className={styles.volumeTabs}>
         {([['issues', 'Issues', '/volumes/$volumeId/issues'], ['files', 'Files', '/volumes/$volumeId/files'], ['history', 'History', '/volumes/$volumeId/history'], ['settings', 'Settings', '/volumes/$volumeId/settings']] as const).map(([key, label, to]) => <Link key={key} to={to} params={{ volumeId: String(id) }} aria-current={tab === key ? 'page' : undefined}>{label}</Link>)}

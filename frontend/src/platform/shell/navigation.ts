@@ -1,4 +1,4 @@
-export type PrimaryNavLabel = 'Home' | 'Comics' | 'Manga' | 'Discover' | 'Activity' | 'Settings';
+export type PrimaryNavLabel = 'Home' | 'Library' | 'Discover' | 'Activity' | 'Settings';
 
 export interface PrimaryNavItem {
   label: PrimaryNavLabel;
@@ -8,8 +8,7 @@ export interface PrimaryNavItem {
 
 export const PRIMARY_NAV: PrimaryNavItem[] = [
   { label: 'Home', to: '/home' },
-  { label: 'Comics', to: '/comics' },
-  { label: 'Manga', to: '/manga' },
+  { label: 'Library', to: '/library' },
   { label: 'Discover', to: '/discover' },
   { label: 'Activity', to: '/activity', parent: true },
   { label: 'Settings', to: '/settings/general' },
@@ -26,16 +25,15 @@ export const ACTIVITY_NAV = [
 
 export function getActivePrimary(pathname: string): PrimaryNavLabel | undefined {
   if (pathname === '/' || pathname === '/home') return 'Home';
-  if (pathname === '/comics' || pathname === '/library' || pathname.startsWith('/volumes/') || pathname.startsWith('/read/')) return 'Comics';
-  if (pathname === '/manga') return 'Manga';
-  if (pathname === '/discover' || pathname.startsWith('/add')) return 'Discover';
+  if (pathname === '/library' || pathname === '/comics' || pathname === '/manga' || pathname.startsWith('/volumes/') || pathname.startsWith('/read/')) return 'Library';
+  if (pathname === '/discover' || pathname.startsWith('/discover/') || pathname.startsWith('/add')) return 'Discover';
   if (pathname === '/activity' || pathname.startsWith('/activity/')) return 'Activity';
   if (pathname === '/settings' || pathname.startsWith('/settings/')) return 'Settings';
   return undefined;
 }
 
 
-const SORT_OPTIONS = new Set(['title', 'volume_number', 'year', 'recently_added', 'recently_released', 'publisher', 'wanted']);
+const SORT_OPTIONS = new Set(['title', 'volume_number', 'year', 'recently_added', 'recently_released', 'publisher', 'completion']);
 const VIEW_OPTIONS = new Set(['posters', 'table']);
 const FILTER_OPTIONS = new Set(['', 'wanted', 'upcoming', 'unmonitored', 'monitored']);
 

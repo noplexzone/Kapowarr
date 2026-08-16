@@ -1,1 +1,1 @@
-export { EmptyState, FormField, PageHeader, StatusBanner } from './patterns';
+export { EmptyState, FormField, StatusBanner } from './patterns';

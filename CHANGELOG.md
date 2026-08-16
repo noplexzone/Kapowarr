@@ -8,11 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Redesign Discover as provider-aware Comics and Manga landing/catalog flows with curated shelves, URL-backed Browse All filters, and hybrid automatic/load-more pagination.
+- Make Discover the canonical search-and-add surface with a title-only accessible combobox, paginated `/discover/search`, and exact `/discover/add/<source>/<metadata-id>` review routes.
 
-### Fixed
+### Changed
 
-- Remove Story Arcs and false Popular labels from Discover, and keep unsupported Character/Genre filters deferred until reliable Metron-backed data exists.
+- Recover interrupted Metron schema normalization safely, keep backups until validation succeeds, and log deterministic merge counts.
+- Preserve Discover exact Add return state through typed router destinations instead of browser-history guesses.
+- Derive Recently Started and Upcoming Launches from ComicVine first-known issue data instead of volume start-year/date-added approximations.
+- Add durable Metron enrichment task reservations so candidate selection and queued work have a single active owner per volume.
+- Apply Monitor Missing with the shared valid-file predicate so missing issues become monitored and downloaded issues are unmonitored.
+- Mark MangaDex decade Browse responses as bounded with unknown totals and no false pagination.
+- Apply Hide in Library on server-side provider IDs for Discover shelves, Browse, and full search.
+- Redirect legacy Add URLs into Discover and return paginated metadata-search envelopes for full result pages while keeping legacy search callers compatible.
+
+### Removed
+
+- Remove obsolete visible page headers, Library attention banner, Saved Views, Story Arcs, and the generic Add/search page while preserving Discover exact Add review.
 
 ## [1.6.0] - 2026-08-12
 

@@ -3,21 +3,11 @@ import { z } from 'zod';
 import { apiClient, readJson } from '@/app/api-client';
 import type { DashboardSearchTask, DashboardSummary, NavBadges, VolumeCard } from './-dashboard.types';
 
-const volumeStatsSchema = z.object({
-  volumes: z.number().int().nonnegative(), monitored: z.number().int().nonnegative(), unmonitored: z.number().int().nonnegative(),
-  issues: z.number().int().nonnegative(), downloaded_issues: z.number().int().nonnegative(),
-  released_issues: z.number().int().nonnegative().optional(), downloaded_released_issues: z.number().int().nonnegative().optional(),
-  completion_percentage: z.number().nullable().optional(),
-  missing_monitored: z.number().int().nonnegative(), upcoming_monitored: z.number().int().nonnegative(),
-  unmonitored_issues: z.number().int().nonnegative(), failed_downloads: z.number().int().nonnegative(),
-  active_downloads: z.number().int().nonnegative(), mismatches: z.number().int().nonnegative(),
-  files: z.number().int().nonnegative().optional(), total_file_size: z.number().nonnegative().optional(),
-});
-const dashboardSectionSummarySchema = z.object({
-  missing_monitored: z.number().int().nonnegative(),
-  upcoming_monitored: z.number().int().nonnegative(),
-  mismatches: z.number().int().nonnegative(),
-});
+
+export const DASHBOARD_SUMMARY_KEY = ['dashboard', 'summary'] as const;
+const DASHBOARD_STALE_TIME = 5 * 60 * 1000;
+const DASHBOARD_GC_TIME = 30 * 60 * 1000;
+
 const dashboardSummarySchema = z.object({
   generated_at: z.string(),
   library: z.object({
@@ -27,13 +17,34 @@ const dashboardSummarySchema = z.object({
     missing_monitored: z.number().int().nonnegative(),
     upcoming_monitored: z.number().int().nonnegative(),
     mismatches: z.number().int().nonnegative(),
-    sections: z.object({ comic: dashboardSectionSummarySchema, manga: dashboardSectionSummarySchema }),
   }),
   operations: z.object({
     active_downloads: z.number().int().nonnegative(),
     failed_downloads: z.number().int().nonnegative(),
     active_searches: z.number().int().nonnegative(),
   }),
+  sections: z.object({
+    comic: z.object({ missing_monitored: z.number().int().nonnegative(), upcoming_monitored: z.number().int().nonnegative(), mismatches: z.number().int().nonnegative() }),
+    manga: z.object({ missing_monitored: z.number().int().nonnegative(), upcoming_monitored: z.number().int().nonnegative(), mismatches: z.number().int().nonnegative() }),
+  }),
+});
+
+export function dashboardSummaryQueryOptions() {
+  return queryOptions({
+    queryKey: DASHBOARD_SUMMARY_KEY,
+    queryFn: () => apiClient.get('dashboard/summary').then((r) => readJson<DashboardSummary>(r, dashboardSummarySchema)),
+    staleTime: DASHBOARD_STALE_TIME,
+    gcTime: DASHBOARD_GC_TIME,
+  });
+}
+
+const volumeStatsSchema = z.object({
+  volumes: z.number().int().nonnegative(), monitored: z.number().int().nonnegative(), unmonitored: z.number().int().nonnegative(),
+  issues: z.number().int().nonnegative(), downloaded_issues: z.number().int().nonnegative(),
+  missing_monitored: z.number().int().nonnegative(), upcoming_monitored: z.number().int().nonnegative(),
+  unmonitored_issues: z.number().int().nonnegative(), failed_downloads: z.number().int().nonnegative(),
+  active_downloads: z.number().int().nonnegative(), mismatches: z.number().int().nonnegative(),
+  files: z.number().int().nonnegative().optional(), total_file_size: z.number().nonnegative().optional(),
 });
 const rawVolumeEntrySchema = z.object({ id: z.number().int(), title: z.string(), year: z.number().nullable(), publisher: z.string().nullable(), issue_count: z.number().int(), issues_downloaded: z.number().int() });
 const volumePageSchema = z.object({
@@ -91,20 +102,6 @@ interface HistoryEntry {
   state: string;
 }
 
-export const DASHBOARD_SUMMARY_KEY = ['dashboard', 'summary'] as const;
-export const DASHBOARD_SUMMARY_STALE_TIME = 5 * 60_000;
-export const DASHBOARD_SUMMARY_GC_TIME = 30 * 60_000;
-
-export function dashboardSummaryQueryOptions() {
-  return queryOptions({
-    queryKey: DASHBOARD_SUMMARY_KEY,
-    queryFn: () => apiClient.get('dashboard/summary').then((r) => readJson<DashboardSummary>(r, dashboardSummarySchema)),
-    staleTime: DASHBOARD_SUMMARY_STALE_TIME,
-    gcTime: DASHBOARD_SUMMARY_GC_TIME,
-    refetchOnMount: false,
-  });
-}
-
 export function navBadgesQueryOptions() {
   return queryOptions({
     queryKey: ['nav', 'badges'],
@@ -120,8 +117,8 @@ export function comicStatsQueryOptions() {
       apiClient
         .get('volumes/stats', { searchParams: { section: 'comic' } })
         .then((r) => readJson(r, volumeStatsSchema)),
-    staleTime: 0,
-    refetchInterval: 15_000,
+    staleTime: DASHBOARD_STALE_TIME,
+    gcTime: DASHBOARD_GC_TIME,
   });
 }
 
@@ -132,8 +129,8 @@ export function mangaStatsQueryOptions() {
       apiClient
         .get('volumes/stats', { searchParams: { section: 'manga' } })
         .then((r) => readJson(r, volumeStatsSchema)),
-    staleTime: 0,
-    refetchInterval: 15_000,
+    staleTime: DASHBOARD_STALE_TIME,
+    gcTime: DASHBOARD_GC_TIME,
   });
 }
 
@@ -154,8 +151,8 @@ export function recentlyAddedQueryOptions(section: 'comic' | 'manga') {
           (v): VolumeCard => ({ ...v, section: section === 'manga' ? 'manga' : 'comics' }),
         );
     },
-    staleTime: 0,
-    refetchInterval: 15_000,
+    staleTime: DASHBOARD_STALE_TIME,
+    gcTime: DASHBOARD_GC_TIME,
   });
 }
 

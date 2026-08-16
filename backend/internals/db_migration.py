@@ -1352,11 +1352,9 @@ def _migrate_add_saved_filters():
     return
 
 
-@DatabaseMigrationHandler.register_handler(57)
-def _migrate_add_metron_enrichment_tables():
-    cursor = get_db()
-    cursor.executescript("""
-        CREATE TABLE IF NOT EXISTS volume_provider_links(
+_METRON_TABLE_DEFINITIONS = {
+    'volume_provider_links': """
+        CREATE TABLE volume_provider_links(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             volume_id INTEGER NOT NULL,
             provider TEXT NOT NULL,
@@ -1371,12 +1369,9 @@ def _migrate_add_metron_enrichment_tables():
             FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
             UNIQUE(volume_id, provider, resource_type)
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS volume_provider_links_provider_external_unique_idx
-            ON volume_provider_links(provider, resource_type, external_id)
-            WHERE external_id != '';
-        CREATE INDEX IF NOT EXISTS volume_provider_links_provider_external_idx
-            ON volume_provider_links(provider, resource_type, external_id);
-        CREATE TABLE IF NOT EXISTS provider_cache(
+    """,
+    'provider_cache': """
+        CREATE TABLE provider_cache(
             provider TEXT NOT NULL,
             resource_type TEXT NOT NULL,
             external_id TEXT NOT NULL,
@@ -1387,7 +1382,9 @@ def _migrate_add_metron_enrichment_tables():
             expires_at INTEGER,
             PRIMARY KEY(provider, resource_type, external_id)
         );
-        CREATE TABLE IF NOT EXISTS volume_enrichment_terms(
+    """,
+    'volume_enrichment_terms': """
+        CREATE TABLE volume_enrichment_terms(
             volume_id INTEGER NOT NULL,
             provider TEXT NOT NULL,
             term_type TEXT NOT NULL,
@@ -1396,25 +1393,681 @@ def _migrate_add_metron_enrichment_tables():
             FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
             UNIQUE(volume_id, provider, term_type, external_id, name)
         );
-        CREATE INDEX IF NOT EXISTS volume_enrichment_terms_type_name_idx
-            ON volume_enrichment_terms(term_type, name);
-        CREATE INDEX IF NOT EXISTS volume_enrichment_terms_provider_external_idx
-            ON volume_enrichment_terms(provider, external_id);
-        CREATE TABLE IF NOT EXISTS metron_backfill_state(
+    """,
+    'metron_backfill_state': """
+        CREATE TABLE metron_backfill_state(
             id INTEGER PRIMARY KEY CHECK(id = 1),
             status TEXT NOT NULL,
             total INTEGER NOT NULL DEFAULT 0,
+            total_estimate INTEGER NOT NULL DEFAULT 0,
             processed INTEGER NOT NULL DEFAULT 0,
             matched INTEGER NOT NULL DEFAULT 0,
             unmatched INTEGER NOT NULL DEFAULT 0,
             review_required INTEGER NOT NULL DEFAULT 0,
             failed INTEGER NOT NULL DEFAULT 0,
+            skipped INTEGER NOT NULL DEFAULT 0,
             current_volume_id INTEGER,
+            last_terminal_volume_id INTEGER NOT NULL DEFAULT 0,
             rate_limit_paused_until INTEGER,
+            last_error TEXT,
+            resume_time INTEGER,
             cancel_requested BOOL NOT NULL DEFAULT 0,
             started_at INTEGER,
             updated_at INTEGER,
             completed_at INTEGER
         );
+    """,
+    'provider_match_candidates': """
+        CREATE TABLE provider_match_candidates(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            candidate_external_id TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            year INTEGER,
+            publisher TEXT,
+            cover_url TEXT,
+            summary TEXT,
+            confidence REAL,
+            match_reason TEXT NOT NULL DEFAULT '',
+            review_group_id TEXT NOT NULL,
+            review_status TEXT NOT NULL DEFAULT 'review_required',
+            payload TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE
+        );
+    """,
+    'volume_metadata_enrichment': """
+        CREATE TABLE volume_metadata_enrichment(
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            field_name TEXT NOT NULL,
+            normalized_value TEXT NOT NULL,
+            external_provider_id TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
+            active BOOL NOT NULL DEFAULT 1,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            PRIMARY KEY(volume_id, provider, field_name)
+        );
+    """,
+    'provider_rate_limit_state': """
+        CREATE TABLE provider_rate_limit_state(
+            provider TEXT PRIMARY KEY,
+            burst_limit INTEGER,
+            burst_remaining INTEGER,
+            burst_reset INTEGER,
+            sustained_limit INTEGER,
+            sustained_remaining INTEGER,
+            sustained_reset INTEGER,
+            retry_after INTEGER,
+            resume_at INTEGER,
+            last_status TEXT,
+            auth_blocked BOOL NOT NULL DEFAULT 0,
+            updated_at INTEGER
+        );
+    """,
+    'metron_enrichment_task_reservations': """
+        CREATE TABLE metron_enrichment_task_reservations(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            candidate_id INTEGER,
+            task_queue_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'reserved',
+            safe_error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            FOREIGN KEY (candidate_id) REFERENCES provider_match_candidates(id) ON DELETE SET NULL
+        );
+    """,
+}
+
+_METRON_TABLE_COLUMNS = {
+    'volume_provider_links': ('id', 'volume_id', 'provider', 'resource_type', 'external_id', 'match_method', 'match_confidence', 'review_status', 'linked_at', 'last_successful_enrichment', 'last_checked'),
+    'provider_cache': ('provider', 'resource_type', 'external_id', 'payload', 'etag', 'last_modified', 'fetched_at', 'expires_at'),
+    'volume_enrichment_terms': ('volume_id', 'provider', 'term_type', 'external_id', 'name'),
+    'metron_backfill_state': ('id', 'status', 'total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'current_volume_id', 'last_terminal_volume_id', 'rate_limit_paused_until', 'last_error', 'resume_time', 'cancel_requested', 'started_at', 'updated_at', 'completed_at'),
+    'provider_match_candidates': ('id', 'volume_id', 'provider', 'resource_type', 'candidate_external_id', 'title', 'year', 'publisher', 'cover_url', 'summary', 'confidence', 'match_reason', 'review_group_id', 'review_status', 'payload', 'created_at', 'updated_at'),
+    'volume_metadata_enrichment': ('volume_id', 'provider', 'field_name', 'normalized_value', 'external_provider_id', 'updated_at', 'active'),
+    'provider_rate_limit_state': ('provider', 'burst_limit', 'burst_remaining', 'burst_reset', 'sustained_limit', 'sustained_remaining', 'sustained_reset', 'retry_after', 'resume_at', 'last_status', 'auth_blocked', 'updated_at'),
+    'metron_enrichment_task_reservations': ('id', 'volume_id', 'candidate_id', 'task_queue_id', 'status', 'safe_error', 'created_at', 'updated_at'),
+}
+
+
+def _table_exists(cursor, table_name: str) -> bool:
+    return cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (table_name,)).fetchone() is not None
+
+
+def _table_columns(cursor, table_name: str) -> List[str]:
+    return [row[1] for row in cursor.execute(f"PRAGMA table_info({table_name});")]
+
+
+def _index_columns(cursor, table_name: str, index_name: str) -> tuple:
+    return tuple(row[2] for row in cursor.execute(f'PRAGMA index_info({index_name});'))
+
+
+def _has_unique_index(cursor, table_name: str, expected_columns: tuple) -> bool:
+    for row in cursor.execute(f'PRAGMA index_list({table_name});'):
+        if int(row[2] or 0) and _index_columns(cursor, table_name, row[1]) == expected_columns:
+            return True
+    return False
+
+
+def _fk_matches(cursor, table_name: str, target_table: str, on_delete: str = 'CASCADE') -> bool:
+    return any(row[2] == target_table and str(row[6]).upper() == on_delete for row in cursor.execute(f'PRAGMA foreign_key_list({table_name});'))
+
+
+def _metron_table_compatible(cursor, table_name: str) -> bool:
+    if not _table_exists(cursor, table_name):
+        return False
+    info = cursor.execute(f"PRAGMA table_info({table_name});").fetchall()
+    columns = {row[1]: {'type': str(row[2] or '').upper(), 'notnull': int(row[3] or 0), 'default': row[4], 'pk': int(row[5] or 0)} for row in info}
+    if set(_METRON_TABLE_COLUMNS[table_name]) - set(columns):
+        return False
+    required_types = {
+        'volume_provider_links': {'id': 'INTEGER', 'volume_id': 'INTEGER', 'provider': 'TEXT', 'resource_type': 'TEXT', 'external_id': 'TEXT', 'match_method': 'TEXT', 'review_status': 'TEXT', 'linked_at': 'INTEGER'},
+        'provider_cache': {'provider': 'TEXT', 'resource_type': 'TEXT', 'external_id': 'TEXT', 'payload': 'TEXT', 'fetched_at': 'INTEGER'},
+        'volume_enrichment_terms': {'volume_id': 'INTEGER', 'provider': 'TEXT', 'term_type': 'TEXT', 'external_id': 'TEXT', 'name': 'TEXT'},
+        'metron_backfill_state': {'id': 'INTEGER', 'status': 'TEXT', 'total': 'INTEGER', 'processed': 'INTEGER', 'cancel_requested': 'BOOL'},
+        'provider_match_candidates': {'id': 'INTEGER', 'volume_id': 'INTEGER', 'provider': 'TEXT', 'resource_type': 'TEXT', 'candidate_external_id': 'TEXT', 'title': 'TEXT', 'review_group_id': 'TEXT', 'review_status': 'TEXT', 'payload': 'TEXT', 'created_at': 'INTEGER', 'updated_at': 'INTEGER'},
+        'volume_metadata_enrichment': {'volume_id': 'INTEGER', 'provider': 'TEXT', 'field_name': 'TEXT', 'normalized_value': 'TEXT', 'external_provider_id': 'TEXT', 'updated_at': 'INTEGER', 'active': 'BOOL'},
+        'provider_rate_limit_state': {'provider': 'TEXT', 'auth_blocked': 'BOOL'},
+        'metron_enrichment_task_reservations': {'id': 'INTEGER', 'volume_id': 'INTEGER', 'status': 'TEXT', 'created_at': 'INTEGER', 'updated_at': 'INTEGER'},
+    }
+    for column, expected in required_types.get(table_name, {}).items():
+        if expected not in columns[column]['type']:
+            return False
+    required_notnull = {
+        'volume_provider_links': ('volume_id', 'provider', 'resource_type', 'external_id', 'match_method', 'review_status', 'linked_at'),
+        'provider_cache': ('provider', 'resource_type', 'external_id', 'payload', 'fetched_at'),
+        'volume_enrichment_terms': ('volume_id', 'provider', 'term_type', 'external_id', 'name'),
+        'metron_backfill_state': ('status', 'total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'last_terminal_volume_id', 'cancel_requested'),
+        'provider_match_candidates': ('volume_id', 'provider', 'resource_type', 'candidate_external_id', 'title', 'match_reason', 'review_group_id', 'review_status', 'payload', 'created_at', 'updated_at'),
+        'volume_metadata_enrichment': ('volume_id', 'provider', 'field_name', 'normalized_value', 'external_provider_id', 'updated_at', 'active'),
+        'provider_rate_limit_state': ('auth_blocked',),
+        'metron_enrichment_task_reservations': ('volume_id', 'status', 'created_at', 'updated_at'),
+    }
+    if any(columns[column]['notnull'] != 1 for column in required_notnull.get(table_name, ())):
+        return False
+    if table_name == 'provider_cache':
+        if tuple(columns[c]['pk'] for c in ('provider', 'resource_type', 'external_id')) != (1, 2, 3):
+            return False
+    if table_name == 'volume_provider_links':
+        if columns['id']['pk'] != 1 or not _fk_matches(cursor, table_name, 'volumes'):
+            return False
+        if not _has_unique_index(cursor, table_name, ('volume_id', 'provider', 'resource_type')):
+            return False
+    if table_name == 'volume_enrichment_terms':
+        if not _fk_matches(cursor, table_name, 'volumes') or not _has_unique_index(cursor, table_name, ('volume_id', 'provider', 'term_type', 'external_id', 'name')):
+            return False
+    if table_name == 'provider_match_candidates':
+        if columns['id']['pk'] != 1 or not _fk_matches(cursor, table_name, 'volumes'):
+            return False
+    if table_name == 'volume_metadata_enrichment':
+        if tuple(columns[c]['pk'] for c in ('volume_id', 'provider', 'field_name')) != (1, 2, 3) or not _fk_matches(cursor, table_name, 'volumes'):
+            return False
+    if table_name == 'provider_rate_limit_state':
+        if columns['provider']['pk'] != 1:
+            return False
+    if table_name == 'metron_enrichment_task_reservations':
+        if columns['id']['pk'] != 1 or not _fk_matches(cursor, table_name, 'volumes') or not _fk_matches(cursor, table_name, 'provider_match_candidates', 'SET NULL'):
+            return False
+    return True
+
+
+
+def _build_metron_source_union(cursor, table_name: str) -> str:
+    variants = [
+        f"{table_name}_migration_58_live",
+        f"{table_name}_migration_58_current_live",
+        f"{table_name}_migration_58_current_live_source",
+        f"{table_name}_migration_58_current_live_source_current",
+        f"{table_name}_migration_58_backup",
+        f"{table_name}_migration_58_final",
+    ]
+    if _table_exists(cursor, table_name):
+        variants.insert(0, table_name)
+    columns = list(_METRON_TABLE_COLUMNS[table_name])
+    selects = []
+    for name in variants:
+        if not _table_exists(cursor, name):
+            continue
+        source_columns = set(_table_columns(cursor, name))
+        exprs = [column if column in source_columns else f"NULL AS {column}" for column in columns]
+        selects.append(f'SELECT {", ".join(exprs)} FROM "{name}"')
+    return ' UNION ALL '.join(selects) if selects else 'SELECT ' + ', '.join(f'NULL AS {column}' for column in columns) + ' WHERE 0'
+
+def _normalize_metron_table(cursor, table_name: str) -> None:
+    """Normalize Metron tables with source-preserving interrupted recovery.
+
+    The recovery state machine treats the live table, migration backup, and
+    migration final/staging table as independent possible sources.  None of the
+    source variants is dropped until the replacement table has been created,
+    populated, and validated.  A rollback therefore keeps the only copy of any
+    unreconciled records.
+    """
+    backup_name = f"{table_name}_migration_58_backup"
+    final_staging = f"{table_name}_migration_58_final"
+    live_source = f"{table_name}_migration_58_live"
+    final_exists = _table_exists(cursor, table_name)
+    backup_exists = _table_exists(cursor, backup_name)
+    staging_exists = _table_exists(cursor, final_staging)
+    live_source_exists = _table_exists(cursor, live_source)
+    current_live_source = f"{table_name}_migration_58_current_live"
+    current_live_exists = _table_exists(cursor, current_live_source)
+    renamed_live_source = f"{table_name}_migration_58_current_live_source"
+    renamed_live_exists = _table_exists(cursor, renamed_live_source)
+
+    if final_exists and not backup_exists and not staging_exists and not live_source_exists and not current_live_exists and not renamed_live_exists and _metron_table_compatible(cursor, table_name):
+        return
+
+    source_names: List[str] = []
+    if live_source_exists:
+        source_names.append(live_source)
+    if current_live_exists:
+        source_names.append(current_live_source)
+    if renamed_live_exists:
+        source_names.append(renamed_live_source)
+    if final_exists:
+        if live_source_exists or current_live_exists or renamed_live_exists:
+            if renamed_live_exists:
+                extra_live_source = f"{table_name}_migration_58_current_live_source_current"
+                cursor.execute(f'DROP TABLE IF EXISTS "{extra_live_source}";')
+                cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{extra_live_source}";')
+                source_names.append(extra_live_source)
+            else:
+                cursor.execute(f'DROP TABLE IF EXISTS "{renamed_live_source}";')
+                cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{renamed_live_source}";')
+                source_names.append(renamed_live_source)
+        else:
+            cursor.execute(f'ALTER TABLE "{table_name}" RENAME TO "{live_source}";')
+            source_names.append(live_source)
+    if backup_exists:
+        source_names.append(backup_name)
+    if staging_exists:
+        source_names.append(final_staging)
+
+    cursor.execute(_METRON_TABLE_DEFINITIONS[table_name])
+    if not _metron_table_compatible(cursor, table_name):
+        raise RuntimeError(f'Failed to create normalized Metron table {table_name}')
+    if not source_names:
+        return
+
+    all_source_columns = {name: set(_table_columns(cursor, name)) for name in source_names}
+    copy_columns = list(_METRON_TABLE_COLUMNS[table_name])
+    if not any(all_source_columns.values()):
+        raise RuntimeError(f'No recoverable columns found for Metron table {table_name}')
+    source_id_rows = []
+    for name, columns in all_source_columns.items():
+        if 'id' in columns:
+            source_id_rows.extend(row[0] for row in cursor.execute(f'SELECT id FROM "{name}" WHERE id IS NOT NULL;').fetchall())
+    preserve_source_ids = len(source_id_rows) == len(set(source_id_rows))
+
+    def select_for_source(source_name: str) -> str:
+        source_columns = all_source_columns[source_name]
+        expressions = []
+        for column in copy_columns:
+            if column == 'id':
+                if column in source_columns and preserve_source_ids:
+                    expressions.append(column)
+                else:
+                    expressions.append('NULL AS id')
+            elif column in source_columns:
+                expressions.append(column)
+            elif column in ('match_confidence', 'last_successful_enrichment', 'last_checked', 'expires_at', 'year', 'current_volume_id', 'rate_limit_paused_until', 'resume_time', 'started_at', 'completed_at', 'publisher', 'cover_url', 'summary', 'confidence', 'candidate_id', 'task_queue_id', 'safe_error', 'burst_limit', 'burst_remaining', 'burst_reset', 'sustained_limit', 'sustained_remaining', 'sustained_reset', 'retry_after', 'resume_at', 'last_status'):
+                expressions.append(f'NULL AS {column}')
+            elif column in ('total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'last_terminal_volume_id', 'cancel_requested', 'auth_blocked'):
+                expressions.append(f'0 AS {column}')
+            elif column == 'active':
+                expressions.append('1 AS active')
+            elif column in ('linked_at', 'fetched_at', 'created_at', 'updated_at'):
+                expressions.append(f'0 AS {column}')
+            elif column == 'payload':
+                expressions.append("'{}' AS payload")
+            elif column == 'review_status':
+                expressions.append("'linked' AS review_status" if table_name == 'volume_provider_links' else "'review_required' AS review_status")
+            elif column == 'status':
+                expressions.append("'reserved' AS status" if table_name == 'metron_enrichment_task_reservations' else "'' AS status")
+            else:
+                expressions.append(f"'' AS {column}")
+        volume_filter = ''
+        if table_name in ('volume_provider_links', 'volume_enrichment_terms', 'volume_metadata_enrichment', 'provider_match_candidates', 'metron_enrichment_task_reservations') and _table_exists(cursor, 'volumes') and 'volume_id' in source_columns:
+            volume_filter = ' WHERE volume_id IN (SELECT id FROM volumes)'
+        return f'SELECT {", ".join(expressions)} FROM "{source_name}"{volume_filter}'
+
+    union_sql = ' UNION ALL '.join(select_for_source(name) for name in source_names)
+    column_sql = ', '.join(copy_columns)
+    considered_count = sum(cursor.execute(f'SELECT COUNT(*) FROM "{name}";').fetchone()[0] for name in source_names)
+
+    if table_name == 'volume_provider_links' and {'volume_id', 'provider', 'resource_type', 'external_id'} <= set(copy_columns):
+        cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY volume_id, provider, resource_type
+                    ORDER BY (external_id IS NOT NULL AND external_id != '') DESC,
+                             (review_status = 'linked') DESC,
+                             COALESCE(last_successful_enrichment, 0) DESC,
+                             COALESCE(last_checked, 0) DESC,
+                             COALESCE(linked_at, 0) DESC,
+                             COALESCE(id, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'provider_cache' and {'provider', 'resource_type', 'external_id'} <= set(copy_columns):
+        cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY provider, resource_type, external_id
+                    ORDER BY COALESCE(fetched_at, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'metron_backfill_state' and 'id' in copy_columns:
+        cursor.execute(f"""INSERT OR REPLACE INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY id ORDER BY COALESCE(updated_at, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'provider_match_candidates':
+        cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY review_group_id, volume_id, provider, resource_type, candidate_external_id
+                    ORDER BY COALESCE(updated_at, 0) DESC, COALESCE(created_at, 0) DESC, COALESCE(id, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'volume_metadata_enrichment':
+        cursor.execute(f"""INSERT OR REPLACE INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY volume_id, provider, field_name
+                    ORDER BY COALESCE(active, 0) DESC, COALESCE(updated_at, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'provider_rate_limit_state':
+        cursor.execute(f"""INSERT OR REPLACE INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY provider ORDER BY COALESCE(updated_at, 0) DESC, COALESCE(resume_at, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'metron_enrichment_task_reservations':
+        candidate_map_sql = """
+            SELECT old_id, new_id FROM (
+                SELECT source.id AS old_id, dest.id AS new_id,
+                    ROW_NUMBER() OVER (PARTITION BY source.id ORDER BY dest.id) AS rn
+                FROM (
+                    SELECT id, volume_id, provider, resource_type, candidate_external_id, review_group_id
+                    FROM (""" + _build_metron_source_union(cursor, 'provider_match_candidates') + """)
+                    WHERE id IS NOT NULL
+                ) AS source
+                JOIN provider_match_candidates AS dest
+                  ON dest.volume_id = source.volume_id
+                 AND dest.provider = source.provider
+                 AND dest.resource_type = source.resource_type
+                 AND dest.candidate_external_id = source.candidate_external_id
+                 AND dest.review_group_id = source.review_group_id
+            ) WHERE rn = 1
+        """ if _table_exists(cursor, 'provider_match_candidates') else "SELECT NULL AS old_id, NULL AS new_id WHERE 0"
+        remapped_columns = "source.id, source.volume_id, COALESCE(candidate_map.new_id, source.candidate_id) AS candidate_id, source.task_queue_id, source.status, source.safe_error, source.created_at, source.updated_at"
+        cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT {remapped_columns}, ROW_NUMBER() OVER (
+                    PARTITION BY CASE WHEN source.status IN ('reserved', 'queued', 'running') THEN 'active:' || source.volume_id || ':' || COALESCE(candidate_map.new_id, source.candidate_id, -1) || ':' || COALESCE(source.task_queue_id, -1) ELSE 'history:' || source.volume_id || ':' || COALESCE(candidate_map.new_id, source.candidate_id, -1) || ':' || source.status || ':' || COALESCE(source.created_at, 0) || ':' || COALESCE(source.updated_at, 0) || ':' || COALESCE(source.safe_error, '') END
+                    ORDER BY COALESCE(source.updated_at, 0) DESC, COALESCE(source.created_at, 0) DESC, COALESCE(source.id, 0) DESC
+                ) AS rn
+                FROM ({union_sql}) AS source
+                LEFT JOIN ({candidate_map_sql}) AS candidate_map ON candidate_map.old_id = source.candidate_id
+            )
+            WHERE status NOT IN ('reserved', 'queued', 'running') OR rn = 1;""")
+    else:
+        cursor.execute(f'INSERT OR IGNORE INTO "{table_name}" ({column_sql}) SELECT DISTINCT {column_sql} FROM ({union_sql});')
+
+    dest_count = cursor.execute(f'SELECT COUNT(*) FROM "{table_name}";').fetchone()[0]
+    if dest_count > considered_count:
+        raise RuntimeError(f'Normalized Metron table {table_name} inserted more records than it considered')
+    expected_identity_sql = {
+        'volume_provider_links': "SELECT volume_id || ':' || provider || ':' || resource_type AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND provider != '' AND resource_type != ''",
+        'provider_cache': "SELECT provider || ':' || resource_type || ':' || external_id AS natural_id FROM ({union_sql}) WHERE provider != '' AND resource_type != '' AND external_id != ''",
+        'provider_match_candidates': "SELECT review_group_id || ':' || volume_id || ':' || provider || ':' || resource_type || ':' || candidate_external_id AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND provider != '' AND resource_type != '' AND candidate_external_id != '' AND review_group_id != ''",
+        'volume_metadata_enrichment': "SELECT volume_id || ':' || provider || ':' || field_name AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND provider != '' AND field_name != ''",
+        'volume_enrichment_terms': "SELECT volume_id || ':' || provider || ':' || term_type || ':' || external_id || ':' || name AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND provider != '' AND term_type != '' AND name != ''",
+        'provider_rate_limit_state': "SELECT provider AS natural_id FROM ({union_sql}) WHERE provider != ''",
+        'metron_enrichment_task_reservations': "SELECT CASE WHEN status IN ('reserved', 'queued', 'running') THEN 'active:' || volume_id || ':' || COALESCE(candidate_id, -1) || ':' || COALESCE(task_queue_id, -1) ELSE 'history:' || volume_id || ':' || COALESCE(candidate_id, -1) || ':' || status || ':' || COALESCE(created_at, 0) || ':' || COALESCE(updated_at, 0) || ':' || COALESCE(safe_error, '') END AS natural_id FROM ({union_sql}) WHERE volume_id IS NOT NULL AND status != ''",
+    }.get(table_name)
+    if expected_identity_sql:
+        expected_identity_sql = expected_identity_sql.format(union_sql=union_sql)
+        expected_identities = cursor.execute(f"SELECT COUNT(*) FROM (SELECT DISTINCT natural_id FROM ({expected_identity_sql}) WHERE natural_id IS NOT NULL);").fetchone()[0]
+        if dest_count < expected_identities:
+            raise RuntimeError(f'Unexplained row loss while normalizing {table_name}: destination_rows={dest_count} distinct_valid_source_identities={expected_identities}')
+    if dest_count != considered_count:
+        LOGGER.warning('Normalized %s during migration: source_rows=%s destination_rows=%s merged_or_rejected=%s', table_name, considered_count, dest_count, considered_count - dest_count)
+    if not _metron_table_compatible(cursor, table_name):
+        raise RuntimeError(f'Normalized Metron table {table_name} failed schema validation')
+    fk_errors = cursor.execute('PRAGMA foreign_key_check;').fetchall()
+    if fk_errors:
+        raise RuntimeError(f'Foreign key validation failed while normalizing {table_name}: {fk_errors[:3]}')
+    cursor.execute(f'DROP TABLE IF EXISTS "{live_source}";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{current_live_source}";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{renamed_live_source}";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{table_name}_migration_58_current_live_source_current";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{final_staging}";')
+    cursor.execute(f'DROP TABLE IF EXISTS "{backup_name}";')
+
+
+def _ensure_metron_base_schema(cursor) -> None:
+    for table_name in _METRON_TABLE_DEFINITIONS:
+        _normalize_metron_table(cursor, table_name)
+    if _table_exists(cursor, 'volumes'):
+        duplicate_count = cursor.execute("""SELECT COUNT(*) FROM volume_provider_links WHERE external_id != ''""").fetchone()[0]
+        cursor.execute("""DELETE FROM volume_provider_links
+            WHERE id NOT IN (
+                SELECT id FROM (
+                    SELECT id, ROW_NUMBER() OVER (
+                        PARTITION BY provider, resource_type, external_id
+                        ORDER BY COALESCE(last_successful_enrichment, 0) DESC,
+                                 COALESCE(linked_at, 0) DESC,
+                                 id DESC
+                    ) AS rn
+                    FROM volume_provider_links
+                    WHERE external_id != ''
+                ) WHERE rn = 1
+            ) AND external_id != '';""")
+        remaining_count = cursor.execute("""SELECT COUNT(*) FROM volume_provider_links WHERE external_id != ''""").fetchone()[0]
+        if remaining_count != duplicate_count:
+            LOGGER.warning('Merged duplicate Metron provider links during migration: before=%s after=%s merged=%s', duplicate_count, remaining_count, duplicate_count - remaining_count)
+    cursor.executescript("""
+        CREATE UNIQUE INDEX IF NOT EXISTS volume_provider_links_provider_external_unique_idx
+            ON volume_provider_links(provider, resource_type, external_id)
+            WHERE external_id != '';
+        CREATE INDEX IF NOT EXISTS volume_provider_links_provider_external_idx
+            ON volume_provider_links(provider, resource_type, external_id);
+        CREATE INDEX IF NOT EXISTS volume_enrichment_terms_type_name_idx
+            ON volume_enrichment_terms(term_type, name);
+        CREATE INDEX IF NOT EXISTS volume_enrichment_terms_provider_external_idx
+            ON volume_enrichment_terms(provider, external_id);
+        CREATE INDEX IF NOT EXISTS provider_match_candidates_unresolved_idx
+            ON provider_match_candidates(provider, review_status, volume_id, created_at);
+        CREATE INDEX IF NOT EXISTS volume_metadata_enrichment_active_idx
+            ON volume_metadata_enrichment(volume_id, provider, active);
+        CREATE UNIQUE INDEX IF NOT EXISTS metron_enrichment_task_reservations_active_idx
+            ON metron_enrichment_task_reservations(volume_id, candidate_id, task_queue_id)
+            WHERE status IN ('reserved', 'queued', 'running');
     """)
+
+
+@DatabaseMigrationHandler.register_handler(57)
+def _migrate_drop_saved_filters():
+    cursor = get_db()
+    cursor.execute('DROP TABLE IF EXISTS saved_filters;')
+    return
+
+
+@DatabaseMigrationHandler.register_handler(58)
+def _migrate_normalize_metron_schema_after_version_collision():
+    cursor = get_db()
+    cursor.execute('DROP TABLE IF EXISTS saved_filters;')
+    _ensure_metron_base_schema(cursor)
+    return
+
+
+@DatabaseMigrationHandler.register_handler(59)
+def _migrate_harden_metron_enrichment_state():
+    cursor = get_db()
+    _ensure_metron_base_schema(cursor)
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS provider_match_candidates(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            candidate_external_id TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            year INTEGER,
+            publisher TEXT,
+            cover_url TEXT,
+            summary TEXT,
+            confidence REAL,
+            match_reason TEXT NOT NULL DEFAULT '',
+            review_group_id TEXT NOT NULL,
+            review_status TEXT NOT NULL DEFAULT 'review_required',
+            payload TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS provider_match_candidates_unresolved_idx
+            ON provider_match_candidates(provider, review_status, volume_id, created_at);
+        CREATE TABLE IF NOT EXISTS volume_metadata_enrichment(
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            field_name TEXT NOT NULL,
+            normalized_value TEXT NOT NULL,
+            external_provider_id TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
+            active BOOL NOT NULL DEFAULT 1,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            PRIMARY KEY(volume_id, provider, field_name)
+        );
+        CREATE INDEX IF NOT EXISTS volume_metadata_enrichment_active_idx
+            ON volume_metadata_enrichment(volume_id, provider, active);
+        CREATE TABLE IF NOT EXISTS provider_rate_limit_state(
+            provider TEXT PRIMARY KEY,
+            burst_limit INTEGER,
+            burst_remaining INTEGER,
+            burst_reset INTEGER,
+            sustained_limit INTEGER,
+            sustained_remaining INTEGER,
+            sustained_reset INTEGER,
+            retry_after INTEGER,
+            resume_at INTEGER,
+            last_status TEXT,
+            auth_blocked BOOL NOT NULL DEFAULT 0,
+            updated_at INTEGER
+        );
+    """)
+    existing = [row[1] for row in cursor.execute('PRAGMA table_info(metron_backfill_state);')]
+    additions = {
+        'total_estimate': 'INTEGER NOT NULL DEFAULT 0',
+        'skipped': 'INTEGER NOT NULL DEFAULT 0',
+        'last_terminal_volume_id': 'INTEGER NOT NULL DEFAULT 0',
+        'last_error': 'TEXT',
+        'resume_time': 'INTEGER',
+    }
+    for column, ddl in additions.items():
+        if column not in existing:
+            cursor.execute(f'ALTER TABLE metron_backfill_state ADD COLUMN {column} {ddl};')
+    return
+
+@DatabaseMigrationHandler.register_handler(60)
+def _migrate_add_file_validity_state():
+    cursor = get_db()
+    existing = [row[1] for row in cursor.execute('PRAGMA table_info(files);')]
+    if 'exists_on_disk' not in existing:
+        cursor.execute('ALTER TABLE files ADD COLUMN exists_on_disk BOOL NOT NULL DEFAULT 1;')
+    if 'missing_since' not in existing:
+        cursor.execute('ALTER TABLE files ADD COLUMN missing_since INTEGER;')
+    cursor.execute('CREATE INDEX IF NOT EXISTS files_exists_on_disk_idx ON files(exists_on_disk);')
+    return
+
+@DatabaseMigrationHandler.register_handler(61)
+def _migrate_add_metron_task_reservations():
+    cursor = get_db()
+    _ensure_metron_base_schema(cursor)
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS metron_enrichment_task_reservations(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            candidate_id INTEGER,
+            task_queue_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'reserved',
+            safe_error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            FOREIGN KEY (candidate_id) REFERENCES provider_match_candidates(id) ON DELETE SET NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS metron_enrichment_task_reservations_active_idx
+            ON metron_enrichment_task_reservations(volume_id, candidate_id, task_queue_id)
+            WHERE status IN ('reserved', 'queued', 'running');
+    """)
+    return
+
+
+
+@DatabaseMigrationHandler.register_handler(62)
+def _migrate_add_comic_discovery_facts():
+    cursor = get_db()
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS comic_series_discovery_facts(
+            comicvine_volume_id INTEGER PRIMARY KEY,
+            first_known_issue_id INTEGER,
+            first_known_issue_number TEXT NOT NULL DEFAULT '',
+            first_known_issue_date TEXT,
+            date_source TEXT NOT NULL DEFAULT '',
+            series_started_at TEXT,
+            volume_title TEXT NOT NULL DEFAULT '',
+            cover_link TEXT NOT NULL DEFAULT '',
+            site_url TEXT NOT NULL DEFAULT '',
+            year INTEGER,
+            publisher TEXT,
+            is_upcoming_launch BOOL NOT NULL DEFAULT 0,
+            provider_modified_at TEXT,
+            metadata_modified_at INTEGER,
+            fetched_at INTEGER,
+            derived_at INTEGER NOT NULL DEFAULT 0,
+            derivation_status TEXT NOT NULL DEFAULT 'valid',
+            date_preference TEXT NOT NULL DEFAULT 'cover_date',
+            last_error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_first_date_idx
+            ON comic_series_discovery_facts(first_known_issue_date);
+        CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_upcoming_idx
+            ON comic_series_discovery_facts(is_upcoming_launch, first_known_issue_date);
+        CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_derived_idx
+            ON comic_series_discovery_facts(derived_at);
+        CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_volume_idx
+            ON comic_series_discovery_facts(comicvine_volume_id);
+        CREATE TABLE IF NOT EXISTS comic_discovery_fact_sync_state(
+            sync_id INTEGER PRIMARY KEY CHECK(sync_id = 1),
+            scope TEXT NOT NULL DEFAULT 'comic_series_discovery',
+            provider_cursor TEXT,
+            last_started_at INTEGER,
+            last_completed_at INTEGER,
+            coverage_state TEXT NOT NULL DEFAULT 'not_started',
+            coverage_complete BOOL NOT NULL DEFAULT 0,
+            date_preference TEXT NOT NULL DEFAULT 'cover_date',
+            last_error TEXT,
+            next_resume_at INTEGER,
+            last_successful_cursor TEXT,
+            records_processed INTEGER NOT NULL DEFAULT 0,
+            facts_created INTEGER NOT NULL DEFAULT 0,
+            facts_updated INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT OR IGNORE INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference)
+            VALUES (1, 'comic_series_discovery', 'not_started', 0, 'cover_date');
+    """)
+    existing_fact_columns = [row[1] for row in cursor.execute('PRAGMA table_info(comic_series_discovery_facts);')]
+    fact_additions = {
+        'provider_modified_at': 'TEXT',
+        'metadata_modified_at': 'INTEGER',
+        'fetched_at': 'INTEGER',
+        'derived_at': 'INTEGER NOT NULL DEFAULT 0',
+        'derivation_status': "TEXT NOT NULL DEFAULT 'valid'",
+        'date_preference': "TEXT NOT NULL DEFAULT 'cover_date'",
+        'last_error': 'TEXT',
+    }
+    for column, ddl in fact_additions.items():
+        if column not in existing_fact_columns:
+            cursor.execute(f'ALTER TABLE comic_series_discovery_facts ADD COLUMN {column} {ddl};')
+    existing_sync_columns = [row[1] for row in cursor.execute('PRAGMA table_info(comic_discovery_fact_sync_state);')]
+    sync_additions = {
+        'last_successful_cursor': 'TEXT',
+        'records_processed': 'INTEGER NOT NULL DEFAULT 0',
+        'facts_created': 'INTEGER NOT NULL DEFAULT 0',
+        'facts_updated': 'INTEGER NOT NULL DEFAULT 0',
+    }
+    for column, ddl in sync_additions.items():
+        if column not in existing_sync_columns:
+            cursor.execute(f'ALTER TABLE comic_discovery_fact_sync_state ADD COLUMN {column} {ddl};')
     return

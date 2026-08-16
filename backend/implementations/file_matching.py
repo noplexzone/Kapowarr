@@ -124,6 +124,21 @@ def scan_files(
         folder=volume_data.folder,
         ext=FileConstants.SCANNABLE_EXTENSIONS
     )
+    present_paths = set(folder_contents)
+    linked_file_rows = cursor.execute(
+        """
+        SELECT DISTINCT f.id, f.filepath
+        FROM files f
+        LEFT JOIN issues_files if ON if.file_id = f.id
+        LEFT JOIN issues i ON i.id = if.issue_id
+        LEFT JOIN volume_files vf ON vf.file_id = f.id
+        WHERE i.volume_id = ? OR vf.volume_id = ?;
+        """,
+        (volume_id, volume_id)
+    ).fetchall()
+    FilesDB.mark_present_file_ids(row[0] for row in linked_file_rows if row[1] in present_paths)
+    if not filepath_filter:
+        FilesDB.mark_missing_file_ids(row[0] for row in linked_file_rows if row[1] not in present_paths)
     files_to_scan = list(filtered_iter(folder_contents, set(filepath_filter)))
     total_files = len(files_to_scan)
     for file_index, file in enumerate(files_to_scan, start=1):

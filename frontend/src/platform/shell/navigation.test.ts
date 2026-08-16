@@ -16,11 +16,10 @@ beforeEach(() => {
 });
 
 describe('canonical navigation model', () => {
-  it('contains the separated premium media-manager destinations', () => {
+  it('contains the selected primary destinations', () => {
     expect(PRIMARY_NAV.map((item) => item.label)).toEqual([
       'Home',
-      'Comics',
-      'Manga',
+      'Library',
       'Discover',
       'Activity',
       'Settings',
@@ -29,10 +28,10 @@ describe('canonical navigation model', () => {
 
   it.each([
     ['/home', 'Home'],
-    ['/library', 'Comics'],
-    ['/comics', 'Comics'],
-    ['/manga', 'Manga'],
-    ['/volumes/42', 'Comics'],
+    ['/library', 'Library'],
+    ['/comics', 'Library'],
+    ['/manga', 'Library'],
+    ['/volumes/42', 'Library'],
     ['/discover', 'Discover'],
     ['/activity/mismatches', 'Activity'],
     ['/settings/proxy', 'Settings'],
@@ -78,4 +77,12 @@ it('ignores invalid stored media nav preferences', () => {
     status: 'all',
     monitoring: 'all',
   });
+});
+
+
+it('Activity parent remains current for primary navigation semantics', async () => {
+  const sidebar = await import('./sidebar?raw');
+  const mobile = await import('./mobile-navigation?raw');
+  expect(sidebar.default).toContain("aria-current={isActive ? 'page' : undefined}");
+  expect(mobile.default).toContain("aria-current={isActive ? 'page' : undefined}");
 });

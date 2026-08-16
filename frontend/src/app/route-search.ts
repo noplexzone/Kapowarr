@@ -11,8 +11,9 @@ export const librarySortSchema = z.enum([
   'recently_added',
   'recently_released',
   'publisher',
-  'wanted',
+  'completion',
 ]);
+export const sortDirectionSchema = z.enum(['asc', 'desc']);
 
 export const mediaLibrarySearchSchema = z.preprocess((raw) => {
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
@@ -26,7 +27,8 @@ export const mediaLibrarySearchSchema = z.preprocess((raw) => {
     q: value.q ?? value.search,
     status: legacyFilter === 'wanted' ? 'missing' : legacyFilter === 'upcoming' ? 'upcoming' : value.status,
     monitoring: legacyFilter === 'unmonitored' ? 'unmonitored' : legacyFilter === 'monitored' ? 'monitored' : value.monitoring,
-    sort: value.sort,
+    sort: value.sort === 'wanted' ? 'completion' : value.sort,
+    direction: value.direction,
     page: Number.isFinite(offset) ? offset + 1 : value.page,
     collection: value.collection,
     section: value.section,
@@ -37,6 +39,7 @@ export const mediaLibrarySearchSchema = z.preprocess((raw) => {
   status: z.enum(['all', 'missing', 'upcoming']).default('all').catch('all'),
   monitoring: z.enum(['all', 'monitored', 'unmonitored']).default('all').catch('all'),
   sort: librarySortSchema.default('title').catch('title'),
+  direction: sortDirectionSchema.default('asc').catch('asc'),
   page: z.coerce.number().int().min(1).default(1).catch(1),
   collection: z.string().trim().max(80).optional().catch(undefined).transform((value) => value || undefined),
 }));
@@ -51,6 +54,7 @@ export const librarySearchSchema = z.preprocess((raw) => {
   status: z.enum(['all', 'missing', 'upcoming']),
   monitoring: z.enum(['all', 'monitored', 'unmonitored']),
   sort: librarySortSchema,
+  direction: sortDirectionSchema,
   page: z.number().int().min(1),
   collection: z.string().optional(),
   section: sectionSchema,
@@ -60,32 +64,71 @@ export const legacyLibrarySearchSchema = z.object({
   sort: z.string().optional().catch(undefined),
   filter: z.string().optional().catch(undefined),
   view: z.string().optional().catch(undefined),
+  direction: z.string().optional().catch(undefined),
   search: cleanQuery,
   offset: z.coerce.number().int().min(0).default(0).catch(0),
 });
 
 export const discoverySearchSchema = z.object({
   section: sectionSchema,
-  category: z.enum(['landing', 'upcoming', 'new', 'trending']).default('landing').catch('landing'),
+  category: z.enum(['recently-started', 'upcoming-launches', 'recently-active', 'recently-updated']).default('recently-started').catch('recently-started'),
   q: cleanQuery,
-  add: z.string().optional().catch(undefined),
+});
+
+export const discoverResultsSearchSchema = z.object({
+  section: sectionSchema,
+  q: z.string().trim().min(2).max(200).catch(''),
+  page: z.coerce.number().int().min(1).default(1).catch(1),
+  cursor: z.string().trim().min(1).max(1800).optional().catch(undefined),
+  hide_added: z.coerce.boolean().default(false).catch(false),
+});
+
+const internalReturnToSchema = z.string().trim().max(1200).optional().catch(undefined).transform((value) => {
+  if (!value) return undefined;
+  let decoded = value;
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      return undefined;
+    }
+  }
+  if (!decoded.startsWith('/') || decoded.startsWith('//') || /[\\]/.test(decoded) || /:\/\//.test(decoded)) return undefined;
+  if (!decoded.startsWith('/discover')) return undefined;
+  return decoded;
+});
+
+export const discoverAddSearchSchema = z.object({
+  section: sectionSchema,
+  title: z.string().trim().min(1).max(200).optional().catch(undefined),
+  language: z.string().min(2).max(16).optional().catch(undefined),
+  returnTo: internalReturnToSchema,
 });
 
 export const discoveryBrowseSearchSchema = z.object({
   section: sectionSchema,
   q: cleanQuery,
-  publisher: z.string().trim().max(80).optional().catch(undefined).transform((value) => value || undefined),
+  publisher: cleanQuery,
+  character: cleanQuery,
+  genre: cleanQuery,
   decade: z.string().regex(/^\d{4}$/).optional().catch(undefined),
-  status: z.string().trim().max(40).optional().catch(undefined).transform((value) => value || undefined),
-  original_language: z.string().trim().max(10).optional().catch(undefined).transform((value) => value || undefined),
+  status: cleanQuery,
+  tags: cleanQuery,
+  demographic: z.enum(['shounen', 'shoujo', 'josei', 'seinen']).optional().catch(undefined),
+  original_language: cleanQuery,
   year: z.string().regex(/^\d{4}$/).optional().catch(undefined),
+  author: cleanQuery,
+  artist: cleanQuery,
+  content_rating: cleanQuery,
+  hide_added: z.coerce.boolean().default(false).catch(false),
   sort: z.enum(['trending', 'title', 'year', 'recently_started', 'recently_updated']).default('trending').catch('trending'),
-  add: z.string().optional().catch(undefined),
 });
 
 export const legacyDiscoverySearchSchema = z.object({
   section: sectionSchema,
-  type: z.enum(['upcoming', 'new', 'story-arcs']).default('upcoming').catch('upcoming'),
+  type: z.enum(['upcoming', 'new', 'trending', 'recently-updated']).default('new').catch('new'),
   q: cleanQuery,
 });
 
@@ -112,7 +155,6 @@ export const scopedActivitySearchSchema = z.object({
   q: cleanQuery,
 });
 
-export type DiscoveryBrowseSearch = z.infer<typeof discoveryBrowseSearchSchema>;
 export type MediaLibrarySearch = z.infer<typeof mediaLibrarySearchSchema>;
 export type LibrarySearch = z.infer<typeof librarySearchSchema>;
 
@@ -131,6 +173,7 @@ export function mediaLibraryToLegacySearch(search: MediaLibrarySearch) {
     sort: search.sort,
     filter,
     view: search.view === 'grid' ? 'posters' as const : 'table' as const,
+    direction: search.direction,
     search: search.q,
     offset: search.page - 1,
   };
@@ -145,7 +188,8 @@ export function legacyLibraryToCanonical(
   rawSearch: unknown,
 ): LibrarySearch {
   const search = legacyLibrarySearchSchema.parse(rawSearch);
-  const sortResult = librarySortSchema.safeParse(search.sort);
+  const sortResult = librarySortSchema.safeParse(search.sort === 'wanted' ? 'completion' : search.sort);
+  const directionResult = sortDirectionSchema.safeParse(search.direction);
 
   return librarySearchSchema.parse({
     section,
@@ -158,6 +202,7 @@ export function legacyLibraryToCanonical(
         ? 'monitored'
         : 'all',
     sort: sortResult.success ? sortResult.data : 'title',
+    direction: directionResult.success ? directionResult.data : 'asc',
     page: search.offset + 1,
   });
 }
@@ -166,7 +211,7 @@ export function legacyDiscoveryToCanonical(rawSearch: unknown) {
   const search = legacyDiscoverySearchSchema.parse(rawSearch);
   return discoverySearchSchema.parse({
     section: search.section,
-    category: search.type === 'story-arcs' ? 'landing' : search.type,
+    category: search.type === 'upcoming' ? 'upcoming-launches' : search.type === 'new' ? 'recently-started' : search.type === 'trending' ? 'recently-active' : 'recently-updated',
     q: search.q,
   });
 }

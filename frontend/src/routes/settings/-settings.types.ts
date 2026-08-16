@@ -49,14 +49,37 @@ export interface AllSettings {
   suwayomi_password: string;
   suwayomi_source_ids: string[];
   comicvine_api_key: string;
-  metron_enabled?: boolean;
-  metron_api_token?: string;
-  metron_last_successful_connection?: number;
-  metron_last_enrichment_run?: number;
-  metron_rate_limit_status?: string;
-  metron_backfill_status?: string;
+  metron_enabled: boolean;
+  metron_api_token: string;
+  metron_last_successful_connection: number;
+  metron_last_enrichment_run: number;
+  metron?: { enabled: boolean; token_configured: boolean; token_masked: string; last_successful_connection: number | null; last_enrichment: number | null; rate_limit?: Record<string, unknown>; backfill?: Record<string, unknown> };
   date_type: string;
   [key: string]: unknown;
+}
+
+
+export interface MetronReviewCandidate {
+  id: number;
+  volume_id: number;
+  provider: string;
+  resource_type: string;
+  candidate_external_id: string;
+  title: string;
+  year?: number | null;
+  publisher?: string | null;
+  confidence?: number | null;
+  match_reason?: string | null;
+  review_status: string;
+  created_at?: number;
+  updated_at?: number;
+}
+
+export interface MetronReviewsResponse {
+  total: number;
+  candidates: MetronReviewCandidate[];
+  limit: number;
+  offset: number;
 }
 
 export interface NZBIndexer {
@@ -106,6 +129,3 @@ export interface SuwayomiSource {
   name: string;
   lang?: string | null;
 }
-
-export interface MetronStatus { enabled: boolean; configured: boolean; last_successful_connection: number; last_enrichment_run: number; rate_limit: Record<string, unknown>; backfill: Record<string, unknown>; }
-export interface MetronTestResult { success: boolean; status: string; description: string; rate_limit?: Record<string, unknown> | null; }

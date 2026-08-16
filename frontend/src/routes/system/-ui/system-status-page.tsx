@@ -51,7 +51,7 @@ export function SystemStatusPage() {
   );
 }
 
-function InfoRow({ label, value, to }: { label: string; value: string | number | undefined; to?: '/changelog' }) {
+function InfoRow({ label, value, to }: { label: string; value: string | undefined; to?: string }) {
   return (
     <div className={styles.infoRow}>
       <span className={styles.infoLabel}>{label}</span>

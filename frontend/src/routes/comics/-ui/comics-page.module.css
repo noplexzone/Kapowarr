@@ -17,9 +17,7 @@
 .secondaryControls,
 .toolbarRight,
 .filterChips,
-.viewToggle,
-.savedViewsRow,
-.missingSummary {
+.viewToggle {
   display: flex;
   align-items: center;
 }
@@ -45,29 +43,6 @@
 
 .viewToggle {
   gap: 0.25rem;
-}
-
-.savedViewsRow {
-  gap: var(--space-2, 0.5rem);
-  flex-wrap: wrap;
-  padding-top: var(--space-2, 0.5rem);
-  border-top: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-}
-
-.missingSummary {
-  justify-content: space-between;
-  gap: var(--space-2, 0.5rem);
-  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
-  color: var(--text-dim);
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
-  border-radius: 10px;
-  flex-wrap: wrap;
-  font-size: 0.88rem;
-}
-
-.missingSummary strong {
-  color: var(--text);
 }
 
 .filterChip {
@@ -100,10 +75,6 @@
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-}
-
-.saveViewButton {
-  margin-left: auto;
 }
 
 .actionMessage {
@@ -145,55 +116,6 @@
   font-size: 0.95rem;
 }
 
-
-.smartEyebrow {
-  color: var(--text-dim);
-  font-size: 0.72rem;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.smartFilterChips {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1, 0.25rem);
-  flex-wrap: wrap;
-}
-
-.smartFilterChip {
-  display: inline-flex;
-  min-height: 2rem;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-}
-
-.smartFilterChip button {
-  min-height: 2rem;
-  padding: 0 0.65rem;
-  color: var(--text);
-  background: transparent;
-  border: 0;
-}
-
-.smartFilterChip button:hover:not(:disabled),
-.smartFilterChip button:focus-visible {
-  color: var(--accent);
-  outline: none;
-}
-
-.smartFilterChip button + button {
-  min-width: 2rem;
-  padding-inline: 0.45rem;
-  border-left: 1px solid var(--border);
-}
-
-.smartFilterEmpty {
-  color: var(--text-dim);
-  font-size: 0.85rem;
-}
 
 .posterGrid {
   display: grid;
@@ -335,9 +257,7 @@
   }
 
   .primaryControls,
-  .secondaryControls,
-  .savedViewsRow,
-  .missingSummary {
+  .secondaryControls {
     align-items: stretch;
     flex-direction: column;
   }
@@ -358,17 +278,11 @@
   }
 
   .toolbarRight button,
-  .missingSummary button,
-  .saveViewButton,
   .select {
     width: 100%;
     min-height: 2.65rem;
     padding-inline: 0.45rem;
     font-size: 0.82rem;
-  }
-
-  .saveViewButton {
-    margin-left: 0;
   }
 
   .posterGrid {

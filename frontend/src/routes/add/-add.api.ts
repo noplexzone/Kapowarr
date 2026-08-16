@@ -5,6 +5,18 @@ import { searchResultSchema, rootFolderSchema } from './-add.types';
 import type { SearchResult, RootFolder } from './-add.types';
 
 const addedVolumeSchema = z.object({ id: z.number().int().positive() });
+const searchPageSchema = z.object({
+  items: z.array(searchResultSchema),
+  total: z.number().int().nonnegative().nullable(),
+  offset: z.number().int().nonnegative(),
+  page_size: z.number().int().positive(),
+  next_offset: z.number().int().nonnegative().nullable(),
+  next_cursor: z.string().nullable().optional(),
+  total_is_exact: z.boolean().optional(),
+  filtered_total_unknown: z.boolean().optional(),
+  has_more: z.boolean(),
+});
+export type SearchResultsPage = z.infer<typeof searchPageSchema>;
 
 export type MetadataSourceFilter = 'all' | 'comicvine' | 'mangadex';
 
@@ -34,19 +46,40 @@ export function exactVolumeQueryOptions(selection: MetadataSelection | undefined
   });
 }
 
-export function searchVolumesQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine') {
+export function searchVolumesQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine', excludeAdded = false) {
   return queryOptions({
-    queryKey: ['volumes', 'search', query, section, metadataSource],
-    queryFn: () => searchVolumes(query, section, metadataSource),
+    queryKey: ['volumes', 'search', query, section, metadataSource, excludeAdded],
+    queryFn: () => searchVolumes(query, section, metadataSource, excludeAdded),
     enabled: query.length >= 2,
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 }
 
-async function searchVolumes(query: string, section: string, metadataSource: MetadataSourceFilter): Promise<SearchResult[]> {
+export function searchVolumesPageQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine', offset: number | string = 0, limit = 30, excludeAdded = false) {
+  return queryOptions({
+    queryKey: ['volumes', 'search-page', query, section, metadataSource, offset, limit, excludeAdded],
+    queryFn: () => searchVolumesPage(query, section, metadataSource, offset, limit, excludeAdded),
+    enabled: query.length >= 2,
+    staleTime: 5 * 60_000,
+  });
+}
+
+async function searchVolumes(query: string, section: string, metadataSource: MetadataSourceFilter, excludeAdded = false): Promise<SearchResult[]> {
   const sp = new URLSearchParams({ query, section, metadata_source: metadataSource });
+  if (excludeAdded) sp.set('exclude_added', 'true');
   const response = await apiClient.get('volumes/search', { searchParams: sp });
   return readJson(response, z.array(searchResultSchema));
+}
+
+async function searchVolumesPage(query: string, section: string, metadataSource: MetadataSourceFilter, offset: number | string, limit: number, excludeAdded = false): Promise<SearchResultsPage> {
+  const cursor = typeof offset === 'string' ? offset : '';
+  const sp = new URLSearchParams({ query, section, metadata_source: metadataSource, paginated: 'true', offset: typeof offset === 'number' ? String(offset) : '0', limit: String(limit) });
+  if (cursor) sp.set('cursor', cursor);
+  if (excludeAdded) sp.set('exclude_added', 'true');
+  const response = await apiClient.get('volumes/search', { searchParams: sp });
+  return readJson(response, searchPageSchema);
 }
 
 export function rootFoldersQueryOptions() {

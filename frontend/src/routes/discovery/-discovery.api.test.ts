@@ -28,7 +28,7 @@ describe('Discovery to Add identity', () => {
     const searchParams = get.mock.calls[0]?.[1]?.searchParams as Record<string, string>;
 
     expect(get).toHaveBeenCalledWith('discovery', expect.any(Object));
-    expect(searchParams).toMatchObject({ type: 'upcoming', section: 'comic', paginated: 'true', offset: '50', limit: '50' });
+    expect(searchParams).toMatchObject({ type: 'upcoming-launches', section: 'comic', paginated: 'true', offset: '50', limit: '50' });
     expect(page.total).toBe(51);
     expect(page.items[0]).toMatchObject({ title: 'Saga', comicvine_id: 4050, issue_number: '70' });
   });

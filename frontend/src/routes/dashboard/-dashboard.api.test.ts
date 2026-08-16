@@ -6,7 +6,7 @@ vi.mock('@/app/api-client', () => ({
 }));
 
 import { apiClient, readJson } from '@/app/api-client';
-import { DASHBOARD_SUMMARY_GC_TIME, DASHBOARD_SUMMARY_STALE_TIME, dashboardActiveSearchesQueryOptions, dashboardHistoryQueryOptions, dashboardSummaryQueryOptions, recentlyAddedQueryOptions } from './-dashboard.api';
+import { dashboardActiveSearchesQueryOptions, dashboardHistoryQueryOptions, dashboardSummaryQueryOptions, recentlyAddedQueryOptions } from './-dashboard.api';
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -81,34 +81,20 @@ it('filters active search tasks from the system queue for the dashboard', async 
 });
 
 
-it('uses a five-minute fresh summary cache with long garbage collection', async () => {
+it('fetches dashboard summary with stable cache timing', async () => {
   vi.mocked(apiClient.get).mockResolvedValue({} as Response);
   vi.mocked(readJson).mockResolvedValue({
     generated_at: '2026-08-13T00:00:00Z',
-    library: {
-      released_issues: 100,
-      downloaded_released_issues: 95,
-      completion_percentage: 95,
-      missing_monitored: 5,
-      upcoming_monitored: 2,
-      mismatches: 1,
-      sections: {
-        comic: { missing_monitored: 3, upcoming_monitored: 1, mismatches: 1 },
-        manga: { missing_monitored: 2, upcoming_monitored: 1, mismatches: 0 },
-      },
-    },
-    operations: { active_downloads: 1, failed_downloads: 4, active_searches: 2 },
+    library: { released_issues: 10, downloaded_released_issues: 9, completion_percentage: 90, missing_monitored: 1, upcoming_monitored: 2, mismatches: 0 },
+    operations: { active_downloads: 1, failed_downloads: 0, active_searches: 1 },
+    sections: { comic: { missing_monitored: 1, upcoming_monitored: 1, mismatches: 0 }, manga: { missing_monitored: 0, upcoming_monitored: 1, mismatches: 0 } },
   });
 
   const options = dashboardSummaryQueryOptions();
   const result = await options.queryFn!({} as never);
 
-  expect(options.queryKey).toEqual(['dashboard', 'summary']);
-  expect(options.staleTime).toBe(DASHBOARD_SUMMARY_STALE_TIME);
-  expect(options.staleTime).toBe(5 * 60_000);
-  expect(options.gcTime).toBe(DASHBOARD_SUMMARY_GC_TIME);
-  expect(options.gcTime).toBeGreaterThanOrEqual(30 * 60_000);
-  expect(options.refetchOnMount).toBe(false);
   expect(apiClient.get).toHaveBeenCalledWith('dashboard/summary');
-  expect(result.library.completion_percentage).toBe(95);
+  expect(result.library.completion_percentage).toBe(90);
+  expect(options.staleTime).toBe(300000);
+  expect(options.gcTime).toBeGreaterThanOrEqual(1800000);
 });

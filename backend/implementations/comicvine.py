@@ -4,12 +4,11 @@
 Search for volumes/issues and fetch metadata for them on ComicVine
 """
 
-from __future__ import annotations
-
 from asyncio import gather, run, sleep
+from datetime import date as _date, timedelta
+from time import time
 from json import JSONDecodeError
 from re import IGNORECASE, compile
-from time import time
 from typing import Any, AsyncGenerator, Dict, FrozenSet, Iterable, List, Sequence, Union
 
 from aiohttp import ContentTypeError
@@ -19,7 +18,7 @@ from bs4 import BeautifulSoup, Tag
 from backend.base.custom_exceptions import (CVRateLimitReached,
                                             InvalidComicVineApiKey,
                                             VolumeNotMatched)
-from backend.base.definitions import (Constants, FilenameData,
+from backend.base.definitions import (Constants, DateType, FilenameData,
                                       IssueMetadata, T, VolumeMetadata)
 from backend.base.file_extraction import (extract_issue_number,
                                           extract_volume_number, volume_regex)
@@ -32,10 +31,6 @@ from backend.base.logging import LOGGER
 from backend.implementations.matching import select_best_volume_result_for_file
 from backend.internals.db import get_db
 from backend.internals.settings import Settings
-
-RECENTLY_STARTED_MONTHS = 12
-_DISCOVER_SERIES_START_CACHE_TTL = 6 * 60 * 60
-_DISCOVER_SERIES_START_CACHE: Dict[tuple[int, str], tuple[float, Union[str, None]]] = {}
 
 _NON_ENGLISH_PUBLISHERS = frozenset({
     # Japanese publishers
@@ -322,12 +317,130 @@ def _clean_description(description: str, short: bool = False) -> str:
     return result
 
 
+RECENT_SERIES_START_WINDOW_DAYS = 365
+
+def _parse_cv_date(value: Any):
+    if not value:
+        return None
+    try:
+        return _date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+def issue_date(issue: Dict[str, Any], configured_date_type: Any = None):
+    configured = str(configured_date_type or DateType.COVER_DATE)
+    preferred = 'store_date' if configured.endswith('store_date') else 'cover_date'
+    fallback = 'cover_date' if preferred == 'store_date' else 'store_date'
+    return _parse_cv_date(issue.get(preferred)) or _parse_cv_date(issue.get(fallback))
+
+
+def _issue_date(issue: Dict[str, Any], configured_date_type: Any = None):
+    return issue_date(issue, configured_date_type)
+
+def _issue_number_value(issue: Dict[str, Any]) -> float:
+    value = first_of_range(force_range(extract_issue_number(str(issue.get('issue_number') or ''))))
+    return float(value) if value is not None else 0.0
+
+def _first_known_issue(volume: Dict[str, Any], configured_date_type: Any = None) -> Union[Dict[str, Any], None]:
+    dated = [issue for issue in (volume.get('issues') or []) if _issue_date(issue, configured_date_type)]
+    if not dated:
+        return None
+    return sorted(dated, key=lambda issue: (_issue_date(issue, configured_date_type), _issue_number_value(issue), str(issue.get('id') or '')))[0]
+
+def _is_recently_started_volume(volume: Dict[str, Any], today: Union[_date, None] = None, configured_date_type: Any = None) -> bool:
+    today = today or _date.today()
+    first = _first_known_issue(volume, configured_date_type)
+    if not first:
+        return False
+    first_date = _issue_date(first, configured_date_type)
+    return bool(first_date and first_date <= today and today - first_date <= timedelta(days=RECENT_SERIES_START_WINDOW_DAYS))
+
+def _is_launch_issue_for_volume(issue: Dict[str, Any], volume: Dict[str, Any], configured_date_type: Any = None) -> bool:
+    first = _first_known_issue(volume, configured_date_type)
+    if not first:
+        return False
+    return str(first.get('id') or '') == str(issue.get('id') or '')
+
+def _first_publication_fact_from_volume(volume: Dict[str, Any], configured_date_type: Any = None, *, upcoming_issue: Dict[str, Any] | None = None) -> Dict[str, Any] | None:
+    first = _first_known_issue(volume, configured_date_type)
+    first_date = _issue_date(first, configured_date_type) if first else None
+    try:
+        comicvine_volume_id = int(volume.get('id') or (upcoming_issue or {}).get('volume', {}).get('id'))
+    except (TypeError, ValueError):
+        return None
+    if not first or not first_date:
+        return None
+    date_basis = 'store_date' if str(configured_date_type or DateType.COVER_DATE).endswith('store_date') else 'cover_date'
+    return {
+        'comicvine_volume_id': comicvine_volume_id,
+        'first_known_issue_id': int(first['id']) if first.get('id') else None,
+        'first_known_issue_number': str(first.get('issue_number') or ''),
+        'first_known_issue_date': first_date.isoformat(),
+        'date_source': date_basis,
+        'series_started_at': first_date.isoformat(),
+        'volume_title': volume.get('name') or (upcoming_issue or {}).get('volume', {}).get('name') or '',
+        'cover_link': ((volume.get('image') or {}).get('small_url') or ((upcoming_issue or {}).get('image') or {}).get('small_url') or ''),
+        'site_url': volume.get('site_detail_url') or '',
+        'year': int(volume['start_year']) if str(volume.get('start_year') or '').isdigit() else None,
+        'publisher': (volume.get('publisher') or {}).get('name') or '',
+        'is_upcoming_launch': bool(upcoming_issue and str(first.get('id') or '') == str(upcoming_issue.get('id') or '')),
+        'provider_modified_at': volume.get('date_last_updated') or (upcoming_issue or {}).get('date_last_updated'),
+        'metadata_modified_at': int(time()),
+        'fetched_at': int(time()),
+        'derived_at': int(time()),
+        'derivation_status': 'valid',
+        'date_preference': date_basis,
+        'last_error': None,
+    }
+
+def _upsert_comic_series_discovery_fact(fact: Dict[str, Any] | None) -> None:
+    if not fact:
+        return
+    get_db().execute(
+        """
+        INSERT INTO comic_series_discovery_facts(
+            comicvine_volume_id, first_known_issue_id, first_known_issue_number,
+            first_known_issue_date, date_source, series_started_at,
+            volume_title, cover_link, site_url, year, publisher,
+            is_upcoming_launch, provider_modified_at, metadata_modified_at, fetched_at,
+            derived_at, derivation_status, date_preference, last_error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(comicvine_volume_id) DO UPDATE SET
+            first_known_issue_id = excluded.first_known_issue_id,
+            first_known_issue_number = excluded.first_known_issue_number,
+            first_known_issue_date = excluded.first_known_issue_date,
+            date_source = excluded.date_source,
+            series_started_at = excluded.series_started_at,
+            volume_title = excluded.volume_title,
+            cover_link = excluded.cover_link,
+            site_url = excluded.site_url,
+            year = excluded.year,
+            publisher = excluded.publisher,
+            is_upcoming_launch = excluded.is_upcoming_launch,
+            provider_modified_at = excluded.provider_modified_at,
+            metadata_modified_at = excluded.metadata_modified_at,
+            fetched_at = excluded.fetched_at,
+            derived_at = excluded.derived_at,
+            derivation_status = excluded.derivation_status,
+            date_preference = excluded.date_preference,
+            last_error = excluded.last_error;
+        """,
+        (
+            fact['comicvine_volume_id'], fact['first_known_issue_id'],
+            fact['first_known_issue_number'], fact['first_known_issue_date'],
+            fact['date_source'], fact['series_started_at'],
+            fact['volume_title'], fact['cover_link'], fact['site_url'],
+            fact['year'], fact['publisher'], int(bool(fact['is_upcoming_launch'])),
+            fact['provider_modified_at'], fact['metadata_modified_at'], fact['fetched_at'],
+            fact['derived_at'], fact['derivation_status'], fact['date_preference'], fact['last_error'],
+        )
+    )
+
 class ComicVine:
     volume_field_list = ','.join((
         'aliases',
         'count_of_issues',
         'date_added',
-        'date_last_updated',
         'deck',
         'description',
         'id',
@@ -337,16 +450,6 @@ class ComicVine:
         'publisher',
         'site_detail_url',
         'start_year'
-    ))
-    story_arc_field_list = ','.join((
-        'count_of_issues',
-        'deck',
-        'description',
-        'id',
-        'image',
-        'name',
-        'publisher',
-        'site_detail_url',
     ))
     issue_field_list = ','.join((
         'id',
@@ -940,10 +1043,11 @@ class ComicVine:
         today = date.today()
         end = today + timedelta(days=days)
 
+        date_field = 'store_date' if str(Settings().sv.date_type).endswith('store_date') else 'cover_date'
         issue_params = {
-            'field_list': 'id,name,issue_number,cover_date,image,site_detail_url,volume',
-            'filter': f'cover_date:{today}|{end}',
-            'sort': 'cover_date:asc',
+            'field_list': 'id,name,issue_number,cover_date,store_date,image,site_detail_url,volume',
+            'filter': f'{date_field}:{today}|{end}',
+            'sort': f'{date_field}:asc',
             'limit': 100,
         }
         async with AsyncSession() as session:
@@ -974,12 +1078,13 @@ class ComicVine:
                 if (r.get('volume') or {}).get('id')
             })
             non_english_vol_ids: set = set()
+            volume_details: Dict[int, Dict[str, Any]] = {}
             if unique_vol_ids:
                 vol_tasks = [
                     self.__call_api(
                         session, '/volumes',
                         {
-                            'field_list': 'id,publisher',
+                            'field_list': 'id,publisher,issues',
                             'filter': f'id:{"|".join(unique_vol_ids[i:i + 100])}',
                             'limit': 100,
                         },
@@ -991,8 +1096,10 @@ class ComicVine:
                 for vol_page in vol_pages:
                     for v in (vol_page.get('results') or []):
                         pub = ((v.get('publisher') or {}).get('name') or '').lower()
+                        vid = int(v['id'])
+                        volume_details[vid] = v
                         if _is_comic_discovery_excluded_publisher(pub):
-                            non_english_vol_ids.add(int(v['id']))
+                            non_english_vol_ids.add(vid)
 
         vol_ids_int = tuple(
             int(r['volume']['id'])
@@ -1014,11 +1121,16 @@ class ComicVine:
             vol_cv_id = int(vol['id']) if vol.get('id') else None
             if vol_cv_id and vol_cv_id in non_english_vol_ids:
                 continue
+            details = volume_details.get(vol_cv_id or 0)
+            if not details or not _is_launch_issue_for_volume(item, details, Settings().sv.date_type):
+                continue
+            _upsert_comic_series_discovery_fact(_first_publication_fact_from_volume(details, Settings().sv.date_type, upcoming_issue=item))
             upcoming.append({
                 'issue_id':     int(item['id']),
                 'issue_number': item.get('issue_number') or '',
                 'title':        item.get('name') or '',
                 'cover_date':   item.get('cover_date') or '',
+                'store_date':   item.get('store_date') or '',
                 'cover_link':   (item.get('image') or {}).get('small_url', ''),
                 'site_url':     item.get('site_detail_url') or '',
                 'volume_id':    vol_cv_id,
@@ -1046,8 +1158,7 @@ class ComicVine:
         # date_added:desc avoids the NULL-first ordering that start_year:desc has.
         # Fetch a wider candidate pool so the Discover hide-library option still
         # has enough non-library comics left to show after local filtering.
-        from datetime import date as _date
-        cutoff = _date.today().year - 3          # 2023+ = "new"
+        today = _date.today()
         params = {
             'field_list': self.volume_field_list,
             'sort': 'date_added:desc',
@@ -1067,18 +1178,17 @@ class ComicVine:
             for result in (page.get('results') or [])
         ]
 
-        def _year(v: Dict[str, Any]) -> int:
-            try:
-                return int(v.get('start_year') or 0)
-            except (TypeError, ValueError):
-                return 0
-
         pre_filtered = [
             v for v in all_results
-            if _year(v) >= cutoff
+            if _is_recently_started_volume(v, today, Settings().sv.date_type)
             and _is_comic_discovery_candidate_volume(v)
         ]
+        pre_filtered.sort(key=lambda v: (-(_issue_date(_first_known_issue(v, Settings().sv.date_type), Settings().sv.date_type) or _date.min).toordinal(), str(v.get('name') or '').lower(), str(v.get('id') or '')))
         formatted = [self.__format_volume_output(v) for v in pre_filtered]
+        for output, source in zip(formatted, pre_filtered):
+            first = _first_known_issue(source, Settings().sv.date_type)
+            output['series_started_at'] = (_issue_date(first, Settings().sv.date_type).isoformat() if first and _issue_date(first, Settings().sv.date_type) else None)
+            _upsert_comic_series_discovery_fact(_first_publication_fact_from_volume(source, Settings().sv.date_type))
         filtered = [v for v in formatted if not v['translated']][:limit]
         self._mark_already_added(filtered)
         return filtered
@@ -1141,162 +1251,6 @@ class ComicVine:
         self._mark_already_added(filtered[:limit])
         return filtered[:limit]
 
-    async def get_story_arcs(
-        self,
-        query: str = '',
-        limit: int = 100
-    ) -> List[Dict[str, Any]]:
-        """Browse or search story arcs on ComicVine.
-
-        With no query, returns recently-updated arcs. With a query, filters by
-        name. Non-English arcs are excluded.
-        """
-        params: Dict[str, Any] = {
-            'field_list': self.story_arc_field_list,
-            'sort': 'date_last_updated:desc',
-            'limit': 100,
-        }
-        if query.strip():
-            params['filter'] = f'name:{query.strip()}'
-
-        async with AsyncSession() as session:
-            page1, page2, page3 = await gather(
-                self.__call_api(session, '/story_arcs', {**params, 'offset': 0},   {'results': []}),
-                self.__call_api(session, '/story_arcs', {**params, 'offset': 100}, {'results': []}),
-                self.__call_api(session, '/story_arcs', {**params, 'offset': 200}, {'results': []}),
-            )
-
-        all_results = (
-            (page1.get('results') or [])
-            + (page2.get('results') or [])
-            + (page3.get('results') or [])
-        )
-
-        filtered = []
-        for arc in all_results:
-            pub = ((arc.get('publisher') or {}).get('name') or '').lower()
-            if pub and pub in _NON_ENGLISH_PUBLISHERS:
-                continue
-            name = (arc.get('name') or '').lower()
-            if any(k in name for k in _MANGA_TITLE_KEYWORDS):
-                continue
-            filtered.append({
-                'id': int(arc['id']),
-                'name': arc.get('name') or '',
-                'deck': arc.get('deck') or '',
-                'cover_link': (
-                    (arc.get('image') or {}).get('medium_url')
-                    or (arc.get('image') or {}).get('small_url')
-                    or ''
-                ),
-                'site_url': arc.get('site_detail_url') or '',
-                'issue_count': int(arc.get('count_of_issues') or 0),
-                'publisher': ((arc.get('publisher') or {}).get('name') or ''),
-            })
-
-        filtered.sort(key=lambda a: a['issue_count'], reverse=True)
-        return filtered[:limit]
-
-    async def get_story_arc_volumes(
-        self,
-        arc_id: int
-    ) -> Dict[str, Any]:
-        """Get arc metadata + deduplicated list of English volumes in the arc."""
-        async with AsyncSession() as session:
-            data = await self.__call_api(
-                session,
-                f'/story_arc/{arc_id}',
-                {'field_list': f'{self.story_arc_field_list},issues'},
-            )
-
-        arc = data.get('results') or {}
-        # Issue stubs returned by the story-arc endpoint only carry id/name/
-        # api_detail_url — no volume field. Batch-fetch via /issues to resolve
-        # each stub's parent volume.
-        issue_stubs = arc.get('issues') or []
-        issue_ids = [int(s['id']) for s in issue_stubs if s.get('id')]
-
-        seen: set = set()
-        vol_ids: List[int] = []
-        if issue_ids:
-            async with AsyncSession() as session:
-                for i in range(0, min(len(issue_ids), 500), 100):
-                    batch = issue_ids[i:i + 100]
-                    resp = await self.__call_api(
-                        session,
-                        '/issues',
-                        {
-                            'field_list': 'id,volume',
-                            'filter': f'id:{"|".join(str(v) for v in batch)}',
-                            'limit': 100,
-                        },
-                        {'results': []}
-                    )
-                    for issue in (resp.get('results') or []):
-                        vid_raw = (issue.get('volume') or {}).get('id')
-                        if vid_raw is None:
-                            continue
-                        vid = int(vid_raw)
-                        if vid not in seen:
-                            seen.add(vid)
-                            vol_ids.append(vid)
-
-        arc_meta: Dict[str, Any] = {
-            'id': arc_id,
-            'name': arc.get('name') or '',
-            'deck': arc.get('deck') or '',
-            'description': _clean_description(arc.get('description') or ''),
-            'cover_link': (
-                (arc.get('image') or {}).get('medium_url')
-                or (arc.get('image') or {}).get('small_url')
-                or ''
-            ),
-            'site_url': arc.get('site_detail_url') or '',
-            'issue_count': int(arc.get('count_of_issues') or 0),
-            'publisher': ((arc.get('publisher') or {}).get('name') or ''),
-        }
-
-        if not vol_ids:
-            return {'arc': arc_meta, 'volumes': []}
-
-        # Batch-fetch volume details (cap at 200 volumes per arc)
-        batch_size = 50
-        raw_volumes: List[Any] = []
-        async with AsyncSession() as session:
-            for i in range(0, min(len(vol_ids), 200), batch_size):
-                batch = vol_ids[i:i + batch_size]
-                resp = await self.__call_api(
-                    session,
-                    '/volumes',
-                    {
-                        'field_list': self.volume_field_list,
-                        'filter': f'id:{"|".join(str(v) for v in batch)}',
-                        'limit': batch_size,
-                    },
-                    {'results': []}
-                )
-                for r in (resp.get('results') or []):
-                    raw_volumes.append(self.__format_volume_output(r))
-
-        def _is_non_english(v: Any) -> bool:
-            pub = (v.get('publisher') or '').lower()
-            return pub in _NON_ENGLISH_PUBLISHERS or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
-
-        filtered_vols = [
-            v for v in raw_volumes
-            if not _is_non_english(v) and not v.get('translated')
-        ]
-
-        # Restore original arc order
-        order = {vid: idx for idx, vid in enumerate(vol_ids)}
-        filtered_vols.sort(key=lambda v: order.get(v['comicvine_id'], 9999))
-        self._mark_already_added(filtered_vols)
-
-        return {
-            'arc': arc_meta,
-            'volumes': [{k: val for k, val in vol.items() if k != 'cover'} for vol in filtered_vols],
-        }
-
     def _mark_already_added(self, volumes: List[VolumeMetadata]) -> None:
         """Populate the already_added field for a list of formatted volumes."""
         if not volumes:
@@ -1327,9 +1281,9 @@ class ComicVine:
             )
             return [result['results']]
 
-    async def __search_query(
-        self, query: str
-    ) -> List[Dict[str, Any]]:
+    async def __search_query_page(
+        self, query: str, *, offset: int = 0, limit: int = 50
+    ) -> Dict[str, Any]:
         async with AsyncSession() as session:
             results = await self.__call_api(
                 session,
@@ -1337,12 +1291,18 @@ class ComicVine:
                 {
                     'query': query,
                     'resources': 'volume',
-                    'limit': 50,
+                    'offset': offset,
+                    'limit': limit,
                     'field_list': self.search_field_list
                 },
-                {'results': []}
+                {'results': [], 'number_of_total_results': 0}
             )
-            return results['results']
+            return results
+
+    async def __search_query(
+        self, query: str
+    ) -> List[Dict[str, Any]]:
+        return (await self.__search_query_page(query, offset=0, limit=50)).get('results') or []
 
     async def search_volumes(
         self,
@@ -1411,6 +1371,137 @@ class ComicVine:
 
         return formatted
 
+    async def search_volumes_page(
+        self,
+        query: str,
+        section: str = 'comic',
+        *,
+        offset: int = 0,
+        limit: int = 30,
+        allow_rate_limit_reached: bool = False
+    ) -> Dict[str, Any]:
+        """Search ComicVine volumes with real provider offset/limit pagination."""
+        try:
+            if query.startswith(('4050-', 'cv:')):
+                results = await self.__search_volume(query)
+                provider_total = len(results)
+            else:
+                page = await self.__search_query_page(query, offset=offset, limit=limit + 1)
+                results = page.get('results') or []
+                provider_total = int(page.get('number_of_total_results') or len(results))
+        except VolumeNotMatched:
+            results = []
+            provider_total = 0
+        except CVRateLimitReached:
+            if allow_rate_limit_reached:
+                results = []
+                provider_total = 0
+            else:
+                raise
+        formatted = self.__format_search_output(results) if results else []
+        if section == 'manga':
+            def _is_manga(v: VolumeMetadata) -> bool:
+                pub = (v.get('publisher') or '').lower()
+                return v.get('translated') or pub in _MANGA_PUBLISHERS or any(p in pub for p in _MANGA_PUBLISHERS)
+            formatted = [v for v in formatted if _is_manga(v)]
+        elif section == 'comic':
+            def _is_non_english(v: VolumeMetadata) -> bool:
+                pub = (v.get('publisher') or '').lower()
+                return pub in _NON_ENGLISH_PUBLISHERS or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
+            formatted = [v for v in formatted if not _is_non_english(v) and not v.get('translated')]
+        has_more = len(formatted) > limit or offset + min(len(results), limit) < provider_total
+        items = formatted[:limit]
+        self._mark_already_added(items)
+        return {
+            'items': items,
+            'total': provider_total,
+            'offset': offset,
+            'page_size': limit,
+            'has_more': has_more,
+            'total_is_exact': True,
+            'next_offset': offset + limit if has_more else None,
+        }
+
+
+    async def browse_catalog_volumes(
+        self,
+        *,
+        query: str = '',
+        publisher: str = '',
+        decade: str = '',
+        year: str = '',
+        offset: int = 0,
+        limit: int = 30,
+        sort: str = 'recently_updated'
+    ) -> Dict[str, Any]:
+        """Browse ComicVine comic volumes with provider-backed filters.
+
+        Fetches limit+1 so has_more is based on an actual extra provider row,
+        and deduplicates by ComicVine volume ID rather than title.
+        """
+        filters = []
+        if query:
+            filters.append(f'name:{query}')
+        if publisher:
+            filters.append(f'publisher:{publisher}')
+        selected_year = None
+        if year:
+            try:
+                selected_year = int(year)
+            except (TypeError, ValueError):
+                selected_year = None
+        elif decade:
+            try:
+                selected_year = int(decade)
+            except (TypeError, ValueError):
+                selected_year = None
+        if selected_year:
+            if year:
+                filters.append(f'start_year:{selected_year}')
+            else:
+                filters.append(f'start_year:{selected_year}|{selected_year + 9}')
+        order = {
+            'title': 'name:asc',
+            'year': 'start_year:desc',
+            'recently_started': 'start_year:desc',
+            'recently_updated': 'date_last_updated:desc',
+            'trending': 'date_last_updated:desc',
+        }.get(sort, 'date_last_updated:desc')
+        params = {
+            'field_list': 'id,name,deck,description,publisher,start_year,image,site_detail_url,count_of_issues,date_added,date_last_updated',
+            'sort': order,
+            'offset': offset,
+            'limit': limit + 1,
+        }
+        if filters:
+            params['filter'] = ','.join(filters)
+        async with AsyncSession() as session:
+            page = await self.__call_api(session, '/volumes', params, {'results': [], 'number_of_total_results': 0})
+        seen = set()
+        raw_items = []
+        for item in page.get('results') or []:
+            key = str(item.get('id') or '')
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            if not _is_comic_discovery_candidate_volume(item):
+                continue
+            raw_items.append(item)
+        has_more = len(raw_items) > limit
+        formatted = self.__format_search_output(raw_items[:limit])
+        for item in formatted:
+            item['metadata_source_label'] = 'ComicVine'
+            if sort == 'trending':
+                item['status'] = 'Recently active'
+        return {
+            'items': formatted,
+            'total': int(page.get('number_of_total_results') or offset + len(formatted) + (1 if has_more else 0)),
+            'offset': offset,
+            'page_size': limit,
+            'has_more': has_more,
+            'source_note': 'Recently Active uses ComicVine date_last_updated; it is not a global popularity score.',
+        }
+
     async def get_upcoming_releases_manga(
         self,
         days: int = 60,
@@ -1425,10 +1516,11 @@ class ComicVine:
         today = date.today()
         end = today + timedelta(days=days)
 
+        date_field = 'store_date' if str(Settings().sv.date_type).endswith('store_date') else 'cover_date'
         issue_params = {
-            'field_list': 'id,name,issue_number,cover_date,image,site_detail_url,volume',
-            'filter': f'cover_date:{today}|{end}',
-            'sort': 'cover_date:asc',
+            'field_list': 'id,name,issue_number,cover_date,store_date,image,site_detail_url,volume',
+            'filter': f'{date_field}:{today}|{end}',
+            'sort': f'{date_field}:asc',
             'limit': 100,
         }
 
@@ -1452,7 +1544,7 @@ class ComicVine:
                     self.__call_api(
                         session, '/volumes',
                         {
-                            'field_list': 'id,publisher',
+                            'field_list': 'id,publisher,issues',
                             'filter': f'id:{"|".join(unique_vol_ids[i:i + 100])}',
                             'limit': 100,
                         },
@@ -1492,6 +1584,7 @@ class ComicVine:
                 'issue_number': item.get('issue_number') or '',
                 'title':        item.get('name') or '',
                 'cover_date':   item.get('cover_date') or '',
+                'store_date':   item.get('store_date') or '',
                 'cover_link':   (item.get('image') or {}).get('small_url', ''),
                 'site_url':     item.get('site_detail_url') or '',
                 'volume_id':    vol_cv_id,
@@ -1557,288 +1650,6 @@ class ComicVine:
         filtered = [v for v in formatted if v['translated']][:limit]
         self._mark_already_added(filtered)
         return filtered
-
-    async def get_story_arcs_manga(
-        self,
-        query: str = '',
-        limit: int = 100
-    ) -> List[Dict[str, Any]]:
-        """Browse or search story arcs on ComicVine, filtered to manga-only."""
-        params: Dict[str, Any] = {
-            'field_list': self.story_arc_field_list,
-            'sort': 'date_last_updated:desc',
-            'limit': 100,
-        }
-        if query.strip():
-            params['filter'] = f'name:{query.strip()}'
-
-        async with AsyncSession() as session:
-            page1, page2, page3 = await gather(
-                self.__call_api(session, '/story_arcs', {**params, 'offset': 0},   {'results': []}),
-                self.__call_api(session, '/story_arcs', {**params, 'offset': 100}, {'results': []}),
-                self.__call_api(session, '/story_arcs', {**params, 'offset': 200}, {'results': []}),
-            )
-
-        all_results = (
-            (page1.get('results') or [])
-            + (page2.get('results') or [])
-            + (page3.get('results') or [])
-        )
-
-        filtered = []
-        for arc in all_results:
-            pub = ((arc.get('publisher') or {}).get('name') or '').lower()
-            if not pub or (pub not in _MANGA_PUBLISHERS
-                           and not any(p in pub for p in _MANGA_PUBLISHERS)):
-                continue
-            filtered.append({
-                'id': int(arc['id']),
-                'name': arc.get('name') or '',
-                'deck': arc.get('deck') or '',
-                'cover_link': (
-                    (arc.get('image') or {}).get('medium_url')
-                    or (arc.get('image') or {}).get('small_url')
-                    or ''
-                ),
-                'site_url': arc.get('site_detail_url') or '',
-                'issue_count': int(arc.get('count_of_issues') or 0),
-                'publisher': ((arc.get('publisher') or {}).get('name') or ''),
-            })
-
-        filtered.sort(key=lambda a: a['issue_count'], reverse=True)
-        return filtered[:limit]
-
-
-    async def _batch_first_issue_dates(
-        self,
-        session,
-        volume_ids: Sequence[int]
-    ) -> Dict[int, Union[str, None]]:
-        """Return first known issue date by volume, cached by configured date type.
-
-        ComicVine exposes series start reliably through issue dates, not through
-        volume record creation/edit timestamps. We batch issue requests for the
-        candidate volumes and cache the derived first issue date so Discover does
-        not refetch every issue on every page load.
-        """
-        now = time()
-        result: Dict[int, Union[str, None]] = {}
-        missing: List[int] = []
-        for volume_id in volume_ids:
-            key = (int(volume_id), self.date_type)
-            cached = _DISCOVER_SERIES_START_CACHE.get(key)
-            if cached and now - cached[0] < _DISCOVER_SERIES_START_CACHE_TTL:
-                result[int(volume_id)] = cached[1]
-            else:
-                missing.append(int(volume_id))
-
-        for batch in batched(missing, 50):
-            calls = [
-                self.__call_api(
-                    session,
-                    '/issues',
-                    {
-                        'field_list': f'id,issue_number,{self.date_type},volume',
-                        'filter': f'volume:{volume_id}',
-                        'sort': f'{self.date_type}:asc',
-                        'limit': 20,
-                    },
-                    {'results': []}
-                )
-                for volume_id in batch
-            ]
-            responses = await gather(*calls)
-            for volume_id, response in zip(batch, responses):
-                first_date: Union[str, None] = None
-                for issue in (response.get('results') or []):
-                    candidate = issue.get(self.date_type)
-                    if candidate:
-                        first_date = str(candidate)[:10]
-                        break
-                result[int(volume_id)] = first_date
-                _DISCOVER_SERIES_START_CACHE[(int(volume_id), self.date_type)] = (now, first_date)
-        return result
-
-    async def get_recently_started_volumes(self, limit: int = 200) -> List[VolumeMetadata]:
-        """Get series whose first known issue date is within the last 12 months."""
-        from datetime import date as _date, timedelta
-        cutoff = _date.today() - timedelta(days=RECENTLY_STARTED_MONTHS * 31)
-        params = {
-            'field_list': self.volume_field_list,
-            'sort': 'date_last_updated:desc',
-            'limit': 100,
-        }
-        async with AsyncSession() as session:
-            pages = await gather(*(
-                self.__call_api(session, '/volumes', {**params, 'offset': offset}, {'results': []})
-                for offset in range(0, 1000, 100)
-            ))
-            candidates = [
-                row
-                for page in pages
-                for row in (page.get('results') or [])
-                if _is_comic_discovery_candidate_volume(row)
-            ]
-            ids = [int(row['id']) for row in candidates if row.get('id')]
-            first_dates = await self._batch_first_issue_dates(session, ids)
-
-        qualified = []
-        for row in candidates:
-            first_date = first_dates.get(int(row['id'])) if row.get('id') else None
-            if not first_date:
-                continue
-            try:
-                parsed = _date.fromisoformat(first_date)
-            except ValueError:
-                continue
-            if parsed >= cutoff:
-                row = {**row, 'series_start_date': first_date}
-                qualified.append(row)
-        qualified.sort(key=lambda row: row.get('series_start_date') or '', reverse=True)
-        formatted = [self.__format_volume_output(row) for row in qualified[:limit]]
-        for item, raw in zip(formatted, qualified[:limit]):
-            item['series_start_date'] = raw.get('series_start_date')
-            item['metadata_source_label'] = 'ComicVine'
-            item['source_note'] = 'Recently Started uses the first known issue date from ComicVine, cached per series.'
-        self._mark_already_added(formatted)
-        return formatted
-
-    async def get_upcoming_series_launches(self, days: int = 120, limit: int = 200) -> List[Dict[str, Any]]:
-        """Get future series launches, not ordinary upcoming issues."""
-        from datetime import date, timedelta
-        today = date.today()
-        end = today + timedelta(days=days)
-        issue_params = {
-            'field_list': 'id,name,issue_number,cover_date,image,site_detail_url,volume',
-            'filter': f'{self.date_type}:{today}|{end}',
-            'sort': f'{self.date_type}:asc',
-            'limit': 100,
-        }
-        async with AsyncSession() as session:
-            issue_pages = await gather(*(
-                self.__call_api(session, '/issues', {**issue_params, 'offset': offset}, {'results': []})
-                for offset in range(0, 500, 100)
-            ))
-            issues = [r for page in issue_pages for r in (page.get('results') or [])]
-            launch_issues = []
-            for issue in issues:
-                number = str(issue.get('issue_number') or '').strip().lower().lstrip('#')
-                if number in {'1', '1.0', '001'}:
-                    launch_issues.append(issue)
-            unique_vol_ids = list({str((r.get('volume') or {}).get('id')) for r in launch_issues if (r.get('volume') or {}).get('id')})
-            publisher_by_id: Dict[int, str] = {}
-            excluded: set[int] = set()
-            if unique_vol_ids:
-                vol_pages = await gather(*(
-                    self.__call_api(
-                        session,
-                        '/volumes',
-                        {
-                            'field_list': 'id,publisher',
-                            'filter': f'id:{"|".join(unique_vol_ids[i:i + 100])}',
-                            'limit': 100,
-                        },
-                        {'results': []}
-                    )
-                    for i in range(0, len(unique_vol_ids), 100)
-                ))
-                for page in vol_pages:
-                    for vol in (page.get('results') or []):
-                        vid = int(vol['id'])
-                        publisher = ((vol.get('publisher') or {}).get('name') or '')
-                        publisher_by_id[vid] = publisher
-                        if _is_comic_discovery_excluded_publisher(publisher):
-                            excluded.add(vid)
-        vol_ids_int = tuple(int((r.get('volume') or {}).get('id')) for r in launch_issues if (r.get('volume') or {}).get('id'))
-        already_added: Dict[int, int] = {}
-        if vol_ids_int:
-            placeholders = ','.join('?' * len(vol_ids_int))
-            already_added = dict(get_db().execute(
-                f'SELECT comicvine_id, id FROM volumes WHERE comicvine_id IN ({placeholders})',
-                vol_ids_int
-            ).fetchall())
-        upcoming = []
-        seen: set[int] = set()
-        for item in launch_issues:
-            vol = item.get('volume') or {}
-            vol_cv_id = int(vol['id']) if vol.get('id') else None
-            if not vol_cv_id or vol_cv_id in seen or vol_cv_id in excluded:
-                continue
-            seen.add(vol_cv_id)
-            upcoming.append({
-                'issue_id': int(item['id']),
-                'issue_number': item.get('issue_number') or '1',
-                'title': item.get('name') or 'Issue #1',
-                'cover_date': item.get(self.date_type) or item.get('cover_date') or '',
-                'cover_link': (item.get('image') or {}).get('small_url', ''),
-                'site_url': item.get('site_detail_url') or '',
-                'volume_id': vol_cv_id,
-                'volume_title': vol.get('name') or '',
-                'publisher': publisher_by_id.get(vol_cv_id, ''),
-                'metadata_source': 'comicvine',
-                'metadata_id': str(vol_cv_id),
-                'metadata_source_label': 'ComicVine',
-                'source_note': 'Upcoming Series Launches only includes future issue #1 records from ComicVine.',
-                'already_added': already_added.get(vol_cv_id),
-            })
-        return upcoming[:limit]
-
-    async def browse_discover_volumes(
-        self,
-        section: str = 'comic',
-        query: str = '',
-        publisher: str = '',
-        decade: str = '',
-        sort: str = 'trending',
-        offset: int = 0,
-        limit: int = 30,
-    ) -> Dict[str, Any]:
-        """Browse a bounded ComicVine catalog with only reliable filters.
-
-        Trending is documented as ComicVine recently-updated order; ComicVine does
-        not expose a global popularity score through the current repository API.
-        Character and genre filters are intentionally omitted until Metron data is
-        introduced.
-        """
-        params: Dict[str, Any] = {'field_list': self.volume_field_list, 'limit': 100}
-        filters = []
-        if query.strip():
-            filters.append(f'name:{query.strip()}')
-        if publisher.strip() and section == 'comic':
-            filters.append(f'publisher:{publisher.strip()}')
-        if decade.strip():
-            try:
-                start = int(decade[:4])
-                filters.append(f'start_year:{start}|{start + 9}')
-            except ValueError:
-                pass
-        if filters:
-            params['filter'] = ','.join(filters)
-        params['sort'] = 'name:asc' if sort == 'title' else 'start_year:desc' if sort == 'year' else 'date_last_updated:desc'
-        async with AsyncSession() as session:
-            pages = await gather(*(
-                self.__call_api(session, '/volumes', {**params, 'offset': page_offset}, {'results': []})
-                for page_offset in range(offset, offset + limit + 100, 100)
-            ))
-        raw = [row for page in pages for row in (page.get('results') or [])]
-        if section == 'comic':
-            raw = [row for row in raw if _is_comic_discovery_candidate_volume(row)]
-        else:
-            raw = [row for row in raw if _is_english_manga_publisher(((row.get('publisher') or {}).get('name') or ''))]
-        formatted = [self.__format_volume_output(row) for row in raw]
-        for item in formatted:
-            item['metadata_source_label'] = 'ComicVine'
-            item['source_note'] = 'Trending uses ComicVine recently-updated order, not a global popularity score.'
-        self._mark_already_added(formatted)
-        items = formatted[:limit]
-        return {
-            'items': [{k: v for k, v in item.items() if k != 'cover'} for item in items],
-            'total': offset + len(items) + (1 if len(formatted) > limit else 0),
-            'offset': offset,
-            'page_size': limit,
-            'has_more': len(formatted) > limit,
-            'source_note': 'ComicVine browse surfaces only provider-backed publisher and decade filters; Character and Genre are deferred to Metron Phase 6.'
-        }
 
     async def filenames_to_cvs(
         self,

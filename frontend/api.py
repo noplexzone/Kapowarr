@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import run
-from datetime import datetime, timezone
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from datetime import date as _date, datetime, timedelta, timezone
 from functools import lru_cache
+import re
 from hashlib import sha256
 from hmac import compare_digest, new as hmac_new
 from io import BytesIO
 import os
-import re
 from os import makedirs, remove
 from secrets import token_hex
 from sqlite3 import IntegrityError, OperationalError
@@ -41,9 +42,8 @@ from backend.features.library_import import (generate_bulk_scan,
                                              prepare_bulk_scan)
 from backend.features.mass_edit import run_mass_editor_action
 from backend.features.search import manual_search, manual_suwayomi_bundle_search
-from backend.features.tasks import (BulkLibraryImport, ImportFilesVolume,
-                                    MetronBackfillExistingComics,
-                                    MetronEnrichVolume, RefreshAndScanVolume,
+from backend.features.tasks import (BulkLibraryImport, ComicDiscoveryFactSyncTask, ImportFilesVolume,
+                                    RefreshAndScanVolume,
                                     Task, TaskHandler,
                                     delete_task_history, get_task_history,
                                     get_task_history_count, get_task_planning,
@@ -57,10 +57,7 @@ from backend.implementations.blocklist import (add_to_blocklist,
                                                get_blocklist_count,
                                                get_blocklist_entry)
 from backend.implementations.comicvine import ComicVine
-from backend.features.metron_enrichment import (
-    MetronEnrichmentService, get_backfill_status, safe_test_connection,
-    update_backfill_state,
-)
+from backend.implementations.mangadex import browse_mangadex_catalog
 from backend.implementations.conversion import preview_mass_convert
 from backend.implementations.converters import ConvertersManager
 from backend.implementations.credentials import Credentials
@@ -82,191 +79,68 @@ from backend.internals.settings import Settings, get_about_data
 api = Blueprint('api', __name__)
 
 
+
+_CHANGELOG_HEADING_RE = re.compile(r'^##\s+\[?([^\]\n]+)\]?\s*(?:-\s*(\d{4}-\d{2}-\d{2}))?\s*$')
+_CHANGELOG_SECTION_RE = re.compile(r'^###\s+(.+?)\s*$')
+_CHANGELOG_SECTION_NAMES = {'Added', 'Changed', 'Fixed', 'Removed', 'Security', 'Deprecated'}
+
+
+def _changelog_anchor(version: str) -> str:
+    return 'changelog-' + re.sub(r'[^a-z0-9]+', '-', version.lower()).strip('-')
+
+
+@lru_cache(maxsize=1)
+def _read_packaged_changelog() -> Dict[str, Any]:
+    changelog_path = Path(folder_path('CHANGELOG.md')).resolve(strict=False)
+    app_root = Path(folder_path()).resolve(strict=False)
+    try:
+        if commonpath((str(changelog_path), str(app_root))) != str(app_root):
+            raise OSError('Packaged changelog path is outside application root')
+        text = changelog_path.read_text(encoding='utf-8')
+    except OSError:
+        return {'entries': [], 'error': 'Packaged CHANGELOG.md could not be read.'}
+
+    entries: List[Dict[str, Any]] = []
+    current: Union[Dict[str, Any], None] = None
+    section: Union[Dict[str, Any], None] = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        heading = _CHANGELOG_HEADING_RE.match(line)
+        if heading:
+            version = heading.group(1).strip()
+            current = {
+                'version': version,
+                'date': heading.group(2),
+                'anchor': _changelog_anchor(version),
+                'sections': [],
+            }
+            entries.append(current)
+            section = None
+            continue
+        if current is None:
+            continue
+        section_match = _CHANGELOG_SECTION_RE.match(line)
+        if section_match:
+            title = section_match.group(1).strip()
+            if title in _CHANGELOG_SECTION_NAMES:
+                section = {'title': title, 'items': []}
+                current['sections'].append(section)
+            else:
+                section = None
+            continue
+        if section is not None and line.startswith('- '):
+            section['items'].append(line[2:].strip())
+    if not entries:
+        return {'entries': [], 'error': 'No version entries found in packaged CHANGELOG.md.'}
+    return {'entries': entries, 'error': None}
+
+
 def return_api(
     result: Any,
     error: Union[str, None] = None,
     code: int = 200
 ) -> Tuple[Dict[str, Any], int]:
     return {'error': error, 'result': result}, code
-
-
-
-_CHANGELOG_HEADING_RE = re.compile(
-    r'^##\s+(?:\[(?P<bracket>[^\]]+)\]|(?P<plain>[^-]+?))'
-    r'(?:\s+-\s+(?P<date>\d{4}-\d{2}-\d{2}))?\s*$'
-)
-_CHANGELOG_SECTION_RE = re.compile(r'^###\s+(?P<title>.+?)\s*$')
-_CHANGELOG_VERSION_ID_RE = re.compile(r'[^a-zA-Z0-9._-]+')
-_KNOWN_CHANGELOG_SECTIONS = ('Added', 'Changed', 'Fixed', 'Removed', 'Security')
-
-
-def _changelog_anchor(version: str) -> str:
-    value = version.strip().lower().replace('[', '').replace(']', '')
-    return _CHANGELOG_VERSION_ID_RE.sub('-', value).strip('-') or 'version'
-
-
-def _empty_changelog_payload(error: Union[str, None] = None) -> Dict[str, Any]:
-    return {
-        'current_version': get_about_data().get('version'),
-        'generated_at': datetime.now(timezone.utc).isoformat(),
-        'entries': [],
-        'error': error,
-    }
-
-
-@lru_cache(1)
-def _read_packaged_changelog() -> Dict[str, Any]:
-    changelog_path = Path(folder_path('CHANGELOG.md'))
-    try:
-        text = changelog_path.read_text(encoding='utf-8')
-    except OSError:
-        return _empty_changelog_payload('CHANGELOG.md could not be read')
-
-    entries: List[Dict[str, Any]] = []
-    current: Union[Dict[str, Any], None] = None
-    current_section: Union[str, None] = None
-    try:
-        for raw_line in text.splitlines():
-            line = raw_line.rstrip()
-            heading = _CHANGELOG_HEADING_RE.match(line)
-            if heading:
-                version = (heading.group('bracket') or heading.group('plain') or '').strip()
-                current = {
-                    'version': version,
-                    'date': heading.group('date'),
-                    'anchor': _changelog_anchor(version),
-                    'sections': [],
-                }
-                entries.append(current)
-                current_section = None
-                continue
-
-            section = _CHANGELOG_SECTION_RE.match(line)
-            if section and current is not None:
-                current_section = section.group('title').strip()
-                current['sections'].append({
-                    'title': current_section,
-                    'items': [],
-                })
-                continue
-
-            if current is None or current_section is None:
-                continue
-            stripped = line.strip()
-            if stripped.startswith('- '):
-                current['sections'][-1]['items'].append(stripped[2:].strip())
-            elif stripped and current['sections'][-1]['items']:
-                current['sections'][-1]['items'][-1] += '\n' + stripped
-
-        # Preserve known sections even when currently empty by leaving the parsed
-        # section order intact; malformed/unknown section names are returned as-is.
-        return {
-            'current_version': get_about_data().get('version'),
-            'generated_at': datetime.now(timezone.utc).isoformat(),
-            'entries': entries,
-            'error': None if entries else 'No version entries found in CHANGELOG.md',
-        }
-    except Exception:
-        LOGGER.exception('Failed to parse CHANGELOG.md')
-        return _empty_changelog_payload('CHANGELOG.md could not be parsed')
-
-
-def _dashboard_summary() -> Dict[str, Any]:
-    comic_stats = Library.get_stats('comic')
-    manga_stats = Library.get_stats('manga')
-    released_issues = int(comic_stats.get('released_issues') or 0) + int(manga_stats.get('released_issues') or 0)
-    downloaded_released_issues = (
-        int(comic_stats.get('downloaded_released_issues') or 0)
-        + int(manga_stats.get('downloaded_released_issues') or 0)
-    )
-    completion_percentage = (
-        round((downloaded_released_issues / released_issues) * 100, 1)
-        if released_issues else None
-    )
-    active_searches = sum(
-        1 for task in TaskHandler().get_all()
-        if task.get('action') in ('auto_search', 'auto_search_issue', 'search_all')
-    )
-    queue = DownloadHandler().get_all()
-    return {
-        'generated_at': datetime.now(timezone.utc).isoformat(),
-        'library': {
-            'released_issues': released_issues,
-            'downloaded_released_issues': downloaded_released_issues,
-            'completion_percentage': completion_percentage,
-            'missing_monitored': int(comic_stats.get('missing_monitored') or 0) + int(manga_stats.get('missing_monitored') or 0),
-            'upcoming_monitored': int(comic_stats.get('upcoming_monitored') or 0) + int(manga_stats.get('upcoming_monitored') or 0),
-            'mismatches': int(comic_stats.get('mismatches') or 0) + int(manga_stats.get('mismatches') or 0),
-            'sections': {
-                'comic': {
-                    'missing_monitored': int(comic_stats.get('missing_monitored') or 0),
-                    'upcoming_monitored': int(comic_stats.get('upcoming_monitored') or 0),
-                    'mismatches': int(comic_stats.get('mismatches') or 0),
-                },
-                'manga': {
-                    'missing_monitored': int(manga_stats.get('missing_monitored') or 0),
-                    'upcoming_monitored': int(manga_stats.get('upcoming_monitored') or 0),
-                    'mismatches': int(manga_stats.get('mismatches') or 0),
-                },
-            },
-        },
-        'operations': {
-            'active_downloads': len(queue),
-            'failed_downloads': get_download_history_count(state='failed'),
-            'active_searches': active_searches,
-        },
-    }
-
-def _validate_saved_filter_section(section: Any) -> str:
-    section = section or 'comic'
-    if section not in ('comic', 'manga'):
-        raise InvalidKeyValue('section', section)
-    return section
-
-
-def _validate_saved_filter_name(name: Any) -> str:
-    if not isinstance(name, str) or not name.strip():
-        raise InvalidKeyValue('name', name)
-    return name.strip()
-
-
-def _validate_saved_filter_query(query: Any) -> Dict[str, Any]:
-    if not isinstance(query, dict):
-        raise InvalidKeyValue('query', query)
-    for key, value in query.items():
-        if not isinstance(key, str):
-            raise InvalidKeyValue('query', query)
-        if value is not None and not isinstance(value, (str, int, float, bool)):
-            raise InvalidKeyValue('query', query)
-    return query
-
-
-def _format_saved_filter(row) -> Dict[str, Any]:
-    if row is None:
-        raise InvalidKeyValue('id', None)
-    query_raw = row['query'] if isinstance(row, dict) else row['query']
-    try:
-        query = _json.loads(query_raw)
-    except (TypeError, ValueError):
-        query = {}
-    return {
-        'id': row['id'],
-        'section': row['section'],
-        'name': row['name'],
-        'query': query if isinstance(query, dict) else {},
-        'created_at': row['created_at'],
-        'updated_at': row['updated_at'],
-    }
-
-
-def _get_saved_filter_or_404(filter_id: int):
-    row = get_db().execute(
-        'SELECT id, section, name, query, created_at, updated_at FROM saved_filters WHERE id = ?;',
-        (filter_id,)
-    ).fetchone()
-    if row is None:
-        raise InvalidKeyValue('id', filter_id)
-    return row
 
 
 _PROTECTED_DELETE_NAMES = {
@@ -595,6 +469,11 @@ def extract_key(request, key: str, check_existence: bool = True) -> Any:
             except KeyError:
                 raise InvalidKeyValue(key, value)
 
+        elif key == 'direction':
+            value = str(value).lower()
+            if value not in ('asc', 'desc'):
+                raise InvalidKeyValue(key, value)
+
         elif key == 'filter':
             try:
                 value = LibraryFilter[value.upper()] if value else None
@@ -629,6 +508,9 @@ def extract_key(request, key: str, check_existence: bool = True) -> Any:
         # Default value
         if key == 'sort':
             value = LibrarySorting.TITLE
+
+        elif key == 'direction':
+            value = 'asc'
 
         elif key == 'filter':
             value = None
@@ -764,20 +646,6 @@ def api_public():
     return return_api(result)
 
 
-
-@api.route('/dashboard/summary', methods=['GET'])
-@error_handler
-@auth
-def api_dashboard_summary():
-    return return_api(_dashboard_summary())
-
-
-@api.route('/changelog', methods=['GET'])
-@error_handler
-@auth
-def api_changelog():
-    return return_api(_read_packaged_changelog())
-
 # =====================
 # Tasks
 # =====================
@@ -809,6 +677,7 @@ def api_logs():
 
 
 @api.route('/system/tasks', methods=['GET', 'POST'])
+@api.route('/tasks', methods=['GET'])
 @error_handler
 @auth
 def api_tasks():
@@ -950,6 +819,11 @@ def api_settings():
     settings = Settings()
     if request.method == 'GET':
         result = settings.get_public_settings().todict()
+        try:
+            from backend.features.metron_enrichment import metron_settings_status
+            result['metron'] = metron_settings_status()
+        except Exception:
+            LOGGER.exception('Failed to load Metron settings status')
         return return_api(result)
 
     elif request.method == 'PUT':
@@ -1029,40 +903,6 @@ def api_settings_api_key():
     settings.generate_api_key()
     return return_api(settings.get_public_settings().todict())
 
-
-
-
-@api.route('/settings/metron/test', methods=['POST'])
-@error_handler
-@auth
-def api_settings_metron_test():
-    return return_api(safe_test_connection())
-
-
-@api.route('/metron/status', methods=['GET'])
-@error_handler
-@auth
-def api_metron_status():
-    settings = Settings().sv
-    return return_api({
-        'enabled': settings.metron_enabled,
-        'configured': bool(settings.metron_api_token),
-        'last_successful_connection': settings.metron_last_successful_connection,
-        'last_enrichment_run': settings.metron_last_enrichment_run,
-        'rate_limit': _json.loads(settings.metron_rate_limit_status) if settings.metron_rate_limit_status else {},
-        'backfill': get_backfill_status(),
-    })
-
-
-@api.route('/metron/backfill', methods=['POST', 'DELETE'])
-@error_handler
-@auth
-def api_metron_backfill():
-    if request.method == 'DELETE':
-        update_backfill_state(cancel_requested=1, status='cancelling')
-        return return_api(get_backfill_status())
-    task_id = TaskHandler().add(MetronBackfillExistingComics())
-    return return_api({'task_id': task_id, 'backfill': get_backfill_status()}, code=202)
 
 @api.route('/settings/availableformats', methods=['GET'])
 @error_handler
@@ -1304,6 +1144,281 @@ def api_library_import_delete():
     return return_api({})
 
 
+
+@api.route('/dashboard/summary', methods=['GET'])
+@error_handler
+@auth
+def api_dashboard_summary():
+    comic_stats = Library.get_stats('comic')
+    manga_stats = Library.get_stats('manga')
+    released = int(comic_stats.get('released_issues') or 0) + int(manga_stats.get('released_issues') or 0)
+    downloaded = int(comic_stats.get('downloaded_released_issues') or 0) + int(manga_stats.get('downloaded_released_issues') or 0)
+    tasks = TaskHandler().get_all()
+    active_searches = sum(
+        1 for task in tasks
+        if task.get('action') in ('auto_search', 'auto_search_issue', 'search_all')
+    )
+    return return_api({
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'library': {
+            'released_issues': released,
+            'downloaded_released_issues': downloaded,
+            'completion_percentage': None if released == 0 else round((downloaded * 100.0) / released, 1),
+            'missing_monitored': int(comic_stats.get('missing_monitored') or 0) + int(manga_stats.get('missing_monitored') or 0),
+            'upcoming_monitored': int(comic_stats.get('upcoming_monitored') or 0) + int(manga_stats.get('upcoming_monitored') or 0),
+            'mismatches': int(comic_stats.get('mismatches') or 0) + int(manga_stats.get('mismatches') or 0),
+        },
+        'operations': {
+            'active_downloads': len(DownloadHandler().get_all()),
+            'failed_downloads': get_download_history_count(state='failed'),
+            'active_searches': active_searches,
+        },
+        'sections': {
+            'comic': {
+                'missing_monitored': int(comic_stats.get('missing_monitored') or 0),
+                'upcoming_monitored': int(comic_stats.get('upcoming_monitored') or 0),
+                'mismatches': int(comic_stats.get('mismatches') or 0),
+            },
+            'manga': {
+                'missing_monitored': int(manga_stats.get('missing_monitored') or 0),
+                'upcoming_monitored': int(manga_stats.get('upcoming_monitored') or 0),
+                'mismatches': int(manga_stats.get('mismatches') or 0),
+            },
+        },
+    })
+
+
+@api.route('/changelog', methods=['GET'])
+@error_handler
+@auth
+def api_changelog():
+    parsed = _read_packaged_changelog()
+    return return_api({
+        'current_version': get_about_data().get('version'),
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'entries': parsed['entries'],
+        'error': parsed['error'],
+    })
+
+
+
+
+def _truthy_request_flag(name: str) -> bool:
+    return str(request.values.get(name) or '').lower() in ('1', 'true', 'yes', 'on')
+
+
+DISCOVERY_SHELF_TYPES = ('recently-started', 'upcoming-launches', 'recently-active', 'recently-updated')
+DISCOVERY_SHELVES_BY_SECTION = {
+    'comic': {'recently-started', 'upcoming-launches', 'recently-active'},
+    'manga': {'recently-started', 'recently-updated'},
+}
+
+
+def _exclude_added_provider_results(items: List[dict]) -> List[dict]:
+    if not items:
+        return []
+    db = get_db()
+    visible = []
+    for item in items:
+        source = str(item.get('metadata_source') or 'comicvine')
+        metadata_id = str(item.get('metadata_id') or item.get('comicvine_id') or item.get('volume_id') or '')
+        if not metadata_id:
+            visible.append(item); continue
+        if source == 'mangadex':
+            row = db.execute("""SELECT id FROM volumes WHERE metadata_source = 'mangadex' AND metadata_id = ? LIMIT 1;""", (metadata_id,)).fetchone()
+        else:
+            row = db.execute("""SELECT id FROM volumes WHERE metadata_source = 'comicvine' AND comicvine_id = ? LIMIT 1;""", (int(metadata_id) if metadata_id.isdigit() else metadata_id,)).fetchone()
+        if row:
+            item['already_added'] = row[0]
+            continue
+        visible.append(item)
+    return visible
+
+
+DISCOVERY_CURSOR_VERSION = 1
+
+
+def _discovery_cursor_secret() -> bytes:
+    secret = Settings().sv.api_key or Constants.PRIVATE_FOLDER
+    return str(secret).encode('utf-8')
+
+
+def _encode_discovery_cursor(payload: Dict[str, Any]) -> str:
+    payload = {'version': DISCOVERY_CURSOR_VERSION, **payload}
+    raw = _json.dumps(payload, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    signature = hmac_new(_discovery_cursor_secret(), raw, sha256).hexdigest()
+    return urlsafe_b64encode(raw).decode('ascii').rstrip('=') + '.' + signature
+
+
+def _decode_discovery_cursor(cursor: str, expected_identity: str, expected_hide_added: bool) -> Dict[str, Any]:
+    try:
+        encoded, signature = cursor.rsplit('.', 1)
+        raw = urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4))
+    except Exception as exc:
+        raise InvalidKeyValue('cursor', 'invalid') from exc
+    expected_signature = hmac_new(_discovery_cursor_secret(), raw, sha256).hexdigest()
+    if not compare_digest(signature, expected_signature):
+        raise InvalidKeyValue('cursor', 'invalid')
+    try:
+        payload = _json.loads(raw.decode('utf-8'))
+    except Exception as exc:
+        raise InvalidKeyValue('cursor', 'invalid') from exc
+    if payload.get('version') != DISCOVERY_CURSOR_VERSION:
+        raise InvalidKeyValue('cursor', 'unsupported')
+    if payload.get('identity') != expected_identity or bool(payload.get('hide_added')) != bool(expected_hide_added):
+        raise InvalidKeyValue('cursor', 'mismatch')
+    return payload
+
+
+def _cursor_identity(provider: str, section: str, surface: str, **filters: Any) -> str:
+    normalized = {k: str(v or '') for k, v in sorted(filters.items())}
+    return _json.dumps({'provider': provider, 'section': section, 'surface': surface, 'filters': normalized}, sort_keys=True, separators=(',', ':'))
+
+
+def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages: int = 5, cursor: str = '', cursor_identity: str = '') -> Dict[str, Any]:
+    filled: List[dict] = []
+    current_offset = offset
+    retained_overflow: List[dict] = []
+    seen: set[tuple[str, str]] = set()
+    safety_exhausted = False
+    provider_has_more = False
+    previous_cursors = []
+    if cursor:
+        payload = _decode_discovery_cursor(cursor, cursor_identity, True)
+        current_offset = int(payload.get('raw_offset') or 0)
+        retained_overflow = [item for item in payload.get('overflow', []) if isinstance(item, dict)][:limit]
+        provider_has_more = bool(payload.get('provider_has_more'))
+        previous_cursors = [value for value in payload.get('previous_cursors', []) if isinstance(value, str)][-20:]
+        if cursor and cursor not in previous_cursors:
+            previous_cursors.append(cursor)
+        for source, metadata_id in payload.get('seen', []):
+            seen.add((str(source), str(metadata_id)))
+
+    def append_visible(items: List[dict]) -> List[dict]:
+        overflow: List[dict] = []
+        for item in items:
+            identity = (str(item.get('metadata_source') or 'comicvine'), str(item.get('metadata_id') or item.get('comicvine_id') or item.get('volume_id') or ''))
+            if identity[1] and identity in seen:
+                continue
+            if len(filled) < limit:
+                filled.append(item)
+                if identity[1]:
+                    seen.add(identity)
+            else:
+                overflow.append(item)
+        return overflow
+
+    overflow = append_visible(retained_overflow)
+    last_page: Dict[str, Any] = {'items': [], 'total': None, 'offset': offset, 'page_size': limit, 'has_more': False}
+    pages_used = 0
+    while len(filled) < limit and pages_used < max(1, safety_pages):
+        page = fetch_page(current_offset, limit)
+        pages_used += 1
+        last_page = page if isinstance(page, dict) else {'items': page or [], 'offset': current_offset, 'page_size': limit, 'has_more': False}
+        provider_items = last_page.get('items', []) if isinstance(last_page, dict) else []
+        visible = _exclude_added_provider_results(list(provider_items))
+        overflow.extend(append_visible(visible))
+        provider_has_more = bool(last_page.get('has_more'))
+        current_offset += int(last_page.get('page_size') or limit)
+        if overflow or not provider_has_more:
+            break
+    if len(filled) < limit and provider_has_more and pages_used >= max(1, safety_pages):
+        safety_exhausted = True
+    cursor_payload = None
+    if overflow or provider_has_more:
+        cursor_payload = {
+            'identity': cursor_identity,
+            'hide_added': True,
+            'raw_offset': current_offset,
+            'overflow': overflow[:limit],
+            'seen': list(seen)[-200:],
+            'safety_pages': safety_pages,
+            'safety_exhausted': safety_exhausted,
+            'provider_has_more': provider_has_more,
+            'previous_cursors': previous_cursors[-20:],
+        }
+    return {
+        **last_page,
+        'items': filled[:limit],
+        'total': None,
+        'total_is_exact': False,
+        'offset': offset,
+        'page_size': limit,
+        'has_more': bool(cursor_payload),
+        'next_cursor': _encode_discovery_cursor(cursor_payload) if cursor_payload else None,
+        'filtered_total_unknown': True,
+        'safety_exhausted': safety_exhausted,
+    }
+
+def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int, exclude_added: bool = False) -> Dict[str, Any]:
+    today = _date.today()
+    if discovery_type == 'recently-started':
+        start = (today - timedelta(days=365)).isoformat()
+        where = "first_known_issue_date BETWEEN ? AND ?"
+        params: Tuple[Any, ...] = (start, today.isoformat())
+    elif discovery_type == 'upcoming-launches':
+        end = (today + timedelta(days=60)).isoformat()
+        where = "is_upcoming_launch = 1 AND first_known_issue_date BETWEEN ? AND ?"
+        params = (today.isoformat(), end)
+    else:
+        raise InvalidKeyValue('type', discovery_type)
+    order = 'ASC' if discovery_type == 'upcoming-launches' else 'DESC'
+    sync_state = {'coverage_state': 'not_started', 'coverage_complete': False, 'last_completed_at': None, 'last_error': None, 'sync_task_id': None, 'source_note': 'Discovery facts are still being indexed.'}
+    try:
+        db = get_db()
+        try:
+            sync_row = db.execute("SELECT coverage_state, coverage_complete, last_completed_at, last_error FROM comic_discovery_fact_sync_state WHERE sync_id = 1;").fetchone()
+            if sync_row:
+                sync_state = {'coverage_state': sync_row[0], 'coverage_complete': bool(sync_row[1]), 'last_completed_at': sync_row[2], 'last_error': sync_row[3], 'sync_task_id': None, 'source_note': None if sync_row[0] == 'complete' else 'Discovery facts are still being indexed.'}
+        except OperationalError:
+            pass
+        fact_columns = {row[1] for row in db.execute('PRAGMA table_info(comic_series_discovery_facts);').fetchall()}
+        if 'derivation_status' in fact_columns:
+            where = f"({where}) AND derivation_status = 'valid'"
+        try:
+            configured_date = str(Settings().sv.date_type)
+        except (OperationalError, RuntimeError):
+            configured_date = 'cover_date'
+        date_preference = 'store_date' if configured_date.endswith('store_date') else 'cover_date'
+        if 'date_preference' in fact_columns:
+            where = f"({where}) AND date_preference = ?"
+            params = (*params, date_preference)
+        scan_limit = limit if not exclude_added else max(limit * 5, limit + 20)
+        rows = db.execute(f"""
+            SELECT comicvine_volume_id, first_known_issue_id, first_known_issue_number,
+                first_known_issue_date, volume_title, cover_link, site_url, year, publisher
+            FROM comic_series_discovery_facts
+            WHERE {where}
+            ORDER BY first_known_issue_date {order}, volume_title COLLATE NOCASE, comicvine_volume_id
+            LIMIT ? OFFSET ?;
+        """, (*params, scan_limit, offset)).fetchall()
+    except OperationalError:
+        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False, **sync_state}
+    if not rows:
+        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False, **sync_state}
+    volume_ids = tuple(int(row[0]) for row in rows)
+    already_added: Dict[int, int] = {}
+    if volume_ids:
+        placeholders = ','.join('?' * len(volume_ids))
+        already_added = dict(db.execute(f'SELECT comicvine_id, id FROM volumes WHERE comicvine_id IN ({placeholders})', volume_ids).fetchall())
+    items = []
+    for row in rows:
+        cv_id = int(row[0])
+        added_id = already_added.get(cv_id)
+        if exclude_added and added_id is not None:
+            continue
+        items.append({
+            'metadata_source': 'comicvine', 'metadata_id': str(cv_id), 'comicvine_id': cv_id,
+            'title': row[4] or '', 'volume_title': row[4] or '', 'cover_link': row[5] or '',
+            'site_url': row[6] or '', 'year': row[7], 'publisher': row[8] or '',
+            'issue_id': row[1], 'issue_number': row[2] or '', 'series_started_at': row[3],
+            'already_added': added_id,
+        })
+    return {
+        'items': items, 'total': None, 'total_is_exact': False, 'offset': offset,
+        'page_size': limit, 'has_more': len(rows) >= (limit if not exclude_added else max(limit * 5, limit + 20)) or len(items) > limit, 'fact_index': True, **sync_state,
+    }
+
 # =====================
 # Discovery
 # =====================
@@ -1314,9 +1429,24 @@ def api_library_import_delete():
 @auth
 def api_discovery():
     discovery_type = extract_key(request, 'type')
+    exclude_added = _truthy_request_flag('exclude_added')
     section = extract_key(request, 'section', False) or 'comic'
+    if section not in ('comic', 'manga'):
+        raise InvalidKeyValue('section', section)
+    aliases = {
+        'new': 'recently-started',
+        'upcoming': 'upcoming-launches',
+        'trending': 'recently-active',
+        'recently_updated': 'recently-updated',
+    }
+    discovery_type = aliases.get(discovery_type, discovery_type)
+    supported = DISCOVERY_SHELVES_BY_SECTION
+    if discovery_type not in supported[section]:
+        raise InvalidKeyValue('type', discovery_type)
+
     paginated = request.values.get('paginated') == 'true'
     offset = extract_key(request, 'offset', False) or 0
+    cursor = request.values.get('cursor', '')
     limit = (
         extract_key(request, 'limit', False)
         if request.values.get('limit') is not None
@@ -1327,51 +1457,123 @@ def api_discovery():
     if limit < 1 or limit > 100:
         raise InvalidKeyValue('limit', limit)
 
-    cv = ComicVine()
+    if section == 'manga':
+        sort = 'recently_updated' if discovery_type == 'recently-updated' else 'recently_started'
+        if exclude_added and paginated:
+            return return_api(_refill_excluding_added(
+                lambda page_offset, page_limit: browse_mangadex_catalog(
+                    offset=page_offset, limit=page_limit, sort=sort
+                ),
+                offset=offset,
+                limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('mangadex', section, 'shelf', type=discovery_type, sort=sort),
+            ))
+        page = browse_mangadex_catalog(offset=offset if paginated else 0, limit=limit if paginated else min(limit, 20), sort=sort)
+        if exclude_added:
+            page['items'] = _exclude_added_provider_results(page.get('items', []))
+            page['total'] = None
+            page['total_is_exact'] = False
+            page['has_more'] = False if page.get('is_bounded') else page.get('has_more', False)
+        if paginated:
+            return return_api(page)
+        return return_api(page['items'])
 
-    if discovery_type == 'upcoming':
-        fetch_limit = offset + limit if paginated else 200
-        if section == 'manga':
-            results = run(cv.get_upcoming_releases_manga(limit=fetch_limit))
+    if discovery_type in ('upcoming-launches', 'recently-started'):
+        fact_limit = limit + 1 if paginated else min(limit, 20)
+        if exclude_added and paginated:
+            fact_page = _refill_excluding_added(
+                lambda page_offset, page_limit: _comic_discovery_facts_page(discovery_type, offset=page_offset, limit=page_limit, exclude_added=False),
+                offset=offset,
+                limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('comicvine', section, 'fact-shelf', type=discovery_type),
+            )
         else:
-            results = run(cv.get_upcoming_series_launches(limit=fetch_limit))
-    elif discovery_type == 'new':
-        fetch_limit = offset + limit if paginated else 200
-        if section == 'manga':
-            results = run(cv.get_new_volumes_manga(limit=fetch_limit))
-        else:
-            results = run(cv.get_recently_started_volumes(limit=fetch_limit))
-        for r in results:
-            if 'cover' in r:
-                del r['cover']
-    elif discovery_type == 'trending':
-        fetch_limit = offset + limit if paginated else 200
-        if section == 'manga':
-            results = run(cv.get_new_volumes_manga(limit=fetch_limit))
-        else:
-            results = run(cv.get_popular_volumes(limit=fetch_limit))
-        for r in results:
-            if 'cover' in r:
-                del r['cover']
-    elif discovery_type == 'story-arcs':
-        raise InvalidKeyValue('type', discovery_type)
+            fact_page = _comic_discovery_facts_page(discovery_type, offset=offset if paginated else 0, limit=fact_limit, exclude_added=exclude_added)
+        if paginated:
+            fact_page['has_more'] = len(fact_page['items']) > limit
+            fact_page['items'] = fact_page['items'][:limit]
+            fact_page['page_size'] = limit
+            return return_api(fact_page)
+        if fact_page['items'] or not fact_page.get('coverage_complete'):
+            return return_api(fact_page['items'][:limit])
+    cv = ComicVine()
+    if discovery_type == 'upcoming-launches':
+        fetch_limit = offset + limit + 1 if paginated else 20
+        results = run(cv.get_upcoming_releases(limit=fetch_limit))
+    elif discovery_type == 'recently-started':
+        fetch_limit = offset + limit + 1 if paginated else 20
+        results = run(cv.get_new_volumes(limit=fetch_limit))
     else:
-        raise InvalidKeyValue('type', discovery_type)
+        sort = {
+            'recently-active': 'trending',
+        }[discovery_type]
+        if exclude_added and paginated:
+            return return_api(_refill_excluding_added(
+                lambda page_offset, page_limit: run(cv.browse_catalog_volumes(
+                    offset=page_offset, limit=page_limit, sort=sort
+                )),
+                offset=offset,
+                limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('comicvine', section, 'shelf', type=discovery_type, sort=sort),
+            ))
+        page = run(cv.browse_catalog_volumes(offset=offset if paginated else 0, limit=(limit if paginated else 20), sort=sort))
+        results = page.get('items', []) if isinstance(page, dict) else page
+        if paginated and isinstance(page, dict):
+            return return_api(page)
 
     if paginated:
-        items = results[offset:offset + limit]
-        total = offset + len(items)
-        if len(results) >= offset + limit:
-            total += 1
+        if exclude_added:
+            results = _exclude_added_provider_results(results)
+            items = results[:limit]
+            has_more = False
+            total = None
+        else:
+            items = results[offset:offset + limit]
+            has_more = len(results) > offset + limit
+            total = offset + len(items) + (1 if has_more else 0)
         return return_api({
             'items': items,
             'total': total,
             'offset': offset,
             'page_size': limit,
-            'has_more': len(results) >= offset + limit
+            'has_more': has_more,
         })
 
     return return_api(results)
+
+
+
+@api.route('/discovery/capabilities', methods=['GET'])
+@error_handler
+@auth
+def api_discovery_capabilities():
+    section = extract_key(request, 'section', False) or 'comic'
+    if section not in ('comic', 'manga'):
+        raise InvalidKeyValue('section', section)
+    if section == 'comic':
+        facets = Library.get_facets('comic')
+        return return_api({
+            'section': 'comic',
+            'filters': ['publisher', 'decade', 'character', 'genre'],
+            'deferred_filters': ['creator', 'imprint', 'format'],
+            'shelves': ['recently_started', 'upcoming_launches', 'recently_active', 'browse_publishers', 'browse_by_decade', 'browse_all_comics'],
+            'source_notes': {'trending': 'Recently Active uses ComicVine date_last_updated, not a global popularity score.'},
+            'publishers': [{'value': f['value'], 'label': f['value'], 'count': f.get('count', 0)} for f in facets.get('publishers', [])],
+            'decades': [{'value': str((int(f['value']) // 10) * 10), 'label': f"{(int(f['value']) // 10) * 10}s", 'count': f.get('count', 0)} for f in facets.get('years', []) if str(f.get('value', '')).isdigit()],
+        })
+    return return_api({
+        'section': 'manga',
+        'filters': ['tags', 'demographic', 'status', 'original_language', 'year', 'author', 'artist', 'content_rating'],
+        'deferred_filters': ['publisher', 'character', 'imprint', 'format'],
+        'shelves': ['recently_updated', 'browse_all_manga'],
+        'source_notes': {'mangadex': 'Manga Browse uses MangaDex directly. Chapter counts are not shown as comic issue counts.'},
+        'statuses': [{'value': v, 'label': v.replace('_', ' ').title()} for v in ['ongoing', 'completed', 'hiatus', 'cancelled']],
+        'original_languages': [{'value': v, 'label': v.upper()} for v in ['ja', 'ko', 'zh', 'en']],
+        'demographics': [{'value': v, 'label': v.title()} for v in ['shounen', 'shoujo', 'josei', 'seinen']],
+    })
 
 
 @api.route('/discovery/browse', methods=['GET'])
@@ -1382,136 +1584,127 @@ def api_discovery_browse():
     if section not in ('comic', 'manga'):
         raise InvalidKeyValue('section', section)
     offset = extract_key(request, 'offset', False) or 0
+    cursor = request.values.get('cursor', '')
     limit = extract_key(request, 'limit', False) or 30
-    if offset < 0:
-        raise InvalidKeyValue('offset', offset)
-    if limit < 1 or limit > 100:
+    exclude_added = _truthy_request_flag('exclude_added')
+    if offset < 0 or limit < 1 or limit > 100:
         raise InvalidKeyValue('limit', limit)
-    publisher = extract_key(request, 'publisher', False) or ''
-    decade = extract_key(request, 'decade', False) or ''
-    status = extract_key(request, 'status', False) or ''
-    original_language = extract_key(request, 'original_language', False) or ''
-    character = extract_key(request, 'character', False) or ''
-    genre = extract_key(request, 'genre', False) or ''
-    query = extract_key(request, 'q', False) or ''
-    sort = extract_key(request, 'sort', False) or 'trending'
-
-    if section == 'comic' and (character or genre):
-        base = """
-            SELECT v.id AS already_added, v.comicvine_id, v.metadata_source,
-                v.metadata_id, v.metadata_language, v.title, v.year, v.publisher,
-                v.volume_number, COUNT(i.id) AS issue_count,
-                COUNT(*) OVER () AS _total_count
-            FROM volumes v
-            INNER JOIN root_folders rf ON rf.id = v.root_folder
-            LEFT JOIN issues i ON i.volume_id = v.id
-            WHERE rf.section = 'comic'
-                AND v.metadata_source = 'comicvine'
-        """
-        params = []
-        if character:
-            base += " AND EXISTS (SELECT 1 FROM volume_enrichment_terms vet WHERE vet.volume_id = v.id AND vet.term_type = 'character' AND vet.name = ?)"
-            params.append(character)
-        if genre:
-            base += " AND EXISTS (SELECT 1 FROM volume_enrichment_terms vet WHERE vet.volume_id = v.id AND vet.term_type = 'genre' AND vet.name = ?)"
-            params.append(genre)
-        if query:
-            base += " AND v.title LIKE ?"
-            params.append(f'%{query}%')
-        base += " GROUP BY v.id ORDER BY v.title COLLATE NOCASE LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-        rows = get_db().execute(base, tuple(params)).fetchalldict()
-        total = int(rows[0].get('_total_count') or 0) if rows else 0
-        for row in rows:
-            row.pop('_total_count', None)
-            row['metadata_source_label'] = 'ComicVine + Metron'
-            row['source_note'] = 'Character/Genre filter uses local Metron enrichment index.'
-        result = {'items': rows, 'total': total, 'offset': offset, 'page_size': limit, 'has_more': offset + len(rows) < total}
-    elif section == 'comic':
-        result = run(ComicVine().browse_discover_volumes(
-            section=section,
-            query=query,
-            publisher=publisher,
-            decade=decade,
-            sort=sort,
-            offset=offset,
-            limit=limit,
-        ))
-    else:
-        result = run(ComicVine().browse_discover_volumes(
-            section=section,
-            query=query,
-            decade=decade,
-            sort=sort,
-            offset=offset,
-            limit=limit,
-        ))
-        result['source_note'] = (
-            'Manga Browse All uses current ComicVine manga records for bounded '
-            'catalog browsing. MangaDex status/original-language filters are '
-            'deferred until a non-misleading MangaDex catalog index exists.'
-        )
-    for item in result.get('items', []):
-        item.pop('cover', None)
-    return return_api(result)
-
-
-@api.route('/discovery/capabilities', methods=['GET'])
-@error_handler
-@auth
-def api_discovery_capabilities():
-    section = extract_key(request, 'section', False) or 'comic'
-    if section == 'comic':
-        facets = Library.get_facets('comic')
-        return return_api({
-            'section': 'comic',
-            'filters': ['publisher', 'decade', 'status', 'character', 'genre'],
-            'deferred_filters': ['creator', 'imprint', 'format'],
-            'shelves': ['recently-started', 'upcoming-series-launches', 'trending', 'browse-publishers', 'browse-by-decade', 'browse-all'],
-            'source_notes': {
-                'recently-started': 'ComicVine first known issue date, 12 month window.',
-                'upcoming': 'ComicVine future issue #1 records.',
-                'trending': 'ComicVine recently-updated order; not global popularity.',
-            },
-            'publishers': [{'value': f['value'], 'label': f['value'], 'count': f.get('count')} for f in facets.get('publishers', [])],
-            'characters': [{'value': f['value'], 'label': f['label'], 'count': f.get('count')} for f in facets.get('characters', [])],
-            'genres': [{'value': f['value'], 'label': f['label'], 'count': f.get('count')} for f in facets.get('genres', [])],
-            'decades': [
-                {'value': '2020', 'label': '2020s'},
-                {'value': '2010', 'label': '2010s'},
-                {'value': '2000', 'label': '2000s'},
-                {'value': '1990', 'label': '1990s'},
-            ],
-            'statuses': [{'value': 'active', 'label': 'Active/known'}, {'value': 'completed', 'label': 'Completed/known'}],
-        })
+    query = request.values.get('q', '').strip()
+    sort = request.values.get('sort', 'recently_updated' if section == 'manga' else 'trending')
     if section == 'manga':
-        return return_api({
-            'section': 'manga',
-            'filters': ['decade', 'status'],
-            'deferred_filters': ['publisher', 'character', 'genre', 'tag', 'demographic', 'original_language', 'author', 'artist', 'content_rating'],
-            'shelves': ['recently-started', 'recently-updated', 'browse-by-decade', 'browse-all'],
-            'source_notes': {
-                'recently-started': 'Current repository uses ComicVine manga records; richer MangaDex catalog filters wait for Phase 6 indexing.',
-                'recently-updated': 'ComicVine manga records ordered by provider activity.',
-            },
-            'decades': [
-                {'value': '2020', 'label': '2020s'},
-                {'value': '2010', 'label': '2010s'},
-                {'value': '2000', 'label': '2000s'},
-                {'value': '1990', 'label': '1990s'},
-            ],
-            'statuses': [{'value': 'known', 'label': 'Known'}],
-        })
-    raise InvalidKeyValue('section', section)
+        unsupported = {'publisher', 'character', 'creator', 'imprint', 'format'} & set(request.values.keys())
+        if unsupported:
+            raise InvalidKeyValue(next(iter(unsupported)), request.values.get(next(iter(unsupported))))
+        try:
+            page = browse_mangadex_catalog(
+                query=query,
+                offset=offset,
+                limit=limit,
+                sort=sort,
+                status=request.values.get('status', ''),
+                original_language=request.values.get('original_language', ''),
+                demographic=request.values.get('demographic', ''),
+                content_rating=request.values.get('content_rating', ''),
+                year=request.values.get('year', ''),
+                decade=request.values.get('decade', ''),
+                author=request.values.get('author', ''),
+                artist=request.values.get('artist', ''),
+                tags=request.values.get('tags', ''),
+                translated_language=request.values.get('translated_language', ''),
+            )
+        except ValueError as exc:
+            raise InvalidKeyValue('filter', str(exc))
+        if exclude_added:
+            page = _refill_excluding_added(
+                lambda page_offset, page_limit: browse_mangadex_catalog(
+                    query=query,
+                    offset=page_offset,
+                    limit=page_limit,
+                    sort=sort,
+                    status=request.values.get('status', ''),
+                    original_language=request.values.get('original_language', ''),
+                    demographic=request.values.get('demographic', ''),
+                    content_rating=request.values.get('content_rating', ''),
+                    year=request.values.get('year', ''),
+                    decade=request.values.get('decade', ''),
+                    author=request.values.get('author', ''),
+                    artist=request.values.get('artist', ''),
+                    tags=request.values.get('tags', ''),
+                    translated_language=request.values.get('translated_language', ''),
+                ),
+                offset=offset,
+                limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('mangadex', section, 'browse', q=query, sort=sort, status=request.values.get('status', ''), original_language=request.values.get('original_language', ''), demographic=request.values.get('demographic', ''), content_rating=request.values.get('content_rating', ''), year=request.values.get('year', ''), decade=request.values.get('decade', ''), author=request.values.get('author', ''), artist=request.values.get('artist', ''), tags=request.values.get('tags', ''), translated_language=request.values.get('translated_language', '')),
+            )
+        return return_api(page)
+    unsupported = {'tags', 'demographic', 'original_language', 'author', 'artist', 'content_rating'} & set(request.values.keys())
+    if unsupported:
+        raise InvalidKeyValue(next(iter(unsupported)), request.values.get(next(iter(unsupported))))
+    character = request.values.get('character', '').strip()
+    genre = request.values.get('genre', '').strip()
+    if character or genre:
+        from backend.features.metron_enrichment import browse_enriched_volumes
+        if character and genre:
+            raise InvalidKeyValue('filter', 'Use either character or genre, not both')
+        page = browse_enriched_volumes(
+            'character' if character else 'genre',
+            character or genre,
+            query=query,
+            offset=offset,
+            limit=limit,
+            sort=sort,
+        )
+        if exclude_added:
+            page = _refill_excluding_added(
+                lambda page_offset, page_limit: browse_enriched_volumes(
+                    'character' if character else 'genre',
+                    character or genre,
+                    query=query,
+                    offset=page_offset,
+                    limit=page_limit,
+                    sort=sort,
+                ),
+                offset=offset,
+                limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('comicvine', section, 'enriched-browse', q=query, sort=sort, character=character, genre=genre),
+            )
+        return return_api(page)
+    cv = ComicVine()
+    def fetch_comic_page(page_offset: int, page_limit: int) -> Dict[str, Any]:
+        return run(cv.browse_catalog_volumes(
+            query=query,
+            publisher=request.values.get('publisher', ''),
+            decade=request.values.get('decade', ''),
+            year=request.values.get('year', ''),
+            offset=page_offset,
+            limit=page_limit,
+            sort=sort,
+        ))
+    page = (
+        _refill_excluding_added(fetch_comic_page, offset=offset, limit=limit, cursor=cursor, cursor_identity=_cursor_identity('comicvine', section, 'browse', q=query, sort=sort, publisher=request.values.get('publisher', ''), decade=request.values.get('decade', ''), year=request.values.get('year', '')))
+        if exclude_added
+        else fetch_comic_page(offset, limit)
+    )
+    return return_api(page)
 
 
-@api.route('/discovery/story-arc/<int:arc_id>', methods=['GET'])
+@api.route('/discovery/facts/refresh', methods=['POST'])
 @error_handler
 @auth
-def api_discovery_story_arc(arc_id: int):
-    cv = ComicVine()
-    result = run(cv.get_story_arc_volumes(arc_id))
-    return return_api(result)
+def api_discovery_facts_refresh():
+    task_id = TaskHandler().add(ComicDiscoveryFactSyncTask())
+    try:
+        db = get_db()
+        date_preference = 'store_date' if str(Settings().sv.date_type).endswith('store_date') else 'cover_date'
+        db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference, last_started_at)
+            VALUES(1, 'comic_series_discovery', 'partial', 0, ?, NULL)
+            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, date_preference=excluded.date_preference, last_error=NULL;""", (date_preference,))
+        commit()
+    except OperationalError:
+        pass
+    return return_api({'sync_task_id': task_id, 'coverage': 'partial', 'source_note': 'Discovery facts are being indexed.'})
 
 
 # =====================
@@ -1598,14 +1791,38 @@ def api_volumes_search():
             extract_key(request, 'metadata_source', False)
             or 'comicvine'
         )
+        paginated = str(extract_key(request, 'paginated', False) or '').lower() == 'true'
+        exclude_added = _truthy_request_flag('exclude_added')
+        offset = int(extract_key(request, 'offset', False) or 0)
+        limit = min(max(int(extract_key(request, 'limit', False) or 30), 1), 100)
 
-        def search_comicvine() -> List[dict]:
-            results = run(ComicVine().search_volumes(query, section=section))
+        def format_comicvine_results(results: List[dict]) -> List[dict]:
             for r in results:
                 r['metadata_source'] = 'comicvine'
                 r['metadata_id'] = str(r['comicvine_id'])
-                del r["cover"] # type: ignore
+                if 'cover' in r:
+                    del r['cover'] # type: ignore
             return results
+
+        def search_comicvine() -> List[dict]:
+            return format_comicvine_results(run(ComicVine().search_volumes(query, section=section)))
+
+        def search_comicvine_page(page_offset: int, page_limit: int) -> Dict[str, Any]:
+            cv = ComicVine()
+            if hasattr(cv, 'search_volumes_page'):
+                page = run(cv.search_volumes_page(query, section=section, offset=page_offset, limit=page_limit))
+                page['items'] = format_comicvine_results(page.get('items', []))
+                return page
+            results = format_comicvine_results(run(cv.search_volumes(query, section=section)))
+            return {
+                'items': results[page_offset:page_offset + page_limit],
+                'total': len(results),
+                'offset': page_offset,
+                'page_size': page_limit,
+                'has_more': page_offset + page_limit < len(results),
+                'total_is_exact': True,
+                'next_offset': page_offset + page_limit if page_offset + page_limit < len(results) else None,
+            }
 
         def search_mangadex() -> List[dict]:
             if section != 'manga':
@@ -1628,19 +1845,56 @@ def api_volumes_search():
                 r['already_added'] = already_added[0] if already_added else None
             return results
 
+        if paginated and metadata_source == 'comicvine':
+            identity = _cursor_identity('comicvine', section, 'volume-search', query=query, metadata_source=metadata_source)
+            if exclude_added:
+                return return_api(_refill_excluding_added(search_comicvine_page, offset=offset, limit=limit, cursor=request.values.get('cursor', ''), cursor_identity=identity))
+            page = search_comicvine_page(offset, limit)
+            return return_api(page)
+
         if metadata_source == 'all':
-            comicvine_results = search_comicvine()
-            if section != 'manga' or comicvine_results:
-                return return_api(comicvine_results)
-            return return_api(search_mangadex())
-
-        if metadata_source == 'mangadex':
-            return return_api(search_mangadex())
-
-        if metadata_source != 'comicvine':
+            results = search_comicvine()
+            if section == 'manga':
+                results.extend(search_mangadex())
+        elif metadata_source == 'mangadex':
+            results = search_mangadex()
+        elif metadata_source == 'comicvine':
+            results = search_comicvine()
+        else:
             raise InvalidKeyValue('metadata_source', metadata_source)
 
-        return return_api(search_comicvine())
+        seen = set()
+        deduped = []
+        for result in results:
+            identity = (
+                result.get('metadata_source') or 'comicvine',
+                str(result.get('metadata_id') or result.get('comicvine_id'))
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            deduped.append(result)
+
+        if exclude_added:
+            deduped = _exclude_added_provider_results(deduped)
+        if paginated:
+            page_items = deduped[offset:offset + limit]
+            next_offset = offset + limit if offset + limit < len(deduped) else None
+            return return_api({
+                'items': page_items,
+                'total': None if exclude_added else len(deduped),
+                'total_is_exact': not exclude_added,
+                'filtered_total_unknown': bool(exclude_added),
+                'offset': offset,
+                'page_size': limit,
+                'next_offset': next_offset,
+                'next_cursor': None,
+                'has_more': next_offset is not None,
+                'is_bounded': True,
+                'maximum_results': len(deduped),
+            })
+
+        return return_api(deduped)
 
     elif request.method == 'POST':
         data: Dict[str, Any] = request.get_json()
@@ -1676,81 +1930,6 @@ def api_volumes_search():
         return return_api({'folder': folder})
 
 
-@api.route('/savedfilters', methods=['GET', 'POST'])
-@error_handler
-@auth
-def api_saved_filters():
-    if request.method == 'GET':
-        section = _validate_saved_filter_section(extract_key(request, 'section', False))
-        rows = get_db().execute(
-            'SELECT id, section, name, query, created_at, updated_at '
-            'FROM saved_filters WHERE section = ? ORDER BY name COLLATE NOCASE, id;',
-            (section,)
-        ).fetchall()
-        return return_api([_format_saved_filter(row) for row in rows])
-
-    data = request.get_json() or {}
-    section = _validate_saved_filter_section(data.get('section'))
-    name = _validate_saved_filter_name(data.get('name'))
-    query = _validate_saved_filter_query(data.get('query'))
-    now = round(time())
-    cursor = get_db()
-    try:
-        result = cursor.execute(
-            'INSERT INTO saved_filters(section, name, query, created_at, updated_at) '
-            'VALUES (?, ?, ?, ?, ?);',
-            (section, name, _json.dumps(query, sort_keys=True), now, now)
-        )
-    except IntegrityError:
-        raise InvalidKeyValue('name', name)
-    cursor.connection.commit()
-    row = cursor.execute(
-        'SELECT id, section, name, query, created_at, updated_at FROM saved_filters WHERE id = ?;',
-        (result.lastrowid,)
-    ).fetchone()
-    return return_api(_format_saved_filter(row), code=201)
-
-
-@api.route('/savedfilters/<int:filter_id>', methods=['PUT', 'DELETE'])
-@error_handler
-@auth
-def api_saved_filter(filter_id: int):
-    cursor = get_db()
-    _get_saved_filter_or_404(filter_id)
-    if request.method == 'DELETE':
-        cursor.execute('DELETE FROM saved_filters WHERE id = ?;', (filter_id,))
-        cursor.connection.commit()
-        return return_api({})
-
-    data = request.get_json() or {}
-    updates = []
-    values = []
-    if 'name' in data:
-        updates.append('name = ?')
-        values.append(_validate_saved_filter_name(data.get('name')))
-    if 'query' in data:
-        updates.append('query = ?')
-        values.append(_json.dumps(_validate_saved_filter_query(data.get('query')), sort_keys=True))
-    if not updates:
-        raise InvalidKeyValue('payload', data)
-    updates.append('updated_at = ?')
-    values.append(round(time()))
-    values.append(filter_id)
-    try:
-        cursor.execute(
-            f"UPDATE saved_filters SET {', '.join(updates)} WHERE id = ?;",
-            tuple(values)
-        )
-    except IntegrityError:
-        raise InvalidKeyValue('name', data.get('name'))
-    cursor.connection.commit()
-    row = cursor.execute(
-        'SELECT id, section, name, query, created_at, updated_at FROM saved_filters WHERE id = ?;',
-        (filter_id,)
-    ).fetchone()
-    return return_api(_format_saved_filter(row))
-
-
 @api.route('/volumes', methods=['GET', 'POST'])
 @error_handler
 @auth
@@ -1759,15 +1938,16 @@ def api_volumes():
         query = extract_key(request, 'query', False)
         sort = extract_key(request, 'sort', False)
         filter = extract_key(request, 'filter', False)
+        direction = extract_key(request, 'direction', False) or 'asc'
         section = extract_key(request, 'section', False) or 'comic'
         paginated = request.values.get('paginated') == 'true'
         if not paginated:
             if query:
                 return return_api(Library.search(
-                    query, sort or LibrarySorting.TITLE, filter, section
+                    query, sort or LibrarySorting.TITLE, filter, section, direction
                 ))
             return return_api(Library.get_public_volumes(
-                sort or LibrarySorting.TITLE, filter, section
+                sort or LibrarySorting.TITLE, filter, section, direction
             ))
         offset = extract_key(request, 'offset', False)
         limit = (
@@ -1784,14 +1964,14 @@ def api_volumes():
 
         LOGGER.debug(
             'api_volumes GET: query=%r sort=%r filter=%r section=%r '
-            'offset=%r limit=%r',
-            query, sort, filter, section, offset, limit
+            'offset=%r limit=%r direction=%r',
+            query, sort, filter, section, offset, limit, direction
         )
         for attempt in range(3):
             try:
                 if query:
                     matching = Library.search(
-                        query, sort or LibrarySorting.TITLE, filter, section
+                        query, sort or LibrarySorting.TITLE, filter, section, direction
                     )
                     total = len(matching)
                     start = offset * limit
@@ -1802,7 +1982,8 @@ def api_volumes():
                         filter,
                         section,
                         offset,
-                        limit
+                        limit,
+                        direction
                     )
                 LOGGER.debug(
                     'api_volumes GET: returning %d of %d volumes',
@@ -2014,6 +2195,11 @@ def api_volume(id: int):
 
     if request.method == 'GET':
         volume_info = volume.get_public_data()
+        try:
+            from backend.features.metron_enrichment import MetronEnrichmentService
+            volume_info['metadata_provenance'] = MetronEnrichmentService.get_volume_provenance(id)
+        except Exception:
+            LOGGER.exception('Failed to load Metron provenance for volume %d', id)
         return return_api(volume_info)
 
     elif request.method == 'PUT':
@@ -2055,34 +2241,6 @@ def api_volume(id: int):
         volume.delete(delete_folder=delete_folder)
         return return_api({})
 
-
-
-
-@api.route('/volumes/<int:id>/metron/refresh', methods=['POST'])
-@error_handler
-@auth
-def api_volume_metron_refresh(id: int):
-    task_id = TaskHandler().add(MetronEnrichVolume(id))
-    return return_api({'task_id': task_id}, code=202)
-
-
-@api.route('/volumes/<int:id>/metron/relink', methods=['POST'])
-@error_handler
-@auth
-def api_volume_metron_relink(id: int):
-    data = request.get_json() or {}
-    external_id = str(data.get('external_id') or '').strip()
-    if not external_id:
-        raise KeyNotFound('external_id')
-    result = MetronEnrichmentService().relink(id, external_id)
-    return return_api(result)
-
-
-@api.route('/volumes/<int:id>/metron', methods=['DELETE'])
-@error_handler
-@auth
-def api_volume_metron_remove(id: int):
-    return return_api(MetronEnrichmentService.unlink(id))
 
 @api.route('/volumes/<int:id>/import', methods=['POST'])
 @error_handler
@@ -3190,3 +3348,120 @@ def api_nzb_indexer(id: int):
     elif request.method == 'DELETE':
         NZBIndexers.delete(id)
         return return_api({})
+
+
+# =====================
+# Metron enrichment
+# =====================
+
+@api.route('/metadata/metron/status', methods=['GET'])
+@error_handler
+@auth
+def api_metron_status():
+    from backend.features.metron_enrichment import metron_settings_status
+    return return_api(metron_settings_status())
+
+
+@api.route('/metadata/metron/test', methods=['POST'])
+@error_handler
+@auth
+def api_metron_test():
+    from backend.features.metron_enrichment import safe_test_connection
+    return return_api(safe_test_connection())
+
+
+@api.route('/metadata/metron/backfill/status', methods=['GET'])
+@error_handler
+@auth
+def api_metron_backfill_status():
+    from backend.features.metron_enrichment import get_backfill_status
+    return return_api(get_backfill_status())
+
+
+@api.route('/metadata/metron/backfill', methods=['POST'])
+@error_handler
+@auth
+def api_metron_backfill():
+    from backend.features.tasks import MetronBackfillTask, TaskHandler
+    task_handler = TaskHandler()
+    if any(task.get('action') == 'metron_backfill' for task in task_handler.get_all()):
+        return return_api({'task_id': None, 'status': 'already_queued', 'duplicate': True}, code=202)
+    task_id = task_handler.add(MetronBackfillTask())
+    return return_api({'task_id': task_id, 'status': 'queued'}, code=202)
+
+
+@api.route('/metadata/metron/reviews', methods=['GET'])
+@error_handler
+@auth
+def api_metron_reviews():
+    from backend.features.metron_enrichment import get_review_candidates
+    volume_id = request.values.get('volume_id')
+    return return_api(get_review_candidates(int(volume_id) if volume_id else None))
+
+
+@api.route('/metadata/metron/reviews/<int:candidate_id>/select', methods=['POST'])
+@error_handler
+@auth
+def api_metron_review_select(candidate_id: int):
+    from backend.features.metron_enrichment import select_candidate_and_queue_enrichment
+    from backend.internals.db import get_db
+    candidate = get_db().execute('SELECT volume_id FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
+    if not candidate:
+        raise InvalidKeyValue('candidate_id', candidate_id)
+    volume_id = int(candidate['volume_id'])
+    result = select_candidate_and_queue_enrichment(candidate_id)
+    return return_api(result, code=202)
+
+
+@api.route('/volumes/<int:id>/metadata/metron/refresh', methods=['POST'])
+@error_handler
+@auth
+def api_volume_metron_refresh(id: int):
+    from backend.features.tasks import MetronEnrichmentTask, TaskHandler
+    if TaskHandler.task_for_volume_running(id):
+        return return_api({'task_id': None, 'duplicate': True}, code=202)
+    task_id = TaskHandler().add(MetronEnrichmentTask(id))
+    return return_api({'task_id': task_id}, code=202)
+
+
+@api.route('/volumes/<int:id>/metadata/metron/relink', methods=['POST'])
+@error_handler
+@auth
+def api_volume_metron_relink(id: int):
+    from backend.features.metron_enrichment import relink_pending
+    from backend.features.tasks import MetronEnrichmentTask, TaskHandler
+    data = request.get_json() or {}
+    series_id = str(data.get('series_id') or data.get('candidate_external_id') or '').strip()
+    candidate_id = data.get('candidate_id')
+    relink_pending(id, series_id, int(candidate_id) if candidate_id is not None else None)
+    if TaskHandler.task_for_volume_running(id):
+        return return_api({'task_id': None, 'status': 'pending', 'duplicate': True}, code=202)
+    task_id = TaskHandler().add(MetronEnrichmentTask(id))
+    return return_api({'task_id': task_id, 'status': 'pending'}, code=202)
+
+
+@api.route('/volumes/<int:id>/metadata/metron/unlink', methods=['POST', 'DELETE'])
+@error_handler
+@auth
+def api_volume_metron_unlink(id: int):
+    from backend.features.metron_enrichment import MetronEnrichmentService
+    return return_api(MetronEnrichmentService.unlink(id))
+
+
+@api.route('/volumes/<int:id>/metadata/metron/review/dismiss', methods=['POST'])
+@error_handler
+@auth
+def api_volume_metron_review_dismiss(id: int):
+    from backend.features.metron_enrichment import dismiss_review
+    return return_api(dismiss_review(id))
+
+
+@api.route('/discover/metron/<term_type>', methods=['GET'])
+@error_handler
+@auth
+def api_discover_metron_terms(term_type: str):
+    from backend.features.metron_enrichment import browse_enriched_terms
+    q = request.values.get('q') or ''
+    page = int(request.values.get('page') or 1)
+    page_size = int(request.values.get('page_size') or 50)
+    return return_api(browse_enriched_terms(term_type, q, page, page_size))

@@ -11,9 +11,7 @@ export const queryClient = new QueryClient({
 });
 
 export function prefetchDashboardSummary(): void {
-  const run = () => {
-    void queryClient.prefetchQuery(dashboardSummaryQueryOptions());
-  };
+  const run = () => { void queryClient.prefetchQuery(dashboardSummaryQueryOptions()); };
   if ('requestIdleCallback' in window) {
     window.requestIdleCallback(run, { timeout: 2_000 });
     return;

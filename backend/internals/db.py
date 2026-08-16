@@ -307,13 +307,19 @@ def setup_db_adapters_and_converters() -> None:
 
 def setup_db() -> None:
     """Setup the default config and database connection and tables"""
-    from backend.internals.db_migration import DatabaseMigrationHandler
+    from backend.internals.db_migration import (
+        DatabaseMigrationHandler,
+        _ensure_metron_base_schema,
+    )
     from backend.internals.settings import Settings, task_intervals
 
     cursor = get_db()
     cursor.execute("PRAGMA journal_mode = wal;")
     setup_db_adapters_and_converters()
 
+    # Normalize the experimental version-58 Metron schema before the full
+    # schema bootstrap creates indexes that depend on final Metron columns.
+    _ensure_metron_base_schema(cursor)
     cursor.executescript(DB_SCHEMA)
 
     settings = Settings()
@@ -352,7 +358,8 @@ CREATE TABLE IF NOT EXISTS config(
 );
 CREATE TABLE IF NOT EXISTS root_folders(
     id INTEGER PRIMARY KEY,
-    folder VARCHAR(254) UNIQUE NOT NULL
+    folder VARCHAR(254) UNIQUE NOT NULL,
+    section VARCHAR(10) NOT NULL DEFAULT 'comic'
 );
 CREATE TABLE IF NOT EXISTS volumes(
     id INTEGER PRIMARY KEY,
@@ -407,7 +414,9 @@ CREATE INDEX IF NOT EXISTS issues_volume_index
 CREATE TABLE IF NOT EXISTS files(
     id INTEGER PRIMARY KEY,
     filepath TEXT UNIQUE NOT NULL,
-    size INTEGER
+    size INTEGER,
+    exists_on_disk BOOL NOT NULL DEFAULT 1,
+    missing_since INTEGER
 );
 CREATE TABLE IF NOT EXISTS issues_files(
     file_id INTEGER NOT NULL,
@@ -545,23 +554,6 @@ CREATE TABLE IF NOT EXISTS remote_mappings(
         REFERENCES external_download_clients(id)
         ON DELETE CASCADE
 );
-CREATE TABLE IF NOT EXISTS nzb_indexers(
-    id INTEGER PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    base_url TEXT NOT NULL,
-    api_key TEXT NOT NULL DEFAULT '',
-    categories VARCHAR(255) NOT NULL DEFAULT '7030,7020',
-    enabled BOOL NOT NULL DEFAULT 1
-);
-CREATE TABLE IF NOT EXISTS saved_filters(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    section TEXT NOT NULL CHECK(section IN ('comic', 'manga')),
-    name TEXT NOT NULL,
-    query TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    UNIQUE(section, name)
-);
 CREATE TABLE IF NOT EXISTS volume_provider_links(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     volume_id INTEGER NOT NULL,
@@ -610,16 +602,140 @@ CREATE TABLE IF NOT EXISTS metron_backfill_state(
     id INTEGER PRIMARY KEY CHECK(id = 1),
     status TEXT NOT NULL,
     total INTEGER NOT NULL DEFAULT 0,
+    total_estimate INTEGER NOT NULL DEFAULT 0,
     processed INTEGER NOT NULL DEFAULT 0,
     matched INTEGER NOT NULL DEFAULT 0,
     unmatched INTEGER NOT NULL DEFAULT 0,
     review_required INTEGER NOT NULL DEFAULT 0,
     failed INTEGER NOT NULL DEFAULT 0,
+    skipped INTEGER NOT NULL DEFAULT 0,
     current_volume_id INTEGER,
+    last_terminal_volume_id INTEGER NOT NULL DEFAULT 0,
     rate_limit_paused_until INTEGER,
+    last_error TEXT,
+    resume_time INTEGER,
     cancel_requested BOOL NOT NULL DEFAULT 0,
     started_at INTEGER,
     updated_at INTEGER,
     completed_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS provider_match_candidates(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    volume_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    candidate_external_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    year INTEGER,
+    publisher TEXT,
+    cover_url TEXT,
+    summary TEXT,
+    confidence REAL,
+    match_reason TEXT NOT NULL DEFAULT '',
+    review_group_id TEXT NOT NULL,
+    review_status TEXT NOT NULL DEFAULT 'review_required',
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS provider_match_candidates_unresolved_idx
+    ON provider_match_candidates(provider, review_status, volume_id, created_at);
+CREATE TABLE IF NOT EXISTS metron_enrichment_task_reservations(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    volume_id INTEGER NOT NULL,
+    candidate_id INTEGER,
+    task_queue_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'reserved',
+    safe_error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+    FOREIGN KEY (candidate_id) REFERENCES provider_match_candidates(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS metron_enrichment_task_reservations_active_idx
+    ON metron_enrichment_task_reservations(volume_id, candidate_id, task_queue_id)
+    WHERE status IN ('reserved', 'queued', 'running');
+CREATE TABLE IF NOT EXISTS volume_metadata_enrichment(
+    volume_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    normalized_value TEXT NOT NULL,
+    external_provider_id TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL,
+    active BOOL NOT NULL DEFAULT 1,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+    PRIMARY KEY(volume_id, provider, field_name)
+);
+CREATE INDEX IF NOT EXISTS volume_metadata_enrichment_active_idx
+    ON volume_metadata_enrichment(volume_id, provider, active);
+CREATE TABLE IF NOT EXISTS provider_rate_limit_state(
+    provider TEXT PRIMARY KEY,
+    burst_limit INTEGER,
+    burst_remaining INTEGER,
+    burst_reset INTEGER,
+    sustained_limit INTEGER,
+    sustained_remaining INTEGER,
+    sustained_reset INTEGER,
+    retry_after INTEGER,
+    resume_at INTEGER,
+    last_status TEXT,
+    auth_blocked BOOL NOT NULL DEFAULT 0,
+    updated_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS comic_series_discovery_facts(
+    comicvine_volume_id INTEGER PRIMARY KEY,
+    first_known_issue_id INTEGER,
+    first_known_issue_number TEXT NOT NULL DEFAULT '',
+    first_known_issue_date TEXT,
+    date_source TEXT NOT NULL DEFAULT '',
+    series_started_at TEXT,
+    volume_title TEXT NOT NULL DEFAULT '',
+    cover_link TEXT NOT NULL DEFAULT '',
+    site_url TEXT NOT NULL DEFAULT '',
+    year INTEGER,
+    publisher TEXT,
+    is_upcoming_launch BOOL NOT NULL DEFAULT 0,
+    provider_modified_at TEXT,
+    metadata_modified_at INTEGER,
+    fetched_at INTEGER,
+    derived_at INTEGER NOT NULL DEFAULT 0,
+    derivation_status TEXT NOT NULL DEFAULT 'valid',
+    date_preference TEXT NOT NULL DEFAULT 'cover_date',
+    last_error TEXT
+);
+CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_first_date_idx
+    ON comic_series_discovery_facts(first_known_issue_date);
+CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_upcoming_idx
+    ON comic_series_discovery_facts(is_upcoming_launch, first_known_issue_date);
+CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_derived_idx
+    ON comic_series_discovery_facts(derived_at);
+CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_volume_idx
+    ON comic_series_discovery_facts(comicvine_volume_id);
+CREATE TABLE IF NOT EXISTS comic_discovery_fact_sync_state(
+    sync_id INTEGER PRIMARY KEY CHECK(sync_id = 1),
+    scope TEXT NOT NULL DEFAULT 'comic_series_discovery',
+    provider_cursor TEXT,
+    last_started_at INTEGER,
+    last_completed_at INTEGER,
+    coverage_state TEXT NOT NULL DEFAULT 'not_started',
+    coverage_complete BOOL NOT NULL DEFAULT 0,
+    date_preference TEXT NOT NULL DEFAULT 'cover_date',
+    last_error TEXT,
+    next_resume_at INTEGER,
+    last_successful_cursor TEXT,
+    records_processed INTEGER NOT NULL DEFAULT 0,
+    facts_created INTEGER NOT NULL DEFAULT 0,
+    facts_updated INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference)
+    VALUES (1, 'comic_series_discovery', 'not_started', 0, 'cover_date');
+CREATE TABLE IF NOT EXISTS nzb_indexers(
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL DEFAULT '',
+    categories VARCHAR(255) NOT NULL DEFAULT '7030,7020',
+    enabled BOOL NOT NULL DEFAULT 1
 );
 """

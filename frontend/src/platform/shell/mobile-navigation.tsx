@@ -7,6 +7,7 @@ export function MobileNavigation() {
   const { pathname } = useLocation();
   const active = getActivePrimary(pathname);
 
+
   return (
     <nav className={styles.nav} aria-label="Mobile primary navigation">
       {PRIMARY_NAV.map((item) => {
@@ -15,12 +16,11 @@ export function MobileNavigation() {
           <Link
             key={item.label}
             to={item.to as never}
-            search={(item.label === 'Comics' || item.label === 'Manga') ? getStoredLibrarySearch() as never : undefined}
+            search={item.label === 'Library' ? { section: 'comic', ...getStoredLibrarySearch() } as never : undefined}
             activeOptions={item.parent ? { exact: true } : undefined}
             className={styles.link}
             data-active={isActive || undefined}
-            activeProps={{ 'aria-current': item.parent ? false : 'page' }}
-            aria-current={isActive && !item.parent ? 'page' : undefined}
+            aria-current={isActive ? 'page' : undefined}
           >
             <NavIcon name={item.label} className={styles.icon} />
             <span>{item.label}</span>

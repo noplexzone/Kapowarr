@@ -38,14 +38,21 @@ export interface VolumeDetailFull {
   root_folder_path: string;
   issue_count: number;
   issues_downloaded: number;
+  released_issue_count?: number;
+  released_issues_downloaded?: number;
+  upcoming_issue_count?: number;
+  completion_percentage?: number | null;
   cover?: string;
   issues: IssueDetail[];
   general_files: GeneralFileDetail[];
-  canonical_provider?: string;
-  enriched_by?: string[];
-  provider_badges?: { provider: string; label: string; role: string }[];
-  metron?: { series_id?: string | null; match_status?: string | null; match_method?: string | null; last_successful_enrichment?: number | null; last_checked?: number | null };
-  enrichment_terms?: { term_type: string; external_id: string; name: string; provider: string }[];
+  metadata_provenance?: {
+    canonical_provider: string;
+    enriched_by: string[];
+    provider_badges: { provider: string; label: string; role: string }[];
+    metron?: { series_id?: string | null; match_status?: string | null; last_successful_enrichment?: number | null; last_checked?: number | null };
+    scalar_fallbacks?: { field_name: string; normalized_value: string; provider: string }[];
+    enrichment_terms?: { term_type: string; name: string; provider: string }[];
+  };
 }
 
 export interface ManualSearchResult {

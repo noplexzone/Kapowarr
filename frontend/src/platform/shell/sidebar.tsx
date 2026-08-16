@@ -64,11 +64,12 @@ export function SidebarSearch({
 export function Sidebar() {
   const { pathname } = useLocation();
   const active = getActivePrimary(pathname);
+
   const { data: about } = useQuery(systemAboutQueryOptions());
 
   return (
     <aside className={styles.sidebar}>
-      <Link to="/home" className={styles.brand}>
+      <Link to="/home" className={styles.brand} data-brand-home>
         <img className={styles.brandIcon} src={runtimeConfig.faviconUrl} alt="" />
         <span className={styles.brandText}>Kapowarr</span>
       </Link>
@@ -79,12 +80,11 @@ export function Sidebar() {
             <Link
               key={item.label}
               to={item.to as never}
-              search={(item.label === 'Comics' || item.label === 'Manga') ? getStoredLibrarySearch() as never : undefined}
+              search={item.label === 'Library' ? { section: 'comic', ...getStoredLibrarySearch() } as never : undefined}
               activeOptions={item.parent ? { exact: true } : undefined}
               className={styles.navItem}
               data-active={isActive || undefined}
-              activeProps={{ 'aria-current': item.parent ? false : 'page' }}
-              aria-current={isActive && !item.parent ? 'page' : undefined}
+              aria-current={isActive ? 'page' : undefined}
             >
               <NavIcon name={item.label} className={styles.navIcon} />
               <span>{item.label}</span>

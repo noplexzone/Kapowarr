@@ -8,12 +8,9 @@ vi.mock('@/app/api-client', () => ({
 
 import { apiClient, readJson } from '@/app/api-client';
 import {
-  createSavedFilter,
   deleteLibraryVolume,
-  deleteSavedFilter,
   runLibraryTask,
   runVolumeTask,
-  savedFiltersQueryOptions,
   setVolumeMonitored,
   volumeListQueryOptions,
 } from './-comics.api';
@@ -47,7 +44,7 @@ describe('volume list pagination', () => {
     expect(get.mock.calls[0]?.[1]?.timeout).toBe(60_000);
     expect(result).toMatchObject({ total: 1167, offset: 2, page_size: 60 });
     expect(result.volumes).toHaveLength(1);
-    expect(result.volumes[0]?.progress).toEqual({ have: 2, total: 5 });
+    expect(result.volumes[0]?.progress).toEqual({ have: 2, total: 5, completion: null, upcoming: 0 });
     expect(parse).toHaveBeenCalledWith(response, expect.anything());
   });
 
@@ -112,52 +109,5 @@ describe('library actions', () => {
     expect(del).toHaveBeenCalledWith('volumes/7', {
       searchParams: { delete_folder: 'false' },
     });
-  });
-});
-
-
-describe('saved filters API', () => {
-  it('lists and transforms section-scoped saved filters', async () => {
-    get.mockResolvedValue({} as never);
-    parse.mockResolvedValue([{
-      id: 3,
-      section: 'manga',
-      name: 'Missing manga',
-      query: { filter: 'wanted', sort: 'wanted' },
-      created_at: 100,
-      updated_at: 101,
-    }]);
-
-    const options = savedFiltersQueryOptions('manga');
-    const result = await options.queryFn!({} as never);
-
-    expect(get).toHaveBeenCalledWith('savedfilters', { searchParams: { section: 'manga' } });
-    expect(result[0]).toMatchObject({ id: 3, section: 'manga', name: 'Missing manga' });
-    expect(result[0]?.query).toEqual({ filter: 'wanted', sort: 'wanted' });
-  });
-
-  it('creates and deletes saved filters through API envelopes', async () => {
-    const post = vi.mocked(apiClient.post);
-    const del = vi.mocked(apiClient.delete);
-    post.mockResolvedValue({} as never);
-    del.mockResolvedValue({} as never);
-    parse
-      .mockResolvedValueOnce({
-        id: 4,
-        section: 'comic',
-        name: 'Unread',
-        query: { filter: 'wanted' },
-        created_at: 100,
-        updated_at: 100,
-      })
-      .mockResolvedValueOnce({});
-
-    await expect(createSavedFilter('comic', 'Unread', { filter: 'wanted' })).resolves.toMatchObject({ id: 4 });
-    await deleteSavedFilter(4);
-
-    expect(post).toHaveBeenCalledWith('savedfilters', {
-      json: { section: 'comic', name: 'Unread', query: { filter: 'wanted' } },
-    });
-    expect(del).toHaveBeenCalledWith('savedfilters/4');
   });
 });

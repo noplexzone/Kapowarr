@@ -158,8 +158,6 @@ class PublicSettingsValues:
     metron_api_token: str = ''
     metron_last_successful_connection: int = 0
     metron_last_enrichment_run: int = 0
-    metron_rate_limit_status: str = ''
-    metron_backfill_status: str = ''
 
     date_type: DateType = DateType.COVER_DATE
 
@@ -180,9 +178,9 @@ class PublicSettingsValues:
             return result
 
         for k, v in result.items():
-            if k in (
-                "auth_username", "auth_password", "proxy_password",
-                "suwayomi_password", "metron_api_token",
+            if (
+                k in ("auth_username", "auth_password", "proxy_password", "suwayomi_password")
+                or k.endswith(("_api_key", "_password", "_token"))
             ) and v:
                 result[k] = Constants.CREDENTIAL_REPLACEMENT
 
@@ -502,23 +500,21 @@ class Settings(metaclass=Singleton):
             if value == Constants.CREDENTIAL_REPLACEMENT:
                 converted_value = self.sv.suwayomi_password
 
-        elif key == 'metron_api_token':
-            if value == Constants.CREDENTIAL_REPLACEMENT:
-                converted_value = self.sv.metron_api_token
-            else:
-                converted_value = value.strip()
-
-        elif key == 'metron_rate_limit_status':
-            converted_value = value.strip()
-
-        elif key == 'metron_backfill_status':
-            converted_value = value.strip()
-
         elif key == 'comicvine_api_key':
             from backend.implementations.comicvine import ComicVine
             converted_value = value.strip()
-            if converted_value and not ComicVine(converted_value).test_key():
+            if converted_value and converted_value != Constants.CREDENTIAL_REPLACEMENT and not ComicVine(converted_value).test_key():
                 raise InvalidKeyValue(key, value)
+            if converted_value == Constants.CREDENTIAL_REPLACEMENT:
+                converted_value = self.sv.comicvine_api_key
+
+        elif key == 'metron_api_token':
+            from backend.implementations.metron import clear_auth_block
+            converted_value = value.strip()
+            if converted_value == Constants.CREDENTIAL_REPLACEMENT:
+                converted_value = self.sv.metron_api_token
+            elif converted_value != self.sv.metron_api_token:
+                clear_auth_block()
 
         elif key == 'download_folder':
             from backend.implementations.root_folders import RootFolders

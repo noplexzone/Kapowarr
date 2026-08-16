@@ -137,7 +137,7 @@ export function ManageIssuesDialog({ open: manageIssuesOpen, volume, loading: ma
                               {issue.downloaded
                                 ? 'Downloaded'
                                 : issue.monitored
-                                  ? 'Wanted'
+                                  ? 'Missing Monitored'
                                   : 'Unmonitored'}
                             </Badge>
                           </td>

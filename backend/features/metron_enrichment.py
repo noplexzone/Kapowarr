@@ -249,21 +249,8 @@ class MetronEnrichmentService:
             VALUES(?, ?, ?, ?, ?);""",
             ((volume_id, METRON_PROVIDER, t['term_type'], t['external_id'], t['name']) for t in extract_terms(payload)),
         )
-        # Scalar precedence: only fill blank ComicVine fields. Keep canonical nonempty values intact.
-        scalar_updates: Dict[str, Any] = {}
-        row = db.execute('SELECT publisher, description FROM volumes WHERE id = ?;', (volume_id,)).fetchonedict() or {}
-        imprint = payload.get('imprint')
-        if not row.get('publisher') and isinstance(imprint, dict):
-            scalar_updates['publisher'] = imprint.get('name')
-        elif not row.get('publisher') and isinstance(imprint, str):
-            scalar_updates['publisher'] = imprint.strip()
-        desc = payload.get('desc') or payload.get('description')
-        if not row.get('description') and isinstance(desc, str) and desc.strip():
-            scalar_updates['description'] = desc.strip()
-        if scalar_updates:
-            assignments = ', '.join(f'{k} = :{k}' for k in scalar_updates)
-            scalar_updates['id'] = volume_id
-            db.execute(f'UPDATE volumes SET {assignments} WHERE id = :id;', scalar_updates)
+        # Metron scalar values are enrichment-only; canonical volume fields stay untouched.
+        # The hardened apply_payload below records scalar fallbacks in volume_metadata_enrichment.
         commit()
 
     @staticmethod
@@ -332,3 +319,502 @@ def safe_test_connection() -> Dict[str, Any]:
         if rate:
             Settings().update({'metron_rate_limit_status': dumps(rate)})
         return {'success': False, 'status': exc.status, 'description': str(exc), 'rate_limit': rate}
+
+
+# ---- Hardened Phase 6 review/provenance/rate/backfill helpers ----
+from uuid import uuid4
+from backend.implementations.metron import get_rate_limit_state
+
+STATUS_SELECTED = 'selected'
+STATUS_ENRICHMENT_PENDING = 'enrichment_pending'
+STATUS_FAILED = 'failed'
+STATUS_PENDING = STATUS_ENRICHMENT_PENDING
+STATUS_DISMISSED = 'dismissed'
+SCALAR_FALLBACK_FIELDS = {
+    'title': ('name', 'title'),
+    'year': ('year_began', 'year'),
+    'publisher': ('publisher', 'imprint'),
+    'description': ('desc', 'description', 'summary'),
+    'volume_number': ('volume', 'volume_number'),
+}
+
+
+def _display_value(value: Any) -> str:
+    if isinstance(value, dict):
+        return str(value.get('name') or value.get('title') or value.get('id') or '').strip()
+    if value is None:
+        return ''
+    return str(value).strip()
+
+
+def _first_payload_value(payload: Dict[str, Any], keys: Tuple[str, ...]) -> str:
+    for key in keys:
+        if key not in payload:
+            continue
+        value = payload.get(key)
+        if isinstance(value, list):
+            value = value[0] if value else None
+        result = _display_value(value)
+        if result:
+            return result
+    return ''
+
+
+def _volume_is_comicvine_comic(volume_id: int) -> bool:
+    row = get_db().execute(
+        """SELECT v.metadata_source, rf.section FROM volumes v
+        INNER JOIN root_folders rf ON rf.id = v.root_folder WHERE v.id = ? LIMIT 1;""",
+        (volume_id,),
+    ).fetchonedict()
+    return bool(row and row['section'] == 'comic' and row['metadata_source'] == 'comicvine')
+
+
+def _clear_candidates(volume_id: int) -> None:
+    get_db().execute('DELETE FROM provider_match_candidates WHERE volume_id = ? AND provider = ?;', (volume_id, METRON_PROVIDER))
+
+
+def _candidate_from_payload(volume_id: int, item: Dict[str, Any], review_group_id: str) -> Dict[str, Any]:
+    external_id = _string_id(item) or ''
+    return {
+        'volume_id': volume_id,
+        'provider': METRON_PROVIDER,
+        'resource_type': RESOURCE_SERIES,
+        'candidate_external_id': external_id,
+        'title': str(item.get('name') or item.get('title') or external_id).strip(),
+        'year': item.get('year_began') or item.get('year') or None,
+        'publisher': _display_value(item.get('publisher')),
+        'cover_url': _display_value(item.get('image') or item.get('cover')),
+        'summary': str(item.get('desc') or item.get('description') or item.get('summary') or '')[:2000],
+        'confidence': 1.0 if external_id else 0.0,
+        'match_reason': 'comicvine_id',
+        'review_group_id': review_group_id,
+        'review_status': STATUS_REVIEW,
+        'payload': dumps(item, separators=(',', ':')),
+    }
+
+
+def _insert_candidate(candidate: Dict[str, Any]) -> None:
+    ts = now_ts()
+    get_db().execute(
+        """INSERT INTO provider_match_candidates(
+            volume_id, provider, resource_type, candidate_external_id, title, year, publisher,
+            cover_url, summary, confidence, match_reason, review_group_id, review_status, payload, created_at, updated_at
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);""",
+        (candidate['volume_id'], candidate['provider'], candidate['resource_type'], candidate['candidate_external_id'], candidate['title'],
+         candidate.get('year'), candidate.get('publisher'), candidate.get('cover_url'), candidate.get('summary'), candidate.get('confidence'),
+         candidate.get('match_reason'), candidate.get('review_group_id'), candidate.get('review_status'), candidate.get('payload'), ts, ts),
+    )
+
+
+def get_review_candidates(volume_id: Optional[int] = None, status: str = STATUS_REVIEW, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+    params: List[Any] = [METRON_PROVIDER, status]
+    where = 'provider = ? AND review_status = ?'
+    if volume_id is not None:
+        where += ' AND volume_id = ?'; params.append(volume_id)
+    count = get_db().execute(f'SELECT COUNT(*) FROM provider_match_candidates WHERE {where};', tuple(params)).fetchone()[0]
+    rows = get_db().execute(
+        f"""SELECT id, volume_id, provider, resource_type, candidate_external_id, title, year,
+               publisher, cover_url, summary, confidence, match_reason, review_group_id,
+               review_status, created_at, updated_at FROM provider_match_candidates
+           WHERE {where} ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?;""",
+        (*params, min(max(limit, 1), 100), max(offset, 0)),
+    ).fetchalldict()
+    return {'total': count, 'candidates': rows, 'limit': limit, 'offset': offset}
+
+
+def _hardened_get_volume_provenance(volume_id: int) -> Dict[str, Any]:
+    base = MetronEnrichmentService.get_link(volume_id)
+    terms = get_db().execute(
+        """SELECT term_type, external_id, name, provider FROM volume_enrichment_terms
+        WHERE volume_id = ? ORDER BY term_type, name COLLATE NOCASE;""",
+        (volume_id,),
+    ).fetchalldict()
+    scalars = get_db().execute(
+        """SELECT field_name, normalized_value, provider, external_provider_id, updated_at
+        FROM volume_metadata_enrichment WHERE volume_id = ? AND provider = ? AND active = 1
+        ORDER BY field_name;""",
+        (volume_id, METRON_PROVIDER),
+    ).fetchalldict()
+    badges = [{'provider': 'comicvine', 'label': 'Canonical: ComicVine', 'role': 'canonical'}]
+    if base and base.get('review_status') == STATUS_LINKED:
+        badges.append({'provider': 'metron', 'label': 'Enriched by: Metron', 'role': 'enrichment'})
+    return {
+        'canonical_provider': 'comicvine',
+        'enriched_by': ['metron'] if base and base.get('review_status') == STATUS_LINKED else [],
+        'provider_badges': badges,
+        'metron': {
+            'series_id': base.get('external_id') if base else None,
+            'match_status': base.get('review_status') if base else None,
+            'match_method': base.get('match_method') if base else None,
+            'last_successful_enrichment': base.get('last_successful_enrichment') if base else None,
+            'last_checked': base.get('last_checked') if base else None,
+        },
+        'scalar_fallbacks': scalars,
+        'enrichment_terms': terms,
+    }
+
+
+def _hardened_match_from_comicvine(self, volume_id: int, comicvine_id: int) -> Dict[str, Any]:
+    if not _volume_is_comicvine_comic(volume_id):
+        return {'status': 'skipped_manga'}
+    checked_at = now_ts()
+    matches = self.client.find_series_by_comicvine_id(comicvine_id)
+    valid = [m for m in matches if _string_id(m)]
+    _clear_candidates(volume_id)
+    if len(valid) == 1:
+        series_id = _string_id(valid[0]) or ''
+        self._upsert_link(volume_id, series_id, STATUS_LINKED, 'comicvine_id', 1.0, checked_at)
+        return {'status': STATUS_LINKED, 'series_id': series_id}
+    if not valid:
+        self._upsert_link(volume_id, '', STATUS_UNAVAILABLE, 'comicvine_id', 0.0, checked_at)
+        return {'status': STATUS_UNAVAILABLE, 'series_id': None}
+    review_group_id = str(uuid4())
+    self._upsert_link(volume_id, '', STATUS_REVIEW, 'comicvine_id', 0.0, checked_at)
+    for item in valid:
+        _insert_candidate(_candidate_from_payload(volume_id, item, review_group_id))
+    commit()
+    return {'status': STATUS_REVIEW, 'series_id': None, 'review_group_id': review_group_id, 'candidates': get_review_candidates(volume_id)['candidates']}
+
+
+def _hardened_apply_payload(self, volume_id: int, series_id: str, payload: Dict[str, Any]) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError('Metron payload must be a dict')
+    db = get_db(); ts = now_ts()
+    db.execute(
+        """INSERT INTO provider_cache(provider, resource_type, external_id, payload, etag, last_modified, fetched_at, expires_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(provider, resource_type, external_id) DO UPDATE SET
+            payload = excluded.payload, last_modified = excluded.last_modified,
+            fetched_at = excluded.fetched_at, expires_at = excluded.expires_at;""",
+        (METRON_PROVIDER, RESOURCE_SERIES, series_id, dumps(payload, separators=(',', ':')), None,
+         payload.get('_metron_last_modified') or payload.get('modified') or payload.get('last_modified'), ts, None),
+    )
+    db.execute('UPDATE volume_metadata_enrichment SET active = 0, updated_at = ? WHERE volume_id = ? AND provider = ?;', (ts, volume_id, METRON_PROVIDER))
+    for field_name, keys in SCALAR_FALLBACK_FIELDS.items():
+        value = _first_payload_value(payload, keys)
+        if value:
+            db.execute(
+                """INSERT INTO volume_metadata_enrichment(volume_id, provider, field_name, normalized_value, external_provider_id, updated_at, active)
+                VALUES(?, ?, ?, ?, ?, ?, 1)
+                ON CONFLICT(volume_id, provider, field_name) DO UPDATE SET
+                    normalized_value = excluded.normalized_value,
+                    external_provider_id = excluded.external_provider_id,
+                    updated_at = excluded.updated_at,
+                    active = 1;""",
+                (volume_id, METRON_PROVIDER, field_name, value, series_id, ts),
+            )
+    db.execute('DELETE FROM volume_enrichment_terms WHERE volume_id = ? AND provider = ?;', (volume_id, METRON_PROVIDER))
+    db.executemany(
+        """INSERT OR IGNORE INTO volume_enrichment_terms(volume_id, provider, term_type, external_id, name)
+        VALUES(?, ?, ?, ?, ?);""",
+        ((volume_id, METRON_PROVIDER, t['term_type'], t['external_id'], t['name']) for t in extract_terms(payload)),
+    )
+    commit()
+
+
+def _hardened_unlink(volume_id: int) -> Dict[str, Any]:
+    db = get_db(); ts = now_ts()
+    db.execute('UPDATE volume_metadata_enrichment SET active = 0, updated_at = ? WHERE volume_id = ? AND provider = ?;', (ts, volume_id, METRON_PROVIDER))
+    db.execute('DELETE FROM volume_enrichment_terms WHERE volume_id = ? AND provider = ?;', (volume_id, METRON_PROVIDER))
+    db.execute('DELETE FROM provider_match_candidates WHERE volume_id = ? AND provider = ?;', (volume_id, METRON_PROVIDER))
+    db.execute('DELETE FROM volume_provider_links WHERE volume_id = ? AND provider = ? AND resource_type = ?;', (volume_id, METRON_PROVIDER, RESOURCE_SERIES))
+    commit(); return {'status': 'removed'}
+
+
+def relink_pending(volume_id: int, series_id: str, candidate_id: Optional[int] = None) -> Dict[str, Any]:
+    series_id = series_id.strip()
+    if not series_id:
+        raise ValueError('Metron series ID is required')
+    if candidate_id is not None:
+        candidate = get_db().execute(
+            """SELECT * FROM provider_match_candidates WHERE id = ? AND volume_id = ? AND provider = ? LIMIT 1;""",
+            (candidate_id, volume_id, METRON_PROVIDER),
+        ).fetchonedict()
+        if not candidate or str(candidate['candidate_external_id']) != series_id:
+            raise ValueError('Candidate does not match this volume')
+    MetronEnrichmentService._upsert_link(volume_id, series_id, STATUS_PENDING, 'manual', 1.0, now_ts())
+    return {'status': STATUS_PENDING, 'series_id': series_id}
+
+
+def resolve_candidate(candidate_id: int) -> Dict[str, Any]:
+    db = get_db()
+    candidate = db.execute('SELECT * FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
+    if not candidate:
+        raise ValueError('Candidate not found')
+    if candidate.get('provider') != METRON_PROVIDER or candidate.get('review_status') not in (STATUS_REVIEW, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING, STATUS_FAILED):
+        raise ValueError('Candidate is not selectable')
+    volume_id = int(candidate['volume_id'])
+    series_id = str(candidate['candidate_external_id'])
+    result = relink_pending(volume_id, series_id, candidate_id)
+    ts = now_ts()
+    db.execute("UPDATE provider_match_candidates SET review_status = ? , updated_at = ? WHERE id = ?;", (STATUS_SELECTED, ts, candidate_id))
+    db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;", (STATUS_ENRICHMENT_PENDING, ts, candidate_id))
+    commit()
+    return {'volume_id': volume_id, **result}
+
+
+
+def reserve_candidate_enrichment_task(candidate_id: int) -> Dict[str, Any]:
+    """Reserve exactly one active Metron enrichment task per volume."""
+    db = get_db()
+    connection = db.connection
+    try:
+        connection.execute('BEGIN IMMEDIATE;')
+        candidate = db.execute('SELECT * FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
+        if not candidate:
+            raise ValueError('Candidate not found')
+        volume_id = int(candidate['volume_id'])
+        review_group_id = str(candidate.get('review_group_id') or '')
+        series_id = str(candidate['candidate_external_id'])
+        existing = db.execute("""SELECT * FROM metron_enrichment_task_reservations
+            WHERE volume_id = ? AND status IN ('reserved', 'queued', 'running')
+            ORDER BY id DESC LIMIT 1;""", (volume_id,)).fetchonedict()
+        if existing:
+            connection.commit()
+            return {'volume_id': volume_id, 'reservation_id': existing['id'], 'task_id': existing.get('task_queue_id'), 'candidate_id': existing.get('candidate_id'), 'review_group_id': review_group_id, 'duplicate': True, 'status': STATUS_ENRICHMENT_PENDING}
+        if candidate.get('provider') != METRON_PROVIDER or candidate.get('review_status') not in (STATUS_REVIEW, STATUS_SELECTED, STATUS_FAILED):
+            raise ValueError('Candidate is not selectable')
+        ts = now_ts()
+        db.execute("""INSERT INTO volume_provider_links(
+                volume_id, provider, resource_type, external_id, match_method,
+                match_confidence, review_status, linked_at, last_checked
+            ) VALUES(?, ?, ?, ?, 'manual', 1.0, ?, ?, ?)
+            ON CONFLICT(volume_id, provider, resource_type) DO UPDATE SET
+                external_id = excluded.external_id,
+                match_method = excluded.match_method,
+                match_confidence = excluded.match_confidence,
+                review_status = excluded.review_status,
+                last_checked = excluded.last_checked;""",
+            (volume_id, METRON_PROVIDER, RESOURCE_SERIES, series_id, STATUS_PENDING, ts, ts),
+        )
+        db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;", (STATUS_ENRICHMENT_PENDING, ts, candidate_id))
+        db.execute("""INSERT INTO metron_enrichment_task_reservations(volume_id, candidate_id, status, created_at, updated_at)
+            VALUES(?, ?, 'reserved', ?, ?);""", (volume_id, candidate_id, ts, ts))
+        reservation_id = db.execute('SELECT last_insert_rowid();').fetchone()[0]
+        connection.commit()
+        return {'volume_id': volume_id, 'reservation_id': reservation_id, 'task_id': None, 'duplicate': False, 'status': STATUS_PENDING, 'series_id': series_id, 'candidate_id': candidate_id, 'review_group_id': review_group_id}
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+
+
+def attach_metron_task_reservation(reservation_id: int, task_id: int) -> None:
+    get_db().execute("""UPDATE metron_enrichment_task_reservations
+        SET task_queue_id = ?, status = 'queued', updated_at = ?
+        WHERE id = ? AND status = 'reserved';""", (task_id, now_ts(), reservation_id))
+    commit()
+
+
+def finish_metron_task_reservation(volume_id: int, success: bool, error: str = '', reservation_id: Optional[int] = None, candidate_id: Optional[int] = None, review_group_id: Optional[str] = None) -> None:
+    safe_error = (error or '')[:500] if error else None
+    db = get_db()
+    params: List[Any] = ['completed' if success else 'failed', safe_error, now_ts()]
+    where = "status IN ('reserved', 'queued', 'running')"
+    if reservation_id is not None:
+        where += ' AND id = ?'; params.append(reservation_id)
+    else:
+        where += ' AND volume_id = ?'; params.append(volume_id)
+    if candidate_id is not None:
+        where += ' AND candidate_id = ?'; params.append(candidate_id)
+    db.execute(f"""UPDATE metron_enrichment_task_reservations
+        SET status = ?, safe_error = ?, updated_at = ?
+        WHERE {where};""", tuple(params))
+    commit()
+
+
+def select_candidate_and_queue_enrichment(candidate_id: int) -> Dict[str, Any]:
+    """Single owner for candidate selection, durable reservation, and task handoff."""
+    result = reserve_candidate_enrichment_task(candidate_id)
+    if result.get('duplicate'):
+        return result
+    from backend.features.tasks import MetronEnrichmentTask, TaskHandler
+    volume_id = int(result['volume_id'])
+    try:
+        task_id = TaskHandler().add(MetronEnrichmentTask(volume_id, reservation_id=int(result['reservation_id']), candidate_id=candidate_id, review_group_id=result.get('review_group_id')))
+    except Exception as exc:
+        ts = now_ts()
+        db = get_db()
+        db.execute("""UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;""", (STATUS_FAILED, ts, candidate_id))
+        db.execute("""UPDATE volume_provider_links SET review_status = ?, last_checked = ? WHERE volume_id = ? AND provider = ? AND resource_type = ?;""", (STATUS_REVIEW, ts, volume_id, METRON_PROVIDER, RESOURCE_SERIES))
+        finish_metron_task_reservation(volume_id, False, str(exc), int(result['reservation_id']), candidate_id, result.get('review_group_id'))
+        raise
+    attach_metron_task_reservation(int(result['reservation_id']), task_id)
+    return {**result, 'task_id': task_id, 'duplicate': False, 'candidate_state': STATUS_ENRICHMENT_PENDING, 'provider_link_state': STATUS_PENDING}
+
+
+def reconcile_metron_task_reservations() -> int:
+    """Mark persisted active reservations as interrupted after process restart."""
+    db = get_db(); ts = now_ts()
+    rows = db.execute("""SELECT id, volume_id, candidate_id FROM metron_enrichment_task_reservations
+        WHERE status IN ('reserved', 'queued', 'running');""").fetchalldict()
+    for row in rows:
+        db.execute("""UPDATE metron_enrichment_task_reservations SET status = 'interrupted', updated_at = ?, safe_error = ? WHERE id = ?;""", (ts, 'Interrupted before completion; user retry required.', row['id']))
+        if row.get('candidate_id'):
+            db.execute("""UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ? AND review_status = ?;""", (STATUS_FAILED, ts, row['candidate_id'], STATUS_ENRICHMENT_PENDING))
+        db.execute("""UPDATE volume_provider_links SET review_status = ?, last_checked = ? WHERE volume_id = ? AND provider = ? AND resource_type = ? AND review_status = ?;""", (STATUS_REVIEW, ts, row['volume_id'], METRON_PROVIDER, RESOURCE_SERIES, STATUS_PENDING))
+    commit()
+    return len(rows)
+
+def mark_candidate_enrichment_result(volume_id: int, status: str, error: str = '', reservation_id: Optional[int] = None, candidate_id: Optional[int] = None, review_group_id: Optional[str] = None) -> None:
+    ts = now_ts()
+    db = get_db()
+    if reservation_id is not None:
+        reservation = db.execute('SELECT * FROM metron_enrichment_task_reservations WHERE id = ? LIMIT 1;', (reservation_id,)).fetchonedict()
+        if reservation:
+            candidate_id = candidate_id or reservation.get('candidate_id')
+    if candidate_id is not None:
+        candidate = db.execute('SELECT * FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
+        if candidate:
+            review_group_id = review_group_id or candidate.get('review_group_id')
+    if status == STATUS_LINKED:
+        if candidate_id is not None:
+            db.execute("UPDATE provider_match_candidates SET review_status = 'resolved', updated_at = ? WHERE id = ?;", (ts, candidate_id))
+            if review_group_id:
+                db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_group_id = ? AND id != ? AND review_status = ?;", (STATUS_DISMISSED, ts, volume_id, METRON_PROVIDER, review_group_id, candidate_id, STATUS_REVIEW))
+        else:
+            db.execute("UPDATE provider_match_candidates SET review_status = 'resolved', updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);", (ts, volume_id, METRON_PROVIDER, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING))
+            db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status = ?;", (STATUS_DISMISSED, ts, volume_id, METRON_PROVIDER, STATUS_REVIEW))
+        finish_metron_task_reservation(volume_id, True, reservation_id=reservation_id, candidate_id=candidate_id, review_group_id=review_group_id)
+    else:
+        if candidate_id is not None:
+            db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;", (STATUS_FAILED, ts, candidate_id))
+        else:
+            db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);", (STATUS_FAILED, ts, volume_id, METRON_PROVIDER, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING))
+        db.execute("UPDATE volume_provider_links SET review_status = ?, last_checked = ? WHERE volume_id = ? AND provider = ? AND resource_type = ?;", (STATUS_REVIEW, ts, volume_id, METRON_PROVIDER, RESOURCE_SERIES))
+        finish_metron_task_reservation(volume_id, False, error, reservation_id=reservation_id, candidate_id=candidate_id, review_group_id=review_group_id)
+    commit()
+
+
+def dismiss_review(volume_id: int) -> Dict[str, Any]:
+    get_db().execute('DELETE FROM provider_match_candidates WHERE volume_id = ? AND provider = ?;', (volume_id, METRON_PROVIDER))
+    commit(); return {'status': STATUS_DISMISSED}
+
+
+def metron_settings_status() -> Dict[str, Any]:
+    sv = Settings().sv
+    state = get_db().execute('SELECT * FROM metron_backfill_state WHERE id = 1;').fetchonedict() or {}
+    return {
+        'enabled': bool(sv.metron_enabled),
+        'token_configured': bool(sv.metron_api_token and sv.metron_api_token != Constants.CREDENTIAL_REPLACEMENT),
+        'token_masked': Constants.CREDENTIAL_REPLACEMENT if sv.metron_api_token else '',
+        'last_successful_connection': sv.metron_last_successful_connection or None,
+        'last_enrichment': sv.metron_last_enrichment_run or None,
+        'rate_limit': get_rate_limit_state(),
+        'backfill': dict(state),
+    }
+
+
+def queue_metron_enrichment(volume_id: int) -> Optional[int]:
+    if not metron_configured() or not _volume_is_comicvine_comic(volume_id):
+        return None
+    try:
+        from backend.features.tasks import MetronEnrichmentTask, TaskHandler
+        return TaskHandler().add(MetronEnrichmentTask(volume_id))
+    except Exception:
+        LOGGER.exception('Failed to queue Metron enrichment for volume %d', volume_id)
+        return None
+
+
+def browse_enriched_terms(term_type: str, query: str = '', page: int = 1, page_size: int = 50) -> Dict[str, Any]:
+    if term_type not in ('character', 'genre'):
+        raise ValueError('Unsupported Metron browse term')
+    limit = min(max(int(page_size or 50), 1), 100); offset = max(int(page or 1) - 1, 0) * limit
+    params: List[Any] = [term_type, METRON_PROVIDER]
+    where = 'vet.term_type = ? AND vet.provider = ?'
+    if query:
+        where += ' AND vet.name LIKE ?'; params.append(f'%{query}%')
+    count = get_db().execute(f"SELECT COUNT(DISTINCT vet.name) FROM volume_enrichment_terms vet WHERE {where};", tuple(params)).fetchone()[0]
+    rows = get_db().execute(
+        f"""SELECT vet.name, COUNT(DISTINCT v.id) AS volume_count
+        FROM volume_enrichment_terms vet
+        INNER JOIN volumes v ON v.id = vet.volume_id
+        INNER JOIN root_folders rf ON rf.id = v.root_folder
+        WHERE {where} AND rf.section = 'comic' AND v.metadata_source = 'comicvine'
+        GROUP BY vet.name ORDER BY vet.name COLLATE NOCASE LIMIT ? OFFSET ?;""",
+        (*params, limit, offset),
+    ).fetchalldict()
+    return {'terms': rows, 'total': count, 'page': page, 'page_size': limit}
+
+
+
+def browse_enriched_volumes(term_type: str, term: str = '', query: str = '', offset: int = 0, limit: int = 30, sort: str = 'title') -> Dict[str, Any]:
+    """Return canonical ComicVine-backed local comics indexed by Metron terms."""
+    if term_type not in ('character', 'genre'):
+        raise ValueError('Unsupported Metron browse term')
+    limit = min(max(int(limit or 30), 1), 100)
+    offset = max(int(offset or 0), 0)
+    params: List[Any] = [term_type, METRON_PROVIDER]
+    where = "vet.term_type = ? AND vet.provider = ? AND rf.section = 'comic' AND v.metadata_source = 'comicvine'"
+    if term:
+        where += ' AND vet.name = ?'; params.append(term)
+    if query:
+        where += ' AND v.title LIKE ?'; params.append(f'%{query}%')
+    order = 'v.title COLLATE NOCASE ASC'
+    if sort in ('year', 'recently_started'):
+        order = 'COALESCE(v.year, 0) DESC, v.title COLLATE NOCASE ASC'
+    count = get_db().execute(
+        f"""SELECT COUNT(DISTINCT v.id) FROM volumes v
+        INNER JOIN root_folders rf ON rf.id = v.root_folder
+        INNER JOIN volume_enrichment_terms vet ON vet.volume_id = v.id
+        WHERE {where};""",
+        tuple(params),
+    ).fetchone()[0]
+    rows = get_db().execute(
+        f"""SELECT v.id, v.comicvine_id, v.metadata_source, v.metadata_id, v.metadata_language,
+            v.title, v.year, v.publisher, v.volume_number,
+            COUNT(DISTINCT i.id) AS issue_count,
+            vet.name AS metron_term
+        FROM volumes v
+        INNER JOIN root_folders rf ON rf.id = v.root_folder
+        INNER JOIN volume_enrichment_terms vet ON vet.volume_id = v.id
+        LEFT JOIN issues i ON i.volume_id = v.id
+        WHERE {where}
+        GROUP BY v.id
+        ORDER BY {order}
+        LIMIT ? OFFSET ?;""",
+        (*params, limit, offset),
+    ).fetchalldict()
+    items = []
+    for row in rows:
+        item = dict(row)
+        item['already_added'] = item['id']
+        item['metadata_source_label'] = 'ComicVine + Metron'
+        item['source_note'] = f"Filtered by local Metron {term_type} enrichment; ComicVine remains canonical."
+        item['status'] = f"Metron {term_type}: {item.pop('metron_term', term)}"
+        items.append(item)
+    return {
+        'items': items,
+        'total': int(count or 0),
+        'offset': offset,
+        'page_size': limit,
+        'has_more': offset + len(items) < int(count or 0),
+        'source_note': f"{term_type.title()} filter uses locally indexed Metron enrichment for ComicVine-backed comics only.",
+    }
+
+def update_backfill_terminal(result_status: str, volume_id: int, counters: Optional[Dict[str, int]] = None, error: str = '') -> None:
+    row = get_db().execute('SELECT * FROM metron_backfill_state WHERE id = 1;').fetchonedict() or {'id': 1, 'status': 'running'}
+    counters = counters or {}
+    row['processed'] = int(row.get('processed') or 0) + 1
+    row['last_terminal_volume_id'] = volume_id
+    row['current_volume_id'] = volume_id
+    row['updated_at'] = now_ts()
+    if error:
+        row['last_error'] = error
+    for key in ('matched', 'unmatched', 'review_required', 'failed', 'skipped'):
+        row[key] = int(row.get(key) or 0) + int(counters.get(key, 0))
+    fields = ('id','status','total','total_estimate','processed','matched','unmatched','review_required','failed','skipped','current_volume_id','last_terminal_volume_id','rate_limit_paused_until','last_error','resume_time','cancel_requested','started_at','updated_at','completed_at')
+    for f in fields:
+        row.setdefault(f, 0 if f not in ('last_error','resume_time','completed_at') else None)
+    get_db().execute("""INSERT INTO metron_backfill_state(id,status,total,total_estimate,processed,matched,unmatched,review_required,failed,skipped,current_volume_id,last_terminal_volume_id,rate_limit_paused_until,last_error,resume_time,cancel_requested,started_at,updated_at,completed_at)
+        VALUES(:id,:status,:total,:total_estimate,:processed,:matched,:unmatched,:review_required,:failed,:skipped,:current_volume_id,:last_terminal_volume_id,:rate_limit_paused_until,:last_error,:resume_time,:cancel_requested,:started_at,:updated_at,:completed_at)
+        ON CONFLICT(id) DO UPDATE SET status=excluded.status,total=excluded.total,total_estimate=excluded.total_estimate,processed=excluded.processed,matched=excluded.matched,unmatched=excluded.unmatched,review_required=excluded.review_required,failed=excluded.failed,skipped=excluded.skipped,current_volume_id=excluded.current_volume_id,last_terminal_volume_id=excluded.last_terminal_volume_id,rate_limit_paused_until=excluded.rate_limit_paused_until,last_error=excluded.last_error,resume_time=excluded.resume_time,cancel_requested=excluded.cancel_requested,started_at=excluded.started_at,updated_at=excluded.updated_at,completed_at=excluded.completed_at;""", {f: row.get(f) for f in fields})
+    commit()
+
+
+MetronEnrichmentService.get_volume_provenance = staticmethod(_hardened_get_volume_provenance)
+MetronEnrichmentService.match_from_comicvine = _hardened_match_from_comicvine
+MetronEnrichmentService.apply_payload = _hardened_apply_payload
+MetronEnrichmentService.unlink = staticmethod(_hardened_unlink)
+MetronEnrichmentService.get_review_candidates = staticmethod(get_review_candidates)
+MetronEnrichmentService.volume_is_comicvine_comic = staticmethod(_volume_is_comicvine_comic)

@@ -117,18 +117,34 @@
   opacity: 0.7;
 }
 
-.heroBackdrop {
+.publisherBackdrop {
   position: absolute;
-  inset: -18% -8%;
+  inset: 0;
   z-index: 0;
-  width: 116%;
-  height: 136%;
-  object-fit: cover;
-  filter: blur(26px) saturate(1.15);
-  opacity: 0.5;
-  transform: scale(1.04);
+  overflow: hidden;
   pointer-events: none;
+  background:
+    radial-gradient(circle at 15% 18%, rgba(255,255,255,.14), transparent 10rem),
+    repeating-radial-gradient(circle at 12% 18%, rgba(255,255,255,.08) 0 1px, transparent 1px 5px),
+    linear-gradient(135deg, rgba(var(--accent-rgb), .22), rgba(0,0,0,.64));
 }
+
+.publisherBackdrop span {
+  position: absolute;
+  right: clamp(1rem, 3vw, 2rem);
+  bottom: clamp(.5rem, 2vw, 1.25rem);
+  color: rgba(255,255,255,.08);
+  font-size: clamp(2rem, 8vw, 6rem);
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.mediaHero[data-publisher-theme="marvel"] { --accent-rgb: 235, 35, 43; }
+.mediaHero[data-publisher-theme="dc"] { --accent-rgb: 0, 122, 201; }
+.mediaHero[data-publisher-theme="image"] { --accent-rgb: 239, 117, 33; }
+.mediaHero[data-publisher-theme="darkHorse"] { --accent-rgb: 200, 40, 38; }
+.mediaHero[data-publisher-theme="viz"] { --accent-rgb: 245, 170, 34; }
 
 .coverStack,
 .info {
@@ -230,7 +246,7 @@
       linear-gradient(0deg, rgba(var(--accent-rgb), 0.18), rgba(var(--accent-rgb), 0));
   }
 
-  .heroBackdrop {
+  .publisherBackdrop {
     inset: -12% -24%;
     width: 148%;
     height: 82%;
@@ -1292,5 +1308,39 @@
   .tabActionRow {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+
+.descriptionClampWrap {
+  display: grid;
+  gap: .35rem;
+}
+
+.inlineDescription {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.descriptionExpanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.readMoreButton {
+  justify-self: start;
+  min-height: 2rem;
+}
+
+@media (max-width: 700px) {
+  .inlineDescription {
+    -webkit-line-clamp: 3;
+  }
+
+  .descriptionExpanded {
+    -webkit-line-clamp: unset;
   }
 }

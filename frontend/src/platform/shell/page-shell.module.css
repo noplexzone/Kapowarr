@@ -29,7 +29,7 @@
   border-bottom: 2px solid transparent;
 }
 
-.sectionNav a[aria-current='page'] {
+.sectionNav a[data-current='true'] {
   color: var(--text);
   border-color: var(--accent);
 }

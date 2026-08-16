@@ -7,8 +7,10 @@ export const SORT_OPTIONS = [
   'recently_added',
   'recently_released',
   'publisher',
-  'wanted',
+  'completion',
 ] as const;
+
+export const DIRECTION_OPTIONS = ['asc', 'desc'] as const;
 
 export const FILTER_OPTIONS = ['', 'wanted', 'upcoming', 'unmonitored', 'monitored'] as const;
 
@@ -21,7 +23,17 @@ export const SORT_LABELS: Record<string, string> = {
   recently_added: 'Recently Added',
   recently_released: 'Recently Released',
   publisher: 'Publisher',
-  wanted: 'Wanted',
+  completion: 'Completion',
+};
+
+export const DIRECTION_LABELS: Record<string, string> = {
+  asc: 'Sort ascending',
+  desc: 'Sort descending',
+};
+
+export const COMPLETION_DIRECTION_LABELS: Record<string, string> = {
+  asc: 'Lowest completion first',
+  desc: 'Highest completion first',
 };
 
 export const VIEW_LABELS: Record<string, string> = {
@@ -44,12 +56,14 @@ export const STORAGE_KEY_SEARCH = 'kapowarr_search';
 
 export type SortOption = (typeof SORT_OPTIONS)[number];
 export type FilterOption = (typeof FILTER_OPTIONS)[number];
+export type DirectionOption = (typeof DIRECTION_OPTIONS)[number];
 export type ViewOption = (typeof VIEW_OPTIONS)[number];
 
 export const volumesSearchSchema = z.object({
   sort: z.enum(SORT_OPTIONS).default('title').catch('title'),
   filter: z.enum(FILTER_OPTIONS).default('').catch(''),
   view: z.enum(VIEW_OPTIONS).default('posters').catch('posters'),
+  direction: z.enum(DIRECTION_OPTIONS).default('asc').catch('asc').optional(),
   search: z.string().optional().catch(undefined),
   offset: z.coerce.number().int().min(0).default(0).catch(0),
 });
@@ -71,6 +85,8 @@ export interface VolumeSummary {
   progress: {
     have: number;
     total: number;
+    completion?: number | null;
+    upcoming?: number;
   };
   cover_url: string;
 }
@@ -97,15 +113,6 @@ export interface IssueSummary {
   release_date?: string;
 }
 
-
-export interface SavedFilter {
-  id: number;
-  section: SectionType;
-  name: string;
-  query: Partial<VolumesSearch>;
-  created_at: number;
-  updated_at: number;
-}
 
 export interface LibraryFacetItem {
   value: string;

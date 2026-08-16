@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   activitySearchSchema,
   discoverySearchSchema,
+  discoverAddSearchSchema,
+  discoverResultsSearchSchema,
   historySearchSchema,
   legacyDiscoveryToCanonical,
   legacyLibraryToCanonical,
@@ -35,9 +37,9 @@ describe('canonical route search', () => {
   });
 
   it('preserves supported discover state and trims query text', () => {
-    expect(discoverySearchSchema.parse({ section: 'manga', category: 'landing', q: '  berserk  ' })).toEqual({
+    expect(discoverySearchSchema.parse({ section: 'manga', category: 'recently-started', q: '  berserk  ' })).toEqual({
       section: 'manga',
-      category: 'landing',
+      category: 'recently-started',
       q: 'berserk',
     });
   });
@@ -119,10 +121,25 @@ describe('legacy route redirects', () => {
     });
   });
 
+  it('validates Discover result and exact-add route state', () => {
+    expect(discoverResultsSearchSchema.parse({ section: 'manga', q: '  Saga ', page: '2' })).toEqual({ section: 'manga', q: 'Saga', page: 2, hide_added: false });
+    expect(discoverResultsSearchSchema.parse({ section: 'manga', q: '  Saga ', page: '2', hide_added: 'true' })).toMatchObject({ hide_added: true });
+    expect(discoverAddSearchSchema.parse({ section: 'manga', title: '  Akira ', language: 'en', returnTo: '/discover/browse?section=manga&status=ongoing' })).toEqual({ section: 'manga', title: 'Akira', language: 'en', returnTo: '/discover/browse?section=manga&status=ongoing' });
+    expect(discoverAddSearchSchema.parse({ section: 'manga', returnTo: 'https://evil.example/' }).returnTo).toBeUndefined();
+  });
+
   it('preserves discovery section, category, and query', () => {
     expect(legacyDiscoveryToCanonical({ section: 'manga', type: 'new', q: '  Pluto ' })).toEqual({
       section: 'manga',
-      category: 'new',
+      category: 'recently-started',
+      q: 'Pluto',
+    });
+  });
+
+  it('redirects legacy story arc discovery state to the normal Discover landing', () => {
+    expect(legacyDiscoveryToCanonical({ section: 'manga', type: 'story-arcs', q: '  Pluto ' })).toEqual({
+      section: 'manga',
+      category: 'recently-started',
       q: 'Pluto',
     });
   });

@@ -40,7 +40,7 @@ A bottom navigation exposes the primary destinations that matter during one-hand
 
 ## Components
 
-Prefer small composable primitives over a universal component. Standardize Button, IconButton, form fields, Checkbox/Radio/Toggle, SegmentedControl, Tabs, Toolbar/FilterBar, StatusBadge, Progress, PosterCard, DataTable, Empty/Error/Skeleton states, Dialog/Drawer/MobileSheet, Toast, Pagination, Breadcrumbs, page heroes, metrics, recovery cards, smart-collection chips, and BulkActionBar.
+Prefer small composable primitives over a universal component. Standardize Button, IconButton, form fields, Checkbox/Radio/Toggle, SegmentedControl, Tabs, Toolbar/FilterBar, StatusBadge, Progress, PosterCard, DataTable, Empty/Error/Skeleton states, Dialog/Drawer/MobileSheet, Toast, Pagination, Breadcrumbs, page heroes, metrics, recovery cards, and BulkActionBar.
 
 Every interactive component supports keyboard use, visible focus, disabled state, accessible naming, relevant loading/error state, themes, and mobile behavior.
 

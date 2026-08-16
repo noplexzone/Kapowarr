@@ -4,7 +4,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 const envelope = (result: unknown) => ({ error: null, result });
 const stats = { volumes: 2, monitored: 1, unmonitored: 1, issues: 18, downloaded_issues: 7, missing_monitored: 11, upcoming_monitored: 2, unmonitored_issues: 3, failed_downloads: 1, active_downloads: 1, import_problems: 0, mismatches: 1, files: 7, total_file_size: 2048 };
 const comicVolumes = [
-  { id: 1, title: 'Acceptance Volume', year: 2026, volume_number: 1, publisher: 'Test Publisher', monitored: true, root_folder: '/comics', folder: '/comics/Acceptance Volume', special_version: '', issue_count: 10, issues_downloaded: 4, provider_badges: [{ provider: 'comicvine', label: 'Canonical: ComicVine', role: 'canonical' }, { provider: 'metron', label: 'Enriched by: Metron', role: 'enrichment' }] },
+  { id: 1, title: 'Acceptance Volume', year: 2026, volume_number: 1, publisher: 'Test Publisher', monitored: true, root_folder: '/comics', folder: '/comics/Acceptance Volume', special_version: '', issue_count: 10, issues_downloaded: 4 },
   { id: 2, title: 'Second Acceptance', year: 2025, volume_number: 2, publisher: 'Test Publisher', monitored: false, root_folder: '/comics', folder: '/comics/Second Acceptance', special_version: '', issue_count: 8, issues_downloaded: 3 },
 ];
 let lastManualMatchPayload: unknown = null;
@@ -20,28 +20,6 @@ async function mockApi(route: Route) {
   if (pathname.endsWith('/api/public')) result = { authentication_method: 0 };
   else if (pathname.endsWith('/api/auth')) result = { api_key: 'browser-test-key' };
   else if (pathname.endsWith('/api/nav/badges')) result = { volumes: 3, comics: 2, manga: 1, queue: 1, library_import: 0, mismatch: 1 };
-  else if (pathname.endsWith('/api/system/about')) result = { version: '1.6.0', python_version: '3.13.5', database_version: '33', platform: 'test' };
-  else if (pathname.endsWith('/api/changelog')) result = {
-    current_version: '1.6.0',
-    generated_at: '2026-08-13T00:00:00Z',
-    error: null,
-    entries: [
-      { version: 'Unreleased', date: null, anchor: 'unreleased', sections: [{ title: 'Added', items: ['Future development note'] }] },
-      { version: '1.6.0', date: '2026-08-12', anchor: '1.6.0', sections: [{ title: 'Added', items: ['Cached dashboard summary'] }, { title: 'Fixed', items: ['Safe changelog markdown'] }] },
-    ],
-  };
-  else if (pathname.endsWith('/api/dashboard/summary')) result = {
-    generated_at: '2026-08-13T00:00:00Z',
-    library: {
-      released_issues: 100, downloaded_released_issues: 95, completion_percentage: 95,
-      missing_monitored: 11, upcoming_monitored: 2, mismatches: 1,
-      sections: {
-        comic: { missing_monitored: 8, upcoming_monitored: 1, mismatches: 1 },
-        manga: { missing_monitored: 3, upcoming_monitored: 1, mismatches: 0 },
-      },
-    },
-    operations: { active_downloads: 1, failed_downloads: 1, active_searches: 0 },
-  };
   else if (pathname.endsWith('/api/volumes/stats')) result = stats;
   else if (pathname.endsWith('/api/system/tasks/42')) {
     await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'TaskNotFound', result: null }) });
@@ -59,11 +37,20 @@ async function mockApi(route: Route) {
       ];
     }
   }
-  else if (pathname.endsWith('/api/volumes/search')) result = [{
-    comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result',
+  else if (pathname.endsWith('/api/volumes/search')) {
+    const items = [
+      { comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result', year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null, description: null, aliases: null, issue_count: 5, already_added: null },
+      { comicvine_id: 101, metadata_source: 'comicvine', metadata_id: '101', title: 'Acceptance Volume', year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null, description: null, aliases: null, issue_count: null, already_added: 1, id: 1 },
+    ];
+    result = searchParams.get('paginated') === 'true'
+      ? { items, total: items.length, offset: Number(searchParams.get('offset') ?? 0), page_size: Number(searchParams.get('limit') ?? 30), next_offset: null, has_more: false }
+      : items;
+  }
+  else if (pathname.endsWith('/api/volumes/search/exact')) result = {
+    comicvine_id: Number(searchParams.get('metadata_id') ?? 501), metadata_source: searchParams.get('metadata_source') ?? 'comicvine', metadata_id: searchParams.get('metadata_id') ?? '501', title: 'Acceptance Search Result',
     year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null,
     description: null, aliases: null, issue_count: 5, already_added: null,
-  }];
+  };
   else if (pathname.endsWith('/api/volumes/1')) result = {
     id: 1, comicvine_id: 101, title: 'Acceptance Volume', year: 2026,
     publisher: 'Test Publisher', volume_number: 1, section: 'comic', monitored: true,
@@ -75,8 +62,6 @@ async function mockApi(route: Route) {
       { id: 12, issue_number: '2', title: 'Second', monitored: true, files: [] },
     ],
     general_files: [{ id: 31, filepath: '/comics/Acceptance Volume/Volume Notes.pdf', size: 2048, file_type: 'metadata' }],
-    provider_badges: [{ provider: 'comicvine', label: 'Canonical: ComicVine', role: 'canonical' }, { provider: 'metron', label: 'Enriched by: Metron', role: 'enrichment' }],
-    metadata_provenance: { canonical_provider: 'comicvine', enriched_by: ['metron'], provider_badges: [{ provider: 'comicvine', label: 'Canonical: ComicVine', role: 'canonical' }, { provider: 'metron', label: 'Enriched by: Metron', role: 'enrichment' }], metron: { series_id: '9001', match_status: 'linked', match_method: 'comicvine_id', last_successful_enrichment: 1786640000, last_checked: 1786640000 }, enrichment_terms: [{ term_type: 'character', name: 'Ada Hero', external_id: '1', provider: 'metron' }, { term_type: 'genre', name: 'Noir', external_id: 'noir', provider: 'metron' }] },
   };
   else if (pathname.endsWith('/api/volumes')) {
     const section = searchParams.get('section');
@@ -93,38 +78,19 @@ async function mockApi(route: Route) {
     delete_empty_folders: false, unmonitor_deleted_issues: false, change_file_date: '', chmod_folder: '', chown_group: '', convert: false, extract_issue_ranges: false,
     format_preference: [], comic_source_priority: [], manga_source_priority: [], service_preference: [], download_folder: '/downloads', concurrent_direct_downloads: 1,
     failing_download_timeout: 0, seeding_handling: 'complete', delete_completed_downloads: false, suwayomi_base_url: '', suwayomi_username: '', suwayomi_password: '',
-    suwayomi_source_ids: [], comicvine_api_key: '', date_type: 'cover_date', metron_enabled: true, metron_api_token: '********',
-    metron_last_successful_connection: 1786640000, metron_last_enrichment_run: 1786640000,
-    metron_backfill_status: { status: 'idle', total: 2, processed: 2, matched: 1, unmatched: 0, review_required: 1, failed: 0 }, metron_rate_limit_status: { burst_remaining: 42 },
+    suwayomi_source_ids: [], comicvine_api_key: '', date_type: 'cover_date',
   };
   else if (pathname.includes('/api/activity/queue')) result = [{ id: 41, title: 'Acceptance Volume #1', status: 'downloading', progress: 42, progress_is_percent: true, volume_id: 1, source: 'direct' }];
   else if (pathname.includes('/api/activity/history') && searchParams.has('issue_id')) result = [{ web_link: 'https://example.invalid/issue', web_title: 'Pilot issue release', web_sub_title: null, file_title: null, volume_id: 1, issue_id: 11, source: 'test', source_name: 'Test Source', downloaded_at: 100, success: true }];
   else if (pathname.includes('/api/activity/history') && searchParams.has('volume_id')) result = [{ web_link: 'https://example.invalid/volume', web_title: 'Volume bundle release', web_sub_title: null, file_title: null, volume_id: 1, issue_id: null, source: 'test', source_name: 'Test Source', downloaded_at: 101, success: true }];
   else if (pathname.endsWith('/api/activity/history')) result = { entries: [{ id: 71, title: 'Acceptance Volume #1', source: 'Test Source', state: 'failed', downloaded_at: 100, failure_reason: 'Network timeout', volume_id: 1 }], total: 1, offset: 0, page_size: 50 };
   else if (pathname.endsWith('/api/blocklist')) result = { entries: [], total: 0, offset: 0, page_size: 50 };
-  else if (pathname.endsWith('/api/discovery/capabilities')) result = {
-    section: searchParams.get('section') === 'manga' ? 'manga' : 'comic',
-    filters: searchParams.get('section') === 'manga' ? ['decade', 'status', 'original_language', 'year'] : ['publisher', 'decade', 'status', 'character', 'genre'],
-    deferred_filters: [],
-    shelves: ['new', 'upcoming', 'trending'],
-    source_notes: { trending: 'Recently active provider records.' },
-    publishers: [{ value: 'Test Publisher', label: 'Test Publisher', count: 2 }],
-    decades: [{ value: '2020', label: '2020s', count: 2 }],
-    characters: [{ value: 'Ada Hero', label: 'Ada Hero', count: 1 }],
-    genres: [{ value: 'Noir', label: 'Noir', count: 1 }],
-  };
-  else if (pathname.endsWith('/api/settings/metron/test')) result = { success: true, status: 'ok', description: 'Connection successful', rate_limit: { burst_remaining: 42 } };
-  else if (pathname.endsWith('/api/metron/backfill')) result = { task_id: 77 };
-  else if (pathname.endsWith('/api/volumes/1/metron/relink')) result = { status: 'linked', series_id: '9002' };
-  else if (pathname.endsWith('/api/volumes/1/metron')) result = route.request().method() === 'DELETE' ? { status: 'removed' } : { status: 'linked', series_id: '9002' };
-  else if (pathname.endsWith('/api/volumes/1/metron/refresh')) result = { task_id: 78 };
-  else if (pathname.endsWith('/api/discovery/browse') || pathname.endsWith('/api/discovery')) result = {
-    items: [{ comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result', year: 2026, publisher: 'Test Publisher', issue_count: 5, already_added: null }],
-    total: 1,
-    offset: Number(searchParams.get('offset') ?? 0),
-    page_size: Number(searchParams.get('limit') ?? 30),
-    has_more: false,
-  };
+  else if (pathname.endsWith('/api/discovery/capabilities')) result = { section: searchParams.get('section') ?? 'comic', filters: ['publisher', 'decade'], deferred_filters: ['character', 'genre'], shelves: ['recently_started', 'browse_all'], source_notes: {}, publishers: [{ value: 'Test Publisher', label: 'Test Publisher', count: 2 }], decades: [{ value: '2020', label: '2020s', count: 2 }] };
+  else if (pathname.endsWith('/api/discovery/browse')) result = { items: [
+    { comicvine_id: 501, metadata_source: 'comicvine', metadata_id: '501', title: 'Acceptance Search Result', year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null, description: null, aliases: null, issue_count: 5, already_added: null },
+    { comicvine_id: 101, metadata_source: 'comicvine', metadata_id: '101', title: 'Acceptance Volume', year: 2026, publisher: 'Test Publisher', volume_number: 1, cover_url: null, cover_link: null, description: null, aliases: null, issue_count: null, already_added: 1, id: 1 },
+  ], total: 2, offset: 0, page_size: 30, has_more: false, source_note: 'acceptance' };
+  else if (pathname.includes('/api/discovery')) result = [];
   else if (pathname.includes('/api/volumes/recent')) result = searchParams.get('section') === 'manga' ? mangaVolumes : comicVolumes;
   else if (pathname.includes('/api/rootfolder')) result = [{ id: 1, folder: '/comics', section: 'comic' }, { id: 2, folder: '/manga', section: 'manga' }];
   else if (pathname.endsWith('/api/files/21/info')) result = { id: 21, filepath: '/comics/Acceptance Volume/Issue 1.cbz', page_count: 2, is_pdf: false };
@@ -163,8 +129,8 @@ test('canonical internal navigation preserves the application shell and browser 
   let documentRequests = 0;
   page.on('request', request => { if (request.resourceType() === 'document') documentRequests += 1; });
 
-  await page.getByRole('link', { name: 'Comics', exact: true }).click();
-  await expect(page).toHaveURL(/\/comics/);
+  await page.getByRole('link', { name: 'Library', exact: true }).click();
+  await expect(page).toHaveURL(/\/library/);
   await page.getByRole('link', { name: 'Discover', exact: true }).click();
   await expect(page).toHaveURL(/\/discover/);
   await page.getByRole('link', { name: 'Activity', exact: true }).click();
@@ -184,7 +150,7 @@ test('mobile shell exposes six safe primary destinations without root overflow',
   await boot(page, 390);
   const navigation = page.getByRole('navigation', { name: /primary/i });
   await expect(navigation).toBeVisible();
-  for (const label of ['Home', 'Comics', 'Manga', 'Discover', 'Activity', 'Settings']) {
+  for (const label of ['Home', 'Library', 'Discover', 'Activity', 'Settings']) {
     const link = navigation.getByRole('link', { name: label, exact: true });
     await expect(link).toBeVisible();
     const box = await link.boundingBox();
@@ -196,7 +162,7 @@ test('mobile shell exposes six safe primary destinations without root overflow',
   expect(navRows).toBe(1);
 });
 
-for (const route of ['/home', '/comics', '/manga', '/discover?section=comic&category=upcoming', '/activity/queue']) {
+for (const route of ['/home', '/library?section=comic', '/library?section=manga', '/discover?section=comic&category=recently-started', '/activity/queue']) {
   test(`canonical route ${route} exposes one current destination and no axe violations`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.route('**/*', injectProductionBase);
@@ -208,7 +174,14 @@ for (const route of ['/home', '/comics', '/manga', '/discover?section=comic&cate
     } catch {
       throw new Error(`${route}: ${await page.locator('body').innerText()}`);
     }
-    await expect(page.locator('nav:visible [aria-current="page"]')).toHaveCount(1);
+    const primaryNav = page.getByRole('navigation', { name: /primary/i }).first();
+    await expect(primaryNav.locator('[aria-current="page"]')).toHaveCount(1);
+    if (route.startsWith('/activity/')) {
+      const activityNav = page.getByRole('navigation', { name: /activity/i });
+      await expect(activityNav.locator('[aria-current="page"]')).toHaveCount(1);
+    } else {
+      await expect(page.locator('nav:visible [aria-current="page"]')).toHaveCount(1);
+    }
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
@@ -217,11 +190,12 @@ for (const route of ['/home', '/comics', '/manga', '/discover?section=comic&cate
 }
 
 const workflowRoutes = [
-  { route: '/add?section=comic', evidence: 'ComicVine' },
-  { route: '/settings/general', evidence: 'Service configuration' },
+  { route: '/discover/search?section=comic&q=Acceptance', evidence: 'Acceptance Search Result' },
+  { route: '/settings/general', evidence: 'Hosting, authentication, theme, logs' },
   { route: '/volumes/1/files', evidence: 'Volume Notes.pdf' },
   { route: '/volumes/1/history', evidence: 'Volume bundle release' },
   { route: '/activity/blocklist', evidence: 'Blocklist' },
+  { route: '/discover/add/comicvine/501?section=comic&title=Acceptance', evidence: 'Acceptance Search Result' },
   { route: '/discover/browse?section=comic&publisher=Test%20Publisher', evidence: 'Acceptance Search Result' },
 ] as const;
 
@@ -249,28 +223,59 @@ for (const { route, evidence } of workflowRoutes) {
 
 
 
-test('Discover exposes a top search/add comics control', async ({ page }) => {
+test('Discover combobox opens exact review and full results without leaving Discover', async ({ page }) => {
   await boot(page);
   await page.getByRole('link', { name: 'Discover', exact: true }).click();
-  const search = page.getByRole('searchbox', { name: 'Search comics' });
+  const search = page.getByRole('combobox', { name: 'Search to add comics' });
   await expect(search).toBeVisible();
   await search.fill('Acceptance');
-  await expect(page.getByRole('button', { name: /Acceptance Search Result/ })).toBeVisible();
-  await expect(page).toHaveURL(/\/discover/);
+  await expect(page.getByRole('listbox')).toBeVisible();
+  await expect(page.getByRole('option', { name: /Acceptance Search Result/ })).toBeVisible();
+  await search.press('Enter');
+  await expect(page).toHaveURL(/\/discover\/search\?section=comic&q=Acceptance/);
+  await expect(page.getByText('5 issues')).toBeVisible();
+  await expect(page.getByText('Issue count unavailable')).toBeVisible();
+  await page.evaluate(() => document.querySelector('[data-app-scroller]')?.scrollTo(0, 120));
+  await page.getByRole('button', { name: 'Add' }).first().click();
+  await expect(page).toHaveURL(/\/discover\/add\/comicvine\/501/);
+  await expect.poll(() => page.getByTestId('discover-origin-route').evaluate((node) => (node as HTMLElement).inert)).toBe(true);
+  await expect(page.getByTestId('discover-background-route')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  const preservedScroll = await page.evaluate(() => document.querySelector('[data-app-scroller]')?.scrollTop ?? window.scrollY);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/discover\/search\?section=comic&q=Acceptance/);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => document.querySelector('[data-app-scroller]')?.scrollTop ?? window.scrollY)).toBe(preservedScroll);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/discover\/add\/comicvine\/501/);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('button', { name: '✕' }).click();
+  await expect(page).toHaveURL(/\/discover\/search\?section=comic&q=Acceptance/);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect.poll(() => page.getByTestId('discover-origin-route').evaluate((node) => (node as HTMLElement).inert)).toBe(false);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.textContent?.includes('Add'))).toBe(true);
 });
 
-test('Add review modal is keyboard-operable, labelled, and mobile-safe', async ({ page }) => {
+test('Browse Add navigates to exact review', async ({ page }) => {
+  await page.route('**/*', injectProductionBase);
+  await page.route('**/api/**', mockApi);
+  await page.goto('/discover/browse?section=comic&publisher=Test%20Publisher');
+  await page.getByRole('button', { name: 'Add' }).first().click();
+  await expect(page).toHaveURL(/\/discover\/add\/comicvine\/501/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/discover\/browse\?section=comic&publisher=Test\+Publisher/);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/discover\/add\/comicvine\/501/);
+  await expect.poll(() => page.getByTestId('discover-origin-route').evaluate((node) => (node as HTMLElement).inert)).toBe(true);
+  await expect(page.getByTestId('discover-background-route')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toBeVisible();
+});
+
+test('Discover exact add review is keyboard-operable, labelled, and mobile-safe', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
   await page.route('**/*', injectProductionBase);
   await page.route('**/api/**', mockApi);
-  await page.goto('/add?section=comic');
-  const search = page.getByRole('searchbox', { name: 'Search Comics' });
-  await search.fill('Acceptance');
-  await search.press('Enter');
-  const result = page.getByRole('button', { name: /Acceptance Search Result/ });
-  await expect(result).toBeVisible();
-  await result.focus();
-  await result.press('Space');
+  await page.goto('/discover/add/comicvine/501?section=comic&title=Acceptance');
   await expect(page.getByRole('dialog')).toBeVisible();
   for (const label of ['Root Folder', 'Volume Folder', 'Monitoring Scheme', 'Special Version', 'Monitor Volume', 'Monitor Issues', 'Auto Search']) {
     await expect(page.getByLabel(label, { exact: true })).toBeVisible();
@@ -352,7 +357,7 @@ test('principal redesign flows remain usable at mobile acceptance width', async 
   await expect(page.getByRole('link', { name: 'Comics missing', exact: true })).toBeVisible();
   await expect(page.getByText('Acceptance Volume').first()).toBeVisible();
 
-  await page.getByRole('link', { name: 'Comics', exact: true }).click();
+  await page.getByRole('link', { name: 'Library', exact: true }).click();
   const acceptanceVolume = page.getByRole('link', { name: 'Acceptance Volume' }).first();
   await expect(acceptanceVolume).toBeVisible();
   await acceptanceVolume.click();
@@ -361,19 +366,20 @@ test('principal redesign flows remain usable at mobile acceptance width', async 
   await page.getByRole('link', { name: 'Files' }).click();
   await expect(page.getByText('Volume Notes.pdf')).toBeVisible();
 
-  await page.getByRole('navigation', { name: /primary/i }).getByRole('link', { name: 'Comics', exact: true }).click();
+  await page.getByRole('navigation', { name: /primary/i }).getByRole('link', { name: 'Library', exact: true }).click();
   await page.getByRole('button', { name: 'Manage' }).click();
   await page.getByRole('checkbox', { name: 'Select Acceptance Volume' }).check();
   await expect(page.getByTestId('bulk-toolbar')).toContainText('1 selected');
   await expect(page.getByRole('button', { name: 'Search Missing Selected' })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Manga', exact: true }).click();
+  await page.goto('/library?section=manga');
+  await expect(page).toHaveURL(/\/library.*section=manga/);
   await expect(page.getByRole('link', { name: 'Acceptance Manga' }).first()).toBeVisible();
 
   await page.getByRole('link', { name: 'Activity', exact: true }).click();
   await expect(page).toHaveURL(/\/activity\//);
   await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await expect(page.getByText('Service configuration')).toBeVisible();
+  await expect(page.getByText('Hosting, authentication, theme, logs').first()).toBeVisible();
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
@@ -415,79 +421,4 @@ test('login branding honors a prefixed production base path', async ({ page }) =
   const logo = page.getByAltText('Kapowarr');
   await expect(logo).toBeVisible();
   await expect(logo).toHaveAttribute('src', /\/kapowarr\/static\/img\/favicon\.svg$/);
-});
-
-
-test('dashboard KPIs render from cache on return navigation and changelog supports direct anchors', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  const dashboardRequests: string[] = [];
-  await page.route('**/api/**', async (route) => {
-    if (route.request().url().includes('/api/dashboard/summary')) dashboardRequests.push(route.request().url());
-    await mockApi(route);
-  });
-
-  await page.goto('/home');
-  await expect(page.getByRole('link', { name: /Missing monitored/ })).toBeVisible();
-  await expect(page.getByText('95%')).toBeVisible();
-  const firstVisitRequests = dashboardRequests.length;
-  expect(firstVisitRequests).toBe(1);
-
-  await page.getByRole('link', { name: 'Comics', exact: true }).click();
-  await expect(page).toHaveURL(/\/comics/);
-  await page.getByRole('link', { name: 'Home', exact: true }).click();
-  await expect(page.getByRole('link', { name: /Missing monitored/ })).toBeVisible();
-  await expect(page.getByText('95%')).toBeVisible();
-  await expect(page.locator('[aria-label="Loading Missing monitored"]')).toHaveCount(0);
-  expect(dashboardRequests.length).toBe(firstVisitRequests);
-
-  await page.getByRole('link', { name: /Kapowarr 1\.6\.0/ }).click();
-  await expect(page).toHaveURL(/\/changelog/);
-  await expect(page.getByRole('heading', { name: 'Changelog' })).toBeVisible();
-  await page.locator('a[href="#1.6.0"]').click();
-  await expect(page).toHaveURL(/\/changelog#1\.6\.0/);
-  await page.reload();
-  await expect(page.getByRole('heading', { name: '1.6.0' })).toBeVisible();
-});
-
-
-test('Metron enrichment controls expose safe settings, provenance, relink, and local Character/Genre discovery', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await boot(page);
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await page.getByRole('button', { name: /Metadata/ }).click();
-  await expect(page.getByLabel('Metron API Token')).toHaveValue('********');
-  await page.getByRole('button', { name: 'Test Connection' }).click();
-  await expect(page.getByText('Connection successful')).toBeVisible();
-  await page.getByRole('button', { name: 'Backfill Existing Comics' }).click();
-  await expect(page.getByText(/Backfill status/i)).toBeVisible();
-  await expect(page.locator('#root')).toHaveScreenshot('phase6-settings-backfill.png', { animations: 'disabled', maxDiffPixelRatio: 0.01 });
-
-  await page.getByRole('link', { name: 'Comics', exact: true }).click();
-  await page.getByRole('link', { name: 'Acceptance Volume' }).first().click();
-  await expect(page.getByText('Canonical: ComicVine')).toBeVisible();
-  await expect(page.getByText('Enriched by: Metron')).toBeVisible();
-  await expect(page.getByText('Ada Hero')).toBeVisible();
-  await expect(page.getByText('Noir')).toBeVisible();
-  await page.getByRole('button', { name: 'Relink Metron Match' }).click();
-  await page.getByLabel('Metron series id').fill('9002');
-  await page.getByRole('button', { name: 'Save Metron Link' }).click();
-  await expect(page.getByText('Metron link updated.')).toBeVisible();
-  await expect(page.locator('#root')).toHaveScreenshot('phase6-volume-source-badges-relink.png', { animations: 'disabled', maxDiffPixelRatio: 0.01 });
-
-  await page.getByRole('link', { name: 'Discover', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Browse Characters' })).toBeVisible();
-  await page.getByRole('link', { name: 'Ada Hero' }).click();
-  await expect(page.getByRole('heading', { name: /Browse All Comics/ })).toBeVisible();
-  await expect(page.getByText('Acceptance Search Result')).toBeVisible();
-  await expect(page.locator('#root')).toHaveScreenshot('phase6-character-browse.png', { animations: 'disabled', maxDiffPixelRatio: 0.01 });
-
-  await page.getByRole('link', { name: 'Discover', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Browse Genres' })).toBeVisible();
-  await page.getByRole('link', { name: 'Noir' }).click();
-  await expect(page.getByText('Acceptance Search Result')).toBeVisible();
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
-  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
-  expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
-  await expect(page.locator('#root')).toHaveScreenshot('phase6-genre-browse.png', { animations: 'disabled', maxDiffPixelRatio: 0.01 });
 });

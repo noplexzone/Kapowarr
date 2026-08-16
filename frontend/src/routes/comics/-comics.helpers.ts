@@ -30,6 +30,7 @@ export function getSelectionScopeKey(section: SectionType, search: VolumesSearch
     search.search ?? '',
     search.filter ?? '',
     search.sort ?? '',
+    search.direction ?? 'asc',
     search.offset ?? 0,
     search.view ?? '',
   ].join('|');
@@ -57,8 +58,9 @@ export function formatVolumeSubtitle(volume: VolumeSummary): string {
   return parts.join(' · ');
 }
 
-export function getProgressLabel(progress: { have: number; total: number }): string {
-  return `${progress.have} of ${progress.total}`;
+export function getProgressLabel(progress: { have: number; total: number; upcoming?: number }): string {
+  const released = `${progress.have} of ${progress.total} released`;
+  return progress.upcoming && progress.upcoming > 0 ? `${released} · ${progress.upcoming} upcoming` : released;
 }
 
 export function getMissingCount(volume: VolumeSummary): number {
@@ -69,7 +71,8 @@ export function hasMissingIssues(volume: VolumeSummary): boolean {
   return getMissingCount(volume) > 0;
 }
 
-export function getProgressPercent(progress: { have: number; total: number }): number {
+export function getProgressPercent(progress: { have: number; total: number; completion?: number | null }): number {
+  if (progress.completion != null) return Math.round(progress.completion);
   if (progress.total <= 0) return 0;
   return Math.round((progress.have / progress.total) * 100);
 }

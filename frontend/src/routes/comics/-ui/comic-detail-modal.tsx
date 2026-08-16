@@ -77,7 +77,7 @@ export function ComicDetailModal({ volumeId, open, onClose }: ComicDetailModalPr
                     </span>
                   )}
                   <Badge tone={issue.downloaded ? 'success' : issue.monitored ? 'warning' : 'neutral'}>
-                    {issue.downloaded ? 'Downloaded' : issue.monitored ? 'Wanted' : 'Unmonitored'}
+                    {issue.downloaded ? 'Downloaded' : issue.monitored ? 'Missing Monitored' : 'Unmonitored'}
                   </Badge>
                 </div>
               ))}

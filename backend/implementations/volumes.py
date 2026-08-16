@@ -709,26 +709,16 @@ class Volume:
             )
 
         elif monitoring_scheme == MonitorScheme.MISSING:
-            cursor.execute("""
-                WITH missing_issues AS (
-                    SELECT id
-                    FROM issues i
-                    WHERE volume_id = ?
-                        AND NOT EXISTS (
-                            SELECT 1
-                            FROM issues_files issue_link
-                            INNER JOIN files file ON file.id = issue_link.file_id
-                            WHERE issue_link.issue_id = i.id
-                              AND file.exists_on_disk = 1
-                        )
-                )
+            valid_file_exists = valid_issue_file_exists_sql('issues')
+            cursor.execute(f"""
                 UPDATE issues
-                SET monitored = 0
-                WHERE
-                    volume_id = ?
-                    AND id NOT IN missing_issues;
+                SET monitored = CASE
+                    WHEN NOT {valid_file_exists} THEN 1
+                    ELSE 0
+                END
+                WHERE volume_id = ?;
                 """,
-                (self.id, self.id)
+                (self.id,)
             )
 
         elif monitoring_scheme == MonitorScheme.ALL:

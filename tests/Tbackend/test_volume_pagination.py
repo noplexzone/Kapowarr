@@ -2,7 +2,7 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from backend.base.definitions import LibraryFilter, LibrarySorting
+from backend.base.definitions import LibraryFilter, LibrarySorting, MonitorScheme
 from backend.implementations.volumes import Library, Volume
 
 
@@ -240,6 +240,31 @@ class VolumePaginationTests(unittest.TestCase):
                 self.assertEqual([tuple(row) for row in Volume(10).get_open_issues()], [(2, 2.0)])
         finally:
             db_conn.close()
+
+    def test_monitor_missing_sets_missing_and_clears_valid_files(self):
+        db_conn = sqlite3.connect(':memory:')
+        db_conn.row_factory = sqlite3.Row
+        db_conn.executescript("""
+            CREATE TABLE issues (id INTEGER PRIMARY KEY, volume_id INTEGER, monitored INTEGER, calculated_issue_number REAL);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER, exists_on_disk INTEGER DEFAULT 1);
+            CREATE TABLE issues_files (file_id INTEGER, issue_id INTEGER);
+        """)
+        db_conn.executemany('INSERT INTO issues VALUES (?, 10, ?, ?)', [(1, 0, 1.0), (2, 0, 2.0), (3, 1, 3.0), (4, 1, 4.0)])
+        db_conn.executemany('INSERT INTO files(id, size, exists_on_disk) VALUES (?, 100, ?)', [(10, 1), (20, 0), (30, 1)])
+        db_conn.executemany('INSERT INTO issues_files VALUES (?, ?)', [(10, 1), (20, 2), (20, 3), (30, 3)])
+        db_conn.commit()
+        try:
+            with patch('backend.implementations.volumes.get_db', return_value=db_conn):
+                Volume(10).apply_monitor_scheme(MonitorScheme.MISSING)
+                rows = dict(db_conn.execute('SELECT id, monitored FROM issues ORDER BY id').fetchall())
+                self.assertEqual(rows, {1: 0, 2: 1, 3: 0, 4: 1})
+                self.assertEqual([tuple(row) for row in Volume(10).get_open_issues()], [(2, 2.0), (4, 4.0)])
+                Volume(10).apply_monitor_scheme(MonitorScheme.MISSING)
+                rows2 = dict(db_conn.execute('SELECT id, monitored FROM issues ORDER BY id').fetchall())
+                self.assertEqual(rows2, rows)
+        finally:
+            db_conn.close()
+
 
     def test_completion_sort_uses_released_issue_counts_and_nulls_last(self):
         db_conn = sqlite3.connect(':memory:')

@@ -79,6 +79,7 @@ export const discoverResultsSearchSchema = z.object({
   section: sectionSchema,
   q: z.string().trim().min(2).max(200).catch(''),
   page: z.coerce.number().int().min(1).default(1).catch(1),
+  cursor: z.string().trim().min(1).max(1800).optional().catch(undefined),
   hide_added: z.coerce.boolean().default(false).catch(false),
 });
 

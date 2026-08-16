@@ -46,10 +46,10 @@ export function exactVolumeQueryOptions(selection: MetadataSelection | undefined
   });
 }
 
-export function searchVolumesQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine') {
+export function searchVolumesQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine', excludeAdded = false) {
   return queryOptions({
-    queryKey: ['volumes', 'search', query, section, metadataSource],
-    queryFn: () => searchVolumes(query, section, metadataSource),
+    queryKey: ['volumes', 'search', query, section, metadataSource, excludeAdded],
+    queryFn: () => searchVolumes(query, section, metadataSource, excludeAdded),
     enabled: query.length >= 2,
     staleTime: 5 * 60_000,
     refetchOnMount: false,
@@ -57,7 +57,7 @@ export function searchVolumesQueryOptions(query: string, section: string, metada
   });
 }
 
-export function searchVolumesPageQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine', offset = 0, limit = 30, excludeAdded = false) {
+export function searchVolumesPageQueryOptions(query: string, section: string, metadataSource: MetadataSourceFilter = 'comicvine', offset: number | string = 0, limit = 30, excludeAdded = false) {
   return queryOptions({
     queryKey: ['volumes', 'search-page', query, section, metadataSource, offset, limit, excludeAdded],
     queryFn: () => searchVolumesPage(query, section, metadataSource, offset, limit, excludeAdded),
@@ -66,14 +66,18 @@ export function searchVolumesPageQueryOptions(query: string, section: string, me
   });
 }
 
-async function searchVolumes(query: string, section: string, metadataSource: MetadataSourceFilter): Promise<SearchResult[]> {
+async function searchVolumes(query: string, section: string, metadataSource: MetadataSourceFilter, excludeAdded = false): Promise<SearchResult[]> {
   const sp = new URLSearchParams({ query, section, metadata_source: metadataSource });
+  if (excludeAdded) sp.set('exclude_added', 'true');
   const response = await apiClient.get('volumes/search', { searchParams: sp });
   return readJson(response, z.array(searchResultSchema));
 }
 
-async function searchVolumesPage(query: string, section: string, metadataSource: MetadataSourceFilter, offset: number, limit: number, excludeAdded = false): Promise<SearchResultsPage> {
-  const sp = new URLSearchParams({ query, section, metadata_source: metadataSource, paginated: 'true', offset: String(offset), limit: String(limit) }); if (excludeAdded) sp.set('exclude_added', 'true');
+async function searchVolumesPage(query: string, section: string, metadataSource: MetadataSourceFilter, offset: number | string, limit: number, excludeAdded = false): Promise<SearchResultsPage> {
+  const cursor = typeof offset === 'string' ? offset : '';
+  const sp = new URLSearchParams({ query, section, metadata_source: metadataSource, paginated: 'true', offset: typeof offset === 'number' ? String(offset) : '0', limit: String(limit) });
+  if (cursor) sp.set('cursor', cursor);
+  if (excludeAdded) sp.set('exclude_added', 'true');
   const response = await apiClient.get('volumes/search', { searchParams: sp });
   return readJson(response, searchPageSchema);
 }

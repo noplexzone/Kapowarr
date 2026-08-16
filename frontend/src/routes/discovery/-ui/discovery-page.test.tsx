@@ -22,7 +22,7 @@ it('closes suggestions on outside click, escape, and clearing input', () => {
 });
 
 it('uses Enter and View all to open URL-backed complete results', () => {
-  expect(source).toContain("navigate({ to: '/discover/search', search: { section, q: query } })");
+  expect(source).toContain("navigate({ to: '/discover/search', search: { section, q: query, page: 1, hide_added: hideAlreadyAdded } })");
   expect(source).toContain('View all results for “{query}”');
 });
 
@@ -34,8 +34,8 @@ it('opens highlighted suggestions by exact provider identity through a router-ow
 });
 
 it('asks the all-source search endpoint so manga can aggregate MangaDex results', () => {
-  expect(source).toContain("searchVolumesQueryOptions(debouncedQuery, section, 'all')");
-  expect(source).toContain("searchVolumesPageQueryOptions(query, section, 'all'");
+  expect(source).toContain("searchVolumesQueryOptions(debouncedQuery, section, 'all', hideAlreadyAdded)");
+  expect(source).toContain("searchVolumesPageQueryOptions(query, section, 'comicvine'");
 });
 
 it('shows comic issue counts and unknown fallback in search metadata', () => {
@@ -62,7 +62,7 @@ it('hybrid-loads Browse with an IntersectionObserver and three automatic pages',
   expect(source).toContain('DISCOVER_AUTOMATIC_PAGE_LIMIT');
   expect(source).toContain('new IntersectionObserver');
   expect(source).toContain("root: ref.current.closest('[data-app-scroller]') ?? null");
-  expect(source).toContain('requestedOffsets.current.has(nextOffset)');
+  expect(source).toContain('requestedCursorIds.current.has(nextCursor)');
   expect(source).toContain('Load More');
 });
 

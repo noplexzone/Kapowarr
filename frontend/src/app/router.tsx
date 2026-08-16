@@ -180,7 +180,7 @@ const discoverSearchRoute = createRoute({
   validateSearch: discoverResultsSearchSchema,
   component: () => {
     const search = discoverSearchRoute.useSearch();
-    return <DiscoverSearchResultsPage section={search.section} q={search.q} page={search.page} hide_added={search.hide_added} />;
+    return <DiscoverSearchResultsPage section={search.section} q={search.q} page={search.page} cursor={search.cursor} hide_added={search.hide_added} />;
   },
 });
 

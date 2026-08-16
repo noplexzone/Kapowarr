@@ -1365,6 +1365,12 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int,
                 sync_state = {'coverage_state': sync_row[0], 'coverage_complete': bool(sync_row[1]), 'last_completed_at': sync_row[2], 'last_error': sync_row[3]}
         except OperationalError:
             pass
+        fact_columns = {row[1] for row in db.execute('PRAGMA table_info(comic_series_discovery_facts);').fetchall()}
+        if 'derivation_status' in fact_columns:
+            where = f"({where}) AND derivation_status = 'valid'"
+        if 'date_preference' in fact_columns:
+            where = f"({where}) AND date_preference = 'cover_date'"
+        scan_limit = limit if not exclude_added else max(limit * 5, limit + 20)
         rows = db.execute(f"""
             SELECT comicvine_volume_id, first_known_issue_id, first_known_issue_number,
                 first_known_issue_date, volume_title, cover_link, site_url, year, publisher
@@ -1372,7 +1378,7 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int,
             WHERE {where}
             ORDER BY first_known_issue_date {order}, volume_title COLLATE NOCASE, comicvine_volume_id
             LIMIT ? OFFSET ?;
-        """, (*params, limit, offset)).fetchall()
+        """, (*params, scan_limit, offset)).fetchall()
     except OperationalError:
         return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False, **sync_state}
     if not rows:
@@ -1397,7 +1403,7 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int,
         })
     return {
         'items': items, 'total': None, 'total_is_exact': False, 'offset': offset,
-        'page_size': limit, 'has_more': len(items) == limit, 'fact_index': True, **sync_state,
+        'page_size': limit, 'has_more': len(rows) >= (limit if not exclude_added else max(limit * 5, limit + 20)) or len(items) > limit, 'fact_index': True, **sync_state,
     }
 
 # =====================
@@ -1627,6 +1633,10 @@ def api_discovery_browse():
             limit=limit,
             sort=sort,
         )
+        if exclude_added:
+            page['items'] = _exclude_added_provider_results(page.get('items', []))
+            page['total'] = None
+            page['total_is_exact'] = False
         return return_api(page)
     cv = ComicVine()
     def fetch_comic_page(page_offset: int, page_limit: int) -> Dict[str, Any]:
@@ -1785,8 +1795,8 @@ def api_volumes_search():
                 r['already_added'] = already_added[0] if already_added else None
             return results
 
-        if paginated and metadata_source == 'comicvine':
-            identity = _cursor_identity('comicvine', section, 'volume-search', query=query)
+        if paginated and metadata_source in ('comicvine', 'all'):
+            identity = _cursor_identity('comicvine', section, 'volume-search', query=query, metadata_source=metadata_source)
             if exclude_added:
                 return return_api(_refill_excluding_added(search_comicvine_page, offset=offset, limit=limit, cursor=request.values.get('cursor', ''), cursor_identity=identity))
             page = search_comicvine_page(offset, limit)

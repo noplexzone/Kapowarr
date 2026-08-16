@@ -1290,11 +1290,12 @@ def api_discovery():
     if discovery_type == 'upcoming-launches':
         fetch_limit = offset + limit + 1 if paginated else 20
         results = run(cv.get_upcoming_releases(limit=fetch_limit))
+    elif discovery_type == 'recently-started':
+        fetch_limit = offset + limit + 1 if paginated else 20
+        results = run(cv.get_new_volumes(limit=fetch_limit))
     else:
         sort = {
-            'recently-started': 'recently_started',
             'recently-active': 'trending',
-            'recently-updated': 'recently_updated',
         }[discovery_type]
         if exclude_added and paginated:
             filled = []

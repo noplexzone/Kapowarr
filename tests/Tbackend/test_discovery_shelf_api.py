@@ -39,6 +39,7 @@ class DiscoveryShelfApiTests(unittest.TestCase):
             'has_more': False,
         })
         comicvine.get_upcoming_releases = AsyncMock(return_value=[self._item('comicvine', '200')])
+        comicvine.get_new_volumes = AsyncMock(return_value=[self._item('comicvine', '300')])
         return comicvine
 
     def _assert_envelope(self, response):
@@ -87,6 +88,40 @@ class DiscoveryShelfApiTests(unittest.TestCase):
                     })
                     result = self._assert_envelope(response)
                     self.assertIn('items', result)
+
+
+    def test_recently_started_uses_derived_new_volumes_service(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        comicvine.get_new_volumes = AsyncMock(return_value=[self._item('comicvine', '300')])
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
+            response = self._client().get('/api/discovery', query_string={
+                'section': 'comic',
+                'type': 'recently-started',
+                'paginated': 'true',
+                'offset': '0',
+                'limit': '10',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual(result['items'][0]['metadata_id'], '300')
+        comicvine.get_new_volumes.assert_awaited_once_with(limit=11)
+        comicvine.browse_catalog_volumes.assert_not_awaited()
+
+    def test_upcoming_uses_upcoming_launch_service(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
+            response = self._client().get('/api/discovery', query_string={
+                'section': 'comic',
+                'type': 'upcoming-launches',
+                'paginated': 'true',
+                'offset': '0',
+                'limit': '10',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual(result['items'][0]['metadata_id'], '200')
+        comicvine.get_upcoming_releases.assert_awaited_once_with(limit=11)
+        comicvine.browse_catalog_volumes.assert_not_awaited()
 
     def test_missing_shelf_type_is_validation_error(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()

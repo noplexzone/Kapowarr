@@ -3,7 +3,11 @@
 import ast
 import unittest
 from pathlib import Path
-from typing import FrozenSet
+from typing import Any, Dict, FrozenSet, Union
+from datetime import date as _date
+from backend.base.definitions import DateType
+from backend.base.file_extraction import extract_issue_number
+from backend.base.helpers import first_of_range, force_range
 from unicodedata import normalize
 
 
@@ -25,6 +29,12 @@ def _load_discovery_filter_symbols():
         '_publisher_matches',
         '_is_comic_discovery_excluded_publisher',
         '_has_manga_discovery_title_keyword',
+        '_parse_cv_date',
+        'issue_date',
+        '_issue_date',
+        '_issue_number_value',
+        '_first_known_issue',
+        '_is_launch_issue_for_volume',
     }
     selected = [
         node
@@ -37,7 +47,7 @@ def _load_discovery_filter_symbols():
             and node.name in names
         )
     ]
-    namespace = {'frozenset': frozenset, 'FrozenSet': FrozenSet, 'str': str, 'bool': bool, 'any': any, 'normalise_query_string': _normalise_query_string}
+    namespace = {'frozenset': frozenset, 'FrozenSet': FrozenSet, 'Any': Any, 'Dict': Dict, 'Union': Union, '_date': _date, 'DateType': DateType, 'first_of_range': first_of_range, 'force_range': force_range, 'extract_issue_number': extract_issue_number, 'str': str, 'bool': bool, 'any': any, 'normalise_query_string': _normalise_query_string}
     exec(compile(ast.Module(body=selected, type_ignores=[]), str(source_path), 'exec'), namespace)
     return namespace
 
@@ -91,6 +101,28 @@ class ComicVineShelfSemanticsTests(unittest.TestCase):
         self.assertFalse(_is_launch_issue_for_volume({'id': 11, 'issue_number': '15', 'cover_date': '2026-09-01'}, {'issues': [{'id': 1, 'issue_number': '1', 'cover_date': '2020-01-01'}, {'id': 11, 'issue_number': '15', 'cover_date': '2026-09-01'}]}))
         self.assertFalse(_is_launch_issue_for_volume(issue_one, {'issues': [{'id': 9, 'issue_number': '0', 'cover_date': '2026-08-01'}, issue_one]}))
 
+
+    def test_upcoming_launch_allows_issue_zero_special_or_annual_as_first_issue(self):
+        is_launch = _SYMBOLS['_is_launch_issue_for_volume']
+        volume = {
+            'issues': [
+                {'id': 1, 'issue_number': '0', 'cover_date': '2026-09-01'},
+                {'id': 2, 'issue_number': '1', 'cover_date': '2026-10-01'},
+            ]
+        }
+        self.assertTrue(is_launch(volume['issues'][0], volume))
+        self.assertFalse(is_launch(volume['issues'][1], volume))
+
+    def test_upcoming_launch_uses_configured_store_date_when_preferred(self):
+        is_launch = _SYMBOLS['_is_launch_issue_for_volume']
+        volume = {
+            'issues': [
+                {'id': 1, 'issue_number': '1', 'cover_date': '2026-12-01', 'store_date': '2026-09-01'},
+                {'id': 2, 'issue_number': '0', 'cover_date': '2026-09-01', 'store_date': '2026-10-01'},
+            ]
+        }
+        self.assertTrue(is_launch(volume['issues'][0], volume, 'store_date'))
+        self.assertFalse(is_launch(volume['issues'][1], volume, 'store_date'))
 
 if __name__ == '__main__':
     unittest.main()

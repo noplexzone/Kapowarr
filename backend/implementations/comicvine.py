@@ -358,7 +358,7 @@ def _is_launch_issue_for_volume(issue: Dict[str, Any], volume: Dict[str, Any], c
     first = _first_known_issue(volume, configured_date_type)
     if not first:
         return False
-    return str(first.get('id') or '') == str(issue.get('id') or '') and _issue_number_value(issue) == 1.0
+    return str(first.get('id') or '') == str(issue.get('id') or '')
 
 class ComicVine:
     volume_field_list = ','.join((
@@ -967,10 +967,11 @@ class ComicVine:
         today = date.today()
         end = today + timedelta(days=days)
 
+        date_field = 'store_date' if str(Settings().sv.date_type).endswith('store_date') else 'cover_date'
         issue_params = {
-            'field_list': 'id,name,issue_number,cover_date,image,site_detail_url,volume',
-            'filter': f'cover_date:{today}|{end}',
-            'sort': 'cover_date:asc',
+            'field_list': 'id,name,issue_number,cover_date,store_date,image,site_detail_url,volume',
+            'filter': f'{date_field}:{today}|{end}',
+            'sort': f'{date_field}:asc',
             'limit': 100,
         }
         async with AsyncSession() as session:
@@ -1052,6 +1053,7 @@ class ComicVine:
                 'issue_number': item.get('issue_number') or '',
                 'title':        item.get('name') or '',
                 'cover_date':   item.get('cover_date') or '',
+                'store_date':   item.get('store_date') or '',
                 'cover_link':   (item.get('image') or {}).get('small_url', ''),
                 'site_url':     item.get('site_detail_url') or '',
                 'volume_id':    vol_cv_id,
@@ -1379,10 +1381,11 @@ class ComicVine:
         today = date.today()
         end = today + timedelta(days=days)
 
+        date_field = 'store_date' if str(Settings().sv.date_type).endswith('store_date') else 'cover_date'
         issue_params = {
-            'field_list': 'id,name,issue_number,cover_date,image,site_detail_url,volume',
-            'filter': f'cover_date:{today}|{end}',
-            'sort': 'cover_date:asc',
+            'field_list': 'id,name,issue_number,cover_date,store_date,image,site_detail_url,volume',
+            'filter': f'{date_field}:{today}|{end}',
+            'sort': f'{date_field}:asc',
             'limit': 100,
         }
 
@@ -1446,6 +1449,7 @@ class ComicVine:
                 'issue_number': item.get('issue_number') or '',
                 'title':        item.get('name') or '',
                 'cover_date':   item.get('cover_date') or '',
+                'store_date':   item.get('store_date') or '',
                 'cover_link':   (item.get('image') or {}).get('small_url', ''),
                 'site_url':     item.get('site_detail_url') or '',
                 'volume_id':    vol_cv_id,

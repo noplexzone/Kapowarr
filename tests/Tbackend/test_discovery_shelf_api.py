@@ -245,19 +245,20 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         result = self._assert_envelope(response)
         self.assertEqual(result['items'], [])
 
-    def test_provider_error_propagates_as_server_failure_without_name_error(self):
+    def test_recently_started_provider_error_uses_invoked_service(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
-        comicvine.browse_catalog_volumes = AsyncMock(side_effect=RuntimeError('provider down'))
+        comicvine.get_new_volumes = AsyncMock(side_effect=RuntimeError('provider down'))
         with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
             response = self._client().get('/api/discovery', query_string={
                 'section': 'comic',
                 'type': 'recently-started',
                 'paginated': 'true',
-                'exclude_added': 'true',
             })
         self.assertEqual(response.status_code, 500)
         self.assertNotIn('exclude_added', response.get_data(as_text=True))
+        comicvine.get_new_volumes.assert_awaited_once()
+        comicvine.browse_catalog_volumes.assert_not_awaited()
 
     def test_url_base_prefixed_route_returns_valid_envelope(self):
         app = Flask(__name__)

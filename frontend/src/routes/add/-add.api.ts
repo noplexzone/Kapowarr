@@ -7,10 +7,13 @@ import type { SearchResult, RootFolder } from './-add.types';
 const addedVolumeSchema = z.object({ id: z.number().int().positive() });
 const searchPageSchema = z.object({
   items: z.array(searchResultSchema),
-  total: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative().nullable(),
   offset: z.number().int().nonnegative(),
   page_size: z.number().int().positive(),
   next_offset: z.number().int().nonnegative().nullable(),
+  next_cursor: z.string().nullable().optional(),
+  total_is_exact: z.boolean().optional(),
+  filtered_total_unknown: z.boolean().optional(),
   has_more: z.boolean(),
 });
 export type SearchResultsPage = z.infer<typeof searchPageSchema>;

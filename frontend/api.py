@@ -1690,13 +1690,21 @@ def api_volumes_search():
             deduped = _exclude_added_provider_results(deduped)
         if paginated:
             page_items = deduped[offset:offset + limit]
-            next_offset = offset + limit if (not exclude_added and offset + limit < len(deduped)) else None
+            next_offset = offset + limit if offset + limit < len(deduped) else None
+            next_cursor = _encode_discovery_cursor({
+                'identity': _cursor_identity(metadata_source, section, 'volume-search', query=query),
+                'hide_added': exclude_added,
+                'raw_offset': next_offset or 0,
+            }) if exclude_added and next_offset is not None else None
             return return_api({
                 'items': page_items,
                 'total': None if exclude_added else len(deduped),
+                'total_is_exact': not exclude_added,
+                'filtered_total_unknown': bool(exclude_added),
                 'offset': offset,
                 'page_size': limit,
                 'next_offset': next_offset,
+                'next_cursor': next_cursor,
                 'has_more': next_offset is not None,
             })
 

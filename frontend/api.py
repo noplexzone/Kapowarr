@@ -1200,6 +1200,32 @@ def api_changelog():
     })
 
 
+
+
+def _truthy_request_flag(name: str) -> bool:
+    return str(request.values.get(name) or '').lower() in ('1', 'true', 'yes', 'on')
+
+
+def _exclude_added_provider_results(items: List[dict]) -> List[dict]:
+    if not items:
+        return []
+    db = get_db()
+    visible = []
+    for item in items:
+        source = str(item.get('metadata_source') or 'comicvine')
+        metadata_id = str(item.get('metadata_id') or item.get('comicvine_id') or item.get('volume_id') or '')
+        if not metadata_id:
+            visible.append(item); continue
+        if source == 'mangadex':
+            row = db.execute("""SELECT id FROM volumes WHERE metadata_source = 'mangadex' AND metadata_id = ? LIMIT 1;""", (metadata_id,)).fetchone()
+        else:
+            row = db.execute("""SELECT id FROM volumes WHERE metadata_source = 'comicvine' AND comicvine_id = ? LIMIT 1;""", (int(metadata_id) if metadata_id.isdigit() else metadata_id,)).fetchone()
+        if row:
+            item['already_added'] = row[0]
+            continue
+        visible.append(item)
+    return visible
+
 # =====================
 # Discovery
 # =====================
@@ -1242,7 +1268,16 @@ def api_discovery():
     if section == 'manga':
         sort = 'recently_updated' if discovery_type == 'recently-updated' else 'recently_started'
         page = browse_mangadex_catalog(offset=offset if paginated else 0, limit=limit if paginated else min(limit, 20), sort=sort)
+        if exclude_added:
+            page['items'] = _exclude_added_provider_results(page.get('items', []))
+            page['total'] = None
+            page['has_more'] = False if page.get('is_bounded') else page.get('has_more', False)
         if paginated:
+            if exclude_added:
+                page['items'] = _exclude_added_provider_results(page.get('items', []))
+                page['total'] = None
+                page['has_more'] = False if page.get('is_bounded') else page.get('has_more', False)
+                page['filtered_total_unknown'] = True
             return return_api(page)
         return return_api(page['items'])
 
@@ -1256,15 +1291,34 @@ def api_discovery():
             'recently-active': 'trending',
             'recently-updated': 'recently_updated',
         }[discovery_type]
+        if exclude_added and paginated:
+            filled = []
+            next_offset = offset
+            page = None
+            for _ in range(5):
+                page = run(cv.browse_catalog_volumes(offset=next_offset, limit=limit, sort=sort))
+                batch = _exclude_added_provider_results(page.get('items', []) if isinstance(page, dict) else page)
+                filled.extend(batch)
+                if len(filled) >= limit or not (isinstance(page, dict) and page.get('has_more')):
+                    break
+                next_offset += limit
+            page = page or {'items': []}
+            return return_api({**page, 'items': filled[:limit], 'total': None, 'offset': offset, 'page_size': limit, 'has_more': bool(isinstance(page, dict) and page.get('has_more') and len(filled) < limit), 'filtered_total_unknown': True})
         page = run(cv.browse_catalog_volumes(offset=offset if paginated else 0, limit=(limit if paginated else 20), sort=sort))
         results = page.get('items', []) if isinstance(page, dict) else page
         if paginated and isinstance(page, dict):
             return return_api(page)
 
     if paginated:
-        items = results[offset:offset + limit]
-        has_more = len(results) > offset + limit
-        total = offset + len(items) + (1 if has_more else 0)
+        if exclude_added:
+            results = _exclude_added_provider_results(results)
+            items = results[:limit]
+            has_more = False
+            total = None
+        else:
+            items = results[offset:offset + limit]
+            has_more = len(results) > offset + limit
+            total = offset + len(items) + (1 if has_more else 0)
         return return_api({
             'items': items,
             'total': total,
@@ -1316,6 +1370,7 @@ def api_discovery_browse():
         raise InvalidKeyValue('section', section)
     offset = extract_key(request, 'offset', False) or 0
     limit = extract_key(request, 'limit', False) or 30
+    exclude_added = _truthy_request_flag('exclude_added')
     if offset < 0 or limit < 1 or limit > 100:
         raise InvalidKeyValue('limit', limit)
     query = request.values.get('q', '').strip()
@@ -1459,6 +1514,7 @@ def api_volumes_search():
             or 'comicvine'
         )
         paginated = str(extract_key(request, 'paginated', False) or '').lower() == 'true'
+        exclude_added = _truthy_request_flag('exclude_added')
         offset = int(extract_key(request, 'offset', False) or 0)
         limit = min(max(int(extract_key(request, 'limit', False) or 30), 1), 100)
 
@@ -1514,12 +1570,14 @@ def api_volumes_search():
             seen.add(identity)
             deduped.append(result)
 
+        if exclude_added:
+            deduped = _exclude_added_provider_results(deduped)
         if paginated:
             page_items = deduped[offset:offset + limit]
-            next_offset = offset + limit if offset + limit < len(deduped) else None
+            next_offset = offset + limit if (not exclude_added and offset + limit < len(deduped)) else None
             return return_api({
                 'items': page_items,
-                'total': len(deduped),
+                'total': None if exclude_added else len(deduped),
                 'offset': offset,
                 'page_size': limit,
                 'next_offset': next_offset,
@@ -3035,27 +3093,14 @@ def api_metron_reviews():
 @error_handler
 @auth
 def api_metron_review_select(candidate_id: int):
-    from backend.features.metron_enrichment import attach_metron_task_reservation, reserve_candidate_enrichment_task, finish_metron_task_reservation
+    from backend.features.metron_enrichment import select_candidate_and_queue_enrichment
     from backend.internals.db import get_db
-    from backend.features.tasks import MetronEnrichmentTask, TaskHandler
-    task_handler = TaskHandler()
     candidate = get_db().execute('SELECT volume_id FROM provider_match_candidates WHERE id = ? LIMIT 1;', (candidate_id,)).fetchonedict()
     if not candidate:
         raise InvalidKeyValue('candidate_id', candidate_id)
     volume_id = int(candidate['volume_id'])
-    existing_task_id = task_handler.active_task_id_for_volume(volume_id)
-    if existing_task_id is not None:
-        return return_api({'volume_id': volume_id, 'task_id': existing_task_id, 'duplicate': True, 'status': 'enrichment_pending'}, code=202)
-    result = reserve_candidate_enrichment_task(candidate_id)
-    if result.get('duplicate'):
-        return return_api(result, code=202)
-    try:
-        task_id = task_handler.add(MetronEnrichmentTask(volume_id))
-    except Exception as exc:
-        finish_metron_task_reservation(volume_id, False, str(exc))
-        raise
-    attach_metron_task_reservation(int(result['reservation_id']), task_id)
-    return return_api({**result, 'task_id': task_id, 'duplicate': False}, code=202)
+    result = select_candidate_and_queue_enrichment(candidate_id)
+    return return_api(result, code=202)
 
 
 @api.route('/volumes/<int:id>/metadata/metron/refresh', methods=['POST'])

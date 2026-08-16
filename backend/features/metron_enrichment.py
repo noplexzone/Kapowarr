@@ -548,8 +548,6 @@ def resolve_candidate(candidate_id: int) -> Dict[str, Any]:
     result = relink_pending(volume_id, series_id, candidate_id)
     ts = now_ts()
     db.execute("UPDATE provider_match_candidates SET review_status = ? , updated_at = ? WHERE id = ?;", (STATUS_SELECTED, ts, candidate_id))
-    db.execute("UPDATE provider_match_candidates SET review_status = ? , updated_at = ? WHERE volume_id = ? AND provider = ? AND id != ? AND review_status IN (?, ?, ?);",
-               (STATUS_DISMISSED, ts, volume_id, METRON_PROVIDER, candidate_id, STATUS_REVIEW, STATUS_SELECTED, STATUS_FAILED))
     db.execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;", (STATUS_ENRICHMENT_PENDING, ts, candidate_id))
     commit()
     return {'volume_id': volume_id, **result}
@@ -591,11 +589,44 @@ def finish_metron_task_reservation(volume_id: int, success: bool, error: str = '
         WHERE volume_id = ? AND status IN ('reserved', 'queued', 'running');""", ('completed' if success else 'failed', safe_error, now_ts(), volume_id))
     commit()
 
+
+def select_candidate_and_queue_enrichment(candidate_id: int) -> Dict[str, Any]:
+    """Single owner for candidate selection, durable reservation, and task handoff."""
+    result = reserve_candidate_enrichment_task(candidate_id)
+    if result.get('duplicate'):
+        return result
+    from backend.features.tasks import MetronEnrichmentTask, TaskHandler
+    volume_id = int(result['volume_id'])
+    try:
+        task_id = TaskHandler().add(MetronEnrichmentTask(volume_id))
+    except Exception as exc:
+        ts = now_ts()
+        get_db().execute("""UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ?;""", (STATUS_FAILED, ts, candidate_id))
+        finish_metron_task_reservation(volume_id, False, str(exc))
+        raise
+    attach_metron_task_reservation(int(result['reservation_id']), task_id)
+    return {**result, 'task_id': task_id, 'duplicate': False, 'candidate_state': STATUS_ENRICHMENT_PENDING, 'provider_link_state': STATUS_PENDING}
+
+
+def reconcile_metron_task_reservations() -> int:
+    """Mark persisted active reservations as interrupted after process restart."""
+    db = get_db(); ts = now_ts()
+    rows = db.execute("""SELECT id, volume_id, candidate_id FROM metron_enrichment_task_reservations
+        WHERE status IN ('reserved', 'queued', 'running');""").fetchalldict()
+    for row in rows:
+        db.execute("""UPDATE metron_enrichment_task_reservations SET status = 'interrupted', updated_at = ?, safe_error = ? WHERE id = ?;""", (ts, 'Interrupted before completion; user retry required.', row['id']))
+        if row.get('candidate_id'):
+            db.execute("""UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE id = ? AND review_status = ?;""", (STATUS_FAILED, ts, row['candidate_id'], STATUS_ENRICHMENT_PENDING))
+    commit()
+    return len(rows)
+
 def mark_candidate_enrichment_result(volume_id: int, status: str, error: str = '') -> None:
     ts = now_ts()
     if status == STATUS_LINKED:
         get_db().execute("UPDATE provider_match_candidates SET review_status = 'resolved', updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);",
                          (ts, volume_id, METRON_PROVIDER, STATUS_SELECTED, STATUS_ENRICHMENT_PENDING))
+        get_db().execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status = ?;",
+                         (STATUS_DISMISSED, ts, volume_id, METRON_PROVIDER, STATUS_REVIEW))
         finish_metron_task_reservation(volume_id, True)
     else:
         get_db().execute("UPDATE provider_match_candidates SET review_status = ?, updated_at = ? WHERE volume_id = ? AND provider = ? AND review_status IN (?, ?);",

@@ -13,7 +13,7 @@ export const discoveryVolumeSchema = z.object({
 }).passthrough();
 export type DiscoveryVolume = z.infer<typeof discoveryVolumeSchema>;
 
-export const discoveryPageSchema = z.object({ items: z.array(z.record(z.unknown())), total: z.number().int().nonnegative().nullable(), offset: z.number().int().nonnegative(), page_size: z.number().int().positive(), has_more: z.boolean().optional(), source_note: z.string().optional(), is_bounded: z.boolean().optional(), maximum_per_year: z.number().int().positive().optional(), years_included: z.array(z.number().int()).optional() });
+export const discoveryPageSchema = z.object({ items: z.array(z.record(z.unknown())), total: z.number().int().nonnegative().nullable(), offset: z.number().int().nonnegative(), page_size: z.number().int().positive(), has_more: z.boolean().optional(), next_cursor: z.string().nullable().optional(), total_is_exact: z.boolean().optional(), source_note: z.string().optional(), is_bounded: z.boolean().optional(), maximum_per_year: z.number().int().positive().optional(), years_included: z.array(z.number().int()).optional() });
 export type DiscoveryPage = Omit<z.infer<typeof discoveryPageSchema>, 'items'> & { items: DiscoveryVolume[] };
 
 export const discoveryFacetSchema = z.object({ value: z.string(), label: z.string(), count: z.number().int().nonnegative().optional() });

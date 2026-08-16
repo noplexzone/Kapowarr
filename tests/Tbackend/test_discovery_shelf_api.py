@@ -114,6 +114,46 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertFalse(result['total_is_exact'])
         self.assertEqual(comicvine.browse_catalog_volumes.await_count, 2)
 
+    def test_hidden_library_cursor_continues_from_raw_provider_offset(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        comicvine.browse_catalog_volumes = AsyncMock(side_effect=[
+            {'items': [self._item('comicvine', '1'), self._item('comicvine', '2')], 'total': 6, 'offset': 0, 'page_size': 2, 'has_more': True},
+            {'items': [self._item('comicvine', '3'), self._item('comicvine', '4')], 'total': 6, 'offset': 2, 'page_size': 2, 'has_more': True},
+            {'items': [self._item('comicvine', '5'), self._item('comicvine', '6')], 'total': 6, 'offset': 4, 'page_size': 2, 'has_more': False},
+        ])
+        def exclude(items):
+            return [item for item in items if item['metadata_id'] in {'3', '4', '5', '6'}]
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine), patch.object(api_mod, '_exclude_added_provider_results', side_effect=exclude):
+            first = self._client().get('/api/discovery', query_string={
+                'section': 'comic', 'type': 'recently-active', 'paginated': 'true', 'limit': '2', 'exclude_added': 'true',
+            })
+            first_result = self._assert_envelope(first)
+            self.assertEqual([item['metadata_id'] for item in first_result['items']], ['3', '4'])
+            self.assertTrue(first_result['next_cursor'])
+            second = self._client().get('/api/discovery', query_string={
+                'section': 'comic', 'type': 'recently-active', 'paginated': 'true', 'limit': '2', 'exclude_added': 'true', 'cursor': first_result['next_cursor'],
+            })
+        second_result = self._assert_envelope(second)
+        self.assertEqual([item['metadata_id'] for item in second_result['items']], ['5', '6'])
+        self.assertEqual(comicvine.browse_catalog_volumes.await_args_list[-1].kwargs['offset'], 4)
+
+    def test_hidden_library_cursor_rejects_tampering(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        comicvine.browse_catalog_volumes = AsyncMock(return_value={'items': [self._item('comicvine', '1')], 'total': 2, 'offset': 0, 'page_size': 1, 'has_more': True})
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine), patch.object(api_mod, '_exclude_added_provider_results', side_effect=lambda items: items):
+            first = self._client().get('/api/discovery', query_string={
+                'section': 'comic', 'type': 'recently-active', 'paginated': 'true', 'limit': '1', 'exclude_added': 'true',
+            })
+            cursor = self._assert_envelope(first)['next_cursor']
+            bad = cursor[:-1] + ('a' if cursor[-1] != 'a' else 'b')
+            response = self._client().get('/api/discovery', query_string={
+                'section': 'comic', 'type': 'recently-active', 'paginated': 'true', 'limit': '1', 'exclude_added': 'true', 'cursor': bad,
+            })
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'InvalidKeyValue')
+
     def test_comic_browse_exclusion_refills_from_later_provider_pages(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()

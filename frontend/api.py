@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import run
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timezone
 from functools import lru_cache
 import re
@@ -1234,9 +1235,52 @@ def _exclude_added_provider_results(items: List[dict]) -> List[dict]:
     return visible
 
 
-def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages: int = 5) -> Dict[str, Any]:
+DISCOVERY_CURSOR_VERSION = 1
+
+
+def _discovery_cursor_secret() -> bytes:
+    secret = Settings().sv.api_key or Constants.PRIVATE_FOLDER
+    return str(secret).encode('utf-8')
+
+
+def _encode_discovery_cursor(payload: Dict[str, Any]) -> str:
+    payload = {'version': DISCOVERY_CURSOR_VERSION, **payload}
+    raw = _json.dumps(payload, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    signature = hmac_new(_discovery_cursor_secret(), raw, sha256).hexdigest()
+    return urlsafe_b64encode(raw).decode('ascii').rstrip('=') + '.' + signature
+
+
+def _decode_discovery_cursor(cursor: str, expected_identity: str, expected_hide_added: bool) -> Dict[str, Any]:
+    try:
+        encoded, signature = cursor.rsplit('.', 1)
+        raw = urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4))
+    except Exception as exc:
+        raise InvalidKeyValue('cursor', 'invalid') from exc
+    expected_signature = hmac_new(_discovery_cursor_secret(), raw, sha256).hexdigest()
+    if not compare_digest(signature, expected_signature):
+        raise InvalidKeyValue('cursor', 'invalid')
+    try:
+        payload = _json.loads(raw.decode('utf-8'))
+    except Exception as exc:
+        raise InvalidKeyValue('cursor', 'invalid') from exc
+    if payload.get('version') != DISCOVERY_CURSOR_VERSION:
+        raise InvalidKeyValue('cursor', 'unsupported')
+    if payload.get('identity') != expected_identity or bool(payload.get('hide_added')) != bool(expected_hide_added):
+        raise InvalidKeyValue('cursor', 'mismatch')
+    return payload
+
+
+def _cursor_identity(provider: str, section: str, surface: str, **filters: Any) -> str:
+    normalized = {k: str(v or '') for k, v in sorted(filters.items())}
+    return _json.dumps({'provider': provider, 'section': section, 'surface': surface, 'filters': normalized}, sort_keys=True, separators=(',', ':'))
+
+
+def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages: int = 5, cursor: str = '', cursor_identity: str = '') -> Dict[str, Any]:
     filled: List[dict] = []
     current_offset = offset
+    if cursor:
+        payload = _decode_discovery_cursor(cursor, cursor_identity, True)
+        current_offset = int(payload.get('raw_offset') or 0)
     last_page: Dict[str, Any] = {
         'items': [], 'total': 0, 'offset': offset, 'page_size': limit, 'has_more': False
     }
@@ -1247,9 +1291,10 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
         provider_items = last_page.get('items', []) if isinstance(last_page, dict) else []
         filled.extend(_exclude_added_provider_results(list(provider_items)))
         provider_has_more = bool(last_page.get('has_more'))
+        current_offset += int(last_page.get('page_size') or limit)
         if len(filled) >= limit or not provider_has_more:
             break
-        current_offset += int(last_page.get('page_size') or limit)
+    next_cursor = _encode_discovery_cursor({'identity': cursor_identity, 'hide_added': True, 'raw_offset': current_offset, 'safety_pages': safety_pages}) if provider_has_more else None
     return {
         **last_page,
         'items': filled[:limit],
@@ -1258,6 +1303,8 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
         'offset': offset,
         'page_size': limit,
         'has_more': bool(provider_has_more),
+        'next_cursor': next_cursor,
+        'total_is_exact': False,
         'filtered_total_unknown': True,
     }
 
@@ -1288,6 +1335,7 @@ def api_discovery():
 
     paginated = request.values.get('paginated') == 'true'
     offset = extract_key(request, 'offset', False) or 0
+    cursor = request.values.get('cursor', '')
     limit = (
         extract_key(request, 'limit', False)
         if request.values.get('limit') is not None
@@ -1307,6 +1355,8 @@ def api_discovery():
                 ),
                 offset=offset,
                 limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('mangadex', section, 'shelf', type=discovery_type, sort=sort),
             ))
         page = browse_mangadex_catalog(offset=offset if paginated else 0, limit=limit if paginated else min(limit, 20), sort=sort)
         if exclude_added:
@@ -1336,6 +1386,8 @@ def api_discovery():
                 )),
                 offset=offset,
                 limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('comicvine', section, 'shelf', type=discovery_type, sort=sort),
             ))
         page = run(cv.browse_catalog_volumes(offset=offset if paginated else 0, limit=(limit if paginated else 20), sort=sort))
         results = page.get('items', []) if isinstance(page, dict) else page
@@ -1402,6 +1454,7 @@ def api_discovery_browse():
     if section not in ('comic', 'manga'):
         raise InvalidKeyValue('section', section)
     offset = extract_key(request, 'offset', False) or 0
+    cursor = request.values.get('cursor', '')
     limit = extract_key(request, 'limit', False) or 30
     exclude_added = _truthy_request_flag('exclude_added')
     if offset < 0 or limit < 1 or limit > 100:
@@ -1451,6 +1504,8 @@ def api_discovery_browse():
                 ),
                 offset=offset,
                 limit=limit,
+                cursor=cursor,
+                cursor_identity=_cursor_identity('mangadex', section, 'browse', q=query, sort=sort, status=request.values.get('status', ''), original_language=request.values.get('original_language', ''), demographic=request.values.get('demographic', ''), content_rating=request.values.get('content_rating', ''), year=request.values.get('year', ''), decade=request.values.get('decade', ''), author=request.values.get('author', ''), artist=request.values.get('artist', ''), tags=request.values.get('tags', ''), translated_language=request.values.get('translated_language', '')),
             )
         return return_api(page)
     unsupported = {'tags', 'demographic', 'original_language', 'author', 'artist', 'content_rating'} & set(request.values.keys())
@@ -1483,7 +1538,7 @@ def api_discovery_browse():
             sort=sort,
         ))
     page = (
-        _refill_excluding_added(fetch_comic_page, offset=offset, limit=limit)
+        _refill_excluding_added(fetch_comic_page, offset=offset, limit=limit, cursor=cursor, cursor_identity=_cursor_identity('comicvine', section, 'browse', q=query, sort=sort, publisher=request.values.get('publisher', ''), decade=request.values.get('decade', ''), year=request.values.get('year', '')))
         if exclude_added
         else fetch_comic_page(offset, limit)
     )

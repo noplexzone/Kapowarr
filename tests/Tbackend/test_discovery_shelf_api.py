@@ -138,6 +138,29 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertEqual([item['metadata_id'] for item in second_result['items']], ['5', '6'])
         self.assertEqual(comicvine.browse_catalog_volumes.await_args_list[-1].kwargs['offset'], 4)
 
+
+    def test_hidden_library_cursor_retains_visible_overflow(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        comicvine.browse_catalog_volumes = AsyncMock(side_effect=[
+            {'items': [self._item('comicvine', '1'), self._item('comicvine', '2'), self._item('comicvine', '3'), self._item('comicvine', '4')], 'total': 8, 'offset': 0, 'page_size': 4, 'has_more': True},
+            {'items': [self._item('comicvine', '5'), self._item('comicvine', '6'), self._item('comicvine', '7'), self._item('comicvine', '8')], 'total': 8, 'offset': 4, 'page_size': 4, 'has_more': False},
+        ])
+        def exclude(items):
+            return [item for item in items if item['metadata_id'] != '1']
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine), patch.object(api_mod, '_exclude_added_provider_results', side_effect=exclude):
+            first = self._client().get('/api/discovery', query_string={
+                'section': 'comic', 'type': 'recently-active', 'paginated': 'true', 'limit': '2', 'exclude_added': 'true',
+            })
+            first_result = self._assert_envelope(first)
+            self.assertEqual([item['metadata_id'] for item in first_result['items']], ['2', '3'])
+            second = self._client().get('/api/discovery', query_string={
+                'section': 'comic', 'type': 'recently-active', 'paginated': 'true', 'limit': '2', 'exclude_added': 'true', 'cursor': first_result['next_cursor'],
+            })
+        second_result = self._assert_envelope(second)
+        self.assertEqual([item['metadata_id'] for item in second_result['items']], ['4', '5'])
+        self.assertEqual(comicvine.browse_catalog_volumes.await_count, 2)
+
     def test_hidden_library_cursor_rejects_tampering(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
@@ -222,10 +245,9 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertEqual(page['items'][0]['metadata_id'], '501')
         self.assertEqual(page['items'][0]['volume_title'], 'Fact Indexed Series')
 
-    def test_recently_started_uses_derived_new_volumes_service(self):
+    def test_recently_started_uses_fact_index_without_provider_when_incomplete(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
-        comicvine.get_new_volumes = AsyncMock(return_value=[self._item('comicvine', '300')])
         with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
             response = self._client().get('/api/discovery', query_string={
                 'section': 'comic',
@@ -235,11 +257,12 @@ class DiscoveryShelfApiTests(unittest.TestCase):
                 'limit': '10',
             })
         result = self._assert_envelope(response)
-        self.assertEqual(result['items'][0]['metadata_id'], '300')
-        comicvine.get_new_volumes.assert_awaited_once_with(limit=11)
+        self.assertEqual(result['items'], [])
+        self.assertEqual(result['coverage_state'], 'not_started')
+        comicvine.get_new_volumes.assert_not_awaited()
         comicvine.browse_catalog_volumes.assert_not_awaited()
 
-    def test_upcoming_uses_upcoming_launch_service(self):
+    def test_upcoming_uses_fact_index_without_provider_when_incomplete(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
         with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
@@ -251,8 +274,9 @@ class DiscoveryShelfApiTests(unittest.TestCase):
                 'limit': '10',
             })
         result = self._assert_envelope(response)
-        self.assertEqual(result['items'][0]['metadata_id'], '200')
-        comicvine.get_upcoming_releases.assert_awaited_once_with(limit=11)
+        self.assertEqual(result['items'], [])
+        self.assertEqual(result['coverage_state'], 'not_started')
+        comicvine.get_upcoming_releases.assert_not_awaited()
         comicvine.browse_catalog_volumes.assert_not_awaited()
 
     def test_missing_shelf_type_is_validation_error(self):
@@ -310,7 +334,7 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         result = self._assert_envelope(response)
         self.assertEqual(result['items'], [])
 
-    def test_recently_started_provider_error_uses_invoked_service(self):
+    def test_recently_started_shelf_does_not_call_provider_on_render(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
         comicvine.get_new_volumes = AsyncMock(side_effect=RuntimeError('provider down'))
@@ -320,9 +344,9 @@ class DiscoveryShelfApiTests(unittest.TestCase):
                 'type': 'recently-started',
                 'paginated': 'true',
             })
-        self.assertEqual(response.status_code, 500)
-        self.assertNotIn('exclude_added', response.get_data(as_text=True))
-        comicvine.get_new_volumes.assert_awaited_once()
+        result = self._assert_envelope(response)
+        self.assertEqual(result['coverage_state'], 'not_started')
+        comicvine.get_new_volumes.assert_not_awaited()
         comicvine.browse_catalog_volumes.assert_not_awaited()
 
     def test_url_base_prefixed_route_returns_valid_envelope(self):

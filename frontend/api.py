@@ -1278,23 +1278,58 @@ def _cursor_identity(provider: str, section: str, surface: str, **filters: Any) 
 def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages: int = 5, cursor: str = '', cursor_identity: str = '') -> Dict[str, Any]:
     filled: List[dict] = []
     current_offset = offset
+    retained_overflow: List[dict] = []
+    seen: set[tuple[str, str]] = set()
+    safety_exhausted = False
     if cursor:
         payload = _decode_discovery_cursor(cursor, cursor_identity, True)
         current_offset = int(payload.get('raw_offset') or 0)
-    last_page: Dict[str, Any] = {
-        'items': [], 'total': 0, 'offset': offset, 'page_size': limit, 'has_more': False
-    }
+        retained_overflow = [item for item in payload.get('overflow', []) if isinstance(item, dict)][:limit]
+        for source, metadata_id in payload.get('seen', []):
+            seen.add((str(source), str(metadata_id)))
+
+    def append_visible(items: List[dict]) -> List[dict]:
+        overflow: List[dict] = []
+        for item in items:
+            identity = (str(item.get('metadata_source') or 'comicvine'), str(item.get('metadata_id') or item.get('comicvine_id') or item.get('volume_id') or ''))
+            if identity[1] and identity in seen:
+                continue
+            if len(filled) < limit:
+                filled.append(item)
+                if identity[1]:
+                    seen.add(identity)
+            else:
+                overflow.append(item)
+        return overflow
+
+    overflow = append_visible(retained_overflow)
+    last_page: Dict[str, Any] = {'items': [], 'total': None, 'offset': offset, 'page_size': limit, 'has_more': False}
     provider_has_more = False
-    for _ in range(max(1, safety_pages)):
+    pages_used = 0
+    while len(filled) < limit and pages_used < max(1, safety_pages):
         page = fetch_page(current_offset, limit)
+        pages_used += 1
         last_page = page if isinstance(page, dict) else {'items': page or [], 'offset': current_offset, 'page_size': limit, 'has_more': False}
         provider_items = last_page.get('items', []) if isinstance(last_page, dict) else []
-        filled.extend(_exclude_added_provider_results(list(provider_items)))
+        visible = _exclude_added_provider_results(list(provider_items))
+        overflow.extend(append_visible(visible))
         provider_has_more = bool(last_page.get('has_more'))
         current_offset += int(last_page.get('page_size') or limit)
-        if len(filled) >= limit or not provider_has_more:
+        if overflow or not provider_has_more:
             break
-    next_cursor = _encode_discovery_cursor({'identity': cursor_identity, 'hide_added': True, 'raw_offset': current_offset, 'safety_pages': safety_pages}) if provider_has_more else None
+    if len(filled) < limit and provider_has_more and pages_used >= max(1, safety_pages):
+        safety_exhausted = True
+    cursor_payload = None
+    if overflow or provider_has_more:
+        cursor_payload = {
+            'identity': cursor_identity,
+            'hide_added': True,
+            'raw_offset': current_offset,
+            'overflow': overflow[:limit],
+            'seen': list(seen)[-200:],
+            'safety_pages': safety_pages,
+            'safety_exhausted': safety_exhausted,
+        }
     return {
         **last_page,
         'items': filled[:limit],
@@ -1302,13 +1337,13 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
         'total_is_exact': False,
         'offset': offset,
         'page_size': limit,
-        'has_more': bool(provider_has_more),
-        'next_cursor': next_cursor,
-        'total_is_exact': False,
+        'has_more': bool(cursor_payload),
+        'next_cursor': _encode_discovery_cursor(cursor_payload) if cursor_payload else None,
         'filtered_total_unknown': True,
+        'safety_exhausted': safety_exhausted,
     }
 
-def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int) -> Dict[str, Any]:
+def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int, exclude_added: bool = False) -> Dict[str, Any]:
     today = _date.today()
     if discovery_type == 'recently-started':
         start = (today - timedelta(days=365)).isoformat()
@@ -1321,8 +1356,15 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int)
     else:
         raise InvalidKeyValue('type', discovery_type)
     order = 'ASC' if discovery_type == 'upcoming-launches' else 'DESC'
+    sync_state = {'coverage_state': 'not_started', 'coverage_complete': False, 'last_completed_at': None, 'last_error': None}
     try:
         db = get_db()
+        try:
+            sync_row = db.execute("SELECT coverage_state, coverage_complete, last_completed_at, last_error FROM comic_discovery_fact_sync_state WHERE sync_id = 1;").fetchone()
+            if sync_row:
+                sync_state = {'coverage_state': sync_row[0], 'coverage_complete': bool(sync_row[1]), 'last_completed_at': sync_row[2], 'last_error': sync_row[3]}
+        except OperationalError:
+            pass
         rows = db.execute(f"""
             SELECT comicvine_volume_id, first_known_issue_id, first_known_issue_number,
                 first_known_issue_date, volume_title, cover_link, site_url, year, publisher
@@ -1332,9 +1374,9 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int)
             LIMIT ? OFFSET ?;
         """, (*params, limit, offset)).fetchall()
     except OperationalError:
-        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False}
+        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False, **sync_state}
     if not rows:
-        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False}
+        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False, **sync_state}
     volume_ids = tuple(int(row[0]) for row in rows)
     already_added: Dict[int, int] = {}
     if volume_ids:
@@ -1343,16 +1385,19 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int)
     items = []
     for row in rows:
         cv_id = int(row[0])
+        added_id = already_added.get(cv_id)
+        if exclude_added and added_id is not None:
+            continue
         items.append({
             'metadata_source': 'comicvine', 'metadata_id': str(cv_id), 'comicvine_id': cv_id,
             'title': row[4] or '', 'volume_title': row[4] or '', 'cover_link': row[5] or '',
             'site_url': row[6] or '', 'year': row[7], 'publisher': row[8] or '',
             'issue_id': row[1], 'issue_number': row[2] or '', 'series_started_at': row[3],
-            'already_added': already_added.get(cv_id),
+            'already_added': added_id,
         })
     return {
         'items': items, 'total': None, 'total_is_exact': False, 'offset': offset,
-        'page_size': limit, 'has_more': len(items) == limit, 'fact_index': True,
+        'page_size': limit, 'has_more': len(items) == limit, 'fact_index': True, **sync_state,
     }
 
 # =====================
@@ -1418,13 +1463,13 @@ def api_discovery():
     cv = ComicVine()
     if discovery_type in ('upcoming-launches', 'recently-started'):
         fact_limit = limit + 1 if paginated else min(limit, 20)
-        fact_page = _comic_discovery_facts_page(discovery_type, offset=offset if paginated else 0, limit=fact_limit)
-        if fact_page['items']:
-            if paginated:
-                fact_page['has_more'] = len(fact_page['items']) > limit
-                fact_page['items'] = fact_page['items'][:limit]
-                fact_page['page_size'] = limit
-                return return_api(fact_page)
+        fact_page = _comic_discovery_facts_page(discovery_type, offset=offset if paginated else 0, limit=fact_limit, exclude_added=exclude_added)
+        if paginated:
+            fact_page['has_more'] = len(fact_page['items']) > limit
+            fact_page['items'] = fact_page['items'][:limit]
+            fact_page['page_size'] = limit
+            return return_api(fact_page)
+        if fact_page['items'] or not fact_page.get('coverage_complete'):
             return return_api(fact_page['items'][:limit])
     if discovery_type == 'upcoming-launches':
         fetch_limit = offset + limit + 1 if paginated else 20

@@ -245,6 +245,60 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertEqual(page['items'][0]['metadata_id'], '501')
         self.assertEqual(page['items'][0]['volume_title'], 'Fact Indexed Series')
 
+
+    def test_recently_started_endpoint_serves_cached_fact_without_comicvine(self):
+        import sqlite3
+        con = sqlite3.connect(':memory:')
+        con.executescript("""
+            CREATE TABLE volumes(id INTEGER PRIMARY KEY, comicvine_id INTEGER, metadata_source TEXT DEFAULT 'comicvine');
+            CREATE TABLE comic_series_discovery_facts(
+                comicvine_volume_id INTEGER PRIMARY KEY, first_known_issue_id INTEGER,
+                first_known_issue_number TEXT, first_known_issue_date TEXT, date_source TEXT,
+                series_started_at TEXT, volume_title TEXT, cover_link TEXT, site_url TEXT,
+                year INTEGER, publisher TEXT, is_upcoming_launch BOOL, provider_modified_at TEXT,
+                metadata_modified_at INTEGER, fetched_at INTEGER, derived_at INTEGER,
+                derivation_status TEXT, date_preference TEXT, last_error TEXT
+            );
+            CREATE TABLE comic_discovery_fact_sync_state(
+                sync_id INTEGER PRIMARY KEY, scope TEXT, provider_cursor TEXT, last_started_at INTEGER,
+                last_completed_at INTEGER, coverage_state TEXT, coverage_complete BOOL,
+                date_preference TEXT, last_error TEXT, next_resume_at INTEGER
+            );
+            INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference) VALUES (1, 'comic_series_discovery', 'partial', 0, 'cover_date');
+            INSERT INTO comic_series_discovery_facts(
+                comicvine_volume_id, first_known_issue_id, first_known_issue_number, first_known_issue_date,
+                date_source, series_started_at, volume_title, cover_link, site_url, year, publisher,
+                is_upcoming_launch, provider_modified_at, metadata_modified_at, fetched_at, derived_at,
+                derivation_status, date_preference
+            ) VALUES (501, 9001, '1', '2026-08-01', 'cover_date', '2026-08-01',
+                'Cached Fact Series', '', '', 2026, 'DC', 0, '2026-08-02', 1, 2, 3, 'valid', 'cover_date');
+        """)
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'get_db', return_value=con), patch.object(api_mod, 'ComicVine', side_effect=AssertionError('provider should not be constructed')):
+            response = self._client().get('/api/discovery', query_string={
+                'section': 'comic', 'type': 'recently-started', 'paginated': 'true', 'limit': '10',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual(result['items'][0]['metadata_id'], '501')
+        self.assertEqual(result['coverage_state'], 'partial')
+
+    def test_comicvine_full_search_uses_provider_offset(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        comicvine.search_volumes_page = AsyncMock(return_value={
+            'items': [self._item('comicvine', '41'), self._item('comicvine', '42')],
+            'total': 60, 'offset': 30, 'page_size': 2, 'has_more': True,
+            'next_offset': 32, 'total_is_exact': True,
+        })
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
+            response = self._client().get('/api/volumes/search', query_string={
+                'query': 'Batman', 'section': 'comic', 'metadata_source': 'comicvine',
+                'paginated': 'true', 'offset': '30', 'limit': '2',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual([item['metadata_id'] for item in result['items']], ['41', '42'])
+        comicvine.search_volumes_page.assert_awaited_once_with('Batman', section='comic', offset=30, limit=2)
+
     def test_recently_started_uses_fact_index_without_provider_when_incomplete(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()

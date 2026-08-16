@@ -1460,7 +1460,6 @@ def api_discovery():
             return return_api(page)
         return return_api(page['items'])
 
-    cv = ComicVine()
     if discovery_type in ('upcoming-launches', 'recently-started'):
         fact_limit = limit + 1 if paginated else min(limit, 20)
         fact_page = _comic_discovery_facts_page(discovery_type, offset=offset if paginated else 0, limit=fact_limit, exclude_added=exclude_added)
@@ -1471,6 +1470,7 @@ def api_discovery():
             return return_api(fact_page)
         if fact_page['items'] or not fact_page.get('coverage_complete'):
             return return_api(fact_page['items'][:limit])
+    cv = ComicVine()
     if discovery_type == 'upcoming-launches':
         fetch_limit = offset + limit + 1 if paginated else 20
         results = run(cv.get_upcoming_releases(limit=fetch_limit))
@@ -1736,13 +1736,33 @@ def api_volumes_search():
         offset = int(extract_key(request, 'offset', False) or 0)
         limit = min(max(int(extract_key(request, 'limit', False) or 30), 1), 100)
 
-        def search_comicvine() -> List[dict]:
-            results = run(ComicVine().search_volumes(query, section=section))
+        def format_comicvine_results(results: List[dict]) -> List[dict]:
             for r in results:
                 r['metadata_source'] = 'comicvine'
                 r['metadata_id'] = str(r['comicvine_id'])
-                del r["cover"] # type: ignore
+                if 'cover' in r:
+                    del r['cover'] # type: ignore
             return results
+
+        def search_comicvine() -> List[dict]:
+            return format_comicvine_results(run(ComicVine().search_volumes(query, section=section)))
+
+        def search_comicvine_page(page_offset: int, page_limit: int) -> Dict[str, Any]:
+            cv = ComicVine()
+            if hasattr(cv, 'search_volumes_page'):
+                page = run(cv.search_volumes_page(query, section=section, offset=page_offset, limit=page_limit))
+                page['items'] = format_comicvine_results(page.get('items', []))
+                return page
+            results = format_comicvine_results(run(cv.search_volumes(query, section=section)))
+            return {
+                'items': results[page_offset:page_offset + page_limit],
+                'total': len(results),
+                'offset': page_offset,
+                'page_size': page_limit,
+                'has_more': page_offset + page_limit < len(results),
+                'total_is_exact': True,
+                'next_offset': page_offset + page_limit if page_offset + page_limit < len(results) else None,
+            }
 
         def search_mangadex() -> List[dict]:
             if section != 'manga':
@@ -1764,6 +1784,13 @@ def api_volumes_search():
                 ).fetchone()
                 r['already_added'] = already_added[0] if already_added else None
             return results
+
+        if paginated and metadata_source == 'comicvine':
+            identity = _cursor_identity('comicvine', section, 'volume-search', query=query)
+            if exclude_added:
+                return return_api(_refill_excluding_added(search_comicvine_page, offset=offset, limit=limit, cursor=request.values.get('cursor', ''), cursor_identity=identity))
+            page = search_comicvine_page(offset, limit)
+            return return_api(page)
 
         if metadata_source == 'all':
             results = search_comicvine()
@@ -1793,11 +1820,6 @@ def api_volumes_search():
         if paginated:
             page_items = deduped[offset:offset + limit]
             next_offset = offset + limit if offset + limit < len(deduped) else None
-            next_cursor = _encode_discovery_cursor({
-                'identity': _cursor_identity(metadata_source, section, 'volume-search', query=query),
-                'hide_added': exclude_added,
-                'raw_offset': next_offset or 0,
-            }) if exclude_added and next_offset is not None else None
             return return_api({
                 'items': page_items,
                 'total': None if exclude_added else len(deduped),
@@ -1806,8 +1828,10 @@ def api_volumes_search():
                 'offset': offset,
                 'page_size': limit,
                 'next_offset': next_offset,
-                'next_cursor': next_cursor,
+                'next_cursor': None,
                 'has_more': next_offset is not None,
+                'is_bounded': True,
+                'maximum_results': len(deduped),
             })
 
         return return_api(deduped)

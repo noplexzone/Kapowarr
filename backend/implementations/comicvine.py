@@ -1281,9 +1281,9 @@ class ComicVine:
             )
             return [result['results']]
 
-    async def __search_query(
-        self, query: str
-    ) -> List[Dict[str, Any]]:
+    async def __search_query_page(
+        self, query: str, *, offset: int = 0, limit: int = 50
+    ) -> Dict[str, Any]:
         async with AsyncSession() as session:
             results = await self.__call_api(
                 session,
@@ -1291,12 +1291,18 @@ class ComicVine:
                 {
                     'query': query,
                     'resources': 'volume',
-                    'limit': 50,
+                    'offset': offset,
+                    'limit': limit,
                     'field_list': self.search_field_list
                 },
-                {'results': []}
+                {'results': [], 'number_of_total_results': 0}
             )
-            return results['results']
+            return results
+
+    async def __search_query(
+        self, query: str
+    ) -> List[Dict[str, Any]]:
+        return (await self.__search_query_page(query, offset=0, limit=50)).get('results') or []
 
     async def search_volumes(
         self,
@@ -1364,6 +1370,57 @@ class ComicVine:
             return [v for v in formatted if not _is_non_english(v) and not v.get('translated')]
 
         return formatted
+
+    async def search_volumes_page(
+        self,
+        query: str,
+        section: str = 'comic',
+        *,
+        offset: int = 0,
+        limit: int = 30,
+        allow_rate_limit_reached: bool = False
+    ) -> Dict[str, Any]:
+        """Search ComicVine volumes with real provider offset/limit pagination."""
+        try:
+            if query.startswith(('4050-', 'cv:')):
+                results = await self.__search_volume(query)
+                provider_total = len(results)
+            else:
+                page = await self.__search_query_page(query, offset=offset, limit=limit + 1)
+                results = page.get('results') or []
+                provider_total = int(page.get('number_of_total_results') or len(results))
+        except VolumeNotMatched:
+            results = []
+            provider_total = 0
+        except CVRateLimitReached:
+            if allow_rate_limit_reached:
+                results = []
+                provider_total = 0
+            else:
+                raise
+        formatted = self.__format_search_output(results) if results else []
+        if section == 'manga':
+            def _is_manga(v: VolumeMetadata) -> bool:
+                pub = (v.get('publisher') or '').lower()
+                return v.get('translated') or pub in _MANGA_PUBLISHERS or any(p in pub for p in _MANGA_PUBLISHERS)
+            formatted = [v for v in formatted if _is_manga(v)]
+        elif section == 'comic':
+            def _is_non_english(v: VolumeMetadata) -> bool:
+                pub = (v.get('publisher') or '').lower()
+                return pub in _NON_ENGLISH_PUBLISHERS or any(p in pub for p in _NON_ENGLISH_PUBLISHERS)
+            formatted = [v for v in formatted if not _is_non_english(v) and not v.get('translated')]
+        has_more = len(formatted) > limit or offset + min(len(results), limit) < provider_total
+        items = formatted[:limit]
+        self._mark_already_added(items)
+        return {
+            'items': items,
+            'total': provider_total,
+            'offset': offset,
+            'page_size': limit,
+            'has_more': has_more,
+            'total_is_exact': True,
+            'next_offset': offset + limit if has_more else None,
+        }
 
 
     async def browse_catalog_volumes(

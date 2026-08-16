@@ -237,8 +237,23 @@ export function DiscoverSearchResultsPage({ section, q, page, hide_added = false
   return <div className={styles.searchPage}><h1 id="discover-search-heading" className={styles.srOnly}>Results for “{query}”</h1>{isError ? <div className={styles.empty} role="alert"><span>Could not load search results: {error.message}</span><Button onClick={() => void refetch()}>Retry</Button></div> : null}{!isError && isFetching && !data ? <div className={styles.empty} role="status">Loading results…</div> : null}{!isError && data && items.length === 0 ? <div className={styles.empty}>No results found for “{query}”.</div> : null}{!isError && items.length > 0 ? <><label className={styles.hideAddedToggle}><input type="checkbox" checked={hide_added} onChange={(event) => navigate({ to: '/discover/search', search: { section, q: query, page: 1, hide_added: event.target.checked } })} /><span>Hide in library</span></label><div className={styles.searchResults}>{items.map((result) => <SearchResultCard key={getResultIdentity(result)} result={result} section={section} onOpen={openResult} />)}</div></> : null}{data ? <div className={styles.paginationRow}><Button variant="secondary" disabled={page <= 1 || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page - 1, hide_added } })}>Previous</Button><span>{data.total == null ? 'Filtered total unknown' : `${data.total} results`}</span><Button variant="secondary" disabled={!data.has_more || isFetching} onClick={() => navigate({ to: '/discover/search', search: { section, q: query, page: page + 1, hide_added } })}>Next</Button></div> : null}{isFetching && data ? <div className={styles.inlineStatus} role="status">Refreshing results…</div> : null}</div>;
 }
 
+function DiscoverBackgroundRoute({ section, returnTo }: { section: DiscoverySection; returnTo?: string }) {
+  if (!returnTo) return null;
+  const parsed = new URL(returnTo, 'http://kapowarr.local');
+  if (parsed.pathname === '/discover/search') {
+    return <div data-testid="discover-background-route" aria-hidden="true"><DiscoverSearchResultsPage section={section} q={parsed.searchParams.get('q') || ''} page={Number(parsed.searchParams.get('page') || '1')} hide_added={parsed.searchParams.get('hide_added') === 'true'} /></div>;
+  }
+  if (parsed.pathname === '/discover/browse') {
+    return <div data-testid="discover-background-route" aria-hidden="true"><DiscoveryBrowsePage search={{ section, sort: (parsed.searchParams.get('sort') || 'trending') as BrowseFilters['sort'], q: parsed.searchParams.get('q') || undefined, publisher: parsed.searchParams.get('publisher') || undefined, decade: parsed.searchParams.get('decade') || undefined, character: parsed.searchParams.get('character') || undefined, genre: parsed.searchParams.get('genre') || undefined, status: parsed.searchParams.get('status') || undefined, hide_added: parsed.searchParams.get('hide_added') === 'true' }} /></div>;
+  }
+  if (parsed.pathname === '/discover') {
+    return <div data-testid="discover-background-route" aria-hidden="true"><DiscoveryPage section={section} type="recently-started" canonical /></div>;
+  }
+  return null;
+}
+
 export function DiscoverExactAddPage({ section, source, metadataId, title, language, returnTo }: { section: DiscoverySection; source: 'comicvine' | 'mangadex'; metadataId: string; title?: string; language?: string; returnTo?: string }) {
-  return <ExactAddReview section={section} selection={{ metadata_source: source, metadata_id: metadataId, title, metadata_language: language }} searchFallbackTo="/discover/search" returnTo={returnTo} />;
+  return <><DiscoverBackgroundRoute section={section} returnTo={returnTo} /><ExactAddReview section={section} selection={{ metadata_source: source, metadata_id: metadataId, title, metadata_language: language }} searchFallbackTo="/discover/search" returnTo={returnTo} /></>;
 }
 
 

@@ -28,4 +28,11 @@ describe('exact Discovery to Add identity', () => {
     expect(source).not.toContain('history.back()');
     expect(source).not.toContain('returnTo as never');
   });
+
+  it('renders a Discover background route for exact Add return state', () => {
+    const source = require('node:fs').readFileSync('src/routes/discovery/-ui/discovery-page.tsx', 'utf8');
+    expect(source).toContain('DiscoverBackgroundRoute');
+    expect(source).toContain('data-testid=\"discover-background-route\"');
+    expect(source).toContain('<ExactAddReview');
+  });
 });

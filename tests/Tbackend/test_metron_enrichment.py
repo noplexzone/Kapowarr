@@ -174,6 +174,12 @@ class MetronClientSecurityTests(unittest.TestCase):
         self.assertNotIn('TEST_METRON_TOKEN_REDACTED', repr(logged))
 
 
+    def test_startup_invokes_metron_reservation_reconciliation(self):
+        source = Path(__file__).parents[2].joinpath('Kapowarr.py').read_text()
+        self.assertIn('reconcile_metron_task_reservations', source)
+        self.assertIn('interrupted Metron enrichment reservation', source)
+
+
 class MetronEnrichmentPersistenceTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()

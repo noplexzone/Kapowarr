@@ -3,12 +3,18 @@ from unittest import TestCase
 
 
 class TestDockerWorkflowSafety(TestCase):
-    def test_develop_tags_publish_only_after_the_complete_ci_gate(self) -> None:
+    def test_develop_and_release_tags_are_separated_after_complete_ci_gate(self) -> None:
         workflow = Path('.github/workflows/tests.yml').read_text()
-        self.assertIn("if: github.event_name == 'push' && github.ref == 'refs/heads/develop'", workflow)
+        self.assertIn("if: github.event_name == 'push' && (github.ref == 'refs/heads/develop'", workflow)
         self.assertIn('needs: [test, frontend]', workflow)
-        self.assertIn('noplexzone/kapowarr:develop', workflow)
-        self.assertIn('noplexzone/kapowarr:${{ steps.version.outputs.value }}', workflow)
+        self.assertIn('${IMAGE_NAME}:develop', workflow)
+        self.assertIn('${IMAGE_NAME}:sha-${GITHUB_SHA}', workflow)
+        self.assertIn('${IMAGE_NAME}:${tag_version}', workflow)
+        self.assertIn('${IMAGE_NAME}:${minor}', workflow)
+        self.assertIn('${IMAGE_NAME}:latest', workflow)
+        self.assertIn('Git tag ${tag} does not match pyproject.toml version ${version}', workflow)
+        self.assertIn('Refusing to overwrite existing Docker release tag', workflow)
+        self.assertNotIn('noplexzone/kapowarr:${{ steps.version.outputs.value }}', workflow)
         self.assertFalse(Path('.github/workflows/docker.yml').exists())
 
     def test_container_defaults_to_unraid_runtime_identity(self) -> None:

@@ -1,7 +1,9 @@
 services:
   kapowarr:
     container_name: kapowarr
-    image: ${KAPOWARR_IMAGE:-noplexzone/kapowarr:1.6.0}
+    # Published images are linux/amd64-only; set KAPOWARR_IMAGE to a
+    # digest-pinned reference for immutable production deployments.
+    image: ${KAPOWARR_IMAGE:-noplexzone/kapowarr:latest}
     user: "99:100"
     environment:
       TZ: ${TZ:-Etc/UTC}

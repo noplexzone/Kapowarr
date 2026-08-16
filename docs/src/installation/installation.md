@@ -17,7 +17,7 @@ Instructions on how to update an installation can be found on the pages of the r
 
 If you already have experience with Docker and the *arr suite of apps, then below you can find some quick instructions to get Kapowarr up and running fast. If you need some more guidance, follow the full guide for [Docker](./docker.md) or a [manual install](./manual_install.md).
 
-You need to have a download folder and root folder created on the host. The database will be stored in a Docker volume. Replace the paths (`/path/to/...`) with their respective values. Set the timezone. The container runs as the fixed non-root identity `99:100`; prepare bind mounts accordingly. Add the mapped folder as your root folder in Kapowarr (`/comics`). See the [examples](./docker.md#example) for some extra help.
+You need to have a download folder and root folder created on the host. The database will be stored in a Docker volume. Replace the paths (`/path/to/...`) with their respective values. Set the timezone. The container runs as the fixed non-root identity `99:100`; prepare bind mounts accordingly. Add the mapped folder as your root folder in Kapowarr (`/comics`). See the [examples](./docker.md#example) for some extra help. `noplexzone/kapowarr:latest` is the stable AMD64 image; use `noplexzone/kapowarr:develop` only for development snapshots, or pin to an image digest for immutable deployments.
 
 === "Docker CLI"
 	=== "Linux"
@@ -30,7 +30,7 @@ You need to have a download folder and root folder created on the host. The data
 			-v "/path/to/root_folder:/comics" \
 			-p 5656:5656 \
 			-e TZ=Etc/UTC \
-			mrcas/kapowarr:latest
+			noplexzone/kapowarr:latest
 		```
 
 	=== "MacOS"
@@ -43,13 +43,13 @@ You need to have a download folder and root folder created on the host. The data
 			-v "/path/to/root_folder:/comics" \
 			-p 5656:5656 \
 			-e TZ=Etc/UTC \
-			mrcas/kapowarr:latest
+			noplexzone/kapowarr:latest
 		```
 
 	=== "Windows"
 
 		```powershell
-		docker run -d --name kapowarr -v "kapowarr-db:/app/db" -v "DRIVE:\with\download_folder:/app/temp_downloads" -v "DRIVE:\with\root_folder:/comics" -p 5656:5656 -e TZ=Etc/UTC mrcas/kapowarr:latest
+		docker run -d --name kapowarr -v "kapowarr-db:/app/db" -v "DRIVE:\with\download_folder:/app/temp_downloads" -v "DRIVE:\with\root_folder:/comics" -p 5656:5656 -e TZ=Etc/UTC noplexzone/kapowarr:latest
 		```
 
 === "Docker Compose"
@@ -58,7 +58,7 @@ You need to have a download folder and root folder created on the host. The data
 	services:
 		kapowarr:
 			container_name: kapowarr
-			image: mrcas/kapowarr:latest
+			image: noplexzone/kapowarr:latest
 			environment:
 				- TZ=Etc/UTC
 			volumes:

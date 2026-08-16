@@ -79,7 +79,7 @@ The database folder, root folder(s) and download folder can't intersect (e.g.: t
 
 ### Launch container
 
-Now we can launch the container.
+Now we can launch the container. The published `noplexzone/kapowarr` image is linux/amd64-only. Stable releases are tagged as `X.Y.Z`, `X.Y`, and `latest`; development snapshots are tagged as `develop` and `sha-<git-sha>`. For production, prefer a stable version tag or a digest-pinned reference.
 
 === "Docker CLI"
 	The command to get the Docker container running can be found below. But before you copy, paste and run it, read the notes below!
@@ -94,7 +94,7 @@ Now we can launch the container.
 			-v "/path/to/root_folder:/comics" \
 			-p 5656:5656 \
 			-e TZ=Etc/UTC \
-			mrcas/kapowarr:latest
+			noplexzone/kapowarr:latest
 		```
 
 	=== "MacOS"
@@ -107,13 +107,13 @@ Now we can launch the container.
 			-v "/path/to/root_folder:/comics" \
 			-p 5656:5656 \
 			-e TZ=Etc/UTC \
-			mrcas/kapowarr:latest
+			noplexzone/kapowarr:latest
 		```
 
 	=== "Windows"
 
 		```powershell
-		docker run -d --name kapowarr -v "kapowarr-db:/app/db" -v "DRIVE:\with\download_folder:/app/temp_downloads" -v "DRIVE:\with\root_folder:/comics" -p 5656:5656 -e TZ=Etc/UTC mrcas/kapowarr:latest
+		docker run -d --name kapowarr -v "kapowarr-db:/app/db" -v "DRIVE:\with\download_folder:/app/temp_downloads" -v "DRIVE:\with\root_folder:/comics" -p 5656:5656 -e TZ=Etc/UTC noplexzone/kapowarr:latest
 		```
 
 	A few notes about this command:
@@ -160,7 +160,7 @@ Now we can launch the container.
 	services:
 		kapowarr:
 			container_name: kapowarr
-			image: mrcas/kapowarr:latest
+			image: noplexzone/kapowarr:latest
 			environment:
 				- TZ=Etc/UTC
 			volumes:
@@ -218,11 +218,11 @@ Now we can launch the container.
 	7. Set the `TZ` environment variable to the [timezone database name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List) of your timezone (value of `TZ identifier` on webpage).
 
 === "Docker Desktop"
-	1. Click the search bar at the top and search for `mrcas/kapowarr`.
+	1. Click the search bar at the top and search for `noplexzone/kapowarr`.
 
-	2. Click `Run` on the entry saying `mrcas/kapowarr`.
+	2. Click `Run` on the entry saying `noplexzone/kapowarr`.
 
-	3. Open `Images`, and on the right, under `Actions` click the play/run button for `mrcas/kapowarr`.
+	3. Open `Images`, and on the right, under `Actions` click the play/run button for `noplexzone/kapowarr`.
 
 	4. Expand the 'Optional settings'.
 
@@ -256,7 +256,7 @@ Below you can find an example of launching the container.
 		-v "/home/cas/other_media/Comics-2:/comics-2" \
 		-p 5656:5656 \
 		-e TZ=Europe/Amsterdam \
-		mrcas/kapowarr:latest
+		noplexzone/kapowarr:latest
 	```
 
 === "Docker Compose"
@@ -264,7 +264,7 @@ Below you can find an example of launching the container.
 	services:
 		kapowarr:
 			container_name: kapowarr
-			image: mrcas/kapowarr:latest
+			image: noplexzone/kapowarr:latest
 			environment:
 				- TZ=Europe/Amsterdam
 			volumes:
@@ -304,7 +304,7 @@ Below you can find instructions on how to update an install. In order for the da
 
 	1. `docker container stop kapowarr`
 	2. `docker container rm kapowarr`
-	3. `docker image rm mrcas/kapowarr:latest`
+	3. `docker image rm noplexzone/kapowarr:latest`
 	4. Repeat the steps of [launching the container](#launch-container).
 
 === "Docker Compose"
@@ -318,6 +318,6 @@ Below you can find instructions on how to update an install. In order for the da
 === "Docker Desktop"
 	1. Open `Containers` and locate the `kapowarr` container in the list.
 	2. Click the stop button on the right, then the delete button.
-	3. Open `Images` and locate the `mrcas/kapowarr` image in the list.
+	3. Open `Images` and locate the `noplexzone/kapowarr` image in the list.
 	4. Click the delete button on the right.
 	5. Repeat the steps of [launching the container](#launch-container).

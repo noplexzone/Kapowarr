@@ -1417,6 +1417,71 @@ _METRON_TABLE_DEFINITIONS = {
             completed_at INTEGER
         );
     """,
+    'provider_match_candidates': """
+        CREATE TABLE provider_match_candidates(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            candidate_external_id TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            year INTEGER,
+            publisher TEXT,
+            cover_url TEXT,
+            summary TEXT,
+            confidence REAL,
+            match_reason TEXT NOT NULL DEFAULT '',
+            review_group_id TEXT NOT NULL,
+            review_status TEXT NOT NULL DEFAULT 'review_required',
+            payload TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE
+        );
+    """,
+    'volume_metadata_enrichment': """
+        CREATE TABLE volume_metadata_enrichment(
+            volume_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            field_name TEXT NOT NULL,
+            normalized_value TEXT NOT NULL,
+            external_provider_id TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
+            active BOOL NOT NULL DEFAULT 1,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            PRIMARY KEY(volume_id, provider, field_name)
+        );
+    """,
+    'provider_rate_limit_state': """
+        CREATE TABLE provider_rate_limit_state(
+            provider TEXT PRIMARY KEY,
+            burst_limit INTEGER,
+            burst_remaining INTEGER,
+            burst_reset INTEGER,
+            sustained_limit INTEGER,
+            sustained_remaining INTEGER,
+            sustained_reset INTEGER,
+            retry_after INTEGER,
+            resume_at INTEGER,
+            last_status TEXT,
+            auth_blocked BOOL NOT NULL DEFAULT 0,
+            updated_at INTEGER
+        );
+    """,
+    'metron_enrichment_task_reservations': """
+        CREATE TABLE metron_enrichment_task_reservations(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            candidate_id INTEGER,
+            task_queue_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'reserved',
+            safe_error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            FOREIGN KEY (candidate_id) REFERENCES provider_match_candidates(id) ON DELETE SET NULL
+        );
+    """,
 }
 
 _METRON_TABLE_COLUMNS = {
@@ -1424,6 +1489,10 @@ _METRON_TABLE_COLUMNS = {
     'provider_cache': ('provider', 'resource_type', 'external_id', 'payload', 'etag', 'last_modified', 'fetched_at', 'expires_at'),
     'volume_enrichment_terms': ('volume_id', 'provider', 'term_type', 'external_id', 'name'),
     'metron_backfill_state': ('id', 'status', 'total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'current_volume_id', 'last_terminal_volume_id', 'rate_limit_paused_until', 'last_error', 'resume_time', 'cancel_requested', 'started_at', 'updated_at', 'completed_at'),
+    'provider_match_candidates': ('id', 'volume_id', 'provider', 'resource_type', 'candidate_external_id', 'title', 'year', 'publisher', 'cover_url', 'summary', 'confidence', 'match_reason', 'review_group_id', 'review_status', 'payload', 'created_at', 'updated_at'),
+    'volume_metadata_enrichment': ('volume_id', 'provider', 'field_name', 'normalized_value', 'external_provider_id', 'updated_at', 'active'),
+    'provider_rate_limit_state': ('provider', 'burst_limit', 'burst_remaining', 'burst_reset', 'sustained_limit', 'sustained_remaining', 'sustained_reset', 'retry_after', 'resume_at', 'last_status', 'auth_blocked', 'updated_at'),
+    'metron_enrichment_task_reservations': ('id', 'volume_id', 'candidate_id', 'task_queue_id', 'status', 'safe_error', 'created_at', 'updated_at'),
 }
 
 
@@ -1462,6 +1531,10 @@ def _metron_table_compatible(cursor, table_name: str) -> bool:
         'provider_cache': {'provider': 'TEXT', 'resource_type': 'TEXT', 'external_id': 'TEXT', 'payload': 'TEXT', 'fetched_at': 'INTEGER'},
         'volume_enrichment_terms': {'volume_id': 'INTEGER', 'provider': 'TEXT', 'term_type': 'TEXT', 'external_id': 'TEXT', 'name': 'TEXT'},
         'metron_backfill_state': {'id': 'INTEGER', 'status': 'TEXT', 'total': 'INTEGER', 'processed': 'INTEGER', 'cancel_requested': 'BOOL'},
+        'provider_match_candidates': {'id': 'INTEGER', 'volume_id': 'INTEGER', 'provider': 'TEXT', 'resource_type': 'TEXT', 'candidate_external_id': 'TEXT', 'title': 'TEXT', 'review_group_id': 'TEXT', 'review_status': 'TEXT', 'payload': 'TEXT', 'created_at': 'INTEGER', 'updated_at': 'INTEGER'},
+        'volume_metadata_enrichment': {'volume_id': 'INTEGER', 'provider': 'TEXT', 'field_name': 'TEXT', 'normalized_value': 'TEXT', 'external_provider_id': 'TEXT', 'updated_at': 'INTEGER', 'active': 'BOOL'},
+        'provider_rate_limit_state': {'provider': 'TEXT', 'auth_blocked': 'BOOL'},
+        'metron_enrichment_task_reservations': {'id': 'INTEGER', 'volume_id': 'INTEGER', 'status': 'TEXT', 'created_at': 'INTEGER', 'updated_at': 'INTEGER'},
     }
     for column, expected in required_types.get(table_name, {}).items():
         if expected not in columns[column]['type']:
@@ -1471,6 +1544,10 @@ def _metron_table_compatible(cursor, table_name: str) -> bool:
         'provider_cache': ('provider', 'resource_type', 'external_id', 'payload', 'fetched_at'),
         'volume_enrichment_terms': ('volume_id', 'provider', 'term_type', 'external_id', 'name'),
         'metron_backfill_state': ('status', 'total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'last_terminal_volume_id', 'cancel_requested'),
+        'provider_match_candidates': ('volume_id', 'provider', 'resource_type', 'candidate_external_id', 'title', 'match_reason', 'review_group_id', 'review_status', 'payload', 'created_at', 'updated_at'),
+        'volume_metadata_enrichment': ('volume_id', 'provider', 'field_name', 'normalized_value', 'external_provider_id', 'updated_at', 'active'),
+        'provider_rate_limit_state': ('auth_blocked',),
+        'metron_enrichment_task_reservations': ('volume_id', 'status', 'created_at', 'updated_at'),
     }
     if any(columns[column]['notnull'] != 1 for column in required_notnull.get(table_name, ())):
         return False
@@ -1482,6 +1559,18 @@ def _metron_table_compatible(cursor, table_name: str) -> bool:
             return False
     if table_name == 'volume_enrichment_terms':
         if not _fk_matches(cursor, table_name, 'volumes') or not _has_unique_index(cursor, table_name, ('volume_id', 'provider', 'term_type', 'external_id', 'name')):
+            return False
+    if table_name == 'provider_match_candidates':
+        if columns['id']['pk'] != 1 or not _fk_matches(cursor, table_name, 'volumes'):
+            return False
+    if table_name == 'volume_metadata_enrichment':
+        if tuple(columns[c]['pk'] for c in ('volume_id', 'provider', 'field_name')) != (1, 2, 3) or not _fk_matches(cursor, table_name, 'volumes'):
+            return False
+    if table_name == 'provider_rate_limit_state':
+        if columns['provider']['pk'] != 1:
+            return False
+    if table_name == 'metron_enrichment_task_reservations':
+        if columns['id']['pk'] != 1 or not _fk_matches(cursor, table_name, 'volumes') or not _fk_matches(cursor, table_name, 'provider_match_candidates', 'SET NULL'):
             return False
     return True
 
@@ -1537,14 +1626,20 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
                 expressions.append('NULL AS id')
             elif column in source_columns:
                 expressions.append(column)
-            elif column in ('match_confidence', 'last_successful_enrichment', 'last_checked', 'expires_at', 'year', 'current_volume_id', 'rate_limit_paused_until', 'resume_time', 'started_at', 'updated_at', 'completed_at'):
+            elif column in ('match_confidence', 'last_successful_enrichment', 'last_checked', 'expires_at', 'year', 'current_volume_id', 'rate_limit_paused_until', 'resume_time', 'started_at', 'completed_at', 'publisher', 'cover_url', 'summary', 'confidence', 'candidate_id', 'task_queue_id', 'safe_error', 'burst_limit', 'burst_remaining', 'burst_reset', 'sustained_limit', 'sustained_remaining', 'sustained_reset', 'retry_after', 'resume_at', 'last_status'):
                 expressions.append(f'NULL AS {column}')
-            elif column in ('total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'last_terminal_volume_id', 'cancel_requested'):
+            elif column in ('total', 'total_estimate', 'processed', 'matched', 'unmatched', 'review_required', 'failed', 'skipped', 'last_terminal_volume_id', 'cancel_requested', 'auth_blocked'):
                 expressions.append(f'0 AS {column}')
-            elif column in ('linked_at', 'fetched_at', 'created_at'):
+            elif column == 'active':
+                expressions.append('1 AS active')
+            elif column in ('linked_at', 'fetched_at', 'created_at', 'updated_at'):
                 expressions.append(f'0 AS {column}')
             elif column == 'payload':
                 expressions.append("'{}' AS payload")
+            elif column == 'review_status':
+                expressions.append("'linked' AS review_status" if table_name == 'volume_provider_links' else "'review_required' AS review_status")
+            elif column == 'status':
+                expressions.append("'reserved' AS status" if table_name == 'metron_enrichment_task_reservations' else "'' AS status")
             else:
                 expressions.append(f"'' AS {column}")
         volume_filter = ''
@@ -1593,6 +1688,49 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
                 FROM ({union_sql})
             )
             WHERE rn = 1;""")
+    elif table_name == 'provider_match_candidates':
+        cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY volume_id, provider, resource_type, candidate_external_id
+                    ORDER BY COALESCE(updated_at, 0) DESC, COALESCE(created_at, 0) DESC, COALESCE(id, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'volume_metadata_enrichment':
+        cursor.execute(f"""INSERT OR REPLACE INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY volume_id, provider, field_name
+                    ORDER BY COALESCE(active, 0) DESC, COALESCE(updated_at, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'provider_rate_limit_state':
+        cursor.execute(f"""INSERT OR REPLACE INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY provider ORDER BY COALESCE(updated_at, 0) DESC, COALESCE(resume_at, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE rn = 1;""")
+    elif table_name == 'metron_enrichment_task_reservations':
+        cursor.execute(f"""INSERT INTO "{table_name}" ({column_sql})
+            SELECT {column_sql}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY CASE WHEN status IN ('reserved', 'queued', 'running') THEN 'active:' || volume_id ELSE 'history:' || volume_id || ':' || status || ':' || COALESCE(created_at, 0) || ':' || COALESCE(updated_at, 0) || ':' || COALESCE(safe_error, '') END
+                    ORDER BY COALESCE(updated_at, 0) DESC, COALESCE(created_at, 0) DESC, COALESCE(id, 0) DESC
+                ) AS rn
+                FROM ({union_sql})
+            )
+            WHERE status NOT IN ('reserved', 'queued', 'running') OR rn = 1;""")
     else:
         cursor.execute(f'INSERT OR IGNORE INTO "{table_name}" ({column_sql}) SELECT DISTINCT {column_sql} FROM ({union_sql});')
 
@@ -1639,6 +1777,13 @@ def _ensure_metron_base_schema(cursor) -> None:
             ON volume_enrichment_terms(term_type, name);
         CREATE INDEX IF NOT EXISTS volume_enrichment_terms_provider_external_idx
             ON volume_enrichment_terms(provider, external_id);
+        CREATE INDEX IF NOT EXISTS provider_match_candidates_unresolved_idx
+            ON provider_match_candidates(provider, review_status, volume_id, created_at);
+        CREATE INDEX IF NOT EXISTS volume_metadata_enrichment_active_idx
+            ON volume_metadata_enrichment(volume_id, provider, active);
+        CREATE UNIQUE INDEX IF NOT EXISTS metron_enrichment_task_reservations_active_idx
+            ON metron_enrichment_task_reservations(volume_id)
+            WHERE status IN ('reserved', 'queued', 'running');
     """)
 
 

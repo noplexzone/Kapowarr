@@ -263,6 +263,48 @@ class Phase123MigrationTests(unittest.TestCase):
             rows = con.execute('SELECT external_id FROM volume_provider_links;').fetchall()
             self.assertEqual(rows, [('newer',)])
 
+    def test_later_metron_experimental_tables_are_normalized_and_preserve_rows(self):
+        self._seed_schema(59)
+        with self._connect() as con:
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Linked', 1);")
+            con.executescript("""
+                DROP TABLE provider_match_candidates;
+                DROP TABLE volume_metadata_enrichment;
+                DROP TABLE provider_rate_limit_state;
+                CREATE TABLE provider_match_candidates(id INTEGER PRIMARY KEY, volume_id INTEGER, provider TEXT, resource_type TEXT, candidate_external_id TEXT, title TEXT, review_group_id TEXT, created_at INTEGER);
+                CREATE TABLE volume_metadata_enrichment(volume_id INTEGER, provider TEXT, field_name TEXT, normalized_value TEXT, updated_at INTEGER);
+                CREATE TABLE provider_rate_limit_state(provider TEXT, resume_at INTEGER, updated_at INTEGER);
+                INSERT INTO provider_match_candidates(id, volume_id, provider, resource_type, candidate_external_id, title, review_group_id, created_at) VALUES (7, 1, 'metron', 'series', 'm-1', 'Candidate', 'group-1', 10);
+                INSERT INTO volume_metadata_enrichment(volume_id, provider, field_name, normalized_value, updated_at) VALUES (1, 'metron', 'publisher', 'DC', 11);
+                INSERT INTO provider_rate_limit_state(provider, resume_at, updated_at) VALUES ('metron', 100, 12);
+            """)
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            self.assertEqual(con.execute("SELECT candidate_external_id, payload, review_status FROM provider_match_candidates;").fetchone(), ('m-1', '{}', 'review_required'))
+            self.assertEqual(con.execute("SELECT normalized_value, external_provider_id, active FROM volume_metadata_enrichment;").fetchone(), ('DC', '', 1))
+            self.assertEqual(con.execute("SELECT provider, resume_at, auth_blocked FROM provider_rate_limit_state;").fetchone(), ('metron', 100, 0))
+
+    def test_phase61_task_reservations_are_normalized_and_active_duplicates_merge(self):
+        self._seed_schema(61)
+        with self._connect() as con:
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Linked', 1);")
+            con.executescript("""
+                DROP TABLE metron_enrichment_task_reservations;
+                CREATE TABLE metron_enrichment_task_reservations(id INTEGER PRIMARY KEY, volume_id INTEGER, status TEXT, created_at INTEGER, updated_at INTEGER);
+                CREATE TABLE metron_enrichment_task_reservations_migration_58_backup(id INTEGER PRIMARY KEY, volume_id INTEGER, status TEXT, safe_error TEXT, created_at INTEGER, updated_at INTEGER);
+                INSERT INTO metron_enrichment_task_reservations(id, volume_id, status, created_at, updated_at) VALUES (1, 1, 'reserved', 10, 10);
+                INSERT INTO metron_enrichment_task_reservations_migration_58_backup(id, volume_id, status, safe_error, created_at, updated_at) VALUES (2, 1, 'queued', 'newer active', 20, 20);
+                INSERT INTO metron_enrichment_task_reservations_migration_58_backup(id, volume_id, status, safe_error, created_at, updated_at) VALUES (3, 1, 'failed', 'historical', 5, 5);
+            """)
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            rows = con.execute("SELECT status, safe_error FROM metron_enrichment_task_reservations ORDER BY status;").fetchall()
+            self.assertEqual(rows, [('failed', 'historical'), ('queued', 'newer active')])
+            idx = {row[1]: row for row in con.execute('PRAGMA index_list(metron_enrichment_task_reservations);')}
+            self.assertIn('metron_enrichment_task_reservations_active_idx', idx)
+
     def test_only_one_handler_registered_for_each_start_version(self):
         versions = list(DatabaseMigrationHandler.handlers)
         self.assertEqual(len(versions), len(set(versions)))

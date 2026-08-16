@@ -683,6 +683,49 @@ CREATE TABLE IF NOT EXISTS provider_rate_limit_state(
     auth_blocked BOOL NOT NULL DEFAULT 0,
     updated_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS comic_series_discovery_facts(
+    comicvine_volume_id INTEGER PRIMARY KEY,
+    first_known_issue_id INTEGER,
+    first_known_issue_number TEXT NOT NULL DEFAULT '',
+    first_known_issue_date TEXT,
+    date_source TEXT NOT NULL DEFAULT '',
+    series_started_at TEXT,
+    volume_title TEXT NOT NULL DEFAULT '',
+    cover_link TEXT NOT NULL DEFAULT '',
+    site_url TEXT NOT NULL DEFAULT '',
+    year INTEGER,
+    publisher TEXT,
+    is_upcoming_launch BOOL NOT NULL DEFAULT 0,
+    provider_modified_at TEXT,
+    metadata_modified_at INTEGER,
+    fetched_at INTEGER,
+    derived_at INTEGER NOT NULL DEFAULT 0,
+    derivation_status TEXT NOT NULL DEFAULT 'valid',
+    date_preference TEXT NOT NULL DEFAULT 'cover_date',
+    last_error TEXT
+);
+CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_first_date_idx
+    ON comic_series_discovery_facts(first_known_issue_date);
+CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_upcoming_idx
+    ON comic_series_discovery_facts(is_upcoming_launch, first_known_issue_date);
+CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_derived_idx
+    ON comic_series_discovery_facts(derived_at);
+CREATE INDEX IF NOT EXISTS comic_series_discovery_facts_volume_idx
+    ON comic_series_discovery_facts(comicvine_volume_id);
+CREATE TABLE IF NOT EXISTS comic_discovery_fact_sync_state(
+    sync_id INTEGER PRIMARY KEY CHECK(sync_id = 1),
+    scope TEXT NOT NULL DEFAULT 'comic_series_discovery',
+    provider_cursor TEXT,
+    last_started_at INTEGER,
+    last_completed_at INTEGER,
+    coverage_state TEXT NOT NULL DEFAULT 'not_started',
+    coverage_complete BOOL NOT NULL DEFAULT 0,
+    date_preference TEXT NOT NULL DEFAULT 'cover_date',
+    last_error TEXT,
+    next_resume_at INTEGER
+);
+INSERT OR IGNORE INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference)
+    VALUES (1, 'comic_series_discovery', 'not_started', 0, 'cover_date');
 CREATE TABLE IF NOT EXISTS nzb_indexers(
     id INTEGER PRIMARY KEY,
     name VARCHAR(255) NOT NULL,

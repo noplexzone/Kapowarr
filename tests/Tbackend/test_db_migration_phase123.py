@@ -351,6 +351,56 @@ class Phase123MigrationTests(unittest.TestCase):
         self.assertIn(58, DatabaseMigrationHandler.handlers)
         self.assertIn(62, DatabaseMigrationHandler.handlers)
 
+    def test_fresh_schema_includes_discovery_fact_tables(self):
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            self.assertTrue(table_exists(con, 'comic_series_discovery_facts'))
+            self.assertTrue(table_exists(con, 'comic_discovery_fact_sync_state'))
+            sync = con.execute('SELECT coverage_state, coverage_complete, date_preference FROM comic_discovery_fact_sync_state WHERE sync_id = 1;').fetchone()
+            self.assertEqual(sync, ('not_started', 0, 'cover_date'))
+
+    def test_version_59_handler_directly_normalizes_malformed_experimental_tables(self):
+        self._seed_schema(59)
+        with self._connect() as con:
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Linked', 1);")
+            con.executescript("""
+                DROP TABLE provider_match_candidates;
+                CREATE TABLE provider_match_candidates(id INTEGER PRIMARY KEY, volume_id INTEGER, provider TEXT, resource_type TEXT, candidate_external_id TEXT, title TEXT, review_group_id TEXT, created_at INTEGER, updated_at INTEGER);
+                INSERT INTO provider_match_candidates(id, volume_id, provider, resource_type, candidate_external_id, title, review_group_id, created_at, updated_at) VALUES (42, 1, 'metron', 'series', 'direct', 'Direct', 'group', 10, 11);
+            """)
+        DBConnectionManager.instances.clear()
+        with self.app.app_context():
+            DatabaseMigrationHandler.handlers[59]()
+            close_db(None)
+        DBConnectionManager.instances.clear()
+        with self._connect() as con:
+            cols = table_columns(con, 'provider_match_candidates')
+            self.assertIn('payload', cols)
+            self.assertEqual(con.execute('SELECT id, candidate_external_id FROM provider_match_candidates;').fetchone(), (42, 'direct'))
+            self.assertEqual(con.execute('PRAGMA foreign_key_check;').fetchall(), [])
+
+    def test_version_61_handler_directly_normalizes_malformed_reservations(self):
+        self._seed_schema(61)
+        with self._connect() as con:
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Linked', 1);")
+            con.executescript("""
+                DROP TABLE metron_enrichment_task_reservations;
+                CREATE TABLE metron_enrichment_task_reservations(id INTEGER PRIMARY KEY, volume_id INTEGER, status TEXT, created_at INTEGER, updated_at INTEGER);
+                INSERT INTO metron_enrichment_task_reservations(id, volume_id, status, created_at, updated_at) VALUES (52, 1, 'reserved', 10, 11);
+            """)
+        DBConnectionManager.instances.clear()
+        with self.app.app_context():
+            DatabaseMigrationHandler.handlers[61]()
+            close_db(None)
+        DBConnectionManager.instances.clear()
+        with self._connect() as con:
+            cols = table_columns(con, 'metron_enrichment_task_reservations')
+            self.assertIn('candidate_id', cols)
+            self.assertEqual(con.execute('SELECT id, volume_id, status FROM metron_enrichment_task_reservations;').fetchone(), (52, 1, 'reserved'))
+            self.assertEqual(con.execute('PRAGMA foreign_key_check;').fetchall(), [])
+
     def test_discovery_facts_schema_and_indexes_are_created(self):
         self._seed_schema(61)
         self._run_setup(); self._assert_normalized()

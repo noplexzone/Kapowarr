@@ -1557,6 +1557,8 @@ def _metron_table_compatible(cursor, table_name: str) -> bool:
     if table_name == 'volume_provider_links':
         if columns['id']['pk'] != 1 or not _fk_matches(cursor, table_name, 'volumes'):
             return False
+        if not _has_unique_index(cursor, table_name, ('volume_id', 'provider', 'resource_type')):
+            return False
     if table_name == 'volume_enrichment_terms':
         if not _fk_matches(cursor, table_name, 'volumes') or not _has_unique_index(cursor, table_name, ('volume_id', 'provider', 'term_type', 'external_id', 'name')):
             return False
@@ -1648,7 +1650,7 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
             else:
                 expressions.append(f"'' AS {column}")
         volume_filter = ''
-        if table_name in ('volume_provider_links', 'volume_enrichment_terms', 'volume_metadata_enrichment', 'provider_match_candidates') and _table_exists(cursor, 'volumes') and 'volume_id' in source_columns:
+        if table_name in ('volume_provider_links', 'volume_enrichment_terms', 'volume_metadata_enrichment', 'provider_match_candidates', 'metron_enrichment_task_reservations') and _table_exists(cursor, 'volumes') and 'volume_id' in source_columns:
             volume_filter = ' WHERE volume_id IN (SELECT id FROM volumes)'
         return f'SELECT {", ".join(expressions)} FROM "{source_name}"{volume_filter}'
 
@@ -1814,6 +1816,7 @@ def _migrate_normalize_metron_schema_after_version_collision():
 @DatabaseMigrationHandler.register_handler(59)
 def _migrate_harden_metron_enrichment_state():
     cursor = get_db()
+    _ensure_metron_base_schema(cursor)
     cursor.executescript("""
         CREATE TABLE IF NOT EXISTS provider_match_candidates(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1892,6 +1895,7 @@ def _migrate_add_file_validity_state():
 @DatabaseMigrationHandler.register_handler(61)
 def _migrate_add_metron_task_reservations():
     cursor = get_db()
+    _ensure_metron_base_schema(cursor)
     cursor.executescript("""
         CREATE TABLE IF NOT EXISTS metron_enrichment_task_reservations(
             id INTEGER PRIMARY KEY AUTOINCREMENT,

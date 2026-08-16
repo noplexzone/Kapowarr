@@ -52,6 +52,7 @@ it('hydrates exact add selections without generic search fallback', () => {
 });
 
 it('refreshes Discover shelves from the toolbar without generic Add state', () => {
+  expect(source).toContain('refreshDiscoveryFacts()');
   expect(source).toContain("invalidateQueries({ queryKey: ['discovery'] })");
   expect(source).not.toContain('onAction={() => undefined}');
   expect(source).not.toContain('onAddVolume={() => undefined}');

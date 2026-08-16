@@ -1987,9 +1987,23 @@ def _migrate_add_comic_discovery_facts():
             coverage_complete BOOL NOT NULL DEFAULT 0,
             date_preference TEXT NOT NULL DEFAULT 'cover_date',
             last_error TEXT,
-            next_resume_at INTEGER
+            next_resume_at INTEGER,
+            last_successful_cursor TEXT,
+            records_processed INTEGER NOT NULL DEFAULT 0,
+            facts_created INTEGER NOT NULL DEFAULT 0,
+            facts_updated INTEGER NOT NULL DEFAULT 0
         );
         INSERT OR IGNORE INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference)
             VALUES (1, 'comic_series_discovery', 'not_started', 0, 'cover_date');
     """)
+    existing_sync_columns = [row[1] for row in cursor.execute('PRAGMA table_info(comic_discovery_fact_sync_state);')]
+    sync_additions = {
+        'last_successful_cursor': 'TEXT',
+        'records_processed': 'INTEGER NOT NULL DEFAULT 0',
+        'facts_created': 'INTEGER NOT NULL DEFAULT 0',
+        'facts_updated': 'INTEGER NOT NULL DEFAULT 0',
+    }
+    for column, ddl in sync_additions.items():
+        if column not in existing_sync_columns:
+            cursor.execute(f'ALTER TABLE comic_discovery_fact_sync_state ADD COLUMN {column} {ddl};')
     return

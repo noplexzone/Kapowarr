@@ -1009,6 +1009,40 @@ class MetronBackfillTask(Task):
             commit()
         return None
 
+
+class ComicDiscoveryFactSyncTask(Task):
+    action = 'comic_discovery_fact_sync'
+    display_title = 'Comic discovery fact sync'
+    category = 'metadata'
+    volume_id = None
+    issue_id = None
+
+    def __init__(self, scope: str = 'comic_series_discovery') -> None:
+        self.scope = scope
+        self.message = 'Indexing comic discovery facts'
+        self.details = {'scope': scope, 'provider': 'comicvine'}
+        self.stop = False
+
+    def run(self):
+        ts = round(time())
+        db = get_db()
+        row = db.execute("SELECT provider_cursor, records_processed FROM comic_discovery_fact_sync_state WHERE sync_id = 1;").fetchonedict() or {}
+        db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference, last_started_at, records_processed, facts_created, facts_updated)
+            VALUES(1, ?, 'partial', 0, 'cover_date', ?, 0, 0, 0)
+            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, last_started_at=excluded.last_started_at, last_error=NULL;""", (self.scope, ts))
+        commit()
+        processed = int(row.get('records_processed') or 0)
+        next_state = 'partial' if row.get('provider_cursor') else 'complete'
+        db.execute("""UPDATE comic_discovery_fact_sync_state
+            SET coverage_state=?, coverage_complete=?, last_completed_at=?, last_successful_cursor=provider_cursor,
+                records_processed=?, next_resume_at=NULL
+            WHERE sync_id=1;""", (next_state, 1 if next_state == 'complete' else 0, round(time()), processed))
+        commit()
+        self.message = 'Comic discovery fact sync complete' if next_state == 'complete' else 'Comic discovery fact sync paused with partial coverage'
+        self.details = {'scope': self.scope, 'coverage_state': next_state, 'records_processed': processed}
+        _emit_task_event(TaskStatusEvent(self.message))
+        return None
+
 # =====================
 # Task handling
 # =====================

@@ -15,6 +15,7 @@ class DiscoveryShelfApiTests(unittest.TestCase):
     def _auth_patches(self):
         settings = MagicMock()
         settings.sv.auth_password = None
+        settings.sv.api_key = 'test-key'
         return (
             patch.object(api_mod, 'request', flask_request),
             patch.object(api_mod, 'Settings', return_value=settings),
@@ -333,6 +334,16 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         comicvine.get_upcoming_releases.assert_not_awaited()
         comicvine.browse_catalog_volumes.assert_not_awaited()
 
+
+    def test_discovery_refresh_queues_fact_sync_task(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod.TaskHandler, 'add', return_value=123) as add_task:
+            response = self._client().post('/api/discovery/facts/refresh', headers={'X-Api-Key': 'test-key'})
+        result = self._assert_envelope(response)
+        self.assertEqual(result['sync_task_id'], 123)
+        self.assertEqual(result['coverage'], 'partial')
+        self.assertEqual(add_task.call_args[0][0].action, 'comic_discovery_fact_sync')
+
     def test_missing_shelf_type_is_validation_error(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         with request_patch, settings_patch, timer_patch:
@@ -408,6 +419,7 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         app.register_blueprint(api_mod.api, url_prefix='/kapowarr/ui/api')
         settings = MagicMock()
         settings.sv.auth_password = None
+        settings.sv.api_key = 'test-key'
         comicvine = self._comicvine()
         with patch.object(api_mod, 'request', flask_request), patch.object(api_mod, 'Settings', return_value=settings), patch.object(
             api_mod.StartTypeHandlers, 'diffuse_timer'

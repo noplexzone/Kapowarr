@@ -5,7 +5,7 @@ import { Badge, Button } from '@/components/primitives';
 import { ExactAddReview } from '@/routes/add/-ui/add-page';
 import { searchVolumesPageQueryOptions, searchVolumesQueryOptions } from '@/routes/add/-add.api';
 import { getUrlBase } from '@/app/api-client';
-import { browseDiscoveryQueryOptions, discoveryCapabilitiesQueryOptions, discoveryShelfQueryOptions } from '../-discovery.api';
+import { browseDiscoveryQueryOptions, discoveryCapabilitiesQueryOptions, discoveryShelfQueryOptions, refreshDiscoveryFacts } from '../-discovery.api';
 import { DISCOVER_AUTOMATIC_PAGE_LIMIT, DISCOVER_INITIAL_PAGE_SIZE, dedupeDiscoveryItems, getDiscoveryCardKey } from '../-discovery.types';
 import type { SearchResult } from '@/routes/add/-add.types';
 import type { BrowseFilters, DiscoveryCapabilities, DiscoveryVolume, DiscoveryType, DiscoverySection } from '../-discovery.types';
@@ -26,9 +26,12 @@ export function DiscoveryPage({ section, type, canonical = false }: DiscoveryPag
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    queryClient.invalidateQueries({ queryKey: ['discovery'] });
-    // Brief visual feedback — the refetch will update isFetching
-    setTimeout(() => setRefreshing(false), 600);
+    void refreshDiscoveryFacts()
+      .catch(() => undefined)
+      .finally(() => {
+        queryClient.invalidateQueries({ queryKey: ['discovery'] });
+        setTimeout(() => setRefreshing(false), 600);
+      });
   }, [queryClient]);
 
   const setSection = (nextSection: DiscoverySection) => navigate({

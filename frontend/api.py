@@ -42,7 +42,7 @@ from backend.features.library_import import (generate_bulk_scan,
                                              prepare_bulk_scan)
 from backend.features.mass_edit import run_mass_editor_action
 from backend.features.search import manual_search, manual_suwayomi_bundle_search
-from backend.features.tasks import (BulkLibraryImport, ImportFilesVolume,
+from backend.features.tasks import (BulkLibraryImport, ComicDiscoveryFactSyncTask, ImportFilesVolume,
                                     RefreshAndScanVolume,
                                     Task, TaskHandler,
                                     delete_task_history, get_task_history,
@@ -1356,13 +1356,13 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int,
     else:
         raise InvalidKeyValue('type', discovery_type)
     order = 'ASC' if discovery_type == 'upcoming-launches' else 'DESC'
-    sync_state = {'coverage_state': 'not_started', 'coverage_complete': False, 'last_completed_at': None, 'last_error': None}
+    sync_state = {'coverage_state': 'not_started', 'coverage_complete': False, 'last_completed_at': None, 'last_error': None, 'sync_task_id': None, 'source_note': 'Discovery facts are still being indexed.'}
     try:
         db = get_db()
         try:
             sync_row = db.execute("SELECT coverage_state, coverage_complete, last_completed_at, last_error FROM comic_discovery_fact_sync_state WHERE sync_id = 1;").fetchone()
             if sync_row:
-                sync_state = {'coverage_state': sync_row[0], 'coverage_complete': bool(sync_row[1]), 'last_completed_at': sync_row[2], 'last_error': sync_row[3]}
+                sync_state = {'coverage_state': sync_row[0], 'coverage_complete': bool(sync_row[1]), 'last_completed_at': sync_row[2], 'last_error': sync_row[3], 'sync_task_id': None, 'source_note': None if sync_row[0] == 'complete' else 'Discovery facts are still being indexed.'}
         except OperationalError:
             pass
         fact_columns = {row[1] for row in db.execute('PRAGMA table_info(comic_series_discovery_facts);').fetchall()}
@@ -1655,6 +1655,22 @@ def api_discovery_browse():
         else fetch_comic_page(offset, limit)
     )
     return return_api(page)
+
+
+@api.route('/discovery/facts/refresh', methods=['POST'])
+@error_handler
+@auth
+def api_discovery_facts_refresh():
+    task_id = TaskHandler().add(ComicDiscoveryFactSyncTask())
+    db = get_db()
+    try:
+        db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference, last_started_at)
+            VALUES(1, 'comic_series_discovery', 'partial', 0, 'cover_date', NULL)
+            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, last_error=NULL;""")
+        commit()
+    except OperationalError:
+        pass
+    return return_api({'sync_task_id': task_id, 'coverage': 'partial', 'source_note': 'Discovery facts are being indexed.'})
 
 
 # =====================

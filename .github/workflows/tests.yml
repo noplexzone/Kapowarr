@@ -234,19 +234,25 @@ jobs:
             -p 127.0.0.1:5656:5656 \
             "${image_by_digest}"
 
+          healthy=false
           for _ in {1..60}; do
-            if curl --fail --silent --show-error http://127.0.0.1:5656/api/health | grep -q '"healthy"'; then
-              break
-            fi
             if ! docker ps --format '{{.Names}}' | grep -qx "${name}"; then
               docker logs "${name}"
               exit 1
             fi
+            if curl --fail --silent http://127.0.0.1:5656/api/health 2>/dev/null | grep -q '"healthy"'; then
+              healthy=true
+              break
+            fi
             sleep 2
           done
 
-          curl --fail --silent --show-error http://127.0.0.1:5656/api/health | grep -q '"healthy"'
-          curl --fail --silent --show-error http://127.0.0.1:5656/ | grep -Eiq '<(html|div id="root")'
+          if [[ "${healthy}" != "true" ]]; then
+            docker logs "${name}"
+            exit 1
+          fi
+          curl --retry 10 --retry-delay 2 --retry-connrefused --fail --silent --show-error http://127.0.0.1:5656/api/health | grep -q '"healthy"'
+          curl --retry 10 --retry-delay 2 --retry-connrefused --fail --silent --show-error http://127.0.0.1:5656/ | grep -Eiq '<(html|div id="root")'
           docker exec "${name}" python3 - <<'PY' | grep -Fx "${{ steps.meta.outputs.version }}"
           import tomllib
           with open('/app/pyproject.toml', 'rb') as handle:

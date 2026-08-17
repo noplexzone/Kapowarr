@@ -32,6 +32,11 @@ RUN pip3 wheel --wheel-dir=/wheels -r requirements.txt
 FROM python:${PYTHON}-slim-${DISTRO} AS runtime
 WORKDIR /app
 
+# Apply Debian security updates before installing Python dependencies.
+RUN apt-get update && \
+    apt-get upgrade -y --no-install-recommends && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Install Compiled Wheels
 COPY --from=builder /wheels /wheels
 RUN pip3 install --no-index --find-links=/wheels -r /wheels/requirements.txt && \

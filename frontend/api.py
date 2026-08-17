@@ -1358,7 +1358,7 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int,
         where = "first_known_issue_date BETWEEN ? AND ?"
         params: Tuple[Any, ...] = (start, today.isoformat())
     elif discovery_type == 'upcoming-launches':
-        end = (today + timedelta(days=60)).isoformat()
+        end = (today + timedelta(days=365)).isoformat()
         where = "is_upcoming_launch = 1 AND first_known_issue_date BETWEEN ? AND ?"
         params = (today.isoformat(), end)
     else:

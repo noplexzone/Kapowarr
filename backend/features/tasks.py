@@ -1018,6 +1018,9 @@ class ComicDiscoveryFactSyncTask(Task):
     category = 'metadata'
     volume_id = None
     issue_id = None
+    scopes = ('recently_started', 'upcoming_launches')
+    page_size = 100
+    max_pages_per_run = 2
 
     def __init__(self, scope: str = 'comic_series_discovery') -> None:
         self.scope = scope
@@ -1025,53 +1028,163 @@ class ComicDiscoveryFactSyncTask(Task):
         self.details = {'scope': scope, 'provider': 'comicvine'}
         self.stop = False
 
+    def _empty_cursor(self, date_preference: str) -> Dict:
+        return {
+            'version': 1,
+            'date_preference': date_preference,
+            'active_scope': 'recently_started',
+            'scopes': {
+                'recently_started': {
+                    'offset': 0, 'coverage_state': 'not_started',
+                    'records_processed': 0, 'candidate_volumes_found': 0,
+                    'facts_created': 0, 'facts_updated': 0, 'facts_failed': 0,
+                },
+                'upcoming_launches': {
+                    'offset': 0, 'coverage_state': 'not_started',
+                    'records_processed': 0, 'candidate_volumes_found': 0,
+                    'facts_created': 0, 'facts_updated': 0, 'facts_failed': 0,
+                },
+            },
+        }
+
+    def _load_cursor(self, raw_cursor: Union[str, None], date_preference: str) -> Dict:
+        if not raw_cursor:
+            return self._empty_cursor(date_preference)
+        if raw_cursor in ('new', 'upcoming'):
+            state = self._empty_cursor(date_preference)
+            if raw_cursor == 'upcoming':
+                state['scopes']['recently_started']['coverage_state'] = 'complete'
+                state['active_scope'] = 'upcoming_launches'
+            return state
+        try:
+            state = json_loads(raw_cursor)
+        except Exception:
+            return self._empty_cursor(date_preference)
+        if not isinstance(state, dict) or state.get('version') != 1:
+            return self._empty_cursor(date_preference)
+        if state.get('date_preference') != date_preference:
+            reset = self._empty_cursor(date_preference)
+            reset['previous_date_preference'] = state.get('date_preference')
+            return reset
+        scopes = state.setdefault('scopes', {})
+        for scope in self.scopes:
+            scopes.setdefault(scope, self._empty_cursor(date_preference)['scopes'][scope])
+        return state
+
+    def _scope_complete(self, state: Dict, scope: str) -> bool:
+        return (state.get('scopes') or {}).get(scope, {}).get('coverage_state') == 'complete'
+
+    def _next_scope(self, state: Dict) -> Union[str, None]:
+        active = state.get('active_scope')
+        if active in self.scopes and not self._scope_complete(state, active):
+            return active
+        for scope in self.scopes:
+            if not self._scope_complete(state, scope):
+                return scope
+        return None
+
     def run(self):
+        from asyncio import run as asyncio_run
+        from backend.base.custom_exceptions import CVRateLimitReached
+
         ts = round(time())
         db = get_db()
         date_preference = str(Settings().sv.date_type)
-        if date_preference.endswith('store_date'):
-            date_preference = 'store_date'
+        date_preference = 'store_date' if date_preference.endswith('store_date') else 'cover_date'
+        cursor_row = db.execute(
+            "SELECT provider_cursor, records_processed, facts_created, facts_updated FROM comic_discovery_fact_sync_state WHERE sync_id = 1;"
+        )
+        if hasattr(cursor_row, 'fetchonedict'):
+            row = cursor_row.fetchonedict() or {}
         else:
-            date_preference = 'cover_date'
-        row = db.execute("SELECT provider_cursor, records_processed, facts_created, facts_updated FROM comic_discovery_fact_sync_state WHERE sync_id = 1;").fetchonedict() or {}
-        cursor = row.get('provider_cursor') or 'new'
+            fetched = cursor_row.fetchone()
+            row = dict(fetched) if fetched is not None and hasattr(fetched, 'keys') else {}
+        state_cursor = self._load_cursor(row.get('provider_cursor'), date_preference)
         processed = int(row.get('records_processed') or 0)
+        facts_created = int(row.get('facts_created') or 0)
+        facts_updated = int(row.get('facts_updated') or 0)
         db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, provider_cursor, coverage_state, coverage_complete, date_preference, last_started_at, records_processed, facts_created, facts_updated)
-            VALUES(1, ?, ?, 'partial', 0, ?, ?, ?, 0, 0)
-            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, provider_cursor=excluded.provider_cursor, date_preference=excluded.date_preference, last_started_at=excluded.last_started_at, last_error=NULL;""", (self.scope, cursor, date_preference, ts, processed))
+            VALUES(1, ?, ?, 'partial', 0, ?, ?, ?, ?, ?)
+            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, provider_cursor=excluded.provider_cursor, date_preference=excluded.date_preference, last_started_at=excluded.last_started_at, last_error=NULL;""", (
+            self.scope, json_dumps(state_cursor, sort_keys=True), date_preference, ts,
+            processed, facts_created, facts_updated,
+        ))
         commit()
         cv = ComicVine()
-        created_before = db.execute("SELECT COUNT(*) FROM comic_series_discovery_facts WHERE date_preference = ?;", (date_preference,)).fetchone()[0]
+        pages_used = 0
         try:
-            if cursor in ('new', '', None):
-                _emit_task_event(TaskStatusEvent('Indexing recently started ComicVine discovery facts'))
-                recent = cv.get_new_volumes(limit=500)
-                from asyncio import run as asyncio_run
-                asyncio_run(recent)
-                processed += 1
-                cursor = 'upcoming'
-                db.execute("UPDATE comic_discovery_fact_sync_state SET provider_cursor=?, records_processed=?, last_successful_cursor=? WHERE sync_id=1;", (cursor, processed, cursor))
+            while not self.stop and pages_used < self.max_pages_per_run:
+                scope = self._next_scope(state_cursor)
+                if scope is None:
+                    break
+                scope_state = state_cursor['scopes'][scope]
+                offset = int(scope_state.get('offset') or 0)
+                _emit_task_event(TaskStatusEvent(f'Indexing ComicVine discovery facts: {scope.replace("_", " ")} offset {offset}'))
+                try:
+                    page = asyncio_run(cv.sync_discovery_fact_page(
+                        scope,
+                        offset=offset,
+                        limit=self.page_size,
+                        date_preference=date_preference,
+                    ))
+                except CVRateLimitReached:
+                    scope_state['coverage_state'] = 'rate_limit_paused'
+                    state_cursor['active_scope'] = scope
+                    db.execute("""UPDATE comic_discovery_fact_sync_state
+                        SET provider_cursor=?, coverage_state='rate_limit_paused', coverage_complete=0,
+                            last_successful_cursor=?, next_resume_at=?, records_processed=?, facts_created=?, facts_updated=?, date_preference=?
+                        WHERE sync_id=1;""", (
+                        json_dumps(state_cursor, sort_keys=True), json_dumps(state_cursor, sort_keys=True),
+                        round(time()) + 3900, processed, facts_created, facts_updated, date_preference,
+                    ))
+                    commit()
+                    self.message = 'Comic discovery fact sync paused for ComicVine rate limit'
+                    self.details = {'scope': scope, 'coverage_state': 'rate_limit_paused', 'date_preference': date_preference}
+                    _emit_task_event(TaskStatusEvent(self.message))
+                    return None
+                pages_used += 1
+                processed += int(page.get('records_processed') or 0)
+                facts_created += int(page.get('facts_created') or 0)
+                facts_updated += int(page.get('facts_updated') or 0)
+                scope_state.update({
+                    'offset': int(page.get('next_offset') or 0),
+                    'window_start': page.get('window_start'),
+                    'window_end': page.get('window_end'),
+                    'coverage_state': 'partial' if page.get('has_more') else 'complete',
+                    'records_processed': int(scope_state.get('records_processed') or 0) + int(page.get('records_processed') or 0),
+                    'candidate_volumes_found': int(scope_state.get('candidate_volumes_found') or 0) + int(page.get('candidate_volumes_found') or 0),
+                    'facts_created': int(scope_state.get('facts_created') or 0) + int(page.get('facts_created') or 0),
+                    'facts_updated': int(scope_state.get('facts_updated') or 0) + int(page.get('facts_updated') or 0),
+                    'facts_failed': int(scope_state.get('facts_failed') or 0) + int(page.get('facts_failed') or 0),
+                })
+                state_cursor['active_scope'] = scope if page.get('has_more') else (self._next_scope(state_cursor) or scope)
+                db.execute("""UPDATE comic_discovery_fact_sync_state
+                    SET provider_cursor=?, coverage_state='partial', coverage_complete=0, last_successful_cursor=?,
+                        records_processed=?, facts_created=?, facts_updated=?, next_resume_at=NULL, date_preference=?
+                    WHERE sync_id=1;""", (
+                    json_dumps(state_cursor, sort_keys=True), json_dumps(state_cursor, sort_keys=True),
+                    processed, facts_created, facts_updated, date_preference,
+                ))
                 commit()
-            if cursor == 'upcoming' and not self.stop:
-                _emit_task_event(TaskStatusEvent('Indexing upcoming ComicVine discovery facts'))
-                from asyncio import run as asyncio_run
-                asyncio_run(cv.get_upcoming_releases(limit=500))
-                processed += 1
-                cursor = None
-            created_after = db.execute("SELECT COUNT(*) FROM comic_series_discovery_facts WHERE date_preference = ?;", (date_preference,)).fetchone()[0]
-            complete = cursor is None and not self.stop
+                if page.get('has_more'):
+                    break
+            complete = self._next_scope(state_cursor) is None and not self.stop
             state = 'complete' if complete else 'partial'
             db.execute("""UPDATE comic_discovery_fact_sync_state
                 SET provider_cursor=?, coverage_state=?, coverage_complete=?, last_completed_at=?, last_successful_cursor=?,
-                    records_processed=?, facts_created=max(COALESCE(facts_created, 0), ?), facts_updated=max(COALESCE(facts_updated, 0), ?), next_resume_at=NULL, date_preference=?
-                WHERE sync_id=1;""", (cursor, state, 1 if complete else 0, round(time()), cursor, processed, max(0, created_after - created_before), created_after, date_preference))
+                    records_processed=?, facts_created=?, facts_updated=?, next_resume_at=NULL, date_preference=?
+                WHERE sync_id=1;""", (
+                json_dumps(state_cursor, sort_keys=True), state, 1 if complete else 0,
+                round(time()) if complete else None, json_dumps(state_cursor, sort_keys=True),
+                processed, facts_created, facts_updated, date_preference,
+            ))
             commit()
         except Exception as exc:
             db.execute("UPDATE comic_discovery_fact_sync_state SET coverage_state='failed', coverage_complete=0, last_error=?, next_resume_at=? WHERE sync_id=1;", (str(exc), round(time()) + 300))
             commit()
             raise
         self.message = 'Comic discovery fact sync complete' if complete else 'Comic discovery fact sync paused with partial coverage'
-        self.details = {'scope': self.scope, 'coverage_state': state, 'records_processed': processed, 'date_preference': date_preference}
+        self.details = {'scope': self.scope, 'coverage_state': state, 'records_processed': processed, 'date_preference': date_preference, 'cursor': state_cursor}
         _emit_task_event(TaskStatusEvent(self.message))
         return None
 

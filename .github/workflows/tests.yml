@@ -4,9 +4,14 @@ on:
   push:
     branches:
       - develop
+    tags:
+      - 'v*.*.*'
   pull_request:
     branches:
       - develop
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -16,12 +21,12 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
         
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         name: Set up checkout
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         name: Set up Python ${{ matrix.python-version }}
         with:
           python-version: ${{ matrix.python-version }}
@@ -68,13 +73,81 @@ jobs:
         name: Run production browser and accessibility tests
 
   docker:
-    name: Build and publish develop image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    name: Build, verify, and publish Docker image
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v'))
     needs: [test, frontend]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      security-events: write
+    env:
+      IMAGE_NAME: noplexzone/kapowarr
+      # Kapowarr's published Docker image is intentionally linux/amd64-only until
+      # an arm64 runtime smoke test is added to this workflow.
+      DOCKER_PLATFORMS: linux/amd64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Resolve Docker release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python - <<'PY'
+          import tomllib
+          with open('pyproject.toml', 'rb') as handle:
+              print(tomllib.load(handle)['project']['version'])
+          PY
+          )"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${GITHUB_REF}" == "refs/heads/develop" ]]; then
+            {
+              echo 'tags<<EOF'
+              echo "${IMAGE_NAME}:develop"
+              echo "${IMAGE_NAME}:sha-${GITHUB_SHA}"
+              echo 'EOF'
+              echo 'channel=development'
+              echo 'release=false'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release publishing requires an explicit vX.Y.Z tag; got ${tag}" >&2
+            exit 1
+          fi
+
+          tag_version="${tag#v}"
+          if [[ "${tag_version}" != "${version}" ]]; then
+            echo "Git tag ${tag} does not match pyproject.toml version ${version}" >&2
+            exit 1
+          fi
+
+          minor="${tag_version%.*}"
+          {
+            echo 'tags<<EOF'
+            echo "${IMAGE_NAME}:${tag_version}"
+            echo "${IMAGE_NAME}:${minor}"
+            echo "${IMAGE_NAME}:latest"
+            echo "${IMAGE_NAME}:sha-${GITHUB_SHA}"
+            echo 'EOF'
+            echo 'channel=release'
+            echo 'release=true'
+            echo "minor=${minor}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -82,29 +155,140 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Refuse to overwrite existing immutable release tag
+        if: steps.meta.outputs.release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          immutable_ref="${IMAGE_NAME}:${{ steps.meta.outputs.version }}"
+          if docker manifest inspect "${immutable_ref}" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing Docker release tag ${immutable_ref}." >&2
+            echo "Create a new pyproject.toml version and git tag instead." >&2
+            exit 1
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Read application version
-        id: version
-        run: |
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import tomllib
-          with open('pyproject.toml', 'rb') as handle:
-              print(f"value={tomllib.load(handle)['project']['version']}")
-          PY
-
-      - name: Build and push develop tags
+      - name: Build and push Docker tags
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: ${{ env.DOCKER_PLATFORMS }}
           push: true
-          tags: |
-            noplexzone/kapowarr:develop
-            noplexzone/kapowarr:${{ steps.version.outputs.value }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: |
-            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+            org.opencontainers.image.title=Kapowarr
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          sbom: true
+          provenance: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Write image digest summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest="${{ steps.build.outputs.digest }}"
+          image_by_digest="${IMAGE_NAME}@${digest}"
+          {
+            echo "## Docker image"
+            echo ""
+            echo "- Channel: ${{ steps.meta.outputs.channel }}"
+            echo "- Platforms: ${DOCKER_PLATFORMS}"
+            echo "- Digest: \`${digest}\`"
+            echo "- Pull by digest: \`docker pull ${image_by_digest}\`"
+            echo "- Tags:"
+            while IFS= read -r tag; do
+              echo "  - \`${tag}\`"
+            done <<< "${{ steps.meta.outputs.tags }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Pull-by-digest smoke test fresh container
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_by_digest="${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
+          name="kapowarr-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          smoke_dir="$(mktemp -d)"
+          cleanup() {
+            docker container rm --force "${name}" >/dev/null 2>&1 || true
+            rm -rf "${smoke_dir}"
+          }
+          trap cleanup EXIT
+
+          mkdir -p "${smoke_dir}"/{db,logs,temp_downloads,comics,manga}
+          chmod -R 777 "${smoke_dir}"
+
+          docker pull "${image_by_digest}"
+          docker run -d --name "${name}" \
+            -e TZ=Etc/UTC \
+            -v "${smoke_dir}/db:/app/db" \
+            -v "${smoke_dir}/logs:/app/logs" \
+            -v "${smoke_dir}/temp_downloads:/app/temp_downloads" \
+            -v "${smoke_dir}/comics:/comics" \
+            -v "${smoke_dir}/manga:/manga" \
+            -p 127.0.0.1:5656:5656 \
+            "${image_by_digest}"
+
+          for _ in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:5656/api/health | grep -q '"healthy"'; then
+              break
+            fi
+            if ! docker ps --format '{{.Names}}' | grep -qx "${name}"; then
+              docker logs "${name}"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          curl --fail --silent --show-error http://127.0.0.1:5656/api/health | grep -q '"healthy"'
+          curl --fail --silent --show-error http://127.0.0.1:5656/ | grep -Eiq '<(html|div id="root")'
+          docker exec "${name}" python3 - <<'PY' | grep -Fx "${{ steps.meta.outputs.version }}"
+          import tomllib
+          with open('/app/pyproject.toml', 'rb') as handle:
+              print(tomllib.load(handle)['project']['version'])
+          PY
+          test -s "${smoke_dir}/db/Kapowarr.db"
+
+      - name: Critical vulnerability scan
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: CRITICAL
+          vuln-type: os,library
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: kapowarr.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kapowarr-sbom-${{ github.sha }}
+          path: kapowarr.spdx.json
+          if-no-files-found: error
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: index.docker.io/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Keyless sign image digest
+        env:
+          COSIGN_EXPERIMENTAL: 'true'
+        run: cosign sign --yes "${IMAGE_NAME}@${{ steps.build.outputs.digest }}"

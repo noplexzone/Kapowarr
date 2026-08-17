@@ -21,8 +21,8 @@ describe('exact Discovery to Add identity', () => {
     // Source-level guard because this route is rendered through TanStack Router lazies in e2e.
     const source = require('node:fs').readFileSync('src/routes/add/-ui/add-page.tsx', 'utf8');
     expect(source).toContain('const closeReview = () =>');
-    expect(source).toContain("navigate({ to: '/discover/search', search: { section, q: selection.title } })");
-    expect(source).toContain("navigate({ to: '/discover', search: { section } })");
+    expect(source).toContain("navigate({ to: '/discover', search: { section }, replace: true })");
+    expect(source).not.toContain("navigate({ to: '/discover/search', search: { section, q: selection.title } })");
     expect(source).toContain('onClose={closeReview}');
     expect(source).toContain('navigateToDiscoverReturn');
     expect(source).not.toContain('history.back()');
@@ -38,8 +38,10 @@ describe('exact Discovery to Add identity', () => {
     expect(source).toContain('data-testid=\"discover-origin-route\"');
     expect(source).toContain('inertProps(overlayOpen)');
     expect(source).toContain('exactAddReturnFocus?.focus({ preventScroll: true })');
+    expect(source).toContain('void router.navigate({ href: current.href, replace: true })');
     expect(source).not.toContain('__tempLocation');
     expect(source).not.toContain('router.history');
+    expect(source).not.toContain(' as never');
     expect(source).not.toContain('DiscoverBackgroundRoute');
     expect(source).not.toContain('data-testid=\"discover-background-route\"');
   });

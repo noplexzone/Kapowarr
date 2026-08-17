@@ -57,7 +57,7 @@ from backend.implementations.blocklist import (add_to_blocklist,
                                                get_blocklist_count,
                                                get_blocklist_entry)
 from backend.implementations.comicvine import ComicVine
-from backend.implementations.mangadex import browse_mangadex_catalog
+from backend.implementations.mangadex import browse_mangadex_catalog, search_mangadex_volumes_page
 from backend.implementations.conversion import preview_mass_convert
 from backend.implementations.converters import ConvertersManager
 from backend.implementations.credentials import Credentials
@@ -1289,8 +1289,6 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
         retained_overflow = [item for item in payload.get('overflow', []) if isinstance(item, dict)][:limit]
         provider_has_more = bool(payload.get('provider_has_more'))
         previous_cursors = [value for value in payload.get('previous_cursors', []) if isinstance(value, str)][-20:]
-        if cursor and cursor not in previous_cursors:
-            previous_cursors.append(cursor)
         for source, metadata_id in payload.get('seen', []):
             seen.add((str(source), str(metadata_id)))
 
@@ -1324,6 +1322,7 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
             break
     if len(filled) < limit and provider_has_more and pages_used >= max(1, safety_pages):
         safety_exhausted = True
+    outgoing_previous_cursors = previous_cursors + ([cursor] if cursor else [])
     cursor_payload = None
     if overflow or provider_has_more:
         cursor_payload = {
@@ -1335,7 +1334,7 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
             'safety_pages': safety_pages,
             'safety_exhausted': safety_exhausted,
             'provider_has_more': provider_has_more,
-            'previous_cursors': previous_cursors[-20:],
+            'previous_cursors': outgoing_previous_cursors[-20:],
         }
     return {
         **last_page,
@@ -1346,6 +1345,8 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
         'page_size': limit,
         'has_more': bool(cursor_payload),
         'next_cursor': _encode_discovery_cursor(cursor_payload) if cursor_payload else None,
+        'previous_cursor': previous_cursors[-1] if previous_cursors else None,
+        'cursor_history': outgoing_previous_cursors[-20:],
         'filtered_total_unknown': True,
         'safety_exhausted': safety_exhausted,
     }
@@ -1357,7 +1358,7 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int,
         where = "first_known_issue_date BETWEEN ? AND ?"
         params: Tuple[Any, ...] = (start, today.isoformat())
     elif discovery_type == 'upcoming-launches':
-        end = (today + timedelta(days=60)).isoformat()
+        end = (today + timedelta(days=365)).isoformat()
         where = "is_upcoming_launch = 1 AND first_known_issue_date BETWEEN ? AND ?"
         params = (today.isoformat(), end)
     else:
@@ -1496,8 +1497,10 @@ def api_discovery():
             fact_page['items'] = fact_page['items'][:limit]
             fact_page['page_size'] = limit
             return return_api(fact_page)
-        if fact_page['items'] or not fact_page.get('coverage_complete'):
-            return return_api(fact_page['items'][:limit])
+        # Normal first-publication shelves are fact-index backed only.  Do not
+        # synchronously fall back to bounded ComicVine provider scans on render;
+        # refresh queues the resumable background fact-sync task instead.
+        return return_api(fact_page['items'][:limit])
     cv = ComicVine()
     if discovery_type == 'upcoming-launches':
         fetch_limit = offset + limit + 1 if paginated else 20
@@ -1845,12 +1848,41 @@ def api_volumes_search():
                 r['already_added'] = already_added[0] if already_added else None
             return results
 
-        if paginated and metadata_source == 'comicvine':
-            identity = _cursor_identity('comicvine', section, 'volume-search', query=query, metadata_source=metadata_source)
+        def search_mangadex_page(page_offset: int, page_limit: int) -> Dict[str, Any]:
+            if section != 'manga':
+                raise InvalidKeyValue('metadata_source', 'mangadex')
+            page = search_mangadex_volumes_page(query, offset=page_offset, limit=page_limit)
+            try:
+                db = get_db()
+                for r in page.get('items', []):
+                    already_added = db.execute(
+                        """
+                        SELECT id
+                        FROM volumes
+                        WHERE metadata_source = 'mangadex'
+                            AND metadata_id = ?
+                            AND metadata_language = ?
+                        LIMIT 1;
+                        """,
+                        (r['metadata_id'], r.get('metadata_language') or 'en')
+                    ).fetchone()
+                    r['already_added'] = already_added[0] if already_added else None
+            except OperationalError:
+                for r in page.get('items', []):
+                    r.setdefault('already_added', None)
+            return page
+
+        if paginated and metadata_source in ('comicvine', 'mangadex'):
+            provider = metadata_source
+            identity = _cursor_identity(provider, section, 'volume-search', query=query, metadata_source=metadata_source)
+            fetch_page = search_mangadex_page if provider == 'mangadex' else search_comicvine_page
             if exclude_added:
-                return return_api(_refill_excluding_added(search_comicvine_page, offset=offset, limit=limit, cursor=request.values.get('cursor', ''), cursor_identity=identity))
-            page = search_comicvine_page(offset, limit)
+                return return_api(_refill_excluding_added(fetch_page, offset=offset, limit=limit, cursor=request.values.get('cursor', ''), cursor_identity=identity))
+            page = fetch_page(offset, limit)
             return return_api(page)
+
+        if paginated and metadata_source == 'all':
+            raise InvalidKeyValue('metadata_source', 'all')
 
         if metadata_source == 'all':
             results = search_comicvine()

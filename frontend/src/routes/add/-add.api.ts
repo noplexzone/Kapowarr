@@ -12,6 +12,8 @@ const searchPageSchema = z.object({
   page_size: z.number().int().positive(),
   next_offset: z.number().int().nonnegative().nullable(),
   next_cursor: z.string().nullable().optional(),
+  previous_cursor: z.string().nullable().optional(),
+  cursor_history: z.array(z.string()).optional(),
   total_is_exact: z.boolean().optional(),
   filtered_total_unknown: z.boolean().optional(),
   has_more: z.boolean(),

@@ -34,9 +34,14 @@ it('opens highlighted suggestions by exact provider identity through a router-ow
   expect(source).not.toContain('__tempLocation');
 });
 
-it('asks the all-source search endpoint so manga can aggregate MangaDex results', () => {
+it('uses all-source suggestions but section-specific complete search providers', () => {
   expect(source).toContain("searchVolumesQueryOptions(debouncedQuery, section, 'all', hideAlreadyAdded)");
-  expect(source).toContain("searchVolumesPageQueryOptions(query, section, 'comicvine'");
+  expect(source).toContain("const metadataSource = section === 'manga' ? 'mangadex' : 'comicvine'");
+  expect(source).toContain("searchVolumesPageQueryOptions(query, section, metadataSource");
+});
+
+it('uses cursor history for Previous on filtered complete search pages', () => {
+  expect(source).toContain('data.previous_cursor ?? undefined');
 });
 
 it('shows comic issue counts and unknown fallback in search metadata', () => {

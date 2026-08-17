@@ -1024,6 +1024,121 @@ class ComicVine:
                     break
         return result
 
+
+    async def sync_discovery_fact_page(
+        self,
+        scope: str,
+        *,
+        offset: int = 0,
+        limit: int = 100,
+        date_preference: Union[str, None] = None,
+        horizon_days: int = 365,
+    ) -> Dict[str, Any]:
+        """Index one provider page of first-publication facts by issue date.
+
+        The normal Discover shelves must never synchronously perform these
+        provider scans.  This method is the resumable background-worker unit:
+        one ComicVine issues page, then batched parent volume hydration for the
+        candidate volumes on that page.
+        """
+        today = _date.today()
+        date_field = 'store_date' if str(date_preference or Settings().sv.date_type).endswith('store_date') else 'cover_date'
+        if scope == 'recently_started':
+            start = today - timedelta(days=RECENT_SERIES_START_WINDOW_DAYS)
+            end = today
+            sort_direction = 'asc'
+        elif scope == 'upcoming_launches':
+            start = today
+            end = today + timedelta(days=horizon_days)
+            sort_direction = 'asc'
+        else:
+            raise ValueError(f'Unsupported discovery fact sync scope: {scope}')
+        issue_params = {
+            'field_list': 'id,name,issue_number,cover_date,store_date,image,site_detail_url,volume,date_last_updated',
+            'filter': f'{date_field}:{start}|{end}',
+            'sort': f'{date_field}:{sort_direction}',
+            'limit': limit + 1,
+            'offset': offset,
+        }
+        async with AsyncSession() as session:
+            issue_page = await self.__call_api(session, '/issues', issue_params, {'results': [], 'number_of_total_results': 0})
+            raw_issues = list(issue_page.get('results') or [])
+            page_issues = raw_issues[:limit]
+            volume_ids = []
+            seen_ids = set()
+            for issue in page_issues:
+                vol = issue.get('volume') or {}
+                if not vol.get('id'):
+                    continue
+                vid = str(vol['id'])
+                if vid not in seen_ids:
+                    seen_ids.add(vid)
+                    volume_ids.append(vid)
+            volume_details: Dict[int, Dict[str, Any]] = {}
+            for id_batch in batched(volume_ids, 100):
+                vol_page = await self.__call_api(
+                    session,
+                    '/volumes',
+                    {
+                        'field_list': self.volume_field_list,
+                        'filter': f'id:{"|".join(id_batch)}',
+                        'limit': 100,
+                    },
+                    {'results': []},
+                )
+                for volume in vol_page.get('results') or []:
+                    try:
+                        volume_details[int(volume['id'])] = volume
+                    except (KeyError, TypeError, ValueError):
+                        continue
+        facts_written = 0
+        candidates_found = 0
+        failed = 0
+        for issue in page_issues:
+            vol = issue.get('volume') or {}
+            try:
+                volume_id = int(vol.get('id'))
+            except (TypeError, ValueError):
+                failed += 1
+                continue
+            volume = volume_details.get(volume_id)
+            if not volume or not _is_comic_discovery_candidate_volume(volume):
+                continue
+            first = _first_known_issue(volume, date_field)
+            first_date = _issue_date(first, date_field) if first else None
+            if not first_date:
+                failed += 1
+                continue
+            is_recent = first_date <= today and today - first_date <= timedelta(days=RECENT_SERIES_START_WINDOW_DAYS)
+            is_upcoming = first_date > today and first_date <= today + timedelta(days=horizon_days)
+            if scope == 'recently_started' and not is_recent:
+                continue
+            if scope == 'upcoming_launches' and not (is_upcoming and str(first.get('id') or '') == str(issue.get('id') or '')):
+                continue
+            candidates_found += 1
+            _upsert_comic_series_discovery_fact(_first_publication_fact_from_volume(
+                volume,
+                date_field,
+                upcoming_issue=issue if scope == 'upcoming_launches' else None,
+            ))
+            facts_written += 1
+        total = int(issue_page.get('number_of_total_results') or offset + len(page_issues))
+        has_more = len(raw_issues) > limit or offset + len(page_issues) < total
+        return {
+            'scope': scope,
+            'date_preference': date_field,
+            'window_start': start.isoformat(),
+            'window_end': end.isoformat(),
+            'offset': offset,
+            'next_offset': offset + len(page_issues) if has_more else None,
+            'has_more': has_more,
+            'records_processed': len(page_issues),
+            'candidate_volumes_found': candidates_found,
+            'facts_created': facts_written,
+            'facts_updated': facts_written,
+            'facts_failed': failed,
+        }
+
     async def get_upcoming_releases(
         self,
         days: int = 60,

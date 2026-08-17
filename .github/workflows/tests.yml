@@ -237,11 +237,14 @@ jobs:
 
           healthy=false
           for _ in {1..60}; do
-            if ! docker ps --format '{{.Names}}' | grep -qx "${name}"; then
-              docker logs "${name}"
+            running="$(docker inspect -f '{{.State.Running}}' "${name}" 2>/dev/null || echo false)"
+            if [[ "${running}" != "true" ]]; then
+              docker inspect "${name}" || true
+              docker logs "${name}" || true
               exit 1
             fi
-            if curl --fail --silent http://127.0.0.1:5656/api/health 2>/dev/null | grep -q '"healthy"'; then
+            health_response="$(curl --fail --silent http://127.0.0.1:5656/api/health 2>/dev/null || true)"
+            if [[ "${health_response}" == *'"healthy"'* ]]; then
               healthy=true
               break
             fi
@@ -249,7 +252,8 @@ jobs:
           done
 
           if [[ "${healthy}" != "true" ]]; then
-            docker logs "${name}"
+            docker inspect "${name}" || true
+            docker logs "${name}" || true
             exit 1
           fi
           curl --retry 10 --retry-delay 2 --retry-connrefused --fail --silent --show-error http://127.0.0.1:5656/api/health | grep -q '"healthy"'

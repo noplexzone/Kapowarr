@@ -213,24 +213,25 @@ jobs:
           set -euo pipefail
           image_by_digest="${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
           name="kapowarr-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          smoke_dir="$(mktemp -d)"
+          db_volume="${name}-db"
+          logs_volume="${name}-logs"
+          temp_volume="${name}-temp"
           cleanup() {
             docker container rm --force "${name}" >/dev/null 2>&1 || true
-            rm -rf "${smoke_dir}"
+            docker volume rm --force "${db_volume}" "${logs_volume}" "${temp_volume}" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
 
-          mkdir -p "${smoke_dir}"/{db,logs,temp_downloads,comics,manga}
-          chmod -R 777 "${smoke_dir}"
+          docker volume create "${db_volume}" >/dev/null
+          docker volume create "${logs_volume}" >/dev/null
+          docker volume create "${temp_volume}" >/dev/null
 
           docker pull "${image_by_digest}"
           docker run -d --name "${name}" \
             -e TZ=Etc/UTC \
-            -v "${smoke_dir}/db:/app/db" \
-            -v "${smoke_dir}/logs:/app/logs" \
-            -v "${smoke_dir}/temp_downloads:/app/temp_downloads" \
-            -v "${smoke_dir}/comics:/comics" \
-            -v "${smoke_dir}/manga:/manga" \
+            -v "${db_volume}:/app/db" \
+            -v "${logs_volume}:/app/logs" \
+            -v "${temp_volume}:/app/temp_downloads" \
             -p 127.0.0.1:5656:5656 \
             "${image_by_digest}"
 
@@ -258,7 +259,7 @@ jobs:
           with open('/app/pyproject.toml', 'rb') as handle:
               print(tomllib.load(handle)['project']['version'])
           PY
-          test -s "${smoke_dir}/db/Kapowarr.db"
+          docker exec "${name}" test -s /app/db/Kapowarr.db
 
       - name: Critical vulnerability scan
         uses: aquasecurity/trivy-action@v0.36.0

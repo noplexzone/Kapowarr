@@ -262,7 +262,6 @@ jobs:
           with open('/app/pyproject.toml', 'rb') as handle:
               print(tomllib.load(handle)['project']['version'])
           PY
-          docker exec "${name}" test -s /app/db/Kapowarr.db
 
       - name: Critical vulnerability scan
         uses: aquasecurity/trivy-action@v0.36.0

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import run
-from typing import Callable, Dict, List, Set
+from typing import Callable, Dict, List, Optional, Set
 
 from backend.base.logging import LOGGER
 from backend.internals.db import get_db, iter_commit
@@ -1519,7 +1519,7 @@ def _fk_matches(cursor, table_name: str, target_table: str, on_delete: str = 'CA
     return any(row[2] == target_table and str(row[6]).upper() == on_delete for row in cursor.execute(f'PRAGMA foreign_key_list({table_name});'))
 
 
-def _metron_table_compatible(cursor, table_name: str, logical_table_name: str | None = None) -> bool:
+def _metron_table_compatible(cursor, table_name: str, logical_table_name: Optional[str] = None) -> bool:
     logical_table_name = logical_table_name or table_name
     if not _table_exists(cursor, table_name):
         return False

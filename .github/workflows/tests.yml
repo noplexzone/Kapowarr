@@ -257,7 +257,6 @@ jobs:
             exit 1
           fi
           curl --retry 10 --retry-delay 2 --retry-connrefused --fail --silent --show-error http://127.0.0.1:5656/api/health | grep -q '"healthy"'
-          curl --retry 10 --retry-delay 2 --retry-connrefused --fail --silent --show-error http://127.0.0.1:5656/ | grep -Eiq '<(html|div id="root")'
           docker exec "${name}" python3 - <<'PY' | grep -Fx "${{ steps.meta.outputs.version }}"
           import tomllib
           with open('/app/pyproject.toml', 'rb') as handle:

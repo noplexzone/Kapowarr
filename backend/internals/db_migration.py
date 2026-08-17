@@ -1628,8 +1628,10 @@ def _build_metron_source_union(cursor, table_name: str, include_source: bool = F
         source_columns = set(_table_columns(cursor, name))
         exprs = [column if column in source_columns else f"NULL AS {column}" for column in columns]
         if include_source:
-            exprs.append(f"'{name.replace("'", "''")}' AS _migration_source")
-            exprs.append(f"'{_migration_source_key(table_name, name).replace("'", "''")}' AS _migration_source_key")
+            escaped_name = name.replace("'", "''")
+            escaped_key = _migration_source_key(table_name, name).replace("'", "''")
+            exprs.append(f"'{escaped_name}' AS _migration_source")
+            exprs.append(f"'{escaped_key}' AS _migration_source_key")
         selects.append(f'SELECT {", ".join(exprs)} FROM {_quote_identifier(name)}')
     fallback_columns = [f'NULL AS {column}' for column in columns]
     if include_source:
@@ -1696,8 +1698,10 @@ def _normalize_metron_table(cursor, table_name: str) -> None:
                 expressions.append("'reserved' AS status" if table_name == 'metron_enrichment_task_reservations' else "'' AS status")
             else:
                 expressions.append(f"'' AS {column}")
-        expressions.append(f"'{source_name.replace("'", "''")}' AS _migration_source")
-        expressions.append(f"'{_migration_source_key(table_name, source_name).replace("'", "''")}' AS _migration_source_key")
+        escaped_source_name = source_name.replace("'", "''")
+        escaped_source_key = _migration_source_key(table_name, source_name).replace("'", "''")
+        expressions.append(f"'{escaped_source_name}' AS _migration_source")
+        expressions.append(f"'{escaped_source_key}' AS _migration_source_key")
         volume_filter = ''
         if table_name in ('volume_provider_links', 'volume_enrichment_terms', 'volume_metadata_enrichment', 'provider_match_candidates', 'metron_enrichment_task_reservations') and _table_exists(cursor, 'volumes') and 'volume_id' in source_columns:
             volume_filter = ' WHERE volume_id IN (SELECT id FROM volumes)'

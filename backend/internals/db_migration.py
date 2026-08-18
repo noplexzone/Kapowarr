@@ -2187,3 +2187,78 @@ def _migrate_add_comic_discovery_facts():
             VALUES (1, 'comic_series_discovery', 'not_started', 0, 'cover_date');
     """)
     return
+
+@DatabaseMigrationHandler.register_handler(63)
+def _migrate_enforce_one_to_one_issue_files():
+    cursor = get_db()
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS file_match_conflicts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            volume_id INTEGER NOT NULL,
+            file_id INTEGER,
+            filepath TEXT NOT NULL DEFAULT '',
+            proposed_issue_id INTEGER,
+            proposed_issue_numbers TEXT NOT NULL DEFAULT '[]',
+            reason TEXT NOT NULL,
+            source_type TEXT NOT NULL DEFAULT 'migration',
+            download_id INTEGER,
+            content_hash TEXT,
+            parser_result TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            resolved_at INTEGER,
+            resolution TEXT,
+            FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+            FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL,
+            FOREIGN KEY (proposed_issue_id) REFERENCES issues(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS file_match_conflicts_volume_unresolved_idx
+            ON file_match_conflicts(volume_id, resolved_at, reason);
+        CREATE INDEX IF NOT EXISTS file_match_conflicts_file_idx
+            ON file_match_conflicts(file_id);
+    """)
+    now = round(__import__('time').time())
+    conflict_rows = cursor.execute("""
+        SELECT if.file_id, if.issue_id, i.volume_id, COALESCE(f.filepath, '') AS filepath,
+               CASE
+                 WHEN file_counts.cnt > 1 THEN 'file_claims_multiple_issues'
+                 WHEN issue_counts.cnt > 1 THEN 'multiple_files_claim_issue'
+                 ELSE 'postprocessing_incomplete'
+               END AS reason
+        FROM issues_files if
+        INNER JOIN issues i ON i.id = if.issue_id
+        LEFT JOIN files f ON f.id = if.file_id
+        INNER JOIN (SELECT file_id, COUNT(*) cnt FROM issues_files GROUP BY file_id) file_counts ON file_counts.file_id = if.file_id
+        INNER JOIN (SELECT issue_id, COUNT(*) cnt FROM issues_files GROUP BY issue_id) issue_counts ON issue_counts.issue_id = if.issue_id
+        WHERE file_counts.cnt > 1 OR issue_counts.cnt > 1;
+    """).fetchall()
+    cursor.executemany("""
+        INSERT INTO file_match_conflicts(volume_id, file_id, filepath, proposed_issue_id, proposed_issue_numbers, reason, source_type, parser_result, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, 'migration', '{}', ?);
+    """, ((row['volume_id'], row['file_id'], row['filepath'], row['issue_id'], '[' + str(row['issue_id']) + ']', row['reason'], now) for row in conflict_rows))
+    cursor.execute("""
+        DELETE FROM issues_files
+        WHERE file_id IN (SELECT file_id FROM issues_files GROUP BY file_id HAVING COUNT(*) > 1)
+           OR issue_id IN (SELECT issue_id FROM issues_files GROUP BY issue_id HAVING COUNT(*) > 1);
+    """)
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS issues_files_file_id_unique_idx ON issues_files(file_id);')
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS issues_files_issue_id_unique_idx ON issues_files(issue_id);')
+    cursor.executescript("""
+        CREATE INDEX IF NOT EXISTS issues_date_idx ON issues(date);
+        CREATE INDEX IF NOT EXISTS issues_monitored_date_idx ON issues(monitored, date);
+        CREATE INDEX IF NOT EXISTS issues_files_file_id_index ON issues_files(file_id);
+        CREATE INDEX IF NOT EXISTS files_exists_on_disk_idx ON files(exists_on_disk);
+        CREATE INDEX IF NOT EXISTS volumes_root_folder_idx ON volumes(root_folder);
+        CREATE INDEX IF NOT EXISTS root_folders_section_idx ON root_folders(section);
+        CREATE INDEX IF NOT EXISTS download_history_success_idx ON download_history(success);
+    """)
+    violations = cursor.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT file_id FROM issues_files GROUP BY file_id HAVING COUNT(*) > 1
+            UNION ALL
+            SELECT issue_id FROM issues_files GROUP BY issue_id HAVING COUNT(*) > 1
+        );
+    """).fetchone()[0]
+    fk = cursor.execute('PRAGMA foreign_key_check;').fetchall()
+    if violations or fk:
+        raise RuntimeError('Failed to enforce one-to-one issue file invariants')
+    return

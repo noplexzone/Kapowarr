@@ -19,7 +19,7 @@ from backend.internals.db_models import FilesDB
 
 
 class SafeMassRenameTests(TestCase):
-    def test_colliding_plans_are_unique_when_target_folder_is_new(self):
+    def test_colliding_plans_raise_destination_conflict_when_target_folder_is_new(self):
         with TemporaryDirectory() as folder:
             source_folder = Path(folder, 'old')
             source_folder.mkdir()
@@ -30,18 +30,11 @@ class SafeMassRenameTests(TestCase):
             ]
             canonical = str(target_folder / 'Series v01.cbz')
 
-            result = same_name_indexing(
-                str(target_folder),
-                {source: canonical for source in reversed(sources)},
-            )
-
-            self.assertEqual(list(result), sorted(sources))
-            self.assertEqual(len(set(result.values())), 3)
-            self.assertEqual(sorted(result.values()), sorted((
-                canonical,
-                str(target_folder / 'Series v01 (1).cbz'),
-                str(target_folder / 'Series v01 (2).cbz'),
-            )))
+            with self.assertRaises(FileExistsError):
+                same_name_indexing(
+                    str(target_folder),
+                    {source: canonical for source in reversed(sources)},
+                )
 
     def test_filesystem_rolls_back_when_database_update_fails(self):
         with TemporaryDirectory() as folder:
@@ -319,12 +312,12 @@ class SafeMassRenameTests(TestCase):
             ), patch(
                 'backend.implementations.naming.RootFolders', return_value={1: object()},
             ):
-                with self.assertRaises(FileExistsError):
+                with self.assertRaises((FileExistsError, ValueError)):
                     mass_rename(1, process_individual_files=False)
             self.assertEqual(source.read_text(), 'source')
             self.assertEqual(destination.read_text(), 'unrelated')
 
-    def test_mass_rename_preserves_every_colliding_file(self):
+    def test_mass_rename_rejects_colliding_issue_files(self):
         with TemporaryDirectory() as folder:
             old_folder = Path(folder, 'old')
             new_folder = Path(folder, 'new')
@@ -336,9 +329,7 @@ class SafeMassRenameTests(TestCase):
             for index, source in enumerate(sources):
                 Path(source).write_text('distinct-{}'.format(index))
             canonical = str(new_folder / 'Series v01.cbz')
-            mapping = same_name_indexing(
-                str(new_folder), {source: canonical for source in sources}
-            )
+            mapping = {source: canonical for source in sources}
             volume_data = SimpleNamespace(folder=str(old_folder), root_folder=1)
             fake_volume = SimpleNamespace(
                 get_data=lambda: volume_data,
@@ -361,14 +352,10 @@ class SafeMassRenameTests(TestCase):
             ), patch(
                 'backend.implementations.naming.delete_empty_parent_folders',
             ):
-                result = mass_rename(1, process_individual_files=False)
+                with self.assertRaises((FileExistsError, ValueError)):
+                    mass_rename(1, process_individual_files=False)
 
-            self.assertEqual(result, list(mapping.values()))
-            self.assertEqual(recorded, [mapping])
-            self.assertEqual(
-                sorted(Path(filepath).read_text() for filepath in mapping.values()),
-                ['distinct-0', 'distinct-1', 'distinct-2'],
-            )
+            self.assertEqual(recorded, [])
 
 
 class DownloadBatchAtomicityTests(TestCase):

@@ -10,6 +10,10 @@ const DASHBOARD_GC_TIME = 30 * 60 * 1000;
 
 const dashboardSummarySchema = z.object({
   generated_at: z.string(),
+  is_stale: z.boolean().optional(),
+  refreshing: z.boolean().optional(),
+  section_errors: z.record(z.string()).optional(),
+  timings_ms: z.record(z.number()).optional(),
   library: z.object({
     released_issues: z.number().int().nonnegative(),
     downloaded_released_issues: z.number().int().nonnegative(),

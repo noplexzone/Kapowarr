@@ -155,8 +155,9 @@ export async function deleteRootFolder(id: number): Promise<void> {
 }
 
 
-export async function testMetronConnection(): Promise<{success: boolean; status: string; description: string | null; rate_limit?: Record<string, unknown> | null}> {
-  return apiClient.post('metadata/metron/test').then(res => readJson<{success: boolean; status: string; description: string | null; rate_limit?: Record<string, unknown> | null}>(res));
+export async function testMetronConnection(token?: string): Promise<{success: boolean; status: string; description: string | null; rate_limit?: Record<string, unknown> | null}> {
+  const options = token ? { json: { token } } : undefined;
+  return apiClient.post('metadata/metron/test', options).then(res => readJson<{success: boolean; status: string; description: string | null; rate_limit?: Record<string, unknown> | null}>(res));
 }
 
 export async function startMetronBackfill(): Promise<{task_id: number | null; status?: string; duplicate?: boolean}> {

@@ -4,8 +4,9 @@
 The matching of files to issues in a volume
 """
 
-from collections import Counter
+from collections import Counter, defaultdict
 from os.path import basename, isdir
+from re import compile as re_compile
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 from backend.base.definitions import (FileConstants, FileMatch,
@@ -19,6 +20,9 @@ from backend.base.helpers import (extract_year_from_date,
                                   filtered_iter, force_range)
 from backend.base.logging import LOGGER
 from backend.implementations.matching import file_importing_filter
+from backend.implementations.file_match_conflicts import (
+    choose_canonical_file, content_hash, record_conflict, quarantine_file,
+)
 from backend.implementations.root_folders import RootFolders
 from backend.internals.db import commit, get_db
 from backend.internals.db_models import FilesDB
@@ -33,6 +37,17 @@ def _emit_downloaded_status_event(event: DownloadedStatusEvent) -> None:
     except Exception:
         LOGGER.exception('Failed to emit downloaded status websocket event')
 
+
+_ISSUE_RANGE_RE = re_compile(r'(?<!\d)(\d{1,4}(?:\.\d+)?)\s*-\s*(\d{1,4}(?:\.\d+)?)(?!\d)')
+
+def _filename_issue_range(filepath: str):
+    match = _ISSUE_RANGE_RE.search(basename(filepath))
+    if not match:
+        return None
+    start, end = float(match.group(1)), float(match.group(2))
+    if start == end:
+        return None
+    return (min(start, end), max(start, end))
 
 # region Automatic Match
 def scan_files(
@@ -120,6 +135,7 @@ def scan_files(
 
     new_issue_bindings: Set[Tuple[int, int]] = set()
     new_general_bindings: Dict[int, str] = {}
+    scanned_file_parser_data: Dict[int, dict] = {}
     folder_contents = list_files(
         folder=volume_data.folder,
         ext=FileConstants.SCANNABLE_EXTENSIONS
@@ -160,6 +176,25 @@ def scan_files(
             continue
 
         file_data = extract_filename_data(file)
+        filename_range = _filename_issue_range(file)
+        if filename_range and (
+            file_data.get('year') is None or file_data.get('year') == volume_data.year
+        ):
+            if file not in current_issue_files:
+                current_issue_files[file] = FilesDB.add_file(file)
+            file_id = current_issue_files[file]
+            scanned_file_parser_data[file_id] = dict(file_data)
+            matching_issues = [
+                issue.id for issue in volume_issues
+                if filename_range[0] <= issue.calculated_issue_number <= filename_range[1]
+            ]
+            for issue in matching_issues or [None]:
+                record_conflict(
+                    volume_id=volume_id, filepath=file, file_id=file_id,
+                    proposed_issue_id=issue, proposed_issue_numbers=filename_range,
+                    reason='multi_issue_range', parser_result=file_data,
+                )
+            continue
 
         # Check if file matches volume
         if not file_importing_filter(
@@ -227,11 +262,26 @@ def scan_files(
             if matching_issues:
                 if file not in current_issue_files:
                     current_issue_files[file] = FilesDB.add_file(file)
+                file_id = current_issue_files[file]
+                scanned_file_parser_data[file_id] = dict(file_data)
 
-                for issue in matching_issues:
-                    new_issue_bindings.add(
-                        (current_issue_files[file], issue)
-                    )
+                if isinstance(file_data["issue_number"], tuple) or len(matching_issues) != 1:
+                    # Final-library range archives are not active issue mappings.
+                    # They require review rather than guessing page boundaries or
+                    # binding one archive to multiple issues.
+                    for issue in matching_issues:
+                        record_conflict(
+                            volume_id=volume_id,
+                            filepath=file,
+                            file_id=file_id,
+                            proposed_issue_id=issue,
+                            proposed_issue_numbers=file_data["issue_number"],
+                            reason='multi_issue_range',
+                            parser_result=file_data,
+                        )
+                    continue
+
+                new_issue_bindings.add((file_id, matching_issues[0]))
 
     # Determine old and new bindings, and which issues change in
     # their marking of being downloaded because of the new bindings
@@ -260,6 +310,88 @@ def scan_files(
         for file_id, issue_id in new_issue_bindings
         if (file_id, issue_id) not in current_bindings
     }
+
+    # Validate the complete active issue-file plan before mutating bindings.
+    # The final library invariant is one issue archive -> one issue and one
+    # issue -> at most one active archive. Ambiguous candidates are persisted as
+    # conflicts and withheld from active mappings.
+    file_id_to_path = {file_id: filepath for filepath, file_id in current_issue_files.items()}
+    for row in cursor.execute('SELECT id, filepath FROM files;'):
+        file_id_to_path.setdefault(row[0], row[1])
+    retained_bindings = current_bindings - delete_bindings
+    proposed_bindings = retained_bindings | add_bindings
+
+    bindings_by_file = defaultdict(set)
+    bindings_by_issue = defaultdict(set)
+    for file_id, issue_id in proposed_bindings:
+        bindings_by_file[file_id].add(issue_id)
+        bindings_by_issue[issue_id].add(file_id)
+
+    conflicted_adds: Set[Tuple[int, int]] = set()
+    for file_id, issue_ids in bindings_by_file.items():
+        if len(issue_ids) <= 1:
+            continue
+        filepath = file_id_to_path.get(file_id, '')
+        for issue_id in issue_ids:
+            if (file_id, issue_id) in add_bindings:
+                conflicted_adds.add((file_id, issue_id))
+            record_conflict(
+                volume_id=volume_id, filepath=filepath, file_id=file_id,
+                proposed_issue_id=issue_id, proposed_issue_numbers=sorted(issue_ids),
+                reason='file_claims_multiple_issues',
+                parser_result=scanned_file_parser_data.get(file_id),
+            )
+
+    for issue_id, file_ids in bindings_by_issue.items():
+        if len(file_ids) <= 1:
+            continue
+        new_file_ids = [file_id for file_id in file_ids if (file_id, issue_id) in add_bindings]
+        retained_file_ids = [file_id for file_id in file_ids if (file_id, issue_id) in retained_bindings]
+        if retained_file_ids:
+            for file_id in new_file_ids:
+                conflicted_adds.add((file_id, issue_id))
+                record_conflict(
+                    volume_id=volume_id, filepath=file_id_to_path.get(file_id, ''),
+                    file_id=file_id, proposed_issue_id=issue_id,
+                    proposed_issue_numbers=[issue_id], reason='issue_already_has_file',
+                    parser_result=scanned_file_parser_data.get(file_id),
+                )
+            continue
+        hash_to_files = defaultdict(list)
+        for file_id in new_file_ids:
+            filepath = file_id_to_path.get(file_id, '')
+            hash_to_files[content_hash(filepath)].append(file_id)
+        if len(hash_to_files) == 1:
+            canonical_path = choose_canonical_file(file_id_to_path[fid] for fid in new_file_ids)
+            canonical_id = current_issue_files.get(canonical_path)
+            if canonical_id is None:
+                canonical_id = next(fid for fid in new_file_ids if file_id_to_path.get(fid) == canonical_path)
+            for file_id in new_file_ids:
+                if file_id == canonical_id:
+                    continue
+                conflicted_adds.add((file_id, issue_id))
+                filepath = file_id_to_path.get(file_id, '')
+                record_conflict(
+                    volume_id=volume_id, filepath=filepath, file_id=file_id,
+                    proposed_issue_id=issue_id, proposed_issue_numbers=[issue_id],
+                    reason='duplicate_content',
+                    parser_result=scanned_file_parser_data.get(file_id),
+                    resolution='quarantined_duplicate', resolved_at=round(__import__('time').time()),
+                )
+                try:
+                    quarantine_file(filepath, reason='duplicate_content', volume_id=volume_id)
+                except Exception:
+                    LOGGER.exception('Failed to quarantine duplicate file %s', filepath)
+        else:
+            for file_id in new_file_ids:
+                conflicted_adds.add((file_id, issue_id))
+                record_conflict(
+                    volume_id=volume_id, filepath=file_id_to_path.get(file_id, ''),
+                    file_id=file_id, proposed_issue_id=issue_id,
+                    proposed_issue_numbers=[issue_id], reason='nonidentical_duplicate',
+                    parser_result=scanned_file_parser_data.get(file_id),
+                )
+    add_bindings -= conflicted_adds
 
     issue_binding_count = Counter((b[1] for b in current_bindings))
 
@@ -374,7 +506,7 @@ def scan_files(
 # region Manual Match
 def get_file_matching(volume_id: int) -> List[FileMatch]:
     """Get the matchings of all files in the volume folder. Either they match to
-    nothing, one or more issues or it's a general file.
+    nothing, exactly one issue or it's a general file.
 
     Args:
         volume_id (int): The ID of the volume.
@@ -456,9 +588,9 @@ def get_file_matching(volume_id: int) -> List[FileMatch]:
 
 def set_file_matching(volume_id: int, matches: List[FileMatch]) -> None:
     """Set the matchings of files in a volume's folder so that they match to one
-    or more issues, become a general file or are allowed to match automatically.
-    For a FileMatch entry, set `forced_match` to `True` and supply the IDs of
-    the issues that it should match to or set `general_file` to `True`. If it
+    issue, become a general file or are allowed to match automatically.
+    For a FileMatch entry, set `forced_match` to `True` and supply exactly one
+    issue ID that it should match to or set `general_file` to `True`. If it
     should be set to automatically match (like a normal file), set `forced_match`
     to `False`. Leave out entries to not change their matching. Afterwards, a
     file scan is automatically done (in case a file that was previously force
@@ -477,6 +609,11 @@ def set_file_matching(volume_id: int, matches: List[FileMatch]) -> None:
     for file_match in matches:
         if not folder_is_inside_folder(volume_folder, file_match['filepath']):
             continue
+        if file_match.get("forced_match") and not file_match.get("general_file"):
+            issue_ids = list(dict.fromkeys(file_match.get("issue_ids") or []))
+            if len(issue_ids) != 1:
+                raise ValueError('Manual file matching requires exactly one issue')
+            file_match["issue_ids"] = issue_ids
 
         # Add file to database if needed; get file ID
         file_id = FilesDB.add_file(file_match["filepath"])
@@ -537,20 +674,26 @@ def set_file_matching(volume_id: int, matches: List[FileMatch]) -> None:
                 )
 
             else:
-                cursor.executemany("""
+                issue_id = file_match["issue_ids"][0]
+                cursor.execute(
+                    "DELETE FROM issues_files WHERE issue_id = ? AND file_id != ?;",
+                    (issue_id, file_id)
+                )
+                cursor.execute(
+                    "DELETE FROM issues_files WHERE file_id = ? AND issue_id != ?;",
+                    (file_id, issue_id)
+                )
+                cursor.execute("""
                     INSERT INTO issues_files(file_id, issue_id, forced)
                         VALUES (:file_id, :issue_id, :forced)
-                    ON CONFLICT(file_id, issue_id) DO
-                    UPDATE SET forced = :forced;
+                    ON CONFLICT(issue_id) DO
+                    UPDATE SET file_id = :file_id, forced = :forced;
                     """,
-                    (
-                        {
-                            "file_id": file_id,
-                            "issue_id": issue_id,
-                            "forced": True
-                        }
-                        for issue_id in file_match["issue_ids"]
-                    )
+                    {
+                        "file_id": file_id,
+                        "issue_id": issue_id,
+                        "forced": True
+                    }
                 )
 
     scan_files(volume_id, update_websocket=True)

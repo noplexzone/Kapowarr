@@ -8,6 +8,7 @@ from flask import Flask
 
 from backend.base.definitions import IssueData, SpecialVersion, VolumeData
 from backend.implementations.file_matching import scan_files, set_file_matching
+from backend.implementations.file_match_repair import apply_volume_repair, dry_run_volume_repair
 from backend.internals.db import DBConnection, DBConnectionManager, close_db, get_db, setup_db
 
 
@@ -106,6 +107,46 @@ class RuntimeIntegrityFileMatchingTests(unittest.TestCase):
             db.execute('INSERT INTO issues_files(file_id, issue_id) VALUES(1, 2)')
         with self.assertRaises(Exception):
             db.execute('INSERT INTO issues_files(file_id, issue_id) VALUES(2, 1)')
+
+
+    def test_repair_dry_run_and_apply_quarantines_punisher_duplicates(self):
+        fp1 = self.folder / 'The Punisher - War Zone 001 (1992).cbz'; fp1.write_bytes(b'same')
+        fp2 = self.folder / 'The Punisher - War Zone 001 (1992) (1).cbz'; fp2.write_bytes(b'same')
+        db = get_db()
+        db.execute('INSERT INTO files(id, filepath, size) VALUES(11, ?, 4)', (str(fp1),))
+        db.execute('INSERT INTO files(id, filepath, size) VALUES(12, ?, 4)', (str(fp2),))
+        db.execute('INSERT INTO issues_files(file_id, issue_id) VALUES(11, 1)')
+        db.execute('DROP INDEX issues_files_issue_id_unique_idx')
+        db.execute('INSERT INTO issues_files(file_id, issue_id) VALUES(12, 1)')
+        db.connection.commit()
+        plan = dry_run_volume_repair(1)
+        self.assertTrue(any(a['action'] == 'quarantine_duplicate' for a in plan['actions']))
+        with self.assertRaises(ValueError):
+            apply_volume_repair(1)
+        with patch('backend.implementations.file_match_conflicts.Settings') as settings:
+            settings.return_value.sv.file_match_quarantine_folder = str(Path(self.tmp.name) / 'quarantine')
+            applied = apply_volume_repair(1, backup_confirmed=True)
+        rows = [tuple(row) for row in get_db().execute('SELECT issue_id, COUNT(*) FROM issues_files GROUP BY issue_id').fetchall()]
+        self.assertEqual(rows, [(1, 1)])
+        self.assertTrue(applied['applied'])
+
+    def test_repair_dry_run_crisis_unmaps_range_and_leaves_issue_one_missing(self):
+        get_db().execute("UPDATE volumes SET title = 'Crisis Aftermath The Battle for Blüdhaven', year = 2006 WHERE id = 1")
+        range_file = self.folder / 'Crisis Aftermath - The Battle for Blüdhaven 001 - 002 (2006).cbz'; range_file.write_bytes(b'range')
+        exact = self.folder / 'Crisis Aftermath - The Battle for Blüdhaven 002 (2006).cbz'; exact.write_bytes(b'exact')
+        db = get_db()
+        db.execute('INSERT INTO files(id, filepath, size) VALUES(21, ?, 5)', (str(range_file),))
+        db.execute('INSERT INTO files(id, filepath, size) VALUES(22, ?, 5)', (str(exact),))
+        db.execute('INSERT INTO issues_files(file_id, issue_id) VALUES(21, 2)')
+        db.execute('DROP INDEX issues_files_issue_id_unique_idx')
+        db.execute('INSERT INTO issues_files(file_id, issue_id) VALUES(22, 2)')
+        db.connection.commit()
+        plan = dry_run_volume_repair(1)
+        self.assertTrue(any(a['action'] == 'unmap_range_file' for a in plan['actions']))
+        apply_volume_repair(1, backup_confirmed=True)
+        mapped = [tuple(row) for row in get_db().execute('SELECT issue_id, file_id FROM issues_files ORDER BY issue_id, file_id').fetchall()]
+        self.assertEqual(mapped, [(2, 22)])
+        self.assertEqual(get_db().execute('SELECT COUNT(*) FROM issues_files WHERE issue_id = 1').fetchone()[0], 0)
 
     def test_manual_forced_match_rejects_multi_issue(self):
         fp = self.folder / 'The Punisher - War Zone 001 (1992).cbz'

@@ -2616,6 +2616,31 @@ def api_file_raw(file_id: int):
 
 
 # =====================
+# File Match Repair
+# =====================
+@api.route('/volumes/<int:id>/file-match-repair', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_file_match_repair(id: int):
+    from backend.implementations.file_match_repair import (
+        apply_volume_repair, dry_run_volume_repair,
+    )
+    Library.get_volume(id)
+    if request.method == 'GET':
+        return return_api(dry_run_volume_repair(id))
+    payload = request.get_json(silent=True) or {}
+    selected_actions = payload.get('selected_actions')
+    if selected_actions is not None and not (
+        isinstance(selected_actions, list)
+        and all(isinstance(item, int) for item in selected_actions)
+    ):
+        raise InvalidKeyValue('selected_actions', selected_actions)
+    return return_api(apply_volume_repair(
+        id, selected_actions, backup_confirmed=bool(payload.get('backup_confirmed'))
+    ))
+
+
+# =====================
 # Manual File Match
 # =====================
 @api.route('/volumes/<int:id>/manualmatch', methods=['GET', 'PUT'])

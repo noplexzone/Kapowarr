@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add volume-scoped file-match repair dry run/apply endpoints with backup confirmation, conflict recording, and duplicate quarantine actions.
 - Add runtime integrity conflict storage for strict one-to-one issue-file matching, duplicate/range conflict capture, and Punisher/Crisis regression fixtures.
 - Make Dashboard summary responses include safe timing, stale/error metadata, and isolated metric-group fallbacks.
 - Make Metron connection testing support current draft tokens without persisting or logging them.

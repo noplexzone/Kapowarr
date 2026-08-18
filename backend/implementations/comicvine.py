@@ -151,7 +151,7 @@ _ENGLISH_MANGA_PUBLISHERS = frozenset({
     'digital manga publishing', 'digital manga guild',
     'gen manga',
     'aurora publishing',
-    'dark horse comics', 'dark horse manga',
+    'dark horse manga',
     'kodansha comics', 'kodansha comics usa', 'kodansha usa',
     'square enix manga',
     'crunchyroll', 'crunchyroll manga',

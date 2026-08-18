@@ -61,43 +61,31 @@ describe('SettingsPage', () => {
     expect(host.getAttribute('aria-describedby')).toBe('setting-host-help');
     expect(screen.getByText(/Network interface Kapowarr listens on/i).id).toBe('setting-host-help');
   });
-  it('shows dirty state, disables no-op save, and discards edits', async () => {
-    renderPage(); const save = await screen.findByRole('button', { name: 'Save Changes' });
-    expect((save as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Host'), { target: { value: '127.0.0.1' } });
-    expect(screen.getByText('1 unsaved change')).toBeTruthy(); expect((save as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
-    expect((screen.getByLabelText('Host') as HTMLInputElement).value).toBe('0.0.0.0');
-    expect(screen.getByText('All changes saved')).toBeTruthy();
+  it('auto-saves edited settings without global Save or Discard controls', async () => {
+    renderPage();
+    expect(screen.queryByRole('button', { name: 'Save Changes' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+    fireEvent.change(await screen.findByLabelText('Host'), { target: { value: '127.0.0.1' } });
+    expect(screen.getByText('1 pending item')).toBeTruthy();
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ host: '127.0.0.1' }));
+    expect((await screen.findAllByText('Saved')).length).toBeGreaterThan(0);
   });
-  it('warns before SPA or browser navigation with unsaved settings', async () => {
+  it('does not use top-level navigation blocking for ordinary auto-save drafts', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderPage();
     fireEvent.change(await screen.findByLabelText('Host'), { target: { value: '127.0.0.1' } });
     const options = useBlocker.mock.calls[useBlocker.mock.calls.length - 1]?.[0];
-    expect(options.disabled).toBe(false);
-    expect(options.enableBeforeUnload).toBe(true);
-    expect(options.shouldBlockFn({
-      current: { pathname: '/settings', search: { category: 'general' } },
-      next: { pathname: '/comics', search: {} },
-    })).toBe(true);
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/unsaved settings/i));
-    confirm.mockReturnValue(true);
-    expect(options.shouldBlockFn({
-      current: { pathname: '/settings', search: { category: 'general' } },
-      next: { pathname: '/comics', search: {} },
-    })).toBe(false);
+    expect(options.disabled).toBe(true);
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ host: '127.0.0.1' }));
+    expect(confirm).not.toHaveBeenCalled();
     confirm.mockRestore();
   });
-  it('does not prompt for same-route category navigation that preserves a top-level draft', async () => {
+  it('does not prompt for same-route category navigation because ordinary settings auto-save', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderPage();
     fireEvent.change(await screen.findByLabelText('Host'), { target: { value: '127.0.0.1' } });
     const options = useBlocker.mock.calls[useBlocker.mock.calls.length - 1]?.[0];
-    expect(options.shouldBlockFn({
-      current: { pathname: '/settings', search: { category: 'general' } },
-      next: { pathname: '/settings', search: { category: 'metadata' } },
-    })).toBe(false);
+    expect(options.disabled).toBe(true);
     expect(confirm).not.toHaveBeenCalled();
     confirm.mockRestore();
   });
@@ -142,28 +130,25 @@ describe('SettingsPage', () => {
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining(promptLabel));
     confirm.mockRestore();
   });
-  it('blocks invalid edited settings and renders an inline error', async () => {
+  it('blocks invalid auto-saved settings and renders an inline error', async () => {
     renderPage(); fireEvent.change(await screen.findByLabelText('Port'), { target: { value: '70000' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('Port must be between 1 and 65535.');
+    expect(await screen.findByText('Port must be between 1 and 65535.')).toBeTruthy();
     expect(updateSettings).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Port').getAttribute('aria-invalid')).toBe('true');
   });
-  it('keeps dirty edits and reports a save failure', async () => {
+  it('keeps dirty edits and reports a field save failure', async () => {
     updateSettings.mockRejectedValue(new Error('server refused settings'));
-    renderPage(); fireEvent.change(await screen.findByLabelText('Log Level'), { target: { value: 'DEBUG' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('server refused settings');
-    expect((screen.getByLabelText('Log Level') as HTMLSelectElement).value).toBe('DEBUG');
-    expect(screen.getByText('1 unsaved change')).toBeTruthy();
+    renderPage(); fireEvent.change(await screen.findByLabelText('Timezone'), { target: { value: 'America/Chicago' } });
+    expect(await screen.findByText('Could not save')).toBeTruthy();
+    expect((screen.getByLabelText('Timezone') as HTMLInputElement).value).toBe('America/Chicago');
+    expect(screen.getByText('1 pending item')).toBeTruthy();
   });
-  it('requires explicit confirmation before saving hosting changes', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('saves hosting changes automatically and shows restart choices without restarting', async () => {
     renderPage(); fireEvent.change(await screen.findByLabelText('Host'), { target: { value: '127.0.0.1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/restart/i)); expect(updateSettings).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true); fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ host: '127.0.0.1' }));
-    confirm.mockRestore();
+    expect(await screen.findByText(/Restart required/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Restart now' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Later' }));
+    expect(screen.queryByText(/Restart required/i)).toBeNull();
   });
 });

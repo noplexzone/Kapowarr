@@ -30,7 +30,7 @@ from backend.implementations.naming import generate_issue_name, mass_rename
 from backend.implementations.post_processing_state import (
     ensure_postprocessing_record, mark_analyzed, mark_applying,
     mark_completed, mark_failed, mark_rolled_back,
-    update_postprocessing_state,
+    replace_postprocessing_filepaths, update_postprocessing_state,
 )
 from backend.implementations.volumes import Volume
 from backend.internals.db import commit, get_db
@@ -212,9 +212,28 @@ def remove_from_queue(download: Download) -> None:
 
 def add_to_history(download: Download, defer_batch: bool = False) -> None:
     "Add the download to history in the database"
-    success = download.state != DownloadState.FAILED_STATE
     failure_detail = getattr(download, '_failure_reason', None)
-    if success:
+    postprocessing_conflict = False
+    state_id = getattr(download, '_postprocessing_state_id', None)
+    if state_id is not None:
+        state_row = get_db().execute(
+            'SELECT state FROM download_postprocessing_state WHERE id = ?',
+            (state_id,),
+        ).fetchone()
+        postprocessing_conflict = bool(
+            state_row and state_row['state'] == 'conflict'
+        )
+    success = (
+        download.state != DownloadState.FAILED_STATE
+        and not postprocessing_conflict
+    )
+    if postprocessing_conflict:
+        failure_reason = json_dumps(
+            {'stage': 'post_processing', 'type': 'post_processing_conflict'},
+            sort_keys=True,
+            separators=(',', ':'),
+        )
+    elif success:
         failure_reason = None
     elif isinstance(failure_detail, dict):
         failure_reason = json_dumps(
@@ -663,12 +682,24 @@ def convert_file(download: Download) -> None:
     if not Settings().sv.convert:
         return
 
-    download.files += mass_convert(
+    original_files = list(download.files)
+    converted_files = mass_convert(
         download.volume_id,
         download.issue_id,
         filepath_filter=download.files,
         update_websocket_files=True,
         process_individual_files=False
+    )
+    replaced_sources = [
+        original for original in original_files if not exists(original)
+    ]
+    current_files = [file for file in original_files if exists(file)]
+    current_files.extend(file for file in converted_files if exists(file))
+    download.files = list(dict.fromkeys(current_files))
+    replace_postprocessing_filepaths(
+        download,
+        replaced_sources,
+        download.files,
     )
     return
 

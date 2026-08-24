@@ -42,7 +42,7 @@ class RuntimeIntegrityFileMatchingTests(unittest.TestCase):
         db = get_db()
         db.execute("INSERT INTO root_folders(id, folder, section) VALUES(1, ?, 'comic')", (str(self.folder),))
         db.execute("""INSERT INTO volumes(id, comicvine_id, title, year, publisher, root_folder, folder, special_version) VALUES(1, 10, 'The Punisher - War Zone', 1992, 'Marvel', 1, ?, ?)""", (str(self.folder), SpecialVersion.NORMAL.value))
-        for n in range(1, 7):
+        for n in range(1, 42):
             db.execute("INSERT INTO issues(id, volume_id, comicvine_id, issue_number, calculated_issue_number, monitored) VALUES(?, 1, ?, ?, ?, 1)", (n, 2000+n, str(n).zfill(3), float(n)))
         db.connection.commit()
 
@@ -54,7 +54,7 @@ class RuntimeIntegrityFileMatchingTests(unittest.TestCase):
 
     def _patch_volume(self, title='The Punisher War Zone', year=1992):
         vd = VolumeData(id=1, comicvine_id=10, title=title, alt_title=None, year=year, volume_number=1, description='', site_url='', publisher='Marvel', monitored=True, monitor_new_issues=True, root_folder=1, folder=str(self.folder), custom_folder=False, special_version=SpecialVersion.NORMAL, special_version_locked=False, last_cv_fetch=0)
-        issues = [_issue(n, n) for n in range(1, 7)]
+        issues = [_issue(n, n) for n in range(1, 42)]
         return patch('backend.implementations.volumes.Volume', return_value=_FakeVolume(vd, issues))
 
     def test_punisher_suffix_duplicates_keep_one_active_mapping(self):
@@ -106,6 +106,39 @@ class RuntimeIntegrityFileMatchingTests(unittest.TestCase):
         ).fetchone()[0]
         self.assertEqual(first_count, 2)
         self.assertEqual(second_count, first_count)
+
+    def test_punisher_story_part_numbers_do_not_override_leading_issue(self):
+        regular_files = {
+            12: 'War Zone #12 - Psychoville, U.S.A. #01.cbz',
+            21: 'War Zone #21 - 2 Mean 2 Die!.cbz',
+            31: 'War Zone #31 - River of Blood #01.cbz',
+            41: 'War Zone #41 - Countdown #02.cbz',
+        }
+        for issue, filename in regular_files.items():
+            (self.folder / filename).write_bytes(
+                'issue-{}'.format(issue).encode()
+            )
+        annuals = (
+            self.folder / 'The Punisher - War Zone - Annual 01 - 1993.cbz',
+            self.folder / 'The Punisher - War Zone - Annual 02 - 1994.cbz',
+        )
+        for annual in annuals:
+            annual.write_bytes(b'annual')
+
+        with self._patch_volume():
+            scan_files(1, del_unmatched_files=False)
+
+        mapped = [
+            tuple(row) for row in get_db().execute(
+                'SELECT issue_id FROM issues_files ORDER BY issue_id;'
+            ).fetchall()
+        ]
+        self.assertEqual(mapped, [(12,), (21,), (31,), (41,)])
+        conflicts = get_db().execute(
+            'SELECT reason, filepath FROM file_match_conflicts;'
+        ).fetchall()
+        self.assertEqual(conflicts, [])
+        self.assertTrue(all(annual.exists() for annual in annuals))
 
 
     def test_schema_enforces_unique_file_and_issue_relationships(self):

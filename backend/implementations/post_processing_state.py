@@ -72,42 +72,16 @@ def _row_payload(download: Download) -> Dict[str, Any]:
 
 
 def ensure_postprocessing_record(download: Download) -> Union[int, None]:
-    """Create or refresh the durable lifecycle row for a GetComics import."""
+    """Create one durable lifecycle row per in-memory download object."""
     if not is_tracked_getcomics_download(download):
         return None
+    existing_state_id = getattr(download, '_postprocessing_state_id', None)
+    if existing_state_id is not None:
+        return existing_state_id
+
     row = _row_payload(download)
     now = round(time())
-    cursor = get_db()
-    existing = cursor.execute(
-        """
-        SELECT id FROM download_postprocessing_state
-        WHERE download_id = ? AND source_type IN (?, ?)
-        ORDER BY id DESC LIMIT 1;
-        """,
-        (download.id, DownloadSource.GETCOMICS.value, DownloadSource.GETCOMICS_TORRENT.value),
-    ).fetchone()
-    if existing:
-        state_id = existing['id'] if isinstance(existing, dict) else existing[0]
-        cursor.execute(
-            """
-            UPDATE download_postprocessing_state
-            SET volume_id = :volume_id,
-                issue_id = :issue_id,
-                covered_issues = :covered_issues,
-                source_name = :source_name,
-                download_link = :download_link,
-                web_link = :web_link,
-                web_title = :web_title,
-                web_sub_title = :web_sub_title,
-                updated_at = :updated_at
-            WHERE id = :id;
-            """,
-            {**row, 'updated_at': now, 'id': state_id},
-        )
-        download._postprocessing_state_id = state_id
-        return state_id
-
-    state_id = cursor.execute(
+    state_id = get_db().execute(
         """
         INSERT INTO download_postprocessing_state(
             download_id, volume_id, issue_id, covered_issues,
@@ -162,6 +136,67 @@ def update_postprocessing_state(
         """,
         params,
     )
+    return state_id
+
+
+def replace_postprocessing_filepaths(
+    download: Download,
+    replaced_sources: List[str],
+    current_files: List[str],
+) -> Union[int, None]:
+    """Retire stale conflict paths and rebuild state from current files."""
+    if not replaced_sources:
+        return getattr(download, '_postprocessing_state_id', None)
+    state_id = getattr(download, '_postprocessing_state_id', None)
+    if state_id is None:
+        return None
+
+    cursor = get_db()
+    now = round(time())
+    cursor.executemany(
+        """UPDATE file_match_conflicts
+        SET resolved_at = ?, resolution = 'converted_filepath_replaced'
+        WHERE volume_id = ? AND filepath = ? AND resolved_at IS NULL""",
+        ((now, download.volume_id, old) for old in replaced_sources),
+    )
+
+    conflicts = []
+    if current_files:
+        placeholders = ','.join('?' for _ in current_files)
+        rows = cursor.execute(
+            f"""SELECT filepath, reason, parser_result
+            FROM file_match_conflicts
+            WHERE volume_id = ? AND resolved_at IS NULL
+              AND filepath IN ({placeholders})
+            ORDER BY filepath, id""",
+            (download.volume_id, *current_files),
+        ).fetchall()
+        conflicts = [
+            {
+                'filepath': row['filepath'],
+                'reason': row['reason'],
+                'parser_result': row['parser_result'],
+            }
+            for row in rows
+        ]
+
+    if conflicts:
+        return update_postprocessing_state(
+            download,
+            'conflict',
+            {'files': current_files, 'conflicts': conflicts},
+        )
+
+    row = cursor.execute(
+        'SELECT state FROM download_postprocessing_state WHERE id = ?',
+        (state_id,),
+    ).fetchone()
+    if row is not None and row['state'] == 'conflict':
+        return update_postprocessing_state(
+            download,
+            'applying',
+            {'files': current_files},
+        )
     return state_id
 
 

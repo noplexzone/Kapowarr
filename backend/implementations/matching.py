@@ -273,7 +273,6 @@ def folder_extraction_filter(
         volume_data.title,
         file_data['issue_number']
     )
-
     # Neither are found (we play it safe so we keep those)
     neither_found = (
         file_data['year'], file_data['volume_number']
@@ -325,6 +324,9 @@ def file_importing_filter(
         volume_data.title,
         file_data['issue_number']
     )
+    matching_annual = file_data['annual'] == (
+        'annual' in volume_data.title.lower()
+    )
 
     matching_volume_number = match_volume_number(
         volume_data,
@@ -339,7 +341,8 @@ def file_importing_filter(
     )
 
     is_match = (
-        matching_special_version
+        matching_annual
+        and matching_special_version
         and (
             matching_volume_number
             or matching_year

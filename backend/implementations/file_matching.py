@@ -38,16 +38,35 @@ def _emit_downloaded_status_event(event: DownloadedStatusEvent) -> None:
         LOGGER.exception('Failed to emit downloaded status websocket event')
 
 
-_ISSUE_RANGE_RE = re_compile(r'(?<!\d)(\d{1,4}(?:\.\d+)?)\s*-\s*(\d{1,4}(?:\.\d+)?)(?!\d)')
+_ISSUE_RANGE_RE = re_compile(
+    r'(?<!\d)(\d{1,4}(?:\.\d+)?)\s*-\s*'
+    r'(\d{1,4}(?:\.\d+)?)(?!\d)'
+)
 
-def _filename_issue_range(filepath: str):
-    match = _ISSUE_RANGE_RE.search(basename(filepath))
-    if not match:
+
+def _filename_issue_range(filepath: str, file_data=None):
+    """Return parser-confirmed, non-annual issue ranges."""
+    parsed = file_data or extract_filename_data(filepath)
+    if parsed.get('annual'):
         return None
-    start, end = float(match.group(1)), float(match.group(2))
+    issue_number = parsed.get('issue_number')
+    if isinstance(issue_number, tuple) and len(issue_number) == 2:
+        start, end = issue_number
+    else:
+        # Some legacy range forms parse only their endpoint. Confirm that the
+        # parsed issue is that endpoint before accepting the raw range; this
+        # rejects title text such as "#21 - 2 Mean 2 Die!" whose leading issue
+        # correctly parses as 21.
+        match = _ISSUE_RANGE_RE.search(basename(filepath))
+        if not match:
+            return None
+        start, end = float(match.group(1)), float(match.group(2))
+        if issue_number != end:
+            return None
     if start == end:
         return None
     return (min(start, end), max(start, end))
+
 
 # region Automatic Match
 def scan_files(
@@ -176,7 +195,7 @@ def scan_files(
             continue
 
         file_data = extract_filename_data(file)
-        filename_range = _filename_issue_range(file)
+        filename_range = _filename_issue_range(file, file_data)
         if filename_range and (
             file_data.get('year') is None or file_data.get('year') == volume_data.year
         ):

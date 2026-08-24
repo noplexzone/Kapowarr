@@ -51,6 +51,12 @@ issue_regex_6 = compile(r'(?:(?P<i_start>^)|(?<=(?<!part)(?<!page)[\s\._])(?P<n_
 issue_regex_7 = compile(r'(?:part[\s\._]|annuals?[\s\._]|(?<=[\s\._])|^)(\-?' + issue_regex_snippet + r')(?![\s\-\._]covers?)(?![\s\-\._]of[\s\-\._]\d+[\s\-\._]covers?)(?=\s|\.|_|\(|$)', IGNORECASE)
 # Fallback: bare parenthesised issue number, e.g. GetComics-style "(02)" or "(02-03)"
 issue_regex_8 = compile(r'\((\-?' + issue_regex_snippet + r'(?:(?:\-|\s\-\s)\-?' + issue_regex_snippet + r')?)\)', IGNORECASE)
+story_title_issue_regex = compile(
+    r'^(?P<series>.+?)\s+#\s*(?P<issue>\-?' + issue_regex_snippet + r')'
+    r'\s+-\s+(?=(?:[a-z]|\d+\s+'
+    r'(?!(?:annuals?|tpb|digital|c2c|covers?)\b)[a-z]))',
+    IGNORECASE,
+)
 year_regex = compile(r'\[(?:[a-z]+\.?\s)?' + year_regex_snippet + r'\]|\((?:[a-z]+\.?\s)?' + year_regex_snippet + r'\)|--' + year_regex_snippet + r'--|__' + year_regex_snippet + r'__|, ' + year_regex_snippet + r'\s{3}|\b(?:(?:\d{2}-){1,2}(\d{4})|(\d{4})(?:-\d{2}){1,2})\b', IGNORECASE)
 series_regex = compile(r'(^(\d+\.)?\s+|^\d+\s{3}|\s(?=\s)|[\s,]+$)')
 annual_regex = compile(r'(?:\+|plus)[\s\._]?annuals?|annuals?[\s\._]?(?:\+|plus)|^((?!annuals?).)*$', IGNORECASE) # If regex matches, it's NOT an annual
@@ -533,47 +539,57 @@ def extract_filename_data(
 
     embedded_issue_match = None
     embedded_issue_year = None
-    for issue_hint_regex in (
-        _issue_then_year_scene_re,
-        _issue_before_cover_date_re
-    ):
-        if issue_hint_regex is _issue_then_year_scene_re and '--' in filename:
-            continue
-        if issue_hint_regex is _issue_before_cover_date_re and issue_regex_2.search(filename):
-            continue
-        embedded_issue_match = issue_hint_regex.search(filename)
-        if embedded_issue_match:
-            embedded_issue_range = (
-                embedded_issue_match.start('issue'),
-                embedded_issue_match.end('issue')
-            )
-            if check_overlapping_pos(
-                all_year_pos + [(volume_pos, volume_end)],
-                embedded_issue_range
-            ):
-                embedded_issue_match = None
+
+    # A leading "#NN - title" marker describes the comic issue. Numbers
+    # later in the title are commonly story-arc parts and must not override it.
+    # The title lookahead deliberately excludes genuine "#1 - 13" ranges.
+    story_title_issue_match = story_title_issue_regex.search(filename)
+    if story_title_issue_match:
+        issue_number = story_title_issue_match.group('issue')
+        issue_pos = story_title_issue_match.start('issue')
+
+    if issue_number is None:
+        for issue_hint_regex in (
+            _issue_then_year_scene_re,
+            _issue_before_cover_date_re
+        ):
+            if issue_hint_regex is _issue_then_year_scene_re and '--' in filename:
                 continue
-            issue_number = _normalise_embedded_issue_hint(
-                embedded_issue_match.group('issue')
-            )
-            issue_pos = embedded_issue_match.start('issue')
-            simple_issue_year = filename[
-                embedded_issue_match.end('issue'):
-            ].lstrip().startswith('(') and filename[
-                embedded_issue_match.end('issue'):
-            ].lstrip()[1:5].isdigit()
-            if (
-                folder_volume_year is not None
-                and issue_hint_regex is _issue_before_cover_date_re
-                and not simple_issue_year
-                and filepath.startswith('/')
-                and dirname(filepath).count('/') <= 2
-            ):
-                embedded_issue_year = folder_volume_year
-            elif embedded_issue_match.groupdict().get('year'):
-                embedded_issue_year = embedded_issue_match.group('year')
-            special_version = None
-            break
+            if issue_hint_regex is _issue_before_cover_date_re and issue_regex_2.search(filename):
+                continue
+            embedded_issue_match = issue_hint_regex.search(filename)
+            if embedded_issue_match:
+                embedded_issue_range = (
+                    embedded_issue_match.start('issue'),
+                    embedded_issue_match.end('issue')
+                )
+                if check_overlapping_pos(
+                    all_year_pos + [(volume_pos, volume_end)],
+                    embedded_issue_range
+                ):
+                    embedded_issue_match = None
+                    continue
+                issue_number = _normalise_embedded_issue_hint(
+                    embedded_issue_match.group('issue')
+                )
+                issue_pos = embedded_issue_match.start('issue')
+                simple_issue_year = filename[
+                    embedded_issue_match.end('issue'):
+                ].lstrip().startswith('(') and filename[
+                    embedded_issue_match.end('issue'):
+                ].lstrip()[1:5].isdigit()
+                if (
+                    folder_volume_year is not None
+                    and issue_hint_regex is _issue_before_cover_date_re
+                    and not simple_issue_year
+                    and filepath.startswith('/')
+                    and dirname(filepath).count('/') <= 2
+                ):
+                    embedded_issue_year = folder_volume_year
+                elif embedded_issue_match.groupdict().get('year'):
+                    embedded_issue_year = embedded_issue_match.group('year')
+                special_version = None
+                break
 
     # Find issue number
     if issue_number is not None:

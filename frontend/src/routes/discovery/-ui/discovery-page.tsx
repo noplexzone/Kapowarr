@@ -346,7 +346,11 @@ function DiscoveryShelf({ title, description, type, section, browseSearch, hideA
   const router = useRouter();
   const query = useQuery(discoveryShelfQueryOptions(type, section, 12, hideAlreadyAdded));
   const items = dedupeDiscoveryItems(query.data?.items ?? []).slice(0, 12);
-  return <section className={styles.shelf} aria-labelledby={`${section}-${type}-heading`}><header className={styles.shelfHeader}><div><h2 id={`${section}-${type}-heading`}>{title}</h2>{description && <p>{description}</p>}</div>{browseSearch && <Link className={styles.viewAllLink} to="/discover/browse" search={browseSearch as any}>View All</Link>}</header>{query.isPending ? <div className={styles.empty}>Loading…</div> : query.isError ? <div className={styles.empty}>Could not load shelf <Button onClick={() => void query.refetch()}>Retry</Button></div> : items.length === 0 ? <div className={styles.empty}>No {title.toLowerCase()} found.</div> : <div className={styles.shelfScroller}>{items.map(volume => <DiscoveryCatalogCard key={getDiscoveryCardKey(volume)} section={section} volume={volume} onOpen={() => openDiscoveryAdd(navigate, router, section, volume)} />)}</div>}</section>;
+  const indexing = section === 'comic' && (type === 'recently-started' || type === 'upcoming-launches') && items.length === 0 && query.data?.coverage_state !== 'complete';
+  const emptyMessage = indexing
+    ? 'Discovery facts are being indexed. Results will appear as ComicVine coverage progresses.'
+    : `No ${title.toLowerCase()} found for the current provider window.`;
+  return <section className={styles.shelf} aria-labelledby={`${section}-${type}-heading`}><header className={styles.shelfHeader}><div><h2 id={`${section}-${type}-heading`}>{title}</h2>{description && <p>{description}</p>}</div>{browseSearch && <Link className={styles.viewAllLink} to="/discover/browse" search={browseSearch as any}>View All</Link>}</header>{query.isPending ? <div className={styles.emptyShelf}>Loading…</div> : query.isError ? <div className={styles.emptyShelf}>Could not load shelf <Button onClick={() => void query.refetch()}>Retry</Button></div> : items.length === 0 ? <div className={styles.emptyShelf} role="status">{emptyMessage}</div> : <div className={styles.shelfScroller}>{items.map(volume => <DiscoveryCatalogCard key={getDiscoveryCardKey(volume)} section={section} volume={volume} onOpen={() => openDiscoveryAdd(navigate, router, section, volume)} />)}</div>}</section>;
 }
 
 function BrowseShortcuts({ section, capabilities }: { section: DiscoverySection; capabilities?: DiscoveryCapabilities }) {

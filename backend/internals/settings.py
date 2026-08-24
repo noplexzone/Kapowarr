@@ -206,6 +206,7 @@ task_intervals = {
     # If there are tasks that should be run at the same time,
     # but per se after each other, put them in that order in the dict.
     'update_all': 86400, # every day
+    'comic_discovery_fact_sync': 3900, # resume after ComicVine's hourly request window
 }
 
 

@@ -36,7 +36,7 @@ _NON_ENGLISH_PUBLISHERS = frozenset({
     # Japanese publishers
     'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
     'shodensha', 'shinchosha', 'shucream', 'shu-cream', 'two virgins',
-    'media factory', 'kodansha', 'kodansha comics', 'kodansha usa',
+    'media factory', 'fujimi shobo', 'kodansha', 'kodansha comics', 'kodansha usa',
     'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
     'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
     'coamix', 'ascii media works', 'core magazine', 'coremagazine',
@@ -114,7 +114,7 @@ _MANGA_TITLE_KEYWORDS = _NON_ENGLISH_TITLE_KEYWORDS
 _MANGA_PUBLISHERS = frozenset({
     'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
     'shodensha', 'shinchosha', 'shucream', 'shu-cream', 'two virgins',
-    'media factory', 'kodansha', 'kodansha comics', 'kodansha usa',
+    'media factory', 'fujimi shobo', 'kodansha', 'kodansha comics', 'kodansha usa',
     'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
     'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
     'coamix', 'ascii media works', 'core magazine', 'coremagazine',

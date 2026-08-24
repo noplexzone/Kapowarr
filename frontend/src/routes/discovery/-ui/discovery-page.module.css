@@ -303,6 +303,15 @@
   font-size: 0.95rem;
 }
 
+.emptyShelf {
+  display: flex;
+  align-items: center;
+  min-height: 3rem;
+  padding: 0.75rem 0;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
 .arcsView {
   display: flex;
   flex-direction: column;

@@ -342,6 +342,35 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertEqual(result['coverage'], 'partial')
         self.assertEqual(add_task.call_args[0][0].action, 'comic_discovery_fact_sync')
 
+    def test_discovery_refresh_restarts_completed_fact_cursor(self):
+        import sqlite3
+        con = sqlite3.connect(':memory:')
+        con.execute("""CREATE TABLE comic_discovery_fact_sync_state(
+            sync_id INTEGER PRIMARY KEY, scope TEXT, provider_cursor TEXT,
+            coverage_state TEXT, coverage_complete BOOL, date_preference TEXT,
+            last_started_at INTEGER, last_completed_at INTEGER, last_error TEXT,
+            next_resume_at INTEGER, records_processed INTEGER,
+            facts_created INTEGER, facts_updated INTEGER
+        );""")
+        con.execute("""INSERT INTO comic_discovery_fact_sync_state VALUES(
+            1, 'comic_series_discovery', 'completed-cursor', 'complete', 1,
+            'cover_date', 1, 2, NULL, NULL, 400, 20, 10
+        );""")
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        with request_patch, settings_patch, timer_patch, \
+                patch.object(api_mod, 'get_db', return_value=con), \
+                patch.object(api_mod, 'commit', side_effect=con.commit), \
+                patch.object(api_mod.TaskHandler, 'add', return_value=124):
+            response = self._client().post(
+                '/api/discovery/facts/refresh',
+                headers={'X-Api-Key': 'test-key'},
+            )
+        self._assert_envelope(response)
+        state = con.execute("""SELECT provider_cursor, coverage_state,
+            coverage_complete, records_processed, facts_created, facts_updated
+            FROM comic_discovery_fact_sync_state WHERE sync_id=1;""").fetchone()
+        self.assertEqual(state, (None, 'partial', 0, 0, 0, 0))
+
     def test_missing_shelf_type_is_validation_error(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         with request_patch, settings_patch, timer_patch:

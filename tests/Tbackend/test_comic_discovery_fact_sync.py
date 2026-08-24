@@ -55,8 +55,8 @@ class ComicDiscoveryFactSyncTests(unittest.TestCase):
         class FakeComicVine:
             async def sync_discovery_fact_page(self, scope, *, offset, limit, date_preference):
                 calls.append((scope, offset, limit, date_preference))
-                if scope == 'recently_started' and offset == 0:
-                    return {'records_processed': 100, 'facts_created': 5, 'facts_updated': 5, 'facts_failed': 0, 'candidate_volumes_found': 5, 'next_offset': 100, 'has_more': True, 'window_start': '2025-01-01', 'window_end': '2026-01-01'}
+                if scope == 'recently_started' and offset < 500:
+                    return {'records_processed': 100, 'facts_created': 5, 'facts_updated': 5, 'facts_failed': 0, 'candidate_volumes_found': 5, 'next_offset': offset + 100, 'has_more': True, 'window_start': '2025-01-01', 'window_end': '2026-01-01'}
                 return {'records_processed': 3, 'facts_created': 1, 'facts_updated': 1, 'facts_failed': 0, 'candidate_volumes_found': 1, 'next_offset': None, 'has_more': False, 'window_start': '2025-01-01', 'window_end': '2026-01-01'}
 
         with patch.object(task_mod, 'get_db', return_value=con), patch.object(task_mod, 'commit', lambda: None), patch.object(task_mod, '_emit_task_event', lambda event: None), self.settings_patch(), patch.object(task_mod, 'ComicVine', return_value=FakeComicVine()):
@@ -66,19 +66,53 @@ class ComicDiscoveryFactSyncTests(unittest.TestCase):
             state = json.loads(row['provider_cursor'])
             self.assertEqual(row['coverage_state'], 'partial')
             self.assertEqual(row['coverage_complete'], 0)
-            self.assertEqual(state['scopes']['recently_started']['offset'], 100)
-            self.assertEqual(calls, [('recently_started', 0, 100, 'cover_date')])
+            self.assertEqual(state['scopes']['recently_started']['offset'], 500)
+            self.assertEqual(calls, [
+                ('recently_started', offset, 100, 'cover_date')
+                for offset in (0, 100, 200, 300, 400)
+            ])
 
             task = ComicDiscoveryFactSyncTask()
             task.run()
             row = con.execute('SELECT provider_cursor, coverage_state, coverage_complete, records_processed FROM comic_discovery_fact_sync_state WHERE sync_id=1').fetchone()
             state = json.loads(row['provider_cursor'])
-            self.assertEqual(calls[-2:], [('recently_started', 100, 100, 'cover_date'), ('upcoming_launches', 0, 100, 'cover_date')])
+            self.assertEqual(calls[-2:], [('recently_started', 500, 100, 'cover_date'), ('upcoming_launches', 0, 100, 'cover_date')])
             self.assertEqual(state['scopes']['recently_started']['coverage_state'], 'complete')
             self.assertEqual(state['scopes']['upcoming_launches']['coverage_state'], 'complete')
             self.assertEqual(row['coverage_state'], 'complete')
             self.assertEqual(row['coverage_complete'], 1)
-            self.assertEqual(row['records_processed'], 106)
+            self.assertEqual(row['records_processed'], 506)
+
+    def test_completed_index_restarts_when_daily_maintenance_is_due(self):
+        con = memory_db()
+        completed = ComicDiscoveryFactSyncTask()._empty_cursor('cover_date')
+        for scope in completed['scopes'].values():
+            scope['coverage_state'] = 'complete'
+        con.execute("""UPDATE comic_discovery_fact_sync_state
+            SET provider_cursor=?, coverage_state='complete', coverage_complete=1,
+                last_completed_at=1, records_processed=999
+            WHERE sync_id=1;""", (json.dumps(completed),))
+        calls = []
+
+        class FakeComicVine:
+            async def sync_discovery_fact_page(self, scope, *, offset, limit, date_preference):
+                calls.append((scope, offset))
+                return {'records_processed': 1, 'facts_created': 1,
+                    'facts_updated': 1, 'facts_failed': 0,
+                    'candidate_volumes_found': 1, 'next_offset': None,
+                    'has_more': False, 'window_start': '2025-01-01',
+                    'window_end': '2026-01-01'}
+
+        with patch.object(task_mod, 'get_db', return_value=con), \
+                patch.object(task_mod, 'commit', lambda: None), \
+                patch.object(task_mod, '_emit_task_event', lambda event: None), \
+                self.settings_patch(), \
+                patch.object(task_mod, 'ComicVine', return_value=FakeComicVine()):
+            ComicDiscoveryFactSyncTask().run()
+        row = con.execute("""SELECT coverage_state, coverage_complete,
+            records_processed FROM comic_discovery_fact_sync_state WHERE sync_id=1""").fetchone()
+        self.assertEqual(calls, [('recently_started', 0), ('upcoming_launches', 0)])
+        self.assertEqual((row['coverage_state'], row['coverage_complete'], row['records_processed']), ('complete', 1, 2))
 
     def test_task_records_rate_limit_pause_without_completing(self):
         con = memory_db()

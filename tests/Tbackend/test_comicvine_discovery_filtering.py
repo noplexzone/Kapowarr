@@ -70,6 +70,7 @@ class ComicVineDiscoveryFilteringTests(unittest.TestCase):
         self.assertTrue(excluded('Shinchosha'))
         self.assertTrue(excluded('ShuCream'))
         self.assertTrue(excluded('Two Virgins'))
+        self.assertTrue(excluded('Fujimi Shobo'))
 
     def test_title_keywords_are_normalized_before_comic_exclusion(self):
         has_keyword = _SYMBOLS['_has_manga_discovery_title_keyword']

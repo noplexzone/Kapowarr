@@ -71,7 +71,7 @@ from backend.implementations.remote_mapping import RemoteMappings
 from backend.implementations.root_folders import RootFolders
 from backend.implementations.volumes import (Library, delete_issue_file,
                                              rematch_volume)
-from backend.internals.db import DBConnection, get_db
+from backend.internals.db import DBConnection, commit, get_db
 from backend.internals.db_models import FilesDB
 from backend.internals.server import Server, StartTypeHandlers
 from backend.internals.settings import Settings, get_about_data
@@ -1512,6 +1512,7 @@ def api_discovery():
             return return_api(page)
         return return_api(page['items'])
 
+    fallback_sync_state: Dict[str, Any] = {}
     if discovery_type in ('upcoming-launches', 'recently-started'):
         fact_limit = limit + 1 if paginated else min(limit, 20)
         if exclude_added and paginated:
@@ -1531,6 +1532,10 @@ def api_discovery():
                 fact_page['page_size'] = limit
                 return return_api(fact_page)
             return return_api(fact_page['items'][:limit])
+        fallback_sync_state = {key: fact_page.get(key) for key in (
+            'coverage_state', 'coverage_complete', 'last_completed_at', 'last_error',
+            'sync_task_id', 'source_note',
+        ) if key in fact_page}
         # If the local fact index is empty/not started, fall back to the bounded
         # provider shelf so a fresh or migrated install does not render blank
         # discovery sections before the background index has run.  Shelves use
@@ -1539,13 +1544,13 @@ def api_discovery():
     if discovery_type == 'upcoming-launches':
         fetch_limit = offset + limit + 1 if paginated else 20
         try:
-            results = run(cv.get_upcoming_releases(limit=fetch_limit))
+            results = run(cv.get_upcoming_releases(days=365, limit=fetch_limit))
         except Exception:
             LOGGER.exception('discovery provider fallback failed type=%s section=%s', discovery_type, section)
             results = []
         if paginated:
             items = results[offset:offset + limit]
-            return return_api({'items': items, 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': len(results) > offset + limit})
+            return return_api({'items': items, 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': len(results) > offset + limit, **fallback_sync_state})
     elif discovery_type == 'recently-started':
         fetch_limit = offset + limit + 1 if paginated else 20
         try:
@@ -1555,7 +1560,7 @@ def api_discovery():
             results = []
         if paginated:
             items = results[offset:offset + limit]
-            return return_api({'items': items, 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': len(results) > offset + limit})
+            return return_api({'items': items, 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': len(results) > offset + limit, **fallback_sync_state})
     else:
         sort = {
             'recently-active': 'trending',
@@ -1745,16 +1750,25 @@ def api_discovery_browse():
 @error_handler
 @auth
 def api_discovery_facts_refresh():
-    task_id = TaskHandler().add(ComicDiscoveryFactSyncTask())
     try:
         db = get_db()
         date_preference = 'store_date' if str(Settings().sv.date_type).endswith('store_date') else 'cover_date'
-        db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, coverage_state, coverage_complete, date_preference, last_started_at)
-            VALUES(1, 'comic_series_discovery', 'partial', 0, ?, NULL)
-            ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, date_preference=excluded.date_preference, last_error=NULL;""", (date_preference,))
+        db.execute("""INSERT INTO comic_discovery_fact_sync_state(
+                sync_id, scope, provider_cursor, coverage_state, coverage_complete,
+                date_preference, last_started_at, last_completed_at, last_error,
+                next_resume_at, records_processed, facts_created, facts_updated
+            ) VALUES(1, 'comic_series_discovery', NULL, 'partial', 0, ?, NULL,
+                NULL, NULL, NULL, 0, 0, 0)
+            ON CONFLICT(sync_id) DO UPDATE SET
+                scope='comic_series_discovery', provider_cursor=NULL,
+                coverage_state='partial', coverage_complete=0,
+                date_preference=excluded.date_preference, last_started_at=NULL,
+                last_completed_at=NULL, last_error=NULL, next_resume_at=NULL,
+                records_processed=0, facts_created=0, facts_updated=0;""", (date_preference,))
         commit()
     except OperationalError:
         pass
+    task_id = TaskHandler().add(ComicDiscoveryFactSyncTask())
     return return_api({'sync_task_id': task_id, 'coverage': 'partial', 'source_note': 'Discovery facts are being indexed.'})
 
 

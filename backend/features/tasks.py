@@ -1020,7 +1020,7 @@ class ComicDiscoveryFactSyncTask(Task):
     issue_id = None
     scopes = ('recently_started', 'upcoming_launches')
     page_size = 100
-    max_pages_per_run = 2
+    max_pages_per_run = 5
 
     def __init__(self, scope: str = 'comic_series_discovery') -> None:
         self.scope = scope
@@ -1092,7 +1092,7 @@ class ComicDiscoveryFactSyncTask(Task):
         date_preference = str(Settings().sv.date_type)
         date_preference = 'store_date' if date_preference.endswith('store_date') else 'cover_date'
         cursor_row = db.execute(
-            "SELECT provider_cursor, records_processed, facts_created, facts_updated FROM comic_discovery_fact_sync_state WHERE sync_id = 1;"
+            "SELECT provider_cursor, records_processed, facts_created, facts_updated, coverage_complete, last_completed_at FROM comic_discovery_fact_sync_state WHERE sync_id = 1;"
         )
         if hasattr(cursor_row, 'fetchonedict'):
             row = cursor_row.fetchonedict() or {}
@@ -1100,9 +1100,14 @@ class ComicDiscoveryFactSyncTask(Task):
             fetched = cursor_row.fetchone()
             row = dict(fetched) if fetched is not None and hasattr(fetched, 'keys') else {}
         state_cursor = self._load_cursor(row.get('provider_cursor'), date_preference)
-        processed = int(row.get('records_processed') or 0)
-        facts_created = int(row.get('facts_created') or 0)
-        facts_updated = int(row.get('facts_updated') or 0)
+        maintenance_due = bool(row.get('coverage_complete')) and int(row.get('last_completed_at') or 0) <= ts - 86400
+        if maintenance_due:
+            state_cursor = self._empty_cursor(date_preference)
+            processed = facts_created = facts_updated = 0
+        else:
+            processed = int(row.get('records_processed') or 0)
+            facts_created = int(row.get('facts_created') or 0)
+            facts_updated = int(row.get('facts_updated') or 0)
         db.execute("""INSERT INTO comic_discovery_fact_sync_state(sync_id, scope, provider_cursor, coverage_state, coverage_complete, date_preference, last_started_at, records_processed, facts_created, facts_updated)
             VALUES(1, ?, ?, 'partial', 0, ?, ?, ?, ?, ?)
             ON CONFLICT(sync_id) DO UPDATE SET coverage_state='partial', coverage_complete=0, provider_cursor=excluded.provider_cursor, date_preference=excluded.date_preference, last_started_at=excluded.last_started_at, last_error=NULL;""", (
@@ -1166,8 +1171,6 @@ class ComicDiscoveryFactSyncTask(Task):
                     processed, facts_created, facts_updated, date_preference,
                 ))
                 commit()
-                if page.get('has_more'):
-                    break
             complete = self._next_scope(state_cursor) is None and not self.stop
             state = 'complete' if complete else 'partial'
             db.execute("""UPDATE comic_discovery_fact_sync_state
@@ -1470,7 +1473,7 @@ class TaskHandler(metaclass=Singleton):
     queue: List[dict] = []
     task_interval_waiter: Union[Timer, None] = None
     queue_lock = RLock()
-    singleton_actions = frozenset(('update_all', 'search_all'))
+    singleton_actions = frozenset(('update_all', 'search_all', 'comic_discovery_fact_sync'))
 
     def __init__(self) -> None:
         """Setup the handler"""

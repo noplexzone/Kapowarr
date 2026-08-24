@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Mark MangaDex decade Browse responses as bounded with unknown totals and no false pagination.
 - Apply Hide in Library on server-side provider IDs for Discover shelves, Browse, and full search.
 - Redirect legacy Add URLs into Discover and return paginated metadata-search envelopes for full result pages while keeping legacy search callers compatible.
+- Keep comic Discover shelves populated and relevant with automatic fact-index continuation, a working full refresh, a one-year launch horizon, compact indexing states, and stricter manga publisher filtering.
 
 ### Removed
 

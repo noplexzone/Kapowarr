@@ -64,6 +64,13 @@ it('refreshes Discover shelves from the toolbar without generic Add state', () =
   expect(source).not.toContain('onAddVolume={() => undefined}');
 });
 
+it('shows compact indexing guidance instead of oversized blank shelves', () => {
+  expect(source).toContain('Discovery facts are being indexed');
+  expect(source).toContain('styles.emptyShelf');
+  const css = readFileSync('src/routes/discovery/-ui/discovery-page.module.css', 'utf8');
+  expect(css).toContain('.emptyShelf');
+});
+
 
 it('hybrid-loads Browse with an IntersectionObserver and three automatic pages', () => {
   expect(source).toContain('DISCOVER_AUTOMATIC_PAGE_LIMIT');

@@ -1529,10 +1529,11 @@ def api_discovery():
             fact_page['items'] = fact_page['items'][:limit]
             fact_page['page_size'] = limit
             return return_api(fact_page)
-        # Normal first-publication shelves are fact-index backed only.  Do not
-        # synchronously fall back to bounded ComicVine provider scans on render;
-        # refresh queues the resumable background fact-sync task instead.
-        return return_api(fact_page['items'][:limit])
+        if fact_page.get('items'):
+            return return_api(fact_page['items'][:limit])
+        # If the local fact index is empty/not started, fall back to the bounded
+        # provider shelf so a fresh or migrated install does not render blank
+        # discovery sections before the background index has run.
     cv = ComicVine()
     if discovery_type == 'upcoming-launches':
         fetch_limit = offset + limit + 1 if paginated else 20

@@ -2310,3 +2310,64 @@ def _migrate_add_download_postprocessing_state():
             ON download_postprocessing_state(volume_id, state, updated_at);
     """)
     return
+
+@DatabaseMigrationHandler.register_handler(65)
+def _migrate_restore_canonical_issue_file_conflict_links():
+    """Restore one safe canonical mapping for legacy duplicate issue links.
+
+    Migration 63 intentionally removed duplicate issue/file mappings before adding
+    one-to-one indexes, but it removed every row in an affected group.  For the
+    common case (multiple physical files claimed one issue), keep one canonical
+    file linked and leave the rest as conflicts for review.
+    """
+    cursor = get_db()
+    cursor.executescript("""
+        WITH ranked AS (
+            SELECT
+                c.id AS conflict_id,
+                c.file_id,
+                c.proposed_issue_id AS issue_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY c.proposed_issue_id
+                    ORDER BY
+                        CASE WHEN c.filepath GLOB '* ([0-9]).*' THEN 1 ELSE 0 END,
+                        CASE WHEN c.filepath GLOB '* ([0-9][0-9]).*' THEN 1 ELSE 0 END,
+                        LENGTH(c.filepath),
+                        c.file_id
+                ) AS rn
+            FROM file_match_conflicts c
+            INNER JOIN files f ON f.id = c.file_id
+            INNER JOIN issues i ON i.id = c.proposed_issue_id
+            WHERE c.source_type = 'migration'
+              AND c.reason = 'multiple_files_claim_issue'
+              AND c.resolved_at IS NULL
+              AND c.file_id IS NOT NULL
+              AND c.proposed_issue_id IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM issues_files existing_file WHERE existing_file.file_id = c.file_id)
+              AND NOT EXISTS (SELECT 1 FROM issues_files existing_issue WHERE existing_issue.issue_id = c.proposed_issue_id)
+        )
+        INSERT OR IGNORE INTO issues_files(file_id, issue_id, forced)
+        SELECT file_id, issue_id, 0 FROM ranked WHERE rn = 1;
+
+        WITH restored AS (
+            SELECT c.id
+            FROM file_match_conflicts c
+            INNER JOIN issues_files ifs ON ifs.file_id = c.file_id AND ifs.issue_id = c.proposed_issue_id
+            WHERE c.source_type = 'migration'
+              AND c.reason = 'multiple_files_claim_issue'
+              AND c.resolved_at IS NULL
+        )
+        UPDATE file_match_conflicts
+        SET resolved_at = strftime('%s','now'), resolution = 'canonical_mapping_restored'
+        WHERE id IN (SELECT id FROM restored);
+    """)
+    violations = cursor.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT file_id FROM issues_files GROUP BY file_id HAVING COUNT(*) > 1
+            UNION ALL
+            SELECT issue_id FROM issues_files GROUP BY issue_id HAVING COUNT(*) > 1
+        );
+    """).fetchone()[0]
+    if violations:
+        raise RuntimeError('Failed to preserve one-to-one issue file invariants after restoration')
+    return

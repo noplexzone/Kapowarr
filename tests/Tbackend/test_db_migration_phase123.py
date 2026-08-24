@@ -128,6 +128,24 @@ class Phase123MigrationTests(unittest.TestCase):
             self.assertEqual(con.execute('SELECT COUNT(*) FROM issues_files;').fetchone()[0], 0)
             self.assertEqual(con.execute("SELECT reason FROM file_match_conflicts WHERE source_type = 'migration';").fetchone()[0], 'file_claims_multiple_issues')
 
+    def test_version_65_restores_one_canonical_issue_mapping_from_migration_conflicts(self):
+        self._seed_schema(65)
+        with self._connect() as con:
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Recovered Links', 1);")
+            con.execute("INSERT INTO issues(id, volume_id, comicvine_id, issue_number, calculated_issue_number) VALUES (1, 1, 101, '1', 1.0);")
+            con.execute("INSERT INTO files(id, filepath, size) VALUES (1, '/comics/Recovered Links #1.cbz', 1);")
+            con.execute("INSERT INTO files(id, filepath, size) VALUES (2, '/comics/Recovered Links #1 (1).cbz', 1);")
+            con.executemany("INSERT INTO file_match_conflicts(volume_id, file_id, filepath, proposed_issue_id, source_type, reason, created_at) VALUES (1, ?, ?, ?, 'migration', 'multiple_files_claim_issue', 1);", [
+                (1, '/comics/Recovered Links #1.cbz', 1),
+                (2, '/comics/Recovered Links #1 (1).cbz', 1),
+            ])
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            self.assertEqual(con.execute('SELECT file_id, issue_id FROM issues_files;').fetchone(), (1, 1))
+            statuses = con.execute('SELECT file_id, resolution IS NOT NULL FROM file_match_conflicts ORDER BY file_id;').fetchall()
+            self.assertEqual(statuses, [(1, 1), (2, 0)])
+
     def test_phase6_experimental_version_58_preserves_metron_rows_and_drops_saved_views(self):
         self._seed_schema(58)
         with self._connect() as con:

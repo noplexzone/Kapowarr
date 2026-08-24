@@ -1,7 +1,9 @@
+import asyncio
 import unittest
 from unittest.mock import patch
 
 from backend.implementations import mangadex
+from backend.implementations.comicvine import ComicVine
 
 class FakeResponse:
     def __init__(self, data):
@@ -24,6 +26,25 @@ class FakeSession:
             if url.endswith(suffix):
                 return FakeResponse(payload)
         return FakeResponse(self.payload)
+
+
+
+class ComicVineBrowseCatalogTests(unittest.TestCase):
+    def test_comicvine_publisher_browse_resolves_publisher_name_to_provider_id(self):
+        calls = []
+        async def fake_call_api(self, session, endpoint, params, default):
+            calls.append((endpoint, dict(params)))
+            if endpoint == '/search':
+                return {'results': [{'id': 31, 'name': 'DC Comics'}]}
+            return {'results': [], 'number_of_total_results': 0}
+        with patch('backend.implementations.comicvine.AsyncSession'), patch.object(ComicVine, '__init__', lambda self, comicvine_api_key=None: None), patch.object(ComicVine, '_ComicVine__call_api', fake_call_api), patch.object(ComicVine, '_ComicVine__format_search_output', lambda self, rows: []):
+            page = asyncio.run(ComicVine().browse_catalog_volumes(publisher='DC Comics', limit=5))
+        self.assertEqual(page['items'], [])
+        self.assertEqual(calls[0][0], '/search')
+        self.assertEqual(calls[0][1]['query'], 'DC Comics')
+        self.assertEqual(calls[0][1]['resources'], 'publisher')
+        self.assertEqual(calls[1][0], '/volumes')
+        self.assertIn('publisher:31', calls[1][1]['filter'])
 
 class DiscoveryBrowseCatalogTests(unittest.TestCase):
     def _payload(self, count):

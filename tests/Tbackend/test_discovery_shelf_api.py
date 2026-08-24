@@ -399,7 +399,7 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         result = self._assert_envelope(response)
         self.assertEqual(result['items'], [])
 
-    def test_recently_started_shelf_does_not_call_provider_on_render(self):
+    def test_recently_started_paginated_shelf_reports_empty_fact_index_without_provider(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
         comicvine.get_new_volumes = AsyncMock(side_effect=RuntimeError('provider down'))
@@ -413,6 +413,19 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertEqual(result['coverage_state'], 'not_started')
         comicvine.get_new_volumes.assert_not_awaited()
         comicvine.browse_catalog_volumes.assert_not_awaited()
+
+    def test_recently_started_public_shelf_falls_back_when_fact_index_empty(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        comicvine = self._comicvine()
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
+            response = self._client().get('/api/discovery', query_string={
+                'section': 'comic',
+                'type': 'recently-started',
+                'limit': '10',
+            })
+        result = self._assert_envelope(response)
+        self.assertEqual([item['metadata_id'] for item in result], ['300'])
+        comicvine.get_new_volumes.assert_awaited_once()
 
     def test_url_base_prefixed_route_returns_valid_envelope(self):
         app = Flask(__name__)
@@ -432,7 +445,7 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self._assert_envelope(response)
 
 
-    def test_completed_recently_started_shelf_still_does_not_fallback_to_provider(self):
+    def test_completed_empty_recently_started_shelf_falls_back_to_provider(self):
         import sqlite3
         con = sqlite3.connect(':memory:')
         con.executescript("""
@@ -461,8 +474,8 @@ class DiscoveryShelfApiTests(unittest.TestCase):
                 'type': 'recently-started',
             })
         result = self._assert_envelope(response)
-        self.assertEqual(result, [])
-        comicvine.get_new_volumes.assert_not_awaited()
+        self.assertEqual([item['metadata_id'] for item in result], ['300'])
+        comicvine.get_new_volumes.assert_awaited_once()
 
     def test_mangadex_full_search_uses_paginated_provider_path(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()

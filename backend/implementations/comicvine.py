@@ -1557,8 +1557,6 @@ class ComicVine:
         filters = []
         if query:
             filters.append(f'name:{query}')
-        if publisher:
-            filters.append(f'publisher:{publisher}')
         selected_year = None
         if year:
             try:
@@ -1582,15 +1580,39 @@ class ComicVine:
             'recently_updated': 'date_last_updated:desc',
             'trending': 'date_last_updated:desc',
         }.get(sort, 'date_last_updated:desc')
-        params = {
-            'field_list': 'id,name,deck,description,publisher,start_year,image,site_detail_url,count_of_issues,date_added,date_last_updated',
-            'sort': order,
-            'offset': offset,
-            'limit': limit + 1,
-        }
-        if filters:
-            params['filter'] = ','.join(filters)
         async with AsyncSession() as session:
+            if publisher:
+                publisher_page = await self.__call_api(
+                    session,
+                    '/search',
+                    {
+                        'query': publisher,
+                        'resources': 'publisher',
+                        'field_list': 'id,name',
+                        'limit': 10,
+                    },
+                    {'results': []},
+                )
+                publisher_results = publisher_page.get('results') or []
+                publisher_match = next(
+                    (
+                        item for item in publisher_results
+                        if str(item.get('name') or '').casefold() == publisher.casefold()
+                    ),
+                    publisher_results[0] if publisher_results else None,
+                )
+                if publisher_match and publisher_match.get('id'):
+                    filters.append(f"publisher:{publisher_match['id']}")
+                else:
+                    filters.append(f'publisher:{publisher}')
+            params = {
+                'field_list': 'id,name,deck,description,publisher,start_year,image,site_detail_url,count_of_issues,date_added,date_last_updated',
+                'sort': order,
+                'offset': offset,
+                'limit': limit + 1,
+            }
+            if filters:
+                params['filter'] = ','.join(filters)
             page = await self.__call_api(session, '/volumes', params, {'results': [], 'number_of_total_results': 0})
         seen = set()
         raw_items = []

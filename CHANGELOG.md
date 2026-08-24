@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Make Metron connection testing support current draft tokens without persisting or logging them.
 - Make Discover the canonical search-and-add surface with a title-only accessible combobox, paginated `/discover/search`, and exact `/discover/add/<source>/<metadata-id>` review routes.
 
+### Fixed
+
+- Extract downloaded ZIP/RAR issue containers before strict one-file/one-issue matching, and deduplicate repeated unresolved match conflicts.
+
 ### Changed
 
 - Enforce final library issue-file mappings with unique active file and issue constraints, withholding range and duplicate candidates from active mappings.

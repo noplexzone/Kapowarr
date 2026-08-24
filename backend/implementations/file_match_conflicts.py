@@ -27,7 +27,23 @@ def record_conflict(*, volume_id: int, filepath: str, reason: str, file_id: Opti
     ts = round(time())
     if hash_value is None: hash_value = content_hash(filepath)
     cursor = get_db()
-    cursor.execute("""INSERT INTO file_match_conflicts(volume_id, file_id, filepath, proposed_issue_id, proposed_issue_numbers, reason, source_type, download_id, content_hash, parser_result, created_at, resolved_at, resolution) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);""", (volume_id, file_id, filepath, proposed_issue_id, _safe_json(proposed_issue_numbers), reason, source_type, download_id, hash_value, _safe_json(parser_result), ts, resolved_at, resolution))
+    proposed_json = _safe_json(proposed_issue_numbers)
+    if resolved_at is None and resolution is None:
+        existing = cursor.execute(
+            """SELECT id FROM file_match_conflicts
+            WHERE volume_id = ? AND filepath = ? AND reason = ?
+                AND source_type = ? AND proposed_issue_id IS ?
+                AND proposed_issue_numbers = ? AND content_hash IS ?
+                AND resolved_at IS NULL
+            LIMIT 1;""",
+            (
+                volume_id, filepath, reason, source_type, proposed_issue_id,
+                proposed_json, hash_value,
+            ),
+        ).fetchone()
+        if existing is not None:
+            return existing['id']
+    cursor.execute("""INSERT INTO file_match_conflicts(volume_id, file_id, filepath, proposed_issue_id, proposed_issue_numbers, reason, source_type, download_id, content_hash, parser_result, created_at, resolved_at, resolution) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);""", (volume_id, file_id, filepath, proposed_issue_id, proposed_json, reason, source_type, download_id, hash_value, _safe_json(parser_result), ts, resolved_at, resolution))
     return cursor.lastrowid
 def choose_canonical_file(filepaths: Iterable[str]) -> str:
     def key(path: str):

@@ -20,7 +20,9 @@ from backend.base.files import (copy_directory, delete_file_folder,
 from backend.base.logging import LOGGER
 from backend.implementations.blocklist import add_to_blocklist
 from backend.implementations.conversion import mass_convert
-from backend.implementations.converters import extract_files_from_folder
+from backend.implementations.converters import (
+    extract_download_container_archive, extract_files_from_folder,
+)
 from backend.implementations.download_clients import TorrentDownload
 from backend.implementations.file_matching import scan_files
 from backend.implementations.file_processing import mass_process_files
@@ -514,6 +516,7 @@ def move_torrent_to_dest(download: TorrentDownload) -> None:
         download.files[0],
         download.volume_id
     )
+    extract_download_container_archives(download)
 
     if not download.files:
         return
@@ -524,13 +527,7 @@ def move_torrent_to_dest(download: TorrentDownload) -> None:
         update_websocket=True
     )
 
-    rename_files = Settings().sv.rename_downloaded_files
-    if rename_files:
-        download.files = mass_rename(
-            download.volume_id,
-            filepath_filter=download.files,
-            process_individual_files=False
-        )
+    rename_download_files(download)
 
     return
 
@@ -563,6 +560,7 @@ def copy_file_torrent(download: TorrentDownload) -> None:
         file_dest,
         download.volume_id
     )
+    extract_download_container_archives(download)
 
     if not download.files:
         return
@@ -573,18 +571,51 @@ def copy_file_torrent(download: TorrentDownload) -> None:
         update_websocket=True
     )
 
-    rename_files = Settings().sv.rename_downloaded_files
-    if rename_files:
-        download.files = mass_rename(
-            download.volume_id,
-            filepath_filter=download.files,
-            process_individual_files=False
-        )
+    rename_download_files(download)
 
     return
 
 
 # region Extras
+def rename_download_files(download: Download) -> None:
+    """Rename only this download while preserving unresolved concrete paths."""
+    if not Settings().sv.rename_downloaded_files:
+        return
+
+    pre_rename_files = download.files[:]
+    renamed_files = mass_rename(
+        download.volume_id,
+        filepath_filter=pre_rename_files,
+        process_individual_files=False
+    )
+    download.files = list(dict.fromkeys(
+        [path for path in pre_rename_files if exists(path)] + renamed_files
+    ))
+    if not renamed_files:
+        LOGGER.warning(
+            'Post-processing: mass_rename returned no files for volume %d; '
+            'files may not be matched to issues: %s',
+            download.volume_id, pre_rename_files
+        )
+    return
+
+
+def extract_download_container_archives(download: Download) -> None:
+    """Expand downloaded issue containers before final-library matching."""
+    if not Settings().sv.extract_issue_ranges:
+        return
+
+    extracted_files = []
+    for file in download.files:
+        extracted = extract_download_container_archive(file, download.volume_id)
+        if extracted is None:
+            extracted_files.append(file)
+        else:
+            extracted_files.extend(extracted)
+    download.files = extracted_files
+    return
+
+
 def delete_file(download: Download) -> None:
     "Delete file from download folder"
     for f in download.files:
@@ -715,25 +746,7 @@ def rename_nzb_files(download: Download) -> None:
         # Fall through to mass_rename to apply the Kapowarr naming scheme
         # to all files (both pre-linked above and already-matched files).
 
-    pre_rename_files = download.files[:]
-    renamed = mass_rename(
-        download.volume_id,
-        filepath_filter=download.files,
-        process_individual_files=False
-    )
-    if renamed:
-        download.files = renamed
-    else:
-        # mass_rename found none of our files in the DB (e.g. the file still
-        # couldn't be matched to an issue after pre-linking). Keep the
-        # pre-rename paths so convert_file receives a non-empty filter and
-        # doesn't accidentally re-process unrelated volume files.
-        LOGGER.warning(
-            'NZB post-processing: mass_rename returned no files for volume %d; '
-            'files may not be matched to issues: %s',
-            download.volume_id, pre_rename_files
-        )
-        download.files = pre_rename_files
+    rename_download_files(download)
 
 
 # region Post-Processors
@@ -741,6 +754,7 @@ class PostProcessor:
     actions_success = [
         move_to_dest,
         rename_with_proper_extension,
+        extract_download_container_archives,
         add_file_to_database,
         convert_file,
         set_file_properties,
@@ -879,6 +893,7 @@ class PostProcessorNZB(PostProcessor):
     actions_success = [
         move_nzb_to_dest,
         rename_with_proper_extension,
+        extract_download_container_archives,
         add_file_to_database,
         rename_nzb_files,
         convert_file,

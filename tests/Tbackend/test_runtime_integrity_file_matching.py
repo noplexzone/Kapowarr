@@ -92,6 +92,21 @@ class RuntimeIntegrityFileMatchingTests(unittest.TestCase):
         self.assertEqual(conflicts[0][0], 'multi_issue_range')
         self.assertIn('001 - 002', conflicts[0][1])
 
+    def test_repeated_range_scan_does_not_duplicate_open_conflicts(self):
+        range_file = self.folder / 'The Punisher - War Zone 001 - 002 (1992).cbz'
+        range_file.write_bytes(b'range')
+        with self._patch_volume():
+            scan_files(1, del_unmatched_files=False)
+            first_count = get_db().execute(
+                "SELECT COUNT(*) FROM file_match_conflicts WHERE resolved_at IS NULL"
+            ).fetchone()[0]
+            scan_files(1, del_unmatched_files=False)
+        second_count = get_db().execute(
+            "SELECT COUNT(*) FROM file_match_conflicts WHERE resolved_at IS NULL"
+        ).fetchone()[0]
+        self.assertEqual(first_count, 2)
+        self.assertEqual(second_count, first_count)
+
 
     def test_schema_enforces_unique_file_and_issue_relationships(self):
         indexes = {row['name'] for row in get_db().execute('PRAGMA index_list(issues_files);').fetchall()}

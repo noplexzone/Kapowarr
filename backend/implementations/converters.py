@@ -9,7 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from itertools import chain
 from os import utime
-from os.path import basename, dirname, getmtime, join, splitext
+from os.path import basename, dirname, exists, getmtime, join, splitext
 from typing import Dict, List, Set, Tuple, Union
 from zipfile import ZipFile
 
@@ -90,9 +90,12 @@ def extract_files_from_folder(
 
     LOGGER.debug(f'Relevant files: {relevant_files}')
 
-    # Move matching files to main folder and delete source folder
-    # (including non-matching files).
-    result = []
+    # Plan every move before touching the library. Extracted children are
+    # untrusted external input and must never replace an existing artifact or
+    # collapse onto the same flattened destination.
+    move_plan = []
+    reserved_destinations = set()
+    source_paths = set(relevant_files)
     for file in relevant_files:
         if file.endswith(FileConstants.IMAGE_EXTENSIONS):
             dest = join(
@@ -108,10 +111,40 @@ def extract_files_from_folder(
             )
 
         dest = splitext(dest)[0] + splitext(set_detected_extension(file))[1]
+        if dest in reserved_destinations:
+            raise FileExistsError(
+                'Multiple extracted files would use the same destination: '
+                + dest
+            )
+        if exists(dest) and dest not in source_paths:
+            raise FileExistsError(
+                'Refusing to overwrite an existing extracted-file destination: '
+                + dest
+            )
+        reserved_destinations.add(dest)
+        move_plan.append((file, dest))
 
-        rename_file(file, dest)
-        result.append(dest)
+    moved = []
+    try:
+        for file, dest in move_plan:
+            if file != dest:
+                rename_file(file, dest)
+            moved.append((file, dest))
+    except Exception:
+        for file, dest in reversed(moved):
+            if file == dest or not exists(dest):
+                continue
+            try:
+                rename_file(dest, file)
+            except Exception:
+                LOGGER.exception(
+                    'Failed to roll back extracted file move from %s to %s',
+                    dest,
+                    file,
+                )
+        raise
 
+    result = [dest for _, dest in move_plan]
     delete_file_folder(source_folder)
     return result
 
@@ -303,6 +336,27 @@ class ConvertersManager:
         return None
 
 
+def extract_download_container_archive(
+    file: str,
+    volume_id: int
+) -> Union[List[str], None]:
+    """Extract a downloaded archive that contains complete child issues.
+
+    Downloaded range containers must be expanded before the final-library
+    one-file/one-issue matching gate. Return ``None`` for ordinary single-issue
+    archives so callers can leave them on the normal scan path.
+    """
+    source_format = splitext(file)[1].lower().lstrip('.')
+    if not archive_contains_issues(file):
+        return None
+
+    if source_format == 'zip':
+        return _zip_to_folder(file, volume_id)
+    if source_format == 'rar':
+        return _rar_to_folder(file, volume_id)
+    return None
+
+
 # region ZIP
 @ConvertersManager.register_converter("zip", "cbz")
 def zip_to_cbz(file: str) -> List[str]:
@@ -352,13 +406,7 @@ def zip_to_cbr(file: str) -> List[str]:
     return cbr_file
 
 
-@ConvertersManager.register_converter("zip", "folder")
-def zip_to_folder(file: str) -> List[str]:
-    volume_id = FilesDB.volume_of_file(file)
-    if not volume_id:
-        # File not matched to volume
-        return [file]
-
+def _zip_to_folder(file: str, volume_id: int) -> List[str]:
     volume_folder = Volume(volume_id).vd.folder
     archive_folder = generate_archive_folder(volume_folder, file)
 
@@ -372,15 +420,30 @@ def zip_to_folder(file: str) -> List[str]:
 
     if resulting_files:
         scan_files(volume_id, filepath_filter=resulting_files)
-        resulting_files = mass_rename(
+        renamed_files = mass_rename(
             volume_id,
             filepath_filter=resulting_files
         )
+        # Strict matching intentionally leaves unresolved files unlinked. Keep
+        # their concrete paths in the downstream filter instead of turning an
+        # empty rename result into unrestricted full-volume processing.
+        resulting_files = list(dict.fromkeys(
+            [path for path in resulting_files if exists(path)] + renamed_files
+        ))
 
     delete_file_folder(file)
     delete_empty_parent_folders(dirname(file), volume_folder)
 
     return resulting_files
+
+
+@ConvertersManager.register_converter("zip", "folder")
+def zip_to_folder(file: str) -> List[str]:
+    volume_id = FilesDB.volume_of_file(file)
+    if not volume_id:
+        # File not matched to volume
+        return [file]
+    return _zip_to_folder(file, volume_id)
 
 
 # region CBZ
@@ -472,13 +535,7 @@ def rar_to_cbz(file: str) -> List[str]:
     return cbz_file
 
 
-@ConvertersManager.register_converter("rar", "folder", supports_32bit=False)
-def rar_to_folder(file: str) -> List[str]:
-    volume_id = FilesDB.volume_of_file(file)
-    if not volume_id:
-        # File not matched to volume
-        return [file]
-
+def _rar_to_folder(file: str, volume_id: int) -> List[str]:
     volume_folder = Volume(volume_id).vd.folder
     archive_folder = generate_archive_folder(volume_folder, file)
     create_folder(archive_folder)
@@ -497,15 +554,30 @@ def rar_to_folder(file: str) -> List[str]:
 
     if resulting_files:
         scan_files(volume_id, filepath_filter=resulting_files)
-        resulting_files = mass_rename(
+        renamed_files = mass_rename(
             volume_id,
             filepath_filter=resulting_files
         )
+        # Strict matching intentionally leaves unresolved files unlinked. Keep
+        # their concrete paths in the downstream filter instead of turning an
+        # empty rename result into unrestricted full-volume processing.
+        resulting_files = list(dict.fromkeys(
+            [path for path in resulting_files if exists(path)] + renamed_files
+        ))
 
     delete_file_folder(file)
     delete_empty_parent_folders(dirname(file), volume_folder)
 
     return resulting_files
+
+
+@ConvertersManager.register_converter("rar", "folder", supports_32bit=False)
+def rar_to_folder(file: str) -> List[str]:
+    volume_id = FilesDB.volume_of_file(file)
+    if not volume_id:
+        # File not matched to volume
+        return [file]
+    return _rar_to_folder(file, volume_id)
 
 
 # region CBR

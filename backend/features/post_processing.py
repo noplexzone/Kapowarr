@@ -25,6 +25,11 @@ from backend.implementations.download_clients import TorrentDownload
 from backend.implementations.file_matching import scan_files
 from backend.implementations.file_processing import mass_process_files
 from backend.implementations.naming import generate_issue_name, mass_rename
+from backend.implementations.post_processing_state import (
+    ensure_postprocessing_record, mark_analyzed, mark_applying,
+    mark_completed, mark_failed, mark_rolled_back,
+    update_postprocessing_state,
+)
 from backend.implementations.volumes import Volume
 from backend.internals.db import commit, get_db
 from backend.internals.db_models import FilesDB
@@ -168,6 +173,7 @@ def _publish_pending_history(download: Download) -> None:
 
 def commit_history(download: Download) -> None:
     """Commit pending history before publishing batch details."""
+    mark_completed(download)
     connection = get_db().connection
     try:
         connection.commit()
@@ -184,6 +190,7 @@ def commit_history(download: Download) -> None:
 
 def remove_from_queue(download: Download) -> None:
     """Atomically commit pending history and remove the queue row."""
+    mark_completed(download)
     connection = get_db().connection
     try:
         connection.execute(
@@ -292,11 +299,31 @@ def add_to_history_transactional(download: Download) -> None:
 
 def add_file_to_database(download: Download) -> None:
     "Register files in database and match to a volume/issue"
+    mark_analyzed(download)
     scan_files(
         download.volume_id,
         filepath_filter=download.files,
         update_websocket=True
     )
+    filepaths = set(download.files)
+    conflicts = get_db().execute(
+        """
+        SELECT reason, filepath FROM file_match_conflicts
+        WHERE volume_id = ? AND resolved_at IS NULL;
+        """,
+        (download.volume_id,),
+    ).fetchalldict()
+    matched_conflicts = [
+        dict(row) for row in conflicts if row.get('filepath') in filepaths
+    ]
+    if matched_conflicts:
+        update_postprocessing_state(
+            download,
+            'conflict',
+            {'conflicts': matched_conflicts, 'files': list(download.files)},
+        )
+    else:
+        mark_applying(download)
     return
 
 
@@ -371,6 +398,7 @@ def discard_staged_destinations(download: Download) -> None:
 
 def move_to_dest(download: Download) -> None:
     "Move file/fold from download folder to final destination"
+    ensure_postprocessing_record(download)
     if not exists(download.files[0]):
         return
 
@@ -571,6 +599,7 @@ def reconcile_failed_import(download: Download) -> None:
     connection = get_db().connection
     restore_staged_destinations(download)
     scan_files(download.volume_id, update_websocket=True)
+    mark_rolled_back(download, {'files': list(download.files)})
     connection.commit()
     return
 
@@ -631,6 +660,7 @@ def move_nzb_to_dest(download: Download) -> None:
     with the folder.  Falls back to the standard ``move_to_dest`` when the
     path is already a single file.
     """
+    ensure_postprocessing_record(download)
     job_path = download.files[0]
     if not exists(job_path):
         return
@@ -782,6 +812,7 @@ class PostProcessor:
     @classmethod
     def failed(cls, download) -> None:
         LOGGER.info(f'Postprocessing of failed download: {download.id}')
+        mark_failed(download, getattr(download, '_failure_reason', None))
         cls._run_actions(cls.actions_failed, download)
         return
 
@@ -790,6 +821,7 @@ class PostProcessor:
         LOGGER.info(
             f'Postprocessing failure cleanup for download: {download.id}'
         )
+        mark_failed(download, getattr(download, '_failure_reason', None))
         cls._run_actions(cls.actions_postprocess_failed, download)
         return
 

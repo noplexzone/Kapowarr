@@ -535,6 +535,32 @@ CREATE TABLE IF NOT EXISTS download_history(
 );
 CREATE INDEX IF NOT EXISTS download_history_success_idx
     ON download_history(success);
+CREATE TABLE IF NOT EXISTS download_postprocessing_state(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    download_id INTEGER,
+    volume_id INTEGER NOT NULL,
+    issue_id INTEGER,
+    covered_issues TEXT,
+    source_type VARCHAR(30) NOT NULL,
+    source_name TEXT,
+    download_link TEXT NOT NULL,
+    web_link TEXT,
+    web_title TEXT,
+    web_sub_title TEXT,
+    state TEXT NOT NULL CHECK (state IN ('staged', 'analyzed', 'conflict', 'applying', 'completed', 'failed', 'rolled_back')),
+    stage_details TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (issue_id) REFERENCES issues(id)
+        ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS download_postprocessing_state_download_idx
+    ON download_postprocessing_state(download_id, source_type);
+CREATE INDEX IF NOT EXISTS download_postprocessing_state_unresolved_idx
+    ON download_postprocessing_state(volume_id, state, updated_at);
 CREATE TABLE IF NOT EXISTS task_history(
     task_name NOT NULL,
     display_title NOT NULL,

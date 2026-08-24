@@ -1608,23 +1608,39 @@ class ComicVine:
             params = {
                 'field_list': 'id,name,deck,description,publisher,start_year,image,site_detail_url,count_of_issues,date_added,date_last_updated',
                 'sort': order,
-                'offset': offset,
-                'limit': limit + 1,
             }
             if filters:
                 params['filter'] = ','.join(filters)
-            page = await self.__call_api(session, '/volumes', params, {'results': [], 'number_of_total_results': 0})
-        seen = set()
-        raw_items = []
-        for item in page.get('results') or []:
-            key = str(item.get('id') or '')
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            if not _is_comic_discovery_candidate_volume(item):
-                continue
-            raw_items.append(item)
-        has_more = len(raw_items) > limit
+            seen = set()
+            raw_items = []
+            provider_offset = offset
+            provider_total = None
+            # ComicVine recently-updated pages are often dominated by manga or
+            # non-English catalog edits that the comic discovery shelf filters
+            # out.  Over-fetch bounded provider pages until the filtered shelf
+            # has something useful instead of rendering an empty card row.
+            for _ in range(5):
+                page = await self.__call_api(
+                    session, '/volumes',
+                    {**params, 'offset': provider_offset, 'limit': 100},
+                    {'results': [], 'number_of_total_results': 0},
+                )
+                provider_total = int(page.get('number_of_total_results') or provider_total or 0)
+                provider_rows = page.get('results') or []
+                for item in provider_rows:
+                    key = str(item.get('id') or '')
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
+                    if not _is_comic_discovery_candidate_volume(item):
+                        continue
+                    raw_items.append(item)
+                    if len(raw_items) > limit:
+                        break
+                if len(raw_items) > limit or len(provider_rows) < 100:
+                    break
+                provider_offset += 100
+        has_more = len(raw_items) > limit or bool(provider_total and provider_offset + 100 < provider_total)
         formatted = self.__format_search_output(raw_items[:limit])
         for item in formatted:
             item['metadata_source_label'] = 'ComicVine'
@@ -1632,7 +1648,7 @@ class ComicVine:
                 item['status'] = 'Recently active'
         return {
             'items': formatted,
-            'total': int(page.get('number_of_total_results') or offset + len(formatted) + (1 if has_more else 0)),
+            'total': int(provider_total or offset + len(formatted) + (1 if has_more else 0)),
             'offset': offset,
             'page_size': limit,
             'has_more': has_more,

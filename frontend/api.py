@@ -1524,23 +1524,38 @@ def api_discovery():
             )
         else:
             fact_page = _comic_discovery_facts_page(discovery_type, offset=offset if paginated else 0, limit=fact_limit, exclude_added=exclude_added)
-        if paginated:
-            fact_page['has_more'] = len(fact_page['items']) > limit
-            fact_page['items'] = fact_page['items'][:limit]
-            fact_page['page_size'] = limit
-            return return_api(fact_page)
         if fact_page.get('items'):
+            if paginated:
+                fact_page['has_more'] = len(fact_page['items']) > limit
+                fact_page['items'] = fact_page['items'][:limit]
+                fact_page['page_size'] = limit
+                return return_api(fact_page)
             return return_api(fact_page['items'][:limit])
         # If the local fact index is empty/not started, fall back to the bounded
         # provider shelf so a fresh or migrated install does not render blank
-        # discovery sections before the background index has run.
+        # discovery sections before the background index has run.  Shelves use
+        # paginated=true, so the fallback must preserve the page envelope too.
     cv = ComicVine()
     if discovery_type == 'upcoming-launches':
         fetch_limit = offset + limit + 1 if paginated else 20
-        results = run(cv.get_upcoming_releases(limit=fetch_limit))
+        try:
+            results = run(cv.get_upcoming_releases(limit=fetch_limit))
+        except Exception:
+            LOGGER.exception('discovery provider fallback failed type=%s section=%s', discovery_type, section)
+            results = []
+        if paginated:
+            items = results[offset:offset + limit]
+            return return_api({'items': items, 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': len(results) > offset + limit})
     elif discovery_type == 'recently-started':
         fetch_limit = offset + limit + 1 if paginated else 20
-        results = run(cv.get_new_volumes(limit=fetch_limit))
+        try:
+            results = run(cv.get_new_volumes(limit=fetch_limit))
+        except Exception:
+            LOGGER.exception('discovery provider fallback failed type=%s section=%s', discovery_type, section)
+            results = []
+        if paginated:
+            items = results[offset:offset + limit]
+            return return_api({'items': items, 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': len(results) > offset + limit})
     else:
         sort = {
             'recently-active': 'trending',

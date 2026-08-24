@@ -328,6 +328,7 @@ def setup_db() -> None:
     set_log_level(settings_values.log_level)
 
     DatabaseMigrationHandler.migrate()
+    DatabaseMigrationHandler.ensure_current_invariants()
 
     # Generate api key
     if not settings_values.api_key:
@@ -439,10 +440,6 @@ CREATE TABLE IF NOT EXISTS issues_files(
         issue_id
     )
 );
-CREATE UNIQUE INDEX IF NOT EXISTS issues_files_file_id_unique_idx
-    ON issues_files(file_id);
-CREATE UNIQUE INDEX IF NOT EXISTS issues_files_issue_id_unique_idx
-    ON issues_files(issue_id);
 CREATE INDEX IF NOT EXISTS issues_files_issue_id_index
     ON issues_files(issue_id);
 CREATE INDEX IF NOT EXISTS issues_files_file_id_index

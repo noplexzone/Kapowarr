@@ -49,6 +49,23 @@ class DatabaseMigrationHandler:
         return max(cls.handlers) + 1
 
     @classmethod
+    def ensure_current_invariants(cls) -> None:
+        """Ensure invariants for fresh databases already at latest version."""
+        cursor = get_db()
+        violations = cursor.execute("""
+            SELECT COUNT(*) FROM (
+                SELECT file_id FROM issues_files GROUP BY file_id HAVING COUNT(*) > 1
+                UNION ALL
+                SELECT issue_id FROM issues_files GROUP BY issue_id HAVING COUNT(*) > 1
+            );
+        """).fetchone()[0]
+        if violations:
+            raise RuntimeError('Failed to enforce one-to-one issue file invariants')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS issues_files_file_id_unique_idx ON issues_files(file_id);')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS issues_files_issue_id_unique_idx ON issues_files(issue_id);')
+        return
+
+    @classmethod
     def migrate(cls) -> None:
         """
         Migrate a Kapowarr database from its current version to the newest

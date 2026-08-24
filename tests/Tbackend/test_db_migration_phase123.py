@@ -88,6 +88,9 @@ class Phase123MigrationTests(unittest.TestCase):
             self.assertTrue({'payload', 'etag', 'last_modified', 'fetched_at', 'expires_at'} <= table_columns(con, 'provider_cache'))
             self.assertTrue({'term_type', 'external_id', 'name'} <= table_columns(con, 'volume_enrichment_terms'))
             self.assertTrue({'status', 'processed', 'matched', 'failed'} <= table_columns(con, 'metron_backfill_state'))
+            indexes = {row[1] for row in con.execute('PRAGMA index_list(issues_files);')}
+            self.assertIn('issues_files_file_id_unique_idx', indexes)
+            self.assertIn('issues_files_issue_id_unique_idx', indexes)
 
     def test_fresh_database_has_normalized_schema(self):
         self._run_setup(); self._assert_normalized()
@@ -109,6 +112,21 @@ class Phase123MigrationTests(unittest.TestCase):
             self._drop_metron_tables(con)
             con.execute('DROP TABLE IF EXISTS saved_filters;')
         self._run_setup(); self._assert_normalized()
+
+    def test_version_63_duplicate_issue_files_migrate_before_unique_indexes(self):
+        self._seed_schema(63)
+        with self._connect() as con:
+            con.execute("INSERT INTO root_folders(id, folder) VALUES (1, '/comics');")
+            con.execute("INSERT INTO volumes(id, comicvine_id, title, root_folder) VALUES (1, 1, 'Duplicate Links', 1);")
+            con.execute("INSERT INTO issues(id, volume_id, comicvine_id, issue_number, calculated_issue_number) VALUES (1, 1, 101, '1', 1.0);")
+            con.execute("INSERT INTO issues(id, volume_id, comicvine_id, issue_number, calculated_issue_number) VALUES (2, 1, 102, '2', 2.0);")
+            con.execute("INSERT INTO files(id, filepath, size) VALUES (1, '/comics/duplicate.cbz', 1);")
+            con.execute("INSERT INTO issues_files(file_id, issue_id) VALUES (1, 1);")
+            con.execute("INSERT INTO issues_files(file_id, issue_id) VALUES (1, 2);")
+        self._run_setup(); self._assert_normalized()
+        with self._connect() as con:
+            self.assertEqual(con.execute('SELECT COUNT(*) FROM issues_files;').fetchone()[0], 0)
+            self.assertEqual(con.execute("SELECT reason FROM file_match_conflicts WHERE source_type = 'migration';").fetchone()[0], 'file_claims_multiple_issues')
 
     def test_phase6_experimental_version_58_preserves_metron_rows_and_drops_saved_views(self):
         self._seed_schema(58)

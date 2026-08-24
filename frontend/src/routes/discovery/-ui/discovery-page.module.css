@@ -715,8 +715,7 @@
     gap: 0.55rem;
   }
 
-  .tabs,
-  .toolbarRight {
+  .tabs {
     width: 100%;
     min-width: 0;
     overflow-x: auto;
@@ -724,7 +723,6 @@
   }
 
   .tabs::-webkit-scrollbar,
-  .toolbarRight::-webkit-scrollbar,
   .discoveryModeChips::-webkit-scrollbar { display: none; }
 
   .tabs {
@@ -741,13 +739,20 @@
   .toolbarRight {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    width: 100%;
+    min-width: 0;
     gap: 0.45rem;
   }
 
   .sectionToggle,
-  .hideAddedToggle,
-  .refreshBtn {
+  .hideAddedToggle {
     flex: 0 0 auto;
+  }
+
+  .refreshBtn {
+    flex: 1 0 100%;
+    width: 100%;
   }
 
   .sectionBtn,

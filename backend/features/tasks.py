@@ -1674,6 +1674,14 @@ class TaskHandler(metaclass=Singleton):
         _emit_task_event(TaskAddedEvent(task, id))
         return id
 
+    def active_task_id_for_action(self, action: str) -> Union[int, None]:
+        """Return the queued/running task ID for an action, if present."""
+        with self.queue_lock:
+            for entry in self.queue:
+                if entry['task'].action == action:
+                    return entry['id']
+        return None
+
     @staticmethod
     def active_task_id_for_volume(volume_id: int) -> Union[int, None]:
         for t in TaskHandler.queue:

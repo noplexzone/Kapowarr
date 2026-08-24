@@ -64,6 +64,12 @@ it('refreshes Discover shelves from the toolbar without generic Add state', () =
   expect(source).not.toContain('onAddVolume={() => undefined}');
 });
 
+it('keeps all mobile Discover toolbar actions visible without horizontal swiping', () => {
+  const css = readFileSync('src/routes/discovery/-ui/discovery-page.module.css', 'utf8');
+  expect(css).not.toMatch(/\.toolbarRight\s*\{[^}]*overflow-x:\s*auto/s);
+  expect(css).toMatch(/\.refreshBtn\s*\{[^}]*flex:\s*1 0 100%/s);
+});
+
 it('shows compact indexing guidance instead of oversized blank shelves', () => {
   expect(source).toContain('Discovery facts are being indexed');
   expect(source).toContain('styles.emptyShelf');

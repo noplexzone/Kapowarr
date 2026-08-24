@@ -329,7 +329,7 @@ class DiscoveryShelfApiTests(unittest.TestCase):
             })
         result = self._assert_envelope(response)
         self.assertEqual([item['metadata_id'] for item in result['items']], ['200'])
-        comicvine.get_upcoming_releases.assert_awaited_once()
+        comicvine.get_upcoming_releases.assert_awaited_once_with(days=60, limit=11)
         comicvine.browse_catalog_volumes.assert_not_awaited()
 
 
@@ -341,6 +341,26 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertEqual(result['sync_task_id'], 123)
         self.assertEqual(result['coverage'], 'partial')
         self.assertEqual(add_task.call_args[0][0].action, 'comic_discovery_fact_sync')
+
+    def test_discovery_refresh_does_not_reset_an_active_singleton_sync(self):
+        from threading import RLock
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        handler = MagicMock()
+        handler.queue_lock = RLock()
+        handler.active_task_id_for_action.return_value = 321
+        handler.add.return_value = 999
+        with request_patch, settings_patch, timer_patch, \
+                patch.object(api_mod, 'TaskHandler', return_value=handler), \
+                patch.object(api_mod, 'get_db') as get_db:
+            response = self._client().post(
+                '/api/discovery/facts/refresh',
+                headers={'X-Api-Key': 'test-key'},
+            )
+        result = self._assert_envelope(response)
+        self.assertEqual(result['sync_task_id'], 321)
+        self.assertIn('already running', result['source_note'])
+        get_db.assert_not_called()
+        handler.add.assert_not_called()
 
     def test_discovery_refresh_restarts_completed_fact_cursor(self):
         import sqlite3

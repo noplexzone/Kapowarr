@@ -1544,7 +1544,7 @@ def api_discovery():
     if discovery_type == 'upcoming-launches':
         fetch_limit = offset + limit + 1 if paginated else 20
         try:
-            results = run(cv.get_upcoming_releases(days=365, limit=fetch_limit))
+            results = run(cv.get_upcoming_releases(days=60, limit=fetch_limit))
         except Exception:
             LOGGER.exception('discovery provider fallback failed type=%s section=%s', discovery_type, section)
             results = []
@@ -1750,25 +1750,36 @@ def api_discovery_browse():
 @error_handler
 @auth
 def api_discovery_facts_refresh():
-    try:
-        db = get_db()
-        date_preference = 'store_date' if str(Settings().sv.date_type).endswith('store_date') else 'cover_date'
-        db.execute("""INSERT INTO comic_discovery_fact_sync_state(
-                sync_id, scope, provider_cursor, coverage_state, coverage_complete,
-                date_preference, last_started_at, last_completed_at, last_error,
-                next_resume_at, records_processed, facts_created, facts_updated
-            ) VALUES(1, 'comic_series_discovery', NULL, 'partial', 0, ?, NULL,
-                NULL, NULL, NULL, 0, 0, 0)
-            ON CONFLICT(sync_id) DO UPDATE SET
-                scope='comic_series_discovery', provider_cursor=NULL,
-                coverage_state='partial', coverage_complete=0,
-                date_preference=excluded.date_preference, last_started_at=NULL,
-                last_completed_at=NULL, last_error=NULL, next_resume_at=NULL,
-                records_processed=0, facts_created=0, facts_updated=0;""", (date_preference,))
-        commit()
-    except OperationalError:
-        pass
-    task_id = TaskHandler().add(ComicDiscoveryFactSyncTask())
+    handler = TaskHandler()
+    with handler.queue_lock:
+        active_task_id = handler.active_task_id_for_action(
+            ComicDiscoveryFactSyncTask.action
+        )
+        if active_task_id is not None:
+            return return_api({
+                'sync_task_id': active_task_id,
+                'coverage': 'partial',
+                'source_note': 'Discovery indexing is already running.',
+            })
+        try:
+            db = get_db()
+            date_preference = 'store_date' if str(Settings().sv.date_type).endswith('store_date') else 'cover_date'
+            db.execute("""INSERT INTO comic_discovery_fact_sync_state(
+                    sync_id, scope, provider_cursor, coverage_state, coverage_complete,
+                    date_preference, last_started_at, last_completed_at, last_error,
+                    next_resume_at, records_processed, facts_created, facts_updated
+                ) VALUES(1, 'comic_series_discovery', NULL, 'partial', 0, ?, NULL,
+                    NULL, NULL, NULL, 0, 0, 0)
+                ON CONFLICT(sync_id) DO UPDATE SET
+                    scope='comic_series_discovery', provider_cursor=NULL,
+                    coverage_state='partial', coverage_complete=0,
+                    date_preference=excluded.date_preference, last_started_at=NULL,
+                    last_completed_at=NULL, last_error=NULL, next_resume_at=NULL,
+                    records_processed=0, facts_created=0, facts_updated=0;""", (date_preference,))
+            commit()
+        except OperationalError:
+            pass
+        task_id = handler.add(ComicDiscoveryFactSyncTask())
     return return_api({'sync_task_id': task_id, 'coverage': 'partial', 'source_note': 'Discovery facts are being indexed.'})
 
 

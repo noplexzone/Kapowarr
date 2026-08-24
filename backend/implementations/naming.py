@@ -697,17 +697,20 @@ def same_name_indexing(
         Dict[str, str]: The planned renames, now updated with numbers if needed.
     """
     final_names = set(list_files(volume_folder)) if isdir(volume_folder) else set()
+    planned_sources = set(planned_renames)
     result: Dict[str, str] = {}
+    reserved: set = set()
     for before, after in sorted(planned_renames.items()):
-        new_after = after
-        index = 1
-        while before != new_after and new_after in final_names:
-            st = splitext(after)
-            new_after = st[0] + f' ({index})' + st[1]
-            index += 1
-
-        final_names.add(new_after)
-        result[before] = new_after
+        if before != after and after in final_names and after not in planned_sources:
+            raise FileExistsError(
+                'Destination collision while renaming final issue file: ' + after
+            )
+        if after in reserved and before != after:
+            raise FileExistsError(
+                'Multiple issue files would rename to the same destination: ' + after
+            )
+        reserved.add(after)
+        result[before] = after
 
     return result
 

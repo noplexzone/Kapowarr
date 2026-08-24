@@ -17,10 +17,11 @@ export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: string; descrip
   { id: 'proxy', label: 'Proxy', description: 'Proxy host, authentication, and protocol settings for outbound requests.', searchText: 'proxy type host port username password socks http hosting restart' },
 ];
 
-type Props = { form: AllSettings; set: <K extends keyof AllSettings>(key: K, value: AllSettings[K]) => void; errors: Partial<Record<keyof AllSettings, string>>; theme: string; setTheme: (value: string) => void; suwayomiSources: SuwayomiSource[]; suwayomiSourcesLoading: boolean };
+type Props = { form: AllSettings; set: <K extends keyof AllSettings>(key: K, value: AllSettings[K]) => void; saveNow?: <K extends keyof AllSettings>(key: K) => void; fieldStatus?: Partial<Record<keyof AllSettings, string>>; errors: Partial<Record<keyof AllSettings, string>>; theme: string; setTheme: (value: string) => void; suwayomiSources: SuwayomiSource[]; suwayomiSourcesLoading: boolean };
 const str = (form: AllSettings, key: keyof AllSettings) => String((form[key] as string | number | boolean | null | undefined) ?? '');
 const bool = (form: AllSettings, key: keyof AllSettings) => Boolean(form[key]);
 const arr = (form: AllSettings, key: keyof AllSettings): string[] => Array.isArray(form[key]) ? form[key] as string[] : [];
+const formatMetronDate = (value: number | null | undefined) => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value * 1000)) : 'Never';
 
 
 function MetronSettingsPanel({ form, toggle, text }: { form: AllSettings; toggle: (key: keyof AllSettings, label: string, help?: string) => ReactElement; text: (key: keyof AllSettings, label: string, help?: string, type?: string) => ReactElement }) {
@@ -62,12 +63,12 @@ function MetronSettingsPanel({ form, toggle, text }: { form: AllSettings; toggle
     </div>
     <dl className={styles.clientMeta}>
       <div><dt>Token</dt><dd>{metron?.token_configured ? 'Configured (masked)' : 'Not configured'}</dd></div>
-      <div><dt>Last successful connection</dt><dd>{(metron?.last_successful_connection ?? form.metron_last_successful_connection) || 'Never'}</dd></div>
-      <div><dt>Last enrichment</dt><dd>{(metron?.last_enrichment ?? form.metron_last_enrichment_run) || 'Never'}</dd></div>
+      <div><dt>Last successful connection</dt><dd>{formatMetronDate(metron?.last_successful_connection ?? form.metron_last_successful_connection)}</dd></div>
+      <div><dt>Last enrichment</dt><dd>{formatMetronDate(metron?.last_enrichment ?? form.metron_last_enrichment_run)}</dd></div>
       <div><dt>Rate status</dt><dd>{String((metron?.rate_limit?.last_status as string | undefined) ?? 'Unknown')}</dd></div>
       <div><dt>Backfill status</dt><dd>{String((backfill.status as string | undefined) ?? 'Idle')}</dd></div>
       <div><dt>Backfill progress</dt><dd>{Number(backfill.processed ?? 0)} processed · {Number(backfill.matched ?? 0)} matched · {Number(backfill.failed ?? 0)} failed · cursor {String(backfill.last_terminal_volume_id ?? 0)}</dd></div>
-      {backfill.rate_limit_paused_until ? <div><dt>Paused until</dt><dd>{String(backfill.rate_limit_paused_until)}</dd></div> : null}
+      {backfill.rate_limit_paused_until ? <div><dt>Paused until</dt><dd>{formatMetronDate(Number(backfill.rate_limit_paused_until))}</dd></div> : null}
     </dl>
     <div className={styles.priorityList} aria-label="Metron review candidates">
       <h4 className={styles.subSectionTitle}>Multiple-match review</h4>
@@ -84,8 +85,9 @@ function MetronSettingsPanel({ form, toggle, text }: { form: AllSettings; toggle
 }
 
 export function SettingsCategoryPanel({ category, ...props }: Props & { category: SettingsCategory }) {
-  const { form, set, errors } = props;
-  const text = (key: keyof AllSettings, label: string, help?: string, type?: string) => <Field id={`setting-${String(key)}`} label={label} help={help} error={errors[key]}><input className={styles.input} type={type} value={str(form,key)} onChange={e => set(key, (type === 'number' ? Number(e.target.value) : e.target.value) as AllSettings[typeof key])}/></Field>;
+  const { form, set, saveNow, fieldStatus = {}, errors } = props;
+  const status = (key: keyof AllSettings) => fieldStatus[key] ? <p className={styles.fieldHelp} role="status">{fieldStatus[key]}</p> : null;
+  const text = (key: keyof AllSettings, label: string, help?: string, type?: string) => <Field id={`setting-${String(key)}`} label={label} help={help} error={errors[key]}><><input className={styles.input} type={type} value={str(form,key)} onChange={e => set(key, (type === 'number' ? Number(e.target.value) : e.target.value) as AllSettings[typeof key])} onBlur={() => saveNow?.(key)} onKeyDown={e => { if (e.key === 'Enter') saveNow?.(key); }}/>{status(key)}</></Field>;
   const toggle = (key: keyof AllSettings, label: string, help?: string) => <ToggleField id={`setting-${String(key)}`} label={label} help={help} checked={bool(form,key)} onChange={v => set(key, v as AllSettings[typeof key])}/>;
   if (category === 'general') return <Section title="General">
     {text('host','Host','Network interface Kapowarr listens on. Changing this hosting setting requires a restart.')}

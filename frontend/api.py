@@ -1149,17 +1149,49 @@ def api_library_import_delete():
 @error_handler
 @auth
 def api_dashboard_summary():
-    comic_stats = Library.get_stats('comic')
-    manga_stats = Library.get_stats('manga')
-    released = int(comic_stats.get('released_issues') or 0) + int(manga_stats.get('released_issues') or 0)
-    downloaded = int(comic_stats.get('downloaded_released_issues') or 0) + int(manga_stats.get('downloaded_released_issues') or 0)
-    tasks = TaskHandler().get_all()
+    request_id = token_hex(6)
+    started = time()
+    section_errors: Dict[str, str] = {}
+    timings: Dict[str, float] = {}
+
+    def timed(name, fn, fallback):
+        group_started = time()
+        try:
+            return fn()
+        except Exception:
+            section_errors[name] = f'{name.replace("_", " ").title()} could not be loaded'
+            LOGGER.exception('dashboard_summary group failed request_id=%s group=%s', request_id, name)
+            return fallback
+        finally:
+            timings[name] = round((time() - group_started) * 1000.0, 2)
+
+    empty_stats = {
+        'released_issues': 0,
+        'downloaded_released_issues': 0,
+        'missing_monitored': 0,
+        'upcoming_monitored': 0,
+        'mismatches': 0,
+    }
+    comic_stats = timed('comic_stats', lambda: Library.get_stats('comic'), dict(empty_stats))
+    manga_stats = timed('manga_stats', lambda: Library.get_stats('manga'), dict(empty_stats))
+    tasks = timed('tasks', lambda: TaskHandler().get_all(), [])
+    downloads = timed('queue_count', lambda: DownloadHandler().get_all(), [])
+    failed_downloads = timed('download_history_count', lambda: get_download_history_count(state='failed'), 0)
     active_searches = sum(
         1 for task in tasks
         if task.get('action') in ('auto_search', 'auto_search_issue', 'search_all')
     )
+    released = int(comic_stats.get('released_issues') or 0) + int(manga_stats.get('released_issues') or 0)
+    downloaded = int(comic_stats.get('downloaded_released_issues') or 0) + int(manga_stats.get('downloaded_released_issues') or 0)
+    total_ms = round((time() - started) * 1000.0, 2)
+    timings['total_summary'] = total_ms
+    LOGGER.info('dashboard_summary request_id=%s duration_ms=%s timings=%s errors=%s', request_id, total_ms, timings, sorted(section_errors))
     return return_api({
         'generated_at': datetime.now(timezone.utc).isoformat(),
+        'is_stale': bool(section_errors),
+        'refreshing': False,
+        'section_errors': section_errors,
+        'timings_ms': timings,
         'library': {
             'released_issues': released,
             'downloaded_released_issues': downloaded,
@@ -1169,8 +1201,8 @@ def api_dashboard_summary():
             'mismatches': int(comic_stats.get('mismatches') or 0) + int(manga_stats.get('mismatches') or 0),
         },
         'operations': {
-            'active_downloads': len(DownloadHandler().get_all()),
-            'failed_downloads': get_download_history_count(state='failed'),
+            'active_downloads': len(downloads),
+            'failed_downloads': int(failed_downloads or 0),
             'active_searches': active_searches,
         },
         'sections': {
@@ -2584,6 +2616,31 @@ def api_file_raw(file_id: int):
 
 
 # =====================
+# File Match Repair
+# =====================
+@api.route('/volumes/<int:id>/file-match-repair', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_file_match_repair(id: int):
+    from backend.implementations.file_match_repair import (
+        apply_volume_repair, dry_run_volume_repair,
+    )
+    Library.get_volume(id)
+    if request.method == 'GET':
+        return return_api(dry_run_volume_repair(id))
+    payload = request.get_json(silent=True) or {}
+    selected_actions = payload.get('selected_actions')
+    if selected_actions is not None and not (
+        isinstance(selected_actions, list)
+        and all(isinstance(item, int) for item in selected_actions)
+    ):
+        raise InvalidKeyValue('selected_actions', selected_actions)
+    return return_api(apply_volume_repair(
+        id, selected_actions, backup_confirmed=bool(payload.get('backup_confirmed'))
+    ))
+
+
+# =====================
 # Manual File Match
 # =====================
 @api.route('/volumes/<int:id>/manualmatch', methods=['GET', 'PUT'])
@@ -3398,8 +3455,20 @@ def api_metron_status():
 @error_handler
 @auth
 def api_metron_test():
+    from backend.base.definitions import Constants
     from backend.features.metron_enrichment import safe_test_connection
-    return return_api(safe_test_connection())
+    payload = request.get_json(silent=True) or {}
+    token = payload.get('token') if isinstance(payload, dict) else None
+    if token == Constants.CREDENTIAL_REPLACEMENT:
+        token = None
+    if token is not None and not isinstance(token, str):
+        return return_api({
+            'success': False,
+            'status': 'bad_request',
+            'description': 'Token must be a string when supplied.',
+            'rate_limit': None,
+        }, 400)
+    return return_api(safe_test_connection(token=token))
 
 
 @api.route('/metadata/metron/backfill/status', methods=['GET'])

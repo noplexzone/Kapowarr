@@ -8,10 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add volume-scoped file-match repair dry run/apply endpoints with backup confirmation, conflict recording, and duplicate quarantine actions.
+- Add runtime integrity conflict storage for strict one-to-one issue-file matching, duplicate/range conflict capture, and Punisher/Crisis regression fixtures.
+- Make Dashboard summary responses include safe timing, stale/error metadata, and isolated metric-group fallbacks.
+- Make Metron connection testing support current draft tokens without persisting or logging them.
 - Make Discover the canonical search-and-add surface with a title-only accessible combobox, paginated `/discover/search`, and exact `/discover/add/<source>/<metadata-id>` review routes.
 
 ### Changed
 
+- Enforce final library issue-file mappings with unique active file and issue constraints, withholding range and duplicate candidates from active mappings.
+- Stop final issue renames from preserving destination collisions by appending `(1)`, `(2)`, and related suffixes.
+- Classify Shinchosha as a Manga publisher so reported Manga titles are excluded from Comic discovery surfaces.
 - Recover interrupted Metron schema normalization safely, keep backups until validation succeeds, and log deterministic merge counts.
 - Preserve Discover exact Add return state through typed router destinations instead of browser-history guesses.
 - Derive Recently Started and Upcoming Launches from ComicVine first-known issue data instead of volume start-year/date-added approximations.

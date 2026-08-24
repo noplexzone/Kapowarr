@@ -63,6 +63,10 @@ export interface DashboardSearchTask {
 
 export interface DashboardSummary {
   generated_at: string;
+  is_stale?: boolean;
+  refreshing?: boolean;
+  section_errors?: Record<string, string>;
+  timings_ms?: Record<string, number>;
   library: {
     released_issues: number;
     downloaded_released_issues: number;

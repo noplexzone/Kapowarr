@@ -35,7 +35,7 @@ from backend.internals.settings import Settings
 _NON_ENGLISH_PUBLISHERS = frozenset({
     # Japanese publishers
     'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
-    'shodensha', 'shucream', 'shu-cream', 'two virgins',
+    'shodensha', 'shinchosha', 'shucream', 'shu-cream', 'two virgins',
     'media factory', 'kodansha', 'kodansha comics', 'kodansha usa',
     'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
     'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
@@ -113,7 +113,7 @@ _MANGA_TITLE_KEYWORDS = _NON_ENGLISH_TITLE_KEYWORDS
 # identify manga volumes for the Manga section).
 _MANGA_PUBLISHERS = frozenset({
     'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
-    'shodensha', 'shucream', 'shu-cream', 'two virgins',
+    'shodensha', 'shinchosha', 'shucream', 'shu-cream', 'two virgins',
     'media factory', 'kodansha', 'kodansha comics', 'kodansha usa',
     'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
     'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
@@ -151,7 +151,7 @@ _ENGLISH_MANGA_PUBLISHERS = frozenset({
     'digital manga publishing', 'digital manga guild',
     'gen manga',
     'aurora publishing',
-    'dark horse comics', 'dark horse manga',
+    'dark horse manga',
     'kodansha comics', 'kodansha comics usa', 'kodansha usa',
     'square enix manga',
     'crunchyroll', 'crunchyroll manga',

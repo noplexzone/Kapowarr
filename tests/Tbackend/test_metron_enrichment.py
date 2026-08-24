@@ -9,7 +9,7 @@ from backend.implementations.metron import (
     MetronAuthenticationError, MetronClient, MetronInvalidResponseError,
     MetronNotModifiedError, MetronRateLimitedError, parse_rate_limit_headers, safe_headers,
 )
-from backend.features.metron_enrichment import MetronEnrichmentService, extract_terms, get_review_candidates, resolve_candidate
+from backend.features.metron_enrichment import MetronEnrichmentService, extract_terms, get_review_candidates, resolve_candidate, safe_test_connection
 from backend.internals.db import DB_SCHEMA, DBConnection, DBConnectionManager, close_db, commit, get_db, setup_db
 from backend.internals.settings import Constants, PublicSettingsValues, _settings_for_log
 
@@ -353,6 +353,41 @@ class MetronEnrichmentPersistenceTests(unittest.TestCase):
             self.assertEqual(link['review_status'], 'review_required')
             self.assertEqual(reservation['status'], 'interrupted')
             self.assertIn('retry required', reservation['safe_error'])
+
+
+class MetronTestConnectionFlowTests(unittest.TestCase):
+    def test_safe_test_connection_does_not_write_invalid_settings_or_disable_metron(self):
+        updated = []
+        class FakeSettings:
+            def update(self, values):
+                updated.append(values)
+        class FakeClient:
+            def test_connection(self):
+                return {'rate_limit': {'burst_remaining': 1}}
+        with patch('backend.features.metron_enrichment.Settings', return_value=FakeSettings()), \
+             patch('backend.features.metron_enrichment.get_metron_client', return_value=FakeClient()):
+            result = safe_test_connection()
+        self.assertTrue(result['success'])
+        keys = {key for values in updated for key in values}
+        self.assertIn('metron_last_successful_connection', keys)
+        self.assertNotIn('metron_rate_limit_status', keys)
+        self.assertNotIn('metron_enabled', keys)
+
+    def test_safe_test_connection_uses_current_draft_token_without_persisting(self):
+        tokens = []
+        class FakeClient:
+            def test_connection(self):
+                return {'rate_limit': None}
+        def fake_get_client(token=None):
+            tokens.append(token); return FakeClient()
+        class FakeSettings:
+            def update(self, values):
+                self.values = values
+        with patch('backend.features.metron_enrichment.Settings', return_value=FakeSettings()), \
+             patch('backend.features.metron_enrichment.get_metron_client', side_effect=fake_get_client):
+            result = safe_test_connection(token='DRAFT_TOKEN')
+        self.assertTrue(result['success'])
+        self.assertEqual(tokens, ['DRAFT_TOKEN'])
 
 
 if __name__ == '__main__':

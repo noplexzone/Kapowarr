@@ -67,6 +67,7 @@ class ComicVineDiscoveryFilteringTests(unittest.TestCase):
         self.assertTrue(excluded('Shōnen Gahōsha'))
         self.assertTrue(excluded('Line Manga'))
         self.assertTrue(excluded('Shodensha'))
+        self.assertTrue(excluded('Shinchosha'))
         self.assertTrue(excluded('ShuCream'))
         self.assertTrue(excluded('Two Virgins'))
 
@@ -77,6 +78,24 @@ class ComicVineDiscoveryFilteringTests(unittest.TestCase):
         self.assertTrue(has_keyword('Feel Young'))
         self.assertTrue(has_keyword('COMIC it'))
         self.assertFalse(has_keyword('Amazing Spider-Man'))
+
+
+    def test_reported_shinchosha_manga_titles_are_excluded_from_comic_shelves(self):
+        excluded = _SYMBOLS['_is_comic_discovery_excluded_publisher']
+        for title in [
+            'Koba-kun wa Koi ga Wakaranai',
+            'Kaji no Kaigo',
+            'Kagetora-kun wa Modorenai',
+            'Tsukikage Gohan',
+            'My Pace to Aruku',
+        ]:
+            with self.subTest(title=title):
+                self.assertTrue(excluded('Shinchosha'))
+
+    def test_dark_horse_comic_vs_dark_horse_manga_classification(self):
+        excluded = _SYMBOLS['_is_comic_discovery_excluded_publisher']
+        self.assertFalse(excluded('Dark Horse Comics'))
+        self.assertTrue(excluded('Dark Horse Manga'))
 
     def test_western_publishers_are_not_excluded_from_comic_discovery(self):
         excluded = _SYMBOLS['_is_comic_discovery_excluded_publisher']

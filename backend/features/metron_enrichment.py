@@ -11,7 +11,7 @@ from backend.base.definitions import Constants
 from backend.base.logging import LOGGER
 from backend.implementations.metron import (
     METRON_PROVIDER, MetronAuthenticationError, MetronClient, MetronError,
-    MetronNotModifiedError, MetronRateLimitedError,
+    MetronNotModifiedError, MetronRateLimitedError, update_rate_limit_state,
 )
 from backend.internals.db import commit, get_db
 from backend.internals.settings import Settings
@@ -41,8 +41,8 @@ def metron_configured() -> bool:
     return bool(sv.metron_enabled and sv.metron_api_token and sv.metron_api_token != Constants.CREDENTIAL_REPLACEMENT)
 
 
-def get_metron_client() -> MetronClient:
-    return MetronClient(Settings().sv.metron_api_token)
+def get_metron_client(token: Optional[str] = None) -> MetronClient:
+    return MetronClient(token if token is not None else Settings().sv.metron_api_token)
 
 
 def _string_id(item: Dict[str, Any]) -> Optional[str]:
@@ -303,22 +303,27 @@ def update_backfill_state(**kwargs: Any) -> None:
     commit()
 
 
-def safe_test_connection() -> Dict[str, Any]:
+def safe_test_connection(token: Optional[str] = None) -> Dict[str, Any]:
+    """Test Metron credentials without mutating enable state or invalid settings."""
+    if token == Constants.CREDENTIAL_REPLACEMENT:
+        token = None
     try:
-        result = get_metron_client().test_connection()
+        result = get_metron_client(token).test_connection()
         ts = now_ts()
-        Settings().update({
-            'metron_last_successful_connection': ts,
-            'metron_rate_limit_status': dumps(result.get('rate_limit') or {}),
-        })
-        return {'success': True, 'status': 'ok', 'description': 'Connection successful', 'rate_limit': result.get('rate_limit')}
+        Settings().update({'metron_last_successful_connection': ts})
+        rate = result.get('rate_limit')
+        return {
+            'success': True, 'status': 'ok',
+            'description': 'Connection successful', 'rate_limit': rate,
+        }
     except MetronError as exc:
-        if isinstance(exc, MetronAuthenticationError):
-            Settings().update({'metron_enabled': False})
         rate = exc.rate_limit.todict() if exc.rate_limit else None
-        if rate:
-            Settings().update({'metron_rate_limit_status': dumps(rate)})
-        return {'success': False, 'status': exc.status, 'description': str(exc), 'rate_limit': rate}
+        if exc.rate_limit:
+            update_rate_limit_state(exc.rate_limit, exc.status)
+        return {
+            'success': False, 'status': exc.status,
+            'description': str(exc) or exc.status, 'rate_limit': rate,
+        }
 
 
 # ---- Hardened Phase 6 review/provenance/rate/backfill helpers ----

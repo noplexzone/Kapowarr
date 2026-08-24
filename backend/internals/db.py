@@ -385,6 +385,10 @@ CREATE TABLE IF NOT EXISTS volumes(
 
     FOREIGN KEY (root_folder) REFERENCES root_folders(id)
 );
+CREATE INDEX IF NOT EXISTS volumes_root_folder_idx
+    ON volumes(root_folder);
+CREATE INDEX IF NOT EXISTS root_folders_section_idx
+    ON root_folders(section);
 CREATE TABLE IF NOT EXISTS volumes_covers(
     volume_id INTEGER UNIQUE NOT NULL,
     cover BLOB,
@@ -411,6 +415,10 @@ CREATE INDEX IF NOT EXISTS issues_volume_number_index
     ON issues(volume_id, calculated_issue_number);
 CREATE INDEX IF NOT EXISTS issues_volume_index
     ON issues(volume_id);
+CREATE INDEX IF NOT EXISTS issues_date_idx
+    ON issues(date);
+CREATE INDEX IF NOT EXISTS issues_monitored_date_idx
+    ON issues(monitored, date);
 CREATE TABLE IF NOT EXISTS files(
     id INTEGER PRIMARY KEY,
     filepath TEXT UNIQUE NOT NULL,
@@ -431,8 +439,37 @@ CREATE TABLE IF NOT EXISTS issues_files(
         issue_id
     )
 );
+CREATE UNIQUE INDEX IF NOT EXISTS issues_files_file_id_unique_idx
+    ON issues_files(file_id);
+CREATE UNIQUE INDEX IF NOT EXISTS issues_files_issue_id_unique_idx
+    ON issues_files(issue_id);
 CREATE INDEX IF NOT EXISTS issues_files_issue_id_index
     ON issues_files(issue_id);
+CREATE INDEX IF NOT EXISTS issues_files_file_id_index
+    ON issues_files(file_id);
+CREATE TABLE IF NOT EXISTS file_match_conflicts(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    volume_id INTEGER NOT NULL,
+    file_id INTEGER,
+    filepath TEXT NOT NULL DEFAULT '',
+    proposed_issue_id INTEGER,
+    proposed_issue_numbers TEXT NOT NULL DEFAULT '[]',
+    reason TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'scan',
+    download_id INTEGER,
+    content_hash TEXT,
+    parser_result TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER,
+    resolution TEXT,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id) ON DELETE CASCADE,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL,
+    FOREIGN KEY (proposed_issue_id) REFERENCES issues(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS file_match_conflicts_volume_unresolved_idx
+    ON file_match_conflicts(volume_id, resolved_at, reason);
+CREATE INDEX IF NOT EXISTS file_match_conflicts_file_idx
+    ON file_match_conflicts(file_id);
 CREATE TABLE IF NOT EXISTS volume_files(
     file_id INTEGER PRIMARY KEY,
     volume_id INTEGER NOT NULL,
@@ -496,6 +533,34 @@ CREATE TABLE IF NOT EXISTS download_history(
     FOREIGN KEY (issue_id) REFERENCES issues(id)
         ON DELETE SET NULL
 );
+CREATE INDEX IF NOT EXISTS download_history_success_idx
+    ON download_history(success);
+CREATE TABLE IF NOT EXISTS download_postprocessing_state(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    download_id INTEGER,
+    volume_id INTEGER NOT NULL,
+    issue_id INTEGER,
+    covered_issues TEXT,
+    source_type VARCHAR(30) NOT NULL,
+    source_name TEXT,
+    download_link TEXT NOT NULL,
+    web_link TEXT,
+    web_title TEXT,
+    web_sub_title TEXT,
+    state TEXT NOT NULL CHECK (state IN ('staged', 'analyzed', 'conflict', 'applying', 'completed', 'failed', 'rolled_back')),
+    stage_details TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (issue_id) REFERENCES issues(id)
+        ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS download_postprocessing_state_download_idx
+    ON download_postprocessing_state(download_id, source_type);
+CREATE INDEX IF NOT EXISTS download_postprocessing_state_unresolved_idx
+    ON download_postprocessing_state(volume_id, state, updated_at);
 CREATE TABLE IF NOT EXISTS task_history(
     task_name NOT NULL,
     display_title NOT NULL,

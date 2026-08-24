@@ -1349,7 +1349,11 @@ def _refill_excluding_added(fetch_page, *, offset: int, limit: int, safety_pages
         visible = _exclude_added_provider_results(list(provider_items))
         overflow.extend(append_visible(visible))
         provider_has_more = bool(last_page.get('has_more'))
-        current_offset += int(last_page.get('page_size') or limit)
+        current_offset = int(
+            last_page.get('next_offset')
+            if last_page.get('next_offset') is not None
+            else current_offset + int(last_page.get('page_size') or limit)
+        )
         if overflow or not provider_has_more:
             break
     if len(filled) < limit and provider_has_more and pages_used >= max(1, safety_pages):
@@ -1426,9 +1430,9 @@ def _comic_discovery_facts_page(discovery_type: str, *, offset: int, limit: int,
             LIMIT ? OFFSET ?;
         """, (*params, scan_limit, offset)).fetchall()
     except OperationalError:
-        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False, **sync_state}
+        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False, 'fact_index': True, **sync_state}
     if not rows:
-        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False, **sync_state}
+        return {'items': [], 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': False, 'fact_index': True, **sync_state}
     volume_ids = tuple(int(row[0]) for row in rows)
     already_added: Dict[int, int] = {}
     if volume_ids:
@@ -1512,7 +1516,6 @@ def api_discovery():
             return return_api(page)
         return return_api(page['items'])
 
-    fallback_sync_state: Dict[str, Any] = {}
     if discovery_type in ('upcoming-launches', 'recently-started'):
         fact_limit = limit + 1 if paginated else min(limit, 20)
         if exclude_added and paginated:
@@ -1524,61 +1527,38 @@ def api_discovery():
                 cursor_identity=_cursor_identity('comicvine', section, 'fact-shelf', type=discovery_type),
             )
         else:
-            fact_page = _comic_discovery_facts_page(discovery_type, offset=offset if paginated else 0, limit=fact_limit, exclude_added=exclude_added)
-        if fact_page.get('items'):
-            if paginated:
+            fact_page = _comic_discovery_facts_page(
+                discovery_type,
+                offset=offset if paginated else 0,
+                limit=fact_limit,
+                exclude_added=exclude_added,
+            )
+        if paginated:
+            if not (exclude_added and fact_page.get('next_cursor')):
                 fact_page['has_more'] = len(fact_page['items']) > limit
-                fact_page['items'] = fact_page['items'][:limit]
-                fact_page['page_size'] = limit
-                return return_api(fact_page)
-            return return_api(fact_page['items'][:limit])
-        fallback_sync_state = {key: fact_page.get(key) for key in (
-            'coverage_state', 'coverage_complete', 'last_completed_at', 'last_error',
-            'sync_task_id', 'source_note',
-        ) if key in fact_page}
-        # If the local fact index is empty/not started, fall back to the bounded
-        # provider shelf so a fresh or migrated install does not render blank
-        # discovery sections before the background index has run.  Shelves use
-        # paginated=true, so the fallback must preserve the page envelope too.
+            fact_page['items'] = fact_page['items'][:limit]
+            fact_page['page_size'] = limit
+            return return_api(fact_page)
+        return return_api(fact_page['items'][:limit])
+
     cv = ComicVine()
-    if discovery_type == 'upcoming-launches':
-        fetch_limit = offset + limit + 1 if paginated else 20
-        try:
-            results = run(cv.get_upcoming_releases(days=60, limit=fetch_limit))
-        except Exception:
-            LOGGER.exception('discovery provider fallback failed type=%s section=%s', discovery_type, section)
-            results = []
-        if paginated:
-            items = results[offset:offset + limit]
-            return return_api({'items': items, 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': len(results) > offset + limit, **fallback_sync_state})
-    elif discovery_type == 'recently-started':
-        fetch_limit = offset + limit + 1 if paginated else 20
-        try:
-            results = run(cv.get_new_volumes(limit=fetch_limit))
-        except Exception:
-            LOGGER.exception('discovery provider fallback failed type=%s section=%s', discovery_type, section)
-            results = []
-        if paginated:
-            items = results[offset:offset + limit]
-            return return_api({'items': items, 'total': None, 'total_is_exact': False, 'offset': offset, 'page_size': limit, 'has_more': len(results) > offset + limit, **fallback_sync_state})
-    else:
-        sort = {
-            'recently-active': 'trending',
-        }[discovery_type]
-        if exclude_added and paginated:
-            return return_api(_refill_excluding_added(
-                lambda page_offset, page_limit: run(cv.browse_catalog_volumes(
-                    offset=page_offset, limit=page_limit, sort=sort
-                )),
-                offset=offset,
-                limit=limit,
-                cursor=cursor,
-                cursor_identity=_cursor_identity('comicvine', section, 'shelf', type=discovery_type, sort=sort),
-            ))
-        page = run(cv.browse_catalog_volumes(offset=offset if paginated else 0, limit=(limit if paginated else 20), sort=sort))
-        results = page.get('items', []) if isinstance(page, dict) else page
-        if paginated and isinstance(page, dict):
-            return return_api(page)
+    sort = {
+        'recently-active': 'trending',
+    }[discovery_type]
+    if exclude_added and paginated:
+        return return_api(_refill_excluding_added(
+            lambda page_offset, page_limit: run(cv.browse_catalog_volumes(
+                offset=page_offset, limit=page_limit, sort=sort
+            )),
+            offset=offset,
+            limit=limit,
+            cursor=cursor,
+            cursor_identity=_cursor_identity('comicvine', section, 'shelf', type=discovery_type, sort=sort),
+        ))
+    page = run(cv.browse_catalog_volumes(offset=offset if paginated else 0, limit=(limit if paginated else 20), sort=sort))
+    results = page.get('items', []) if isinstance(page, dict) else page
+    if paginated and isinstance(page, dict):
+        return return_api(page)
 
     if paginated:
         if exclude_added:
@@ -2075,12 +2055,10 @@ def api_volumes():
         for attempt in range(3):
             try:
                 if query:
-                    matching = Library.search(
-                        query, sort or LibrarySorting.TITLE, filter, section, direction
+                    volumes, total = Library.search_page(
+                        query, sort or LibrarySorting.TITLE, filter, section,
+                        offset, limit, direction
                     )
-                    total = len(matching)
-                    start = offset * limit
-                    volumes = matching[start:start + limit]
                 else:
                     volumes, total = Library.get_public_volumes_page(
                         sort or LibrarySorting.TITLE,

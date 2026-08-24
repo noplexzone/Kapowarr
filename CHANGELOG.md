@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Fix Library searches hanging on unbounded in-memory filtering, restore Comic publication facts from ComicVine first-issue references and restart stale failed fact cursors, and tighten shared Recently Active comic/manga candidate classification.
 - Fix issue filenames with story-part suffixes and annual years being misread as issue ranges, and keep conflicted import history/path state truthful.
 - Extract downloaded ZIP/RAR issue containers before strict one-file/one-issue matching, and deduplicate repeated unresolved match conflicts.
 

@@ -34,6 +34,11 @@ class _DB:
     def __init__(self, batches):
         self.batches = list(batches)
         self.calls = []
+        self.connection = self
+        self.functions = {}
+
+    def create_function(self, name, arity, function, **kwargs):
+        self.functions[(name, arity)] = function
 
     def execute(self, query, params=()):
         self.calls.append((query, params))
@@ -73,6 +78,20 @@ class VolumePaginationTests(unittest.TestCase):
         self.assertEqual(rows, [])
         self.assertEqual(total, 87)
         self.assertEqual(db.calls[1][1], ('manga', 1, 0))
+
+    def test_search_page_filters_before_bounded_sql(self):
+        db = _DB([[{'id': 121, 'title': 'Saga', '_total_count': 1}]])
+        with patch('backend.implementations.volumes.get_db', return_value=db):
+            rows, total = Library.search_page('saga', section='comic', page=0, page_size=60)
+        self.assertEqual(rows, [{'id': 121, 'title': 'Saga'}])
+        self.assertEqual(total, 1)
+        query, params = db.calls[0]
+        self.assertIn('kapowarr_title_contains(volumes.title, ?) = 1', query)
+        self.assertIn('LIMIT ? OFFSET ?', query)
+        self.assertEqual(params, ('comic', 'saga', 'saga', 'saga', 60, 0))
+        matcher = db.functions[('kapowarr_title_contains', 2)]
+        self.assertEqual(matcher('Spider-Man', 'Spider Man'), 1)
+        self.assertEqual(matcher('Saga', '%'), 0)
 
     def test_recently_released_sort_uses_set_based_issue_date(self):
         db = _DB([[{'id': 1, 'latest_issue_date': '2024-01-01', '_total_count': 1}]])

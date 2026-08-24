@@ -2,7 +2,7 @@ import asyncio
 import json
 import sqlite3
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import backend.features.tasks as task_mod
 from backend.base.custom_exceptions import CVRateLimitReached
@@ -47,6 +47,30 @@ class ComicDiscoveryFactSyncTests(unittest.TestCase):
         class Settings:
             sv = SV()
         return patch.object(task_mod, 'Settings', return_value=Settings())
+
+    def test_legacy_failed_cursor_restarts_from_zero(self):
+        task = ComicDiscoveryFactSyncTask()
+        legacy = json.dumps({
+            'version': 1,
+            'date_preference': 'cover_date',
+            'active_scope': 'recently_started',
+            'scopes': {
+                'recently_started': {
+                    'offset': 7500,
+                    'coverage_state': 'partial',
+                    'records_processed': 7500,
+                    'candidate_volumes_found': 0,
+                    'facts_created': 0,
+                    'facts_updated': 0,
+                    'facts_failed': 2632,
+                }
+            },
+        })
+        state = task._load_cursor(legacy, 'cover_date')
+        self.assertEqual(state['version'], 2)
+        self.assertEqual(state['previous_version'], 1)
+        self.assertEqual(state['scopes']['recently_started']['offset'], 0)
+        self.assertEqual(state['scopes']['upcoming_launches']['offset'], 0)
 
     def test_task_persists_scope_offsets_and_resumes(self):
         con = memory_db()
@@ -152,13 +176,8 @@ class ComicDiscoveryFactSyncTests(unittest.TestCase):
                 ]}
             if endpoint == '/volumes':
                 return {'results': [
-                    {'id': 10, 'name': 'Long Runner', 'start_year': str(today.year - 1), 'publisher': {'name': 'Image'}, 'image': {}, 'site_detail_url': '', 'issues': [
-                        {'id': 1001, 'issue_number': '1', 'cover_date': past, 'store_date': past},
-                        {'id': 2001, 'issue_number': '25', 'cover_date': future, 'store_date': future},
-                    ]},
-                    {'id': 11, 'name': 'Future Launch', 'start_year': str(today.year), 'publisher': {'name': 'Image'}, 'image': {}, 'site_detail_url': '', 'issues': [
-                        {'id': 3001, 'issue_number': '0', 'cover_date': future, 'store_date': future},
-                    ]},
+                    {'id': 10, 'name': 'Long Runner', 'start_year': str(today.year - 1), 'publisher': {'name': 'Image'}, 'image': {'small_url': ''}, 'site_detail_url': '', 'count_of_issues': 25, 'first_issue': {'id': 1001, 'issue_number': '1'}, 'issues': []},
+                    {'id': 11, 'name': 'Future Launch', 'start_year': str(today.year), 'publisher': {'name': 'Image'}, 'image': {'small_url': ''}, 'site_detail_url': '', 'count_of_issues': 1, 'first_issue': {'id': 3001, 'issue_number': '0'}, 'issues': []},
                 ]}
             return default or {'results': []}
 
@@ -171,6 +190,59 @@ class ComicDiscoveryFactSyncTests(unittest.TestCase):
         issue_call = calls[0][1]
         self.assertIn('cover_date:', issue_call['filter'])
         self.assertEqual(issue_call['offset'], 0)
+
+
+class _FakeAsyncSession:
+    async def __aenter__(self):
+        return object()
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class ComicVineFilteredPaginationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_recently_active_resumes_at_raw_provider_offset(self):
+        comicvine = object.__new__(ComicVine)
+
+        async def provider_page(_session, _path, params, _default):
+            offset = int(params['offset'])
+            rows = []
+            for item_id in range(offset, offset + 100):
+                rows.append({
+                    'id': item_id + 1,
+                    'name': f'Volume {item_id + 1}',
+                    'publisher': {'name': 'Shueisha' if item_id < 50 else 'Marvel'},
+                    'start_year': '2026',
+                    'count_of_issues': 1,
+                    'deck': '',
+                    'description': '',
+                    'site_detail_url': '',
+                    'date_added': '2026-08-24 00:00:00',
+                    'date_last_updated': '2026-08-24 00:00:00',
+                    'image': {'small_url': ''},
+                })
+            return {'results': rows, 'number_of_total_results': 200}
+
+        comicvine._ComicVine__call_api = AsyncMock(side_effect=provider_page)
+        empty_db = MagicMock()
+        empty_db.execute.return_value = []
+        with patch.object(cv_mod, 'AsyncSession', return_value=_FakeAsyncSession()), patch.object(
+            cv_mod, 'get_db', return_value=empty_db
+        ):
+            first = await comicvine.browse_catalog_volumes(offset=0, limit=10)
+            second = await comicvine.browse_catalog_volumes(
+                offset=first['next_offset'], limit=10
+            )
+
+        self.assertEqual(first['next_offset'], 60)
+        self.assertEqual(
+            [item['comicvine_id'] for item in first['items']],
+            list(range(51, 61))
+        )
+        self.assertEqual(
+            [item['comicvine_id'] for item in second['items']],
+            list(range(61, 71))
+        )
 
 
 if __name__ == '__main__':

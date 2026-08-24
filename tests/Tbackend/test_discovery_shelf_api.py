@@ -300,10 +300,10 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertEqual([item['metadata_id'] for item in result['items']], ['41', '42'])
         comicvine.search_volumes_page.assert_awaited_once_with('Batman', section='comic', offset=30, limit=2)
 
-    def test_recently_started_paginated_falls_back_when_fact_index_empty(self):
+    def test_recently_started_paginated_empty_fact_index_stays_local(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
-        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', side_effect=AssertionError('provider fallback')):
             response = self._client().get('/api/discovery', query_string={
                 'section': 'comic',
                 'type': 'recently-started',
@@ -312,14 +312,13 @@ class DiscoveryShelfApiTests(unittest.TestCase):
                 'limit': '10',
             })
         result = self._assert_envelope(response)
-        self.assertEqual([item['metadata_id'] for item in result['items']], ['300'])
-        comicvine.get_new_volumes.assert_awaited_once()
-        comicvine.browse_catalog_volumes.assert_not_awaited()
+        self.assertEqual(result['items'], [])
+        self.assertTrue(result['fact_index'])
 
-    def test_upcoming_paginated_falls_back_when_fact_index_empty(self):
+    def test_upcoming_paginated_empty_fact_index_stays_local(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
-        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', side_effect=AssertionError('provider fallback')):
             response = self._client().get('/api/discovery', query_string={
                 'section': 'comic',
                 'type': 'upcoming-launches',
@@ -328,9 +327,8 @@ class DiscoveryShelfApiTests(unittest.TestCase):
                 'limit': '10',
             })
         result = self._assert_envelope(response)
-        self.assertEqual([item['metadata_id'] for item in result['items']], ['200'])
-        comicvine.get_upcoming_releases.assert_awaited_once_with(days=60, limit=11)
-        comicvine.browse_catalog_volumes.assert_not_awaited()
+        self.assertEqual(result['items'], [])
+        self.assertTrue(result['fact_index'])
 
 
     def test_discovery_refresh_queues_fact_sync_task(self):
@@ -446,11 +444,10 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         result = self._assert_envelope(response)
         self.assertEqual(result['items'], [])
 
-    def test_recently_started_paginated_provider_failure_returns_empty_page(self):
+    def test_recently_started_paginated_empty_page_does_not_construct_provider(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
-        comicvine.get_new_volumes = AsyncMock(side_effect=RuntimeError('provider down'))
-        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', side_effect=AssertionError('provider fallback')):
             response = self._client().get('/api/discovery', query_string={
                 'section': 'comic',
                 'type': 'recently-started',
@@ -458,21 +455,18 @@ class DiscoveryShelfApiTests(unittest.TestCase):
             })
         result = self._assert_envelope(response)
         self.assertEqual(result['items'], [])
-        comicvine.get_new_volumes.assert_awaited_once()
-        comicvine.browse_catalog_volumes.assert_not_awaited()
 
-    def test_recently_started_public_shelf_falls_back_when_fact_index_empty(self):
+    def test_recently_started_public_empty_fact_index_stays_local(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
-        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', return_value=comicvine):
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'ComicVine', side_effect=AssertionError('provider fallback')):
             response = self._client().get('/api/discovery', query_string={
                 'section': 'comic',
                 'type': 'recently-started',
                 'limit': '10',
             })
         result = self._assert_envelope(response)
-        self.assertEqual([item['metadata_id'] for item in result], ['300'])
-        comicvine.get_new_volumes.assert_awaited_once()
+        self.assertEqual(result, [])
 
     def test_url_base_prefixed_route_returns_valid_envelope(self):
         app = Flask(__name__)
@@ -492,7 +486,7 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self._assert_envelope(response)
 
 
-    def test_completed_empty_recently_started_shelf_falls_back_to_provider(self):
+    def test_completed_empty_recently_started_shelf_stays_local(self):
         import sqlite3
         con = sqlite3.connect(':memory:')
         con.executescript("""
@@ -515,14 +509,13 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         """)
         request_patch, settings_patch, timer_patch = self._auth_patches()
         comicvine = self._comicvine()
-        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'get_db', return_value=con), patch.object(api_mod, 'ComicVine', return_value=comicvine):
+        with request_patch, settings_patch, timer_patch, patch.object(api_mod, 'get_db', return_value=con), patch.object(api_mod, 'ComicVine', side_effect=AssertionError('provider fallback')):
             response = self._client().get('/api/discovery', query_string={
                 'section': 'comic',
                 'type': 'recently-started',
             })
         result = self._assert_envelope(response)
-        self.assertEqual([item['metadata_id'] for item in result], ['300'])
-        comicvine.get_new_volumes.assert_awaited_once()
+        self.assertEqual(result, [])
 
     def test_mangadex_full_search_uses_paginated_provider_path(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
@@ -568,6 +561,30 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         second_result = self._assert_envelope(second)
         self.assertIsNone(second_result.get('previous_cursor'))
         self.assertIn(first_result['next_cursor'], second_result.get('cursor_history') or [])
+
+    def test_hidden_fact_shelf_preserves_refill_cursor(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        refill_page = {
+            'items': [self._item('comicvine', '501')],
+            'total': None,
+            'offset': 0,
+            'page_size': 1,
+            'has_more': True,
+            'next_cursor': 'signed-next-page',
+        }
+        with request_patch, settings_patch, timer_patch, patch.object(
+            api_mod, '_refill_excluding_added', return_value=refill_page
+        ):
+            response = self._client().get('/api/discovery', query_string={
+                'section': 'comic',
+                'type': 'recently-started',
+                'paginated': 'true',
+                'limit': '1',
+                'exclude_added': 'true',
+            })
+        result = self._assert_envelope(response)
+        self.assertTrue(result['has_more'])
+        self.assertEqual(result['next_cursor'], 'signed-next-page')
 
 
 if __name__ == '__main__':

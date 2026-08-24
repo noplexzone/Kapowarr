@@ -47,6 +47,7 @@ function setStorageVal(key: string, val: unknown) {
 export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const route = canonical ? '/library' : section === 'comic' ? '/comics' : '/manga';
 
   const rawSearch = useSearch({ strict: false }) as any;
   const search: VolumesSearch = canonical ? {
@@ -90,8 +91,8 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
     const storedSort = getStoredSortPreference(window.localStorage, STORAGE_KEY_SORT);
     if (storedSort && storedSort !== search.sort) {
       navigate({
-        to: section === 'comic' ? '/comics' : '/manga',
-        search: (previous: any) => ({ ...previous, sort: storedSort, page: 1 }),
+        to: route,
+        search: (previous: any) => ({ ...previous, section, sort: storedSort, page: 1 }),
         replace: true,
       });
     }
@@ -106,8 +107,8 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
       if (trimmed !== current) {
         setStorageVal(STORAGE_KEY_SEARCH, trimmed || undefined);
         navigate({
-          to: section === 'comic' ? '/comics' : '/manga',
-          search: (prev: any) => canonical ? ({ ...prev, q: trimmed || undefined, page: 1 }) : ({ ...prev, search: trimmed || undefined, offset: 0 }),
+          to: route,
+          search: (prev: any) => canonical ? ({ ...prev, section, q: trimmed || undefined, page: 1 }) : ({ ...prev, search: trimmed || undefined, offset: 0 }),
         });
       }
     }, 350);
@@ -138,12 +139,12 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
           canonicalPatch.monitoring = patch.filter === 'unmonitored' ? 'unmonitored' : patch.filter === 'monitored' ? 'monitored' : 'all';
         }
         if (resetsPage) canonicalPatch.page = 1;
-        navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...canonicalPatch }) });
+        navigate({ to: route, search: (prev: any) => ({ ...prev, section, ...canonicalPatch }) });
       } else {
         navigate({ to: section === 'comic' ? '/comics' : '/manga', search: (prev: any) => ({ ...prev, ...patch, ...(resetsPage ? { offset: 0 } : {}) }) });
       }
     },
-    [canonical, navigate, section],
+    [canonical, navigate, route, section],
   );
 
   const toggleSelect = useCallback((id: number) => {

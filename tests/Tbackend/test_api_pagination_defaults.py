@@ -49,6 +49,20 @@ class PaginationApiDefaultsTests(unittest.TestCase):
             api_mod.LibrarySorting.TITLE, None, 'comic', 0, 60, 'asc'
         )
 
+    def test_volumes_paginated_search_uses_bounded_search_page(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        with request_patch, settings_patch, timer_patch, patch.object(
+            api_mod.Library, 'search_page', return_value=([{'id': 7}], 1)
+        ) as search_page, patch.object(
+            api_mod.Library, 'search', side_effect=AssertionError('unbounded search')
+        ):
+            response = self._client().get('/api/volumes?paginated=true&query=Saga&offset=2&limit=60')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['result']['items'], [{'id': 7}])
+        search_page.assert_called_once_with(
+            'Saga', api_mod.LibrarySorting.TITLE, None, 'comic', 2, 60, 'asc'
+        )
+
     def test_volumes_paginated_retries_transient_database_locks(self):
         request_patch, settings_patch, timer_patch = self._auth_patches()
         with request_patch, settings_patch, timer_patch, patch.object(

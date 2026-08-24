@@ -142,7 +142,7 @@ describe('ComicsPage poster-first manage mode', () => {
 
 
 
-  it('keeps canonical filters on the active comics or manga route', () => {
+  it('keeps canonical filters on the canonical library route', () => {
     searchState = {
       sort: 'title',
       status: 'all',
@@ -155,11 +155,28 @@ describe('ComicsPage poster-first manage mode', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Missing' }));
     expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
-      to: '/comics',
+      to: '/library',
       search: expect.any(Function),
     }));
     const patchSearch = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0]?.search;
-    expect(patchSearch({})).toMatchObject({ status: 'missing', monitoring: 'all', page: 1 });
+    expect(patchSearch({})).toMatchObject({ section: 'comic', status: 'missing', monitoring: 'all', page: 1 });
+  });
+
+  it('keeps canonical search text on the library route', async () => {
+    searchState = {
+      section: 'manga', sort: 'title', status: 'all', monitoring: 'all',
+      view: 'grid', q: undefined, page: 1,
+    };
+    renderPage('manga', true);
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search library' }), {
+      target: { value: 'Berserk' },
+    });
+    await waitFor(() => {
+      const navigation = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0];
+      expect(navigation.to).toBe('/library');
+      expect(navigation.search({})).toMatchObject({ section: 'manga', q: 'Berserk', page: 1 });
+    });
   });
 
   it('keeps discovery shortcuts out of the library header', () => {

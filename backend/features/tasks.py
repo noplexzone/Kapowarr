@@ -1030,7 +1030,7 @@ class ComicDiscoveryFactSyncTask(Task):
 
     def _empty_cursor(self, date_preference: str) -> Dict:
         return {
-            'version': 1,
+            'version': 2,
             'date_preference': date_preference,
             'active_scope': 'recently_started',
             'scopes': {
@@ -1060,8 +1060,12 @@ class ComicDiscoveryFactSyncTask(Task):
             state = json_loads(raw_cursor)
         except Exception:
             return self._empty_cursor(date_preference)
-        if not isinstance(state, dict) or state.get('version') != 1:
+        if not isinstance(state, dict):
             return self._empty_cursor(date_preference)
+        if state.get('version') != 2:
+            reset = self._empty_cursor(date_preference)
+            reset['previous_version'] = state.get('version')
+            return reset
         if state.get('date_preference') != date_preference:
             reset = self._empty_cursor(date_preference)
             reset['previous_date_preference'] = state.get('date_preference')
@@ -1101,7 +1105,11 @@ class ComicDiscoveryFactSyncTask(Task):
             row = dict(fetched) if fetched is not None and hasattr(fetched, 'keys') else {}
         state_cursor = self._load_cursor(row.get('provider_cursor'), date_preference)
         maintenance_due = bool(row.get('coverage_complete')) and int(row.get('last_completed_at') or 0) <= ts - 86400
-        if maintenance_due:
+        cursor_reset = (
+            'previous_version' in state_cursor
+            or 'previous_date_preference' in state_cursor
+        )
+        if maintenance_due or cursor_reset:
             state_cursor = self._empty_cursor(date_preference)
             processed = facts_created = facts_updated = 0
         else:

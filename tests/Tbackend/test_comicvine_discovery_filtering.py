@@ -29,6 +29,9 @@ def _load_discovery_filter_symbols():
         '_publisher_matches',
         '_is_comic_discovery_excluded_publisher',
         '_has_manga_discovery_title_keyword',
+        '_has_usable_discovery_identity',
+        '_is_manga_discovery_candidate_volume',
+        '_is_comic_discovery_candidate_volume',
         '_parse_cv_date',
         'issue_date',
         '_issue_date',
@@ -64,6 +67,8 @@ class ComicVineDiscoveryFilteringTests(unittest.TestCase):
         self.assertTrue(excluded('Ize Press'))
         self.assertTrue(excluded('Manga Classics Inc.'))
         self.assertTrue(excluded('Yen On'))
+        self.assertTrue(excluded('GOT'))
+        self.assertFalse(excluded('Forgotten Realms Publishing'))
         self.assertTrue(excluded('Shōnen Gahōsha'))
         self.assertTrue(excluded('Line Manga'))
         self.assertTrue(excluded('Shodensha'))
@@ -103,6 +108,26 @@ class ComicVineDiscoveryFilteringTests(unittest.TestCase):
 
         self.assertFalse(excluded('Marvel'))
         self.assertFalse(excluded('DC Comics'))
+
+    def test_shared_candidate_classification_keeps_western_unicode_and_rejects_noise(self):
+        is_comic = _SYMBOLS['_is_comic_discovery_candidate_volume']
+        is_manga = _SYMBOLS['_is_manga_discovery_candidate_volume']
+        western = {'name': 'The Incal: L’Intégrale', 'publisher': {'name': 'Humanoids'}, 'count_of_issues': 6}
+        manga = {'name': 'Delicious in Dungeon', 'publisher': {'name': 'Yen Press'}, 'count_of_issues': 14}
+        issue_less = {'name': 'Unused ComicVine Placeholder', 'publisher': {'name': 'Image'}, 'count_of_issues': 0}
+        self.assertTrue(is_comic(western))
+        self.assertFalse(is_manga(western))
+        self.assertTrue(is_manga(manga))
+        self.assertFalse(is_comic(manga))
+        self.assertFalse(is_comic(issue_less))
+
+    def test_reported_recently_active_manga_publishers_are_excluded_from_comics(self):
+        is_comic = _SYMBOLS['_is_comic_discovery_candidate_volume']
+        is_manga = _SYMBOLS['_is_manga_discovery_candidate_volume']
+        for publisher in ('GOT', 'Bunkasha', 'Kobunsha', 'Seoul Munhwasa', 'Project-H'):
+            volume = {'name': 'Reported title', 'publisher': {'name': publisher}, 'count_of_issues': 1}
+            self.assertFalse(is_comic(volume), publisher)
+            self.assertTrue(is_manga(volume), publisher)
 
 
 class ComicVineShelfSemanticsTests(unittest.TestCase):

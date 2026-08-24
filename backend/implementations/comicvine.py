@@ -36,6 +36,7 @@ _NON_ENGLISH_PUBLISHERS = frozenset({
     # Japanese publishers
     'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
     'shodensha', 'shinchosha', 'shucream', 'shu-cream', 'two virgins',
+    'got', 'bunkasha', 'kobunsha', 'seoul munhwasa', 'project-h',
     'media factory', 'fujimi shobo', 'kodansha', 'kodansha comics', 'kodansha usa',
     'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
     'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
@@ -114,6 +115,7 @@ _MANGA_TITLE_KEYWORDS = _NON_ENGLISH_TITLE_KEYWORDS
 _MANGA_PUBLISHERS = frozenset({
     'shogakukan', 'akita shoten', 'akita publishing', 'square enix',
     'shodensha', 'shinchosha', 'shucream', 'shu-cream', 'two virgins',
+    'got', 'bunkasha', 'kobunsha', 'seoul munhwasa', 'project-h',
     'media factory', 'fujimi shobo', 'kodansha', 'kodansha comics', 'kodansha usa',
     'kodansha comics usa', 'shueisha', 'hakusensha', 'kadokawa',
     'kadokawa shoten', 'mag garden', 'futabasha', 'futabasha comics',
@@ -180,8 +182,10 @@ def _publisher_matches(pub: str, publishers: FrozenSet[str]) -> bool:
         return False
     return any(
         normalized == publisher
-        or publisher in normalized
-        or normalized in publisher
+        or (
+            len(publisher) >= 4
+            and (normalized in publisher or publisher in normalized)
+        )
         for publisher in publishers
     )
 
@@ -202,13 +206,30 @@ def _has_non_ascii(value: str) -> bool:
     return any(ord(c) > 127 for c in (value or ''))
 
 
-def _is_comic_discovery_candidate_volume(volume: Dict[str, Any]) -> bool:
+def _has_usable_discovery_identity(volume: Dict[str, Any]) -> bool:
+    if not str(volume.get('name') or '').strip():
+        return False
+    issue_count = volume.get('count_of_issues')
+    if issue_count is not None:
+        try:
+            if int(issue_count) <= 0:
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def _is_manga_discovery_candidate_volume(volume: Dict[str, Any]) -> bool:
     pub = ((volume.get('publisher') or {}).get('name') or '')
-    return (
-        not _is_comic_discovery_excluded_publisher(pub)
-        and not _has_non_ascii(volume.get('name') or '')
-        and not _has_manga_discovery_title_keyword(volume.get('name') or '')
+    title = volume.get('name') or ''
+    return _has_usable_discovery_identity(volume) and (
+        _is_comic_discovery_excluded_publisher(pub)
+        or _has_manga_discovery_title_keyword(title)
     )
+
+
+def _is_comic_discovery_candidate_volume(volume: Dict[str, Any]) -> bool:
+    return _has_usable_discovery_identity(volume) and not _is_manga_discovery_candidate_volume(volume)
 
 
 def _is_english_manga_publisher(pub: str) -> bool:
@@ -361,6 +382,26 @@ def _is_launch_issue_for_volume(issue: Dict[str, Any], volume: Dict[str, Any], c
         return False
     return str(first.get('id') or '') == str(issue.get('id') or '')
 
+def _is_first_issue_reference(issue: Dict[str, Any], volume: Dict[str, Any]) -> bool:
+    first_issue = volume.get('first_issue') or {}
+    if first_issue.get('id'):
+        return str(first_issue['id']) == str(issue.get('id') or '')
+    references = list(volume.get('issues') or [])
+    if not references:
+        return False
+    first = min(references, key=lambda candidate: (
+        _issue_number_value(candidate), str(candidate.get('id') or '')
+    ))
+    return str(first.get('id') or '') == str(issue.get('id') or '')
+
+
+def _volume_with_issue_details(volume: Dict[str, Any], issue: Dict[str, Any]) -> Dict[str, Any]:
+    # ComicVine's volume list response can omit ``issues`` even when
+    # ``first_issue`` is present. Once the scanned issue has been confirmed as
+    # that first issue, it is the only dated issue needed to derive the fact.
+    return {**volume, 'issues': [issue]}
+
+
 def _first_publication_fact_from_volume(volume: Dict[str, Any], configured_date_type: Any = None, *, upcoming_issue: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     first = _first_known_issue(volume, configured_date_type)
     first_date = _issue_date(first, configured_date_type) if first else None
@@ -443,6 +484,7 @@ class ComicVine:
         'date_added',
         'deck',
         'description',
+        'first_issue',
         'id',
         'image',
         'issues',
@@ -1104,6 +1146,9 @@ class ComicVine:
             volume = volume_details.get(volume_id)
             if not volume or not _is_comic_discovery_candidate_volume(volume):
                 continue
+            if not _is_first_issue_reference(issue, volume):
+                continue
+            volume = _volume_with_issue_details(volume, issue)
             first = _first_known_issue(volume, date_field)
             first_date = _issue_date(first, date_field) if first else None
             if not first_date:
@@ -1614,6 +1659,7 @@ class ComicVine:
             seen = set()
             raw_items = []
             provider_offset = offset
+            next_provider_offset = None
             provider_total = None
             # ComicVine recently-updated pages are often dominated by manga or
             # non-English catalog edits that the comic discovery shelf filters
@@ -1627,20 +1673,23 @@ class ComicVine:
                 )
                 provider_total = int(page.get('number_of_total_results') or provider_total or 0)
                 provider_rows = page.get('results') or []
-                for item in provider_rows:
+                for row_index, item in enumerate(provider_rows):
                     key = str(item.get('id') or '')
                     if not key or key in seen:
                         continue
                     seen.add(key)
                     if not _is_comic_discovery_candidate_volume(item):
                         continue
-                    raw_items.append(item)
-                    if len(raw_items) > limit:
+                    if len(raw_items) >= limit:
+                        next_provider_offset = provider_offset + row_index
                         break
-                if len(raw_items) > limit or len(provider_rows) < 100:
+                    raw_items.append(item)
+                if next_provider_offset is not None or len(provider_rows) < 100:
                     break
-                provider_offset += 100
-        has_more = len(raw_items) > limit or bool(provider_total and provider_offset + 100 < provider_total)
+                provider_offset += len(provider_rows)
+            if next_provider_offset is None and provider_total and provider_offset < provider_total:
+                next_provider_offset = provider_offset
+        has_more = next_provider_offset is not None
         formatted = self.__format_search_output(raw_items[:limit])
         for item in formatted:
             item['metadata_source_label'] = 'ComicVine'
@@ -1652,6 +1701,7 @@ class ComicVine:
             'offset': offset,
             'page_size': limit,
             'has_more': has_more,
+            'next_offset': next_provider_offset,
             'source_note': 'Recently Active uses ComicVine date_last_updated; it is not a global popularity score.',
         }
 

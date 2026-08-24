@@ -997,14 +997,45 @@ class Library:
         section: str,
         page: Union[int, None] = None,
         page_size: Union[int, None] = None,
-        direction: str = 'asc'
+        direction: str = 'asc',
+        query: str = ''
     ) -> List[Dict[str, Any]]:
         """Run the public-volume query, optionally as a zero-based page."""
         if section not in ('comic', 'manga'):
             raise ValueError(f'Unknown library section: {section}')
+        if page is not None or page_size is not None:
+            if page is None or page_size is None or page < 0 or page_size < 1:
+                raise ValueError('Invalid library page')
 
+        db = get_db()
         params: List[Any] = [section]
         base_filters = ["rf.section = ?"]
+        if query:
+            normalized_query = query.strip().lower()
+            if query.startswith(('4050-', 'cv:')):
+                try:
+                    cv_id = to_number_cv_id((query,))[0]
+                    base_filters.append("volumes.comicvine_id = ?")
+                    params.append(cv_id)
+                except ValueError:
+                    base_filters.append("0 = 1")
+            else:
+                db.connection.create_function(
+                    'kapowarr_title_contains',
+                    2,
+                    lambda candidate, needle: int(match_title(
+                        str(candidate or ''),
+                        str(needle or ''),
+                        allow_contains=True
+                    )),
+                    deterministic=True
+                )
+                base_filters.append(
+                    "(kapowarr_title_contains(volumes.title, ?) = 1 OR "
+                    "kapowarr_title_contains(COALESCE(volumes.publisher, ''), ?) = 1 OR "
+                    "CAST(volumes.year AS TEXT) = ?)"
+                )
+                params.extend((query, query, normalized_query))
         stats_filter = ""
         if filter == LibraryFilter.WANTED:
             stats_filter = "WHERE COALESCE(issue_stats.has_wanted, 0) = 1"
@@ -1022,8 +1053,6 @@ class Library:
 
         pagination = ''
         if page is not None or page_size is not None:
-            if page is None or page_size is None or page < 0 or page_size < 1:
-                raise ValueError('Invalid library page')
             pagination = "LIMIT ? OFFSET ?"
             params.extend((page_size, page * page_size))
 
@@ -1040,7 +1069,7 @@ class Library:
         else:
             order_by = f'{sort.value}, volumes.id'
 
-        return get_db().execute(f"""
+        return db.execute(f"""
             WITH
                 scoped_volumes AS (
                     SELECT volumes.*
@@ -1179,6 +1208,34 @@ class Library:
         else:
             total = 0
 
+        for row in rows:
+            row.pop('_total_count', None)
+            _apply_effective_metadata(row)
+        return rows, total
+
+    @classmethod
+    def search_page(
+        cls,
+        query: str,
+        sort: LibrarySorting = LibrarySorting.TITLE,
+        filter: Union[LibraryFilter, None] = None,
+        section: str = 'comic',
+        page: int = 0,
+        page_size: int = 60,
+        direction: str = 'asc'
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        rows = cls._get_public_volume_rows(
+            sort, filter, section, page, page_size, direction, query
+        )
+        if rows:
+            total = int(rows[0].get('_total_count') or 0)
+        elif page:
+            first = cls._get_public_volume_rows(
+                sort, filter, section, 0, 1, direction, query
+            )
+            total = int(first[0].get('_total_count') or 0) if first else 0
+        else:
+            total = 0
         for row in rows:
             row.pop('_total_count', None)
             _apply_effective_metadata(row)

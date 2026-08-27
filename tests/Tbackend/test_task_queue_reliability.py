@@ -12,10 +12,12 @@ class TaskQueueReliabilityTests(unittest.TestCase):
     def setUp(self):
         self.handler = tasks.TaskHandler()
         self.old_class_queue = tasks.TaskHandler.queue
+        self.old_delayed_tasks = tasks.TaskHandler.delayed_tasks
         self.had_instance_queue = 'queue' in self.handler.__dict__
         self.old_instance_queue = self.handler.__dict__.get('queue')
         self.handler.__dict__.pop('queue', None)
         tasks.TaskHandler.queue = []
+        tasks.TaskHandler.delayed_tasks = {}
         self.original_process_queue = tasks.TaskHandler._process_queue
         self.emit_patch = patch.object(tasks, '_emit_task_event', lambda event: None)
         self.process_patch = patch.object(
@@ -28,6 +30,7 @@ class TaskQueueReliabilityTests(unittest.TestCase):
         self.process_patch.stop()
         self.emit_patch.stop()
         tasks.TaskHandler.queue = self.old_class_queue
+        tasks.TaskHandler.delayed_tasks = self.old_delayed_tasks
         self.handler.__dict__.pop('queue', None)
         if self.had_instance_queue:
             self.handler.__dict__['queue'] = self.old_instance_queue
@@ -111,6 +114,197 @@ class TaskQueueReliabilityTests(unittest.TestCase):
 
         self.assertEqual(starts, [])
         self.assertEqual(self.handler.queue[0]['status'], 'cancelling')
+
+    def test_delayed_task_timer_requeues_new_task_exactly_once(self):
+        timers = []
+
+        class FakeTimer:
+            def __init__(self, delay, callback, args=()):
+                self.delay = delay
+                self.callback = callback
+                self.args = args
+                self.started = False
+                self.cancelled = False
+                self.daemon = False
+                timers.append(self)
+
+            def start(self):
+                self.started = True
+
+            def cancel(self):
+                self.cancelled = True
+
+        with patch.object(tasks, 'Timer', FakeTimer), \
+                patch.object(tasks, 'time', return_value=100):
+            self.assertTrue(self.handler.schedule_delayed(tasks.MetronBackfillTask, 160))
+            self.assertFalse(self.handler.schedule_delayed(tasks.MetronBackfillTask, 170))
+
+        self.assertEqual(len(timers), 1)
+        self.assertEqual(timers[0].delay, 60)
+        self.assertTrue(timers[0].started)
+        with patch.object(self.handler, 'add', return_value=17) as add:
+            timers[0].callback(*timers[0].args)
+            timers[0].callback(*timers[0].args)
+
+        add.assert_called_once()
+        queued_task = add.call_args.args[0]
+        self.assertIsInstance(queued_task, tasks.MetronBackfillTask)
+        self.assertEqual(tasks.TaskHandler.delayed_tasks, {})
+
+    def test_delayed_retry_waits_until_previous_singleton_leaves_queue(self):
+        timers = []
+
+        class FakeTimer:
+            def __init__(self, delay, callback, args=()):
+                self.delay = delay
+                self.callback = callback
+                self.args = args
+                self.started = False
+                self.cancelled = False
+                self.daemon = False
+                timers.append(self)
+
+            def start(self):
+                self.started = True
+
+            def cancel(self):
+                self.cancelled = True
+
+        existing = tasks.MetronBackfillTask()
+        self.handler.queue.append({
+            'task': existing,
+            'id': 7,
+            'status': 'running',
+            'queued_at': 1,
+            'started_at': 2,
+            'thread': object(),
+        })
+        with patch.object(tasks, 'Timer', FakeTimer), \
+                patch.object(tasks, 'time', return_value=100):
+            self.handler.schedule_delayed(tasks.MetronBackfillTask, 101)
+            timers[0].callback(*timers[0].args)
+
+            self.assertEqual(len(timers), 2)
+            self.assertIn('metron_backfill', tasks.TaskHandler.delayed_tasks)
+            self.assertIs(tasks.TaskHandler.delayed_tasks['metron_backfill']['timer'], timers[1])
+
+            self.handler.queue.clear()
+            timers[1].callback(*timers[1].args)
+
+        self.assertEqual(len(self.handler.queue), 1)
+        self.assertIsInstance(self.handler.queue[0]['task'], tasks.MetronBackfillTask)
+        self.assertEqual(tasks.TaskHandler.delayed_tasks, {})
+
+    def test_cancel_delayed_task_prevents_timer_callback_requeue(self):
+        class FakeTimer:
+            def __init__(self, delay, callback, args=()):
+                self.callback = callback
+                self.args = args
+                self.cancelled = False
+                self.daemon = False
+
+            def start(self):
+                pass
+
+            def cancel(self):
+                self.cancelled = True
+
+        with patch.object(tasks, 'Timer', FakeTimer), \
+                patch.object(tasks, 'time', return_value=100):
+            self.handler.schedule_delayed(tasks.MetronBackfillTask, 160)
+        timer = tasks.TaskHandler.delayed_tasks['metron_backfill']['timer']
+        self.assertTrue(self.handler.cancel_delayed('metron_backfill'))
+        self.assertTrue(timer.cancelled)
+        with patch.object(self.handler, 'add') as add:
+            timer.callback(*timer.args)
+        add.assert_not_called()
+
+    def test_restore_paused_metron_backfill_schedules_future_resume_once(self):
+        timers = []
+
+        class FakeTimer:
+            def __init__(self, delay, callback, args=()):
+                self.delay = delay
+                self.callback = callback
+                self.args = args
+                self.daemon = False
+                timers.append(self)
+
+            def start(self):
+                pass
+
+            def cancel(self):
+                pass
+
+        class FakeResult:
+            def fetchonedict(self):
+                return {
+                    'status': 'rate_limit_paused',
+                    'resume_time': 160,
+                    'rate_limit_paused_until': 150,
+                }
+
+        class FakeDb:
+            def execute(self, *args):
+                return FakeResult()
+
+        with patch.object(tasks, 'get_db', return_value=FakeDb()), \
+                patch.object(tasks, 'Timer', FakeTimer), \
+                patch.object(self.handler, 'add') as add, \
+                patch.object(tasks, 'time', return_value=100):
+            self.assertTrue(self.handler.restore_metron_backfill())
+            self.assertFalse(self.handler.restore_metron_backfill())
+
+        self.assertEqual(len(timers), 1)
+        self.assertEqual(timers[0].delay, 60)
+        add.assert_not_called()
+
+    def test_restore_paused_metron_backfill_enqueues_past_resume_immediately(self):
+        class FakeResult:
+            def __init__(self, status):
+                self.status = status
+
+            def fetchonedict(self):
+                return {
+                    'status': self.status,
+                    'resume_time': 90,
+                    'rate_limit_paused_until': 80,
+                }
+
+        class FakeDb:
+            def __init__(self, status):
+                self.status = status
+
+            def execute(self, *args):
+                return FakeResult(self.status)
+
+        with patch.object(tasks, 'get_db', return_value=FakeDb('rate_limit_paused')), \
+                patch.object(self.handler, 'schedule_delayed') as schedule, \
+                patch.object(self.handler, 'add', return_value=1) as add, \
+                patch.object(tasks, 'time', return_value=100):
+            self.assertTrue(self.handler.restore_metron_backfill())
+
+        add.assert_called_once()
+        self.assertIsInstance(add.call_args.args[0], tasks.MetronBackfillTask)
+        schedule.assert_not_called()
+
+        for status in ('cancelled', 'completed'):
+            with self.subTest(status=status), \
+                    patch.object(tasks, 'get_db', return_value=FakeDb(status)), \
+                    patch.object(self.handler, 'schedule_delayed') as schedule, \
+                    patch.object(self.handler, 'add') as add:
+                self.assertFalse(self.handler.restore_metron_backfill())
+                schedule.assert_not_called()
+                add.assert_not_called()
+
+    def test_manual_add_is_suppressed_while_action_is_delayed(self):
+        tasks.TaskHandler.delayed_tasks['metron_backfill'] = {
+            'timer': object(), 'token': object(), 'task_type': tasks.MetronBackfillTask,
+            'run_at': 500,
+        }
+
+        self.assertIsNone(self.handler.add(tasks.MetronBackfillTask()))
+        self.assertEqual(self.handler.queue, [])
 
     def test_update_all_passes_cancellation_and_updates_heartbeat(self):
         captured = {}

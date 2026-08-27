@@ -138,6 +138,10 @@ def _main(
         download_handler = DownloadHandler()
         download_handler.load_downloads()
         task_handler = TaskHandler()
+        try:
+            task_handler.restore_metron_backfill()
+        except Exception:
+            LOGGER.exception('Failed to restore paused Metron backfill during startup')
         task_handler.handle_intervals()
 
     restart_type = None

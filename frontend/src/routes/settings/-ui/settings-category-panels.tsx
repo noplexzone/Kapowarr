@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import type { AllSettings, SuwayomiSource } from '../-settings.types';
-import { dismissMetronReview, fetchMetronReviews, selectMetronCandidate, startMetronBackfill, testMetronConnection, type MetronReviewCandidate } from '../-settings.api';
+import { cancelMetronBackfill, dismissMetronReview, fetchMetronReviews, selectMetronCandidate, startMetronBackfill, testMetronConnection, type MetronReviewCandidate } from '../-settings.api';
 import { SettingsField as Field, SettingsSection as Section, ToggleField } from './settings-field';
 import styles from './settings-page.module.css';
 
@@ -30,6 +30,18 @@ function MetronSettingsPanel({ form, toggle, text }: { form: AllSettings; toggle
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const metron = form.metron;
   const backfill = metron?.backfill ?? {};
+  const persistedBackfillStatus = String(backfill.status ?? 'idle');
+  const [backfillStatus, setBackfillStatus] = useState(persistedBackfillStatus);
+  const [backfillActive, setBackfillActive] = useState(
+    persistedBackfillStatus === 'running' || persistedBackfillStatus === 'rate_limit_paused',
+  );
+  const [backfillRequest, setBackfillRequest] = useState<'start' | 'cancel' | null>(null);
+  useEffect(() => {
+    setBackfillStatus(persistedBackfillStatus);
+    setBackfillActive(
+      persistedBackfillStatus === 'running' || persistedBackfillStatus === 'rate_limit_paused',
+    );
+  }, [persistedBackfillStatus]);
   const refreshReviews = () => {
     setReviewsLoading(true);
     fetchMetronReviews()
@@ -51,6 +63,28 @@ function MetronSettingsPanel({ form, toggle, text }: { form: AllSettings; toggle
       .then(() => { setMetronStatus('Metron review dismissed.'); refreshReviews(); })
       .catch((error) => setMetronStatus(String(error)));
   };
+  const startBackfill = () => {
+    setBackfillRequest('start');
+    startMetronBackfill()
+      .then((result) => {
+        setBackfillStatus(result.status ?? (result.duplicate ? 'already_queued' : 'queued'));
+        setBackfillActive(true);
+        setMetronStatus(result.duplicate ? 'Backfill is already queued.' : `Backfill queued${result.task_id ? ` as task ${result.task_id}` : ''}`);
+      })
+      .catch((error) => setMetronStatus(String(error)))
+      .finally(() => setBackfillRequest(null));
+  };
+  const cancelBackfill = () => {
+    setBackfillRequest('cancel');
+    cancelMetronBackfill()
+      .then((result) => {
+        setBackfillStatus(result.status);
+        setBackfillActive(false);
+        setMetronStatus(`Backfill ${result.status}.`);
+      })
+      .catch((error) => setMetronStatus(String(error)))
+      .finally(() => setBackfillRequest(null));
+  };
   return <div className={styles.clientCard}>
     <h3>Metadata / Integrations — Metron</h3>
     <p>Metron enriches Comics only. ComicVine remains canonical; Manga is unchanged.</p>
@@ -58,7 +92,8 @@ function MetronSettingsPanel({ form, toggle, text }: { form: AllSettings; toggle
     {text('metron_api_token','Metron API token','Write-only bearer token. Saved settings return only a masked value.','password')}
     <div className={styles.actionBtns}>
       <button className={styles.smallBtn} type="button" onClick={() => testMetronConnection().then(r => setMetronStatus(`${r.success ? 'Connection successful' : 'Connection failed'}: ${r.status}`)).catch(e => setMetronStatus(String(e)))}>Test Connection</button>
-      <button className={styles.smallBtn} type="button" onClick={() => startMetronBackfill().then(r => setMetronStatus(r.duplicate ? 'Backfill is already queued.' : `Backfill queued${r.task_id ? ` as task ${r.task_id}` : ''}`)).catch(e => setMetronStatus(String(e)))}>Backfill Existing Comics</button>
+      <button className={styles.smallBtn} type="button" onClick={startBackfill} disabled={backfillActive || backfillRequest !== null}>{backfillRequest === 'start' ? 'Starting backfill…' : 'Backfill Existing Comics'}</button>
+      {backfillActive ? <button className={styles.smallBtn} type="button" onClick={cancelBackfill} disabled={backfillRequest !== null} aria-label="Cancel Backfill">{backfillRequest === 'cancel' ? 'Cancelling backfill…' : 'Cancel Backfill'}</button> : null}
       <button className={styles.smallBtn} type="button" onClick={refreshReviews} disabled={reviewsLoading}>{reviewsLoading ? 'Refreshing reviews…' : 'Refresh Reviews'}</button>
     </div>
     <dl className={styles.clientMeta}>
@@ -66,7 +101,7 @@ function MetronSettingsPanel({ form, toggle, text }: { form: AllSettings; toggle
       <div><dt>Last successful connection</dt><dd>{formatMetronDate(metron?.last_successful_connection ?? form.metron_last_successful_connection)}</dd></div>
       <div><dt>Last enrichment</dt><dd>{formatMetronDate(metron?.last_enrichment ?? form.metron_last_enrichment_run)}</dd></div>
       <div><dt>Rate status</dt><dd>{String((metron?.rate_limit?.last_status as string | undefined) ?? 'Unknown')}</dd></div>
-      <div><dt>Backfill status</dt><dd>{String((backfill.status as string | undefined) ?? 'Idle')}</dd></div>
+      <div><dt>Backfill status</dt><dd>{backfillStatus}</dd></div>
       <div><dt>Backfill progress</dt><dd>{Number(backfill.processed ?? 0)} processed · {Number(backfill.matched ?? 0)} matched · {Number(backfill.failed ?? 0)} failed · cursor {String(backfill.last_terminal_volume_id ?? 0)}</dd></div>
       {backfill.rate_limit_paused_until ? <div><dt>Paused until</dt><dd>{formatMetronDate(Number(backfill.rate_limit_paused_until))}</dd></div> : null}
     </dl>

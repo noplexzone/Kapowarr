@@ -3498,15 +3498,55 @@ def api_metron_backfill_status():
     return return_api(get_backfill_status())
 
 
-@api.route('/metadata/metron/backfill', methods=['POST'])
+@api.route('/metadata/metron/backfill', methods=['POST', 'DELETE'])
 @error_handler
 @auth
 def api_metron_backfill():
     from backend.features.tasks import MetronBackfillTask, TaskHandler
     task_handler = TaskHandler()
-    if any(task.get('action') == 'metron_backfill' for task in task_handler.get_all()):
+    if request.method == 'DELETE':
+        active_cancelled, delayed_cancelled = task_handler.cancel_action(
+            'metron_backfill'
+        )
+        db = get_db()
+        state = db.execute(
+            'SELECT status FROM metron_backfill_state WHERE id = 1;'
+        ).fetchonedict() or {}
+        persisted_status = str(state.get('status') or 'idle')
+        if (
+            not active_cancelled
+            and not delayed_cancelled
+            and persisted_status not in ('running', 'rate_limit_paused')
+        ):
+            return return_api({
+                'status': persisted_status,
+                'active_task_cancelled': False,
+                'delayed_task_cancelled': False,
+            })
+
+        timestamp = round(time())
+        db.execute("""INSERT INTO metron_backfill_state(
+                id, status, cancel_requested, current_volume_id,
+                rate_limit_paused_until, resume_time, completed_at, updated_at)
+            VALUES(1, 'cancelled', 1, NULL, NULL, NULL, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                status='cancelled', cancel_requested=1,
+                current_volume_id=NULL, rate_limit_paused_until=NULL,
+                resume_time=NULL, completed_at=excluded.completed_at,
+                updated_at=excluded.updated_at;""",
+            (timestamp, timestamp))
+        commit()
+        return return_api({
+            'status': 'cancelled',
+            'active_task_cancelled': active_cancelled,
+            'delayed_task_cancelled': delayed_cancelled,
+        })
+
+    if task_handler.has_pending_action('metron_backfill'):
         return return_api({'task_id': None, 'status': 'already_queued', 'duplicate': True}, code=202)
     task_id = task_handler.add(MetronBackfillTask())
+    if task_id is None:
+        return return_api({'task_id': None, 'status': 'already_queued', 'duplicate': True}, code=202)
     return return_api({'task_id': task_id, 'status': 'queued'}, code=202)
 
 

@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep Library search drafts responsive and intact while debounced route queries and background volume loading settle.
+- Defer quota-paused and HTTP 429 Metron backfills without blocking unrelated tasks, preserve exact progress, survive restarts, remain cancellable, and resume at the persisted reset time.
 - Fix Library searches hanging on unbounded in-memory filtering, restore Comic publication facts from ComicVine first-issue references and restart stale failed fact cursors, and tighten shared Recently Active comic/manga candidate classification.
 - Fix issue filenames with story-part suffixes and annual years being misread as issue ranges, and keep conflicted import history/path state truthful.
 - Extract downloaded ZIP/RAR issue containers before strict one-file/one-issue matching, and deduplicate repeated unresolved match conflicts.

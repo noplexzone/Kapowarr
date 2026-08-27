@@ -955,11 +955,34 @@ class MetronBackfillTask(Task):
     category = 'metadata'
     volume_id = None
     issue_id = None
+    cancellable = True
+    rate_limit_fallback_wait = 60
 
     def __init__(self) -> None:
         self.message = 'Backfilling existing comics with Metron'
         self.details = {'provider': 'metron'}
         self.stop = False
+
+    def _rate_limit_pause_until(self, exc, rate_state: Dict) -> int:
+        """Return a future retry time from the response or persisted quota."""
+        candidates = []
+        rate = getattr(exc, 'rate_limit', None)
+        response_pause_until = rate.pause_until if rate is not None else None
+        if response_pause_until is not None:
+            candidates.append(int(response_pause_until))
+        resume_at = rate_state.get('resume_at')
+        if resume_at:
+            candidates.append(int(resume_at))
+        for remaining_key, reset_key in (
+            ('burst_remaining', 'burst_reset'),
+            ('sustained_remaining', 'sustained_reset'),
+        ):
+            reset = rate_state.get(reset_key)
+            if rate_state.get(remaining_key) == 0 and reset:
+                candidates.append(int(reset))
+        now = round(time())
+        pause_until = max(candidates or [now + self.rate_limit_fallback_wait])
+        return max(pause_until, now + 1)
 
     def run(self):
         from backend.implementations.metron import MetronPausedError, MetronRateLimitedError
@@ -968,47 +991,90 @@ class MetronBackfillTask(Task):
         db = get_db()
         state = db.execute('SELECT * FROM metron_backfill_state WHERE id = 1;').fetchonedict() or {}
         cursor = int(state.get('last_terminal_volume_id') or 0)
-        total = db.execute("""SELECT COUNT(*) FROM volumes v INNER JOIN root_folders rf ON rf.id = v.root_folder
+        remaining = db.execute("""SELECT COUNT(*) FROM volumes v INNER JOIN root_folders rf ON rf.id = v.root_folder
             WHERE rf.section = 'comic' AND v.metadata_source = 'comicvine' AND v.id > ?;""", (cursor,)).fetchone()[0]
+        total = int(state.get('processed') or 0) + int(remaining)
         db.execute("""INSERT INTO metron_backfill_state(id,status,total,total_estimate,started_at,updated_at,last_terminal_volume_id)
             VALUES(1,'running',?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET status='running', total=excluded.total, total_estimate=excluded.total_estimate, updated_at=excluded.updated_at;""",
+            ON CONFLICT(id) DO UPDATE SET status='running', total=excluded.total, total_estimate=excluded.total_estimate,
+                rate_limit_paused_until=NULL, resume_time=NULL, cancel_requested=0, completed_at=NULL,
+                updated_at=excluded.updated_at;""",
             (total, total, now_ts(), now_ts(), cursor))
         commit()
         service = MetronEnrichmentService()
+        task_handler = TaskHandler()
         rows = db.execute("""SELECT v.id, v.comicvine_id FROM volumes v INNER JOIN root_folders rf ON rf.id = v.root_folder
             WHERE rf.section = 'comic' AND v.metadata_source = 'comicvine' AND v.id > ? ORDER BY v.id;""", (cursor,)).fetchalldict()
-        paused = False
-        failed_fatally = False
         for row in rows:
             if self.stop:
                 break
             volume_id = int(row['id'])
             self.message = f'Metron backfill volume {volume_id}'
             _emit_task_event(TaskStatusEvent(self.message))
-            try:
-                result = service.refresh_volume(volume_id)
-                status = result.get('status')
-                key = 'matched' if status == 'linked' else 'unmatched' if status == 'unavailable' else 'review_required' if status == 'review_required' else 'skipped'
-                update_backfill_terminal(status, volume_id, {key: 1})
-            except (MetronPausedError, MetronRateLimitedError) as exc:
-                pause_until = exc.rate_limit.pause_until if getattr(exc, 'rate_limit', None) else None
-                if pause_until is None:
+            while not self.stop:
+                try:
+                    result = service.refresh_volume(volume_id)
+                    with task_handler.queue_lock:
+                        if self.stop:
+                            break
+                        status = str(result.get('status') or '')
+                        key = 'matched' if status == 'linked' else 'unmatched' if status == 'unavailable' else 'review_required' if status == 'review_required' else 'skipped'
+                        update_backfill_terminal(status, volume_id, {key: 1})
+                    break
+                except (MetronPausedError, MetronRateLimitedError) as exc:
                     try:
-                        pause_until = get_rate_limit_state().get('resume_at')
+                        rate_state = get_rate_limit_state()
                     except Exception:
-                        pause_until = None
-                db.execute("UPDATE metron_backfill_state SET status='rate_limit_paused', rate_limit_paused_until=?, resume_time=?, last_error=?, updated_at=? WHERE id=1;",
-                           (pause_until, pause_until, str(exc), now_ts()))
-                commit(); paused = True; break
-            except Exception as exc:
-                LOGGER.exception('Metron backfill failed for volume %s', volume_id)
-                update_backfill_terminal('failed', volume_id, {'failed': 1}, str(exc))
-        if not paused:
-            final_status = 'cancelled' if self.stop else 'completed'
-            db.execute("UPDATE metron_backfill_state SET status=?, completed_at=?, updated_at=? WHERE id=1 AND status='running';",
-                       (final_status, now_ts(), now_ts()))
-            commit()
+                        rate_state = {}
+                    pause_until = self._rate_limit_pause_until(exc, rate_state)
+                    db.execute("""UPDATE metron_backfill_state
+                        SET status='rate_limit_paused', current_volume_id=?,
+                            rate_limit_paused_until=?, resume_time=?, last_error=?, updated_at=?
+                        WHERE id=1;""",
+                        (volume_id, pause_until, pause_until, str(exc), now_ts()))
+                    commit()
+                    self.message = (
+                        f'Metron backfill paused at volume {volume_id} until '
+                        f'{pause_until}'
+                    )
+                    _emit_task_event(TaskStatusEvent(self.message))
+                    with task_handler.queue_lock:
+                        if self.stop:
+                            break
+                        task_handler.schedule_delayed(
+                            MetronBackfillTask,
+                            pause_until,
+                        )
+                    return None
+                except Exception as exc:
+                    with task_handler.queue_lock:
+                        if self.stop:
+                            break
+                        LOGGER.exception(
+                            'Metron backfill failed for volume %s',
+                            volume_id,
+                        )
+                        update_backfill_terminal(
+                            'failed',
+                            volume_id,
+                            {'failed': 1},
+                            str(exc),
+                        )
+                    break
+        if self.stop:
+            db.execute("""UPDATE metron_backfill_state
+                SET status='cancelled', cancel_requested=1,
+                    current_volume_id=NULL, rate_limit_paused_until=NULL,
+                    resume_time=NULL, completed_at=?, updated_at=?
+                WHERE id=1 AND status IN ('running', 'rate_limit_paused');""",
+                (now_ts(), now_ts()))
+        else:
+            db.execute("""UPDATE metron_backfill_state
+                SET status='completed', cancel_requested=0,
+                    completed_at=?, updated_at=?
+                WHERE id=1 AND status IN ('running', 'rate_limit_paused');""",
+                (now_ts(), now_ts()))
+        commit()
         return None
 
 
@@ -1479,9 +1545,13 @@ class TaskHandler(metaclass=Singleton):
     "Note: Singleton"
 
     queue: List[dict] = []
+    delayed_tasks: Dict[str, dict] = {}
     task_interval_waiter: Union[Timer, None] = None
     queue_lock = RLock()
-    singleton_actions = frozenset(('update_all', 'search_all', 'comic_discovery_fact_sync'))
+    singleton_actions = frozenset((
+        'update_all', 'search_all', 'comic_discovery_fact_sync',
+        'metron_backfill',
+    ))
 
     def __init__(self) -> None:
         """Setup the handler"""
@@ -1648,10 +1718,17 @@ class TaskHandler(metaclass=Singleton):
             first_entry['thread'].start()
         return
 
-    def add(self, task: Task) -> int:
+    def add(self, task: Task) -> Optional[int]:
         """Add a task, returning an existing singleton task when present."""
         LOGGER.debug(f'Adding task to queue: {task.display_title}')
         with self.queue_lock:
+            if task.action in self.delayed_tasks:
+                LOGGER.info(
+                    'Skipped task %s because an automatic delayed run is pending',
+                    task.action,
+                )
+                return None
+
             if task.action in self.singleton_actions:
                 for entry in self.queue:
                     if entry['task'].action == task.action:
@@ -1681,6 +1758,137 @@ class TaskHandler(metaclass=Singleton):
 
         _emit_task_event(TaskAddedEvent(task, id))
         return id
+
+    def _enqueue_delayed(self, action: str, token: object) -> None:
+        """Consume one delayed registration and enqueue a fresh task once."""
+        with self.queue_lock:
+            entry = self.delayed_tasks.get(action)
+            if entry is None or entry.get('token') is not token:
+                return
+            if any(item['task'].action == action for item in self.queue):
+                timer = Timer(
+                    1,
+                    self._enqueue_delayed,
+                    args=(action, token),
+                )
+                timer.daemon = True
+                entry['timer'] = timer
+                entry['run_at'] = round(time()) + 1
+                try:
+                    timer.start()
+                except Exception:
+                    self.delayed_tasks.pop(action, None)
+                    timer.cancel()
+                    raise
+                return
+            self.delayed_tasks.pop(action, None)
+            task_type = entry['task_type']
+            self.add(task_type())
+
+    def schedule_delayed(self, task_type: Type[Task], run_at: int) -> bool:
+        """Schedule one automatic task admission without occupying the queue."""
+        action = task_type.action
+        with self.queue_lock:
+            if action in self.delayed_tasks:
+                LOGGER.info('Delayed task %s is already scheduled', action)
+                return False
+
+            token = object()
+            delay = max(0, run_at - time())
+            timer = Timer(delay, self._enqueue_delayed, args=(action, token))
+            timer.daemon = True
+            self.delayed_tasks[action] = {
+                'timer': timer,
+                'token': token,
+                'task_type': task_type,
+                'run_at': run_at,
+            }
+            try:
+                timer.start()
+            except Exception:
+                self.delayed_tasks.pop(action, None)
+                timer.cancel()
+                raise
+
+        LOGGER.info('Scheduled delayed task %s in %.1f seconds', action, delay)
+        return True
+
+    def cancel_delayed(self, action: str) -> bool:
+        """Cancel and forget a delayed task registration."""
+        with self.queue_lock:
+            entry = self.delayed_tasks.pop(action, None)
+        if entry is None:
+            return False
+        entry['timer'].cancel()
+        return True
+
+    def cancel_action(self, action: str) -> Tuple[bool, bool]:
+        """Atomically cancel delayed admission and queued/running work."""
+        queued_task = None
+        running_thread = None
+        active_cancelled = False
+        with self.queue_lock:
+            delayed_cancelled = self.cancel_delayed(action)
+            task_id = self.active_task_id_for_action(action)
+            if task_id is not None:
+                entry = self.__get_raw_entry(task_id)
+                task = entry['task']
+                if entry['status'] in ('running', 'cancelling'):
+                    if not getattr(task, 'cancellable', False):
+                        raise TaskNotDeletable(task_id)
+                    task.stop = True
+                    running_thread = entry['thread']
+                    if entry['status'] != 'cancelling':
+                        entry['status'] = 'cancelling'
+                        LOGGER.info(
+                            'Requested cancellation: %s (%d)',
+                            task.display_title,
+                            task_id,
+                        )
+                else:
+                    task.stop = True
+                    self.queue.remove(entry)
+                    queued_task = task
+                    LOGGER.info(
+                        'Removed task: %s (%d)',
+                        task.display_title,
+                        task_id,
+                    )
+                active_cancelled = True
+
+        if running_thread:
+            running_thread.join(timeout=5)
+            if running_thread.is_alive():
+                LOGGER.warning(
+                    'Task for action %s is still stopping after cancellation request',
+                    action,
+                )
+        elif queued_task:
+            _emit_task_event(TaskEndedEvent(queued_task))
+        return active_cancelled, delayed_cancelled
+
+    def restore_metron_backfill(self) -> bool:
+        """Restore a persisted rate-limit pause after process startup."""
+        state = get_db().execute(
+            'SELECT status, resume_time, rate_limit_paused_until '
+            'FROM metron_backfill_state WHERE id = 1;'
+        ).fetchonedict()
+        if not state or state.get('status') != 'rate_limit_paused':
+            return False
+        if self.has_pending_action(MetronBackfillTask.action):
+            return False
+
+        run_at = state.get('resume_time') or state.get('rate_limit_paused_until')
+        if not run_at or int(run_at) <= time():
+            return self.add(MetronBackfillTask()) is not None
+        return self.schedule_delayed(MetronBackfillTask, int(run_at))
+
+    def has_pending_action(self, action: str) -> bool:
+        """Return whether an action is queued, running, or delayed."""
+        with self.queue_lock:
+            return action in self.delayed_tasks or any(
+                entry['task'].action == action for entry in self.queue
+            )
 
     def active_task_id_for_action(self, action: str) -> Union[int, None]:
         """Return the queued/running task ID for an action, if present."""
@@ -1763,10 +1971,17 @@ class TaskHandler(metaclass=Singleton):
 
         running_thread = None
         with self.queue_lock:
+            delayed_timers = [
+                entry['timer'] for entry in self.delayed_tasks.values()
+            ]
+            self.delayed_tasks.clear()
             for entry in self.queue:
                 entry['task'].stop = True
             if self.queue and self.queue[0]['thread'].is_alive():
                 running_thread = self.queue[0]['thread']
+
+        for timer in delayed_timers:
+            timer.cancel()
 
         if running_thread:
             running_thread.join(timeout=5)

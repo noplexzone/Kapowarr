@@ -2,12 +2,13 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
-from flask import Flask
+from unittest.mock import MagicMock, patch
+from flask import Flask, request as flask_request
 
 from backend.implementations.metron import (
     MetronAuthenticationError, MetronClient, MetronInvalidResponseError,
-    MetronNotModifiedError, MetronRateLimitedError, parse_rate_limit_headers, safe_headers,
+    MetronNotModifiedError, MetronPausedError, MetronRateLimit,
+    MetronRateLimitedError, parse_rate_limit_headers, safe_headers,
 )
 from backend.features.metron_enrichment import MetronEnrichmentService, extract_terms, get_review_candidates, resolve_candidate, safe_test_connection
 from backend.internals.db import DB_SCHEMA, DBConnection, DBConnectionManager, close_db, commit, get_db, setup_db
@@ -178,6 +179,10 @@ class MetronClientSecurityTests(unittest.TestCase):
         source = Path(__file__).parents[2].joinpath('Kapowarr.py').read_text()
         self.assertIn('reconcile_metron_task_reservations', source)
         self.assertIn('interrupted Metron enrichment reservation', source)
+
+    def test_startup_restores_paused_metron_backfill(self):
+        source = Path(__file__).parents[2].joinpath('Kapowarr.py').read_text()
+        self.assertIn('restore_metron_backfill', source)
 
 
 class MetronEnrichmentPersistenceTests(unittest.TestCase):
@@ -353,6 +358,321 @@ class MetronEnrichmentPersistenceTests(unittest.TestCase):
             self.assertEqual(link['review_status'], 'review_required')
             self.assertEqual(reservation['status'], 'interrupted')
             self.assertIn('retry required', reservation['safe_error'])
+
+    def _backfill_state(self):
+        return get_db().execute(
+            'SELECT status, total, total_estimate, processed, matched, unmatched, '
+            'review_required, failed, skipped, current_volume_id, '
+            'last_terminal_volume_id, rate_limit_paused_until, resume_time, '
+            'cancel_requested, completed_at, updated_at '
+            'FROM metron_backfill_state WHERE id = 1;'
+        ).fetchonedict()
+
+    def test_backfill_quota_pause_returns_promptly_and_schedules_one_resume(self):
+        from backend.features.tasks import MetronBackfillTask, TaskHandler
+
+        calls = []
+
+        def refresh(volume_id):
+            calls.append(volume_id)
+            raise MetronPausedError('persisted quota exhausted')
+
+        with self.app.app_context(), \
+                patch('backend.features.tasks.time', return_value=100), \
+                patch('backend.features.tasks.sleep') as sleeper, \
+                patch('backend.features.tasks._emit_task_event'), \
+                patch.object(TaskHandler, 'schedule_delayed', return_value=True) as schedule, \
+                patch('backend.features.metron_enrichment.MetronEnrichmentService.refresh_volume', side_effect=refresh), \
+                patch('backend.implementations.metron.get_rate_limit_state', return_value={'resume_at': 102}):
+            MetronBackfillTask().run()
+            state = self._backfill_state()
+
+        self.assertEqual(calls, [1])
+        sleeper.assert_not_called()
+        schedule.assert_called_once_with(MetronBackfillTask, 102)
+        self.assertEqual(state['status'], 'rate_limit_paused')
+        self.assertEqual(state['processed'], 0)
+        self.assertEqual(state['last_terminal_volume_id'], 0)
+        self.assertEqual(state['current_volume_id'], 1)
+        self.assertEqual(state['rate_limit_paused_until'], 102)
+        self.assertEqual(state['resume_time'], 102)
+
+    def test_backfill_cancellation_during_pause_does_not_schedule_resume(self):
+        from backend.features.tasks import MetronBackfillTask, TaskHandler
+
+        task = MetronBackfillTask()
+
+        def cancel_while_resolving_reset():
+            task.stop = True
+            return {'resume_at': 102}
+
+        with self.app.app_context(), \
+                patch('backend.features.tasks.time', return_value=100), \
+                patch('backend.features.tasks._emit_task_event'), \
+                patch.object(TaskHandler, 'schedule_delayed', return_value=True) as schedule, \
+                patch(
+                    'backend.features.metron_enrichment.MetronEnrichmentService.refresh_volume',
+                    side_effect=MetronPausedError('persisted quota exhausted'),
+                ), \
+                patch(
+                    'backend.implementations.metron.get_rate_limit_state',
+                    side_effect=cancel_while_resolving_reset,
+                ):
+            task.run()
+            state = self._backfill_state()
+
+        schedule.assert_not_called()
+        self.assertEqual(state['status'], 'cancelled')
+        self.assertEqual(state['cancel_requested'], 1)
+        self.assertIsNone(state['resume_time'])
+
+    def test_backfill_cancellation_after_refresh_does_not_advance_progress(self):
+        from backend.features.tasks import MetronBackfillTask
+
+        task = MetronBackfillTask()
+
+        def finish_after_cancel(volume_id):
+            task.stop = True
+            return {'status': 'linked'}
+
+        with self.app.app_context(), \
+                patch('backend.features.tasks._emit_task_event'), \
+                patch(
+                    'backend.features.metron_enrichment.MetronEnrichmentService.refresh_volume',
+                    side_effect=finish_after_cancel,
+                ):
+            task.run()
+            state = self._backfill_state()
+
+        self.assertEqual(state['status'], 'cancelled')
+        self.assertEqual(state['cancel_requested'], 1)
+        self.assertEqual(state['processed'], 0)
+        self.assertEqual(state['matched'], 0)
+        self.assertEqual(state['last_terminal_volume_id'], 0)
+        self.assertIsNone(state['current_volume_id'])
+
+    def test_delayed_backfill_retries_same_volume_without_double_counting(self):
+        from backend.features.tasks import MetronBackfillTask, TaskHandler
+
+        calls = []
+
+        def refresh(volume_id):
+            calls.append(volume_id)
+            if len(calls) == 1:
+                raise MetronRateLimitedError(
+                    'HTTP 429',
+                    MetronRateLimit(burst_remaining=0, burst_reset=203),
+                )
+            return {'status': 'linked'}
+
+        with self.app.app_context(), \
+                patch('backend.features.tasks.time', return_value=200), \
+                patch('backend.features.tasks.sleep') as sleeper, \
+                patch('backend.features.tasks._emit_task_event'), \
+                patch.object(TaskHandler, 'schedule_delayed', return_value=True), \
+                patch('backend.features.metron_enrichment.MetronEnrichmentService.refresh_volume', side_effect=refresh):
+            MetronBackfillTask().run()
+            paused = self._backfill_state()
+            MetronBackfillTask().run()
+            state = self._backfill_state()
+
+        self.assertEqual(calls, [1, 1])
+        sleeper.assert_not_called()
+        self.assertEqual(paused['status'], 'rate_limit_paused')
+        self.assertEqual(paused['processed'], 0)
+        self.assertEqual(paused['last_terminal_volume_id'], 0)
+        self.assertEqual(state['status'], 'completed')
+        self.assertEqual(state['processed'], 1)
+        self.assertEqual(state['matched'], 1)
+        self.assertEqual(state['failed'], 0)
+        self.assertEqual(state['last_terminal_volume_id'], 1)
+        self.assertIsNone(state['rate_limit_paused_until'])
+        self.assertIsNone(state['resume_time'])
+
+    def test_delayed_backfill_preserves_cumulative_exact_progress(self):
+        from backend.features.tasks import MetronBackfillTask, TaskHandler
+
+        calls = []
+
+        def refresh(volume_id):
+            calls.append(volume_id)
+            if calls == [1, 2]:
+                raise MetronRateLimitedError(
+                    'HTTP 429',
+                    MetronRateLimit(burst_remaining=0, burst_reset=203),
+                )
+            return {
+                1: {'status': 'linked'},
+                2: {'status': 'unavailable'},
+                3: {'status': 'review_required'},
+            }[volume_id]
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute("""INSERT INTO volumes(id, comicvine_id, metadata_source, metadata_id, title, root_folder)
+                VALUES(2, 222, 'comicvine', '222', 'Second', 1);""")
+            db.execute("""INSERT INTO volumes(id, comicvine_id, metadata_source, metadata_id, title, root_folder)
+                VALUES(3, 333, 'comicvine', '333', 'Third', 1);""")
+            commit()
+            with patch('backend.features.tasks.time', return_value=200), \
+                    patch('backend.features.tasks._emit_task_event'), \
+                    patch.object(TaskHandler, 'schedule_delayed', return_value=True), \
+                    patch('backend.features.metron_enrichment.MetronEnrichmentService.refresh_volume', side_effect=refresh):
+                MetronBackfillTask().run()
+                paused = self._backfill_state()
+                MetronBackfillTask().run()
+                completed = self._backfill_state()
+
+        self.assertEqual(calls, [1, 2, 2, 3])
+        self.assertEqual(paused['status'], 'rate_limit_paused')
+        self.assertEqual(paused['total'], 3)
+        self.assertEqual(paused['total_estimate'], 3)
+        self.assertEqual(paused['processed'], 1)
+        self.assertEqual(paused['matched'], 1)
+        self.assertEqual(paused['last_terminal_volume_id'], 1)
+        self.assertEqual(completed['status'], 'completed')
+        self.assertEqual(completed['total'], 3)
+        self.assertEqual(completed['total_estimate'], 3)
+        self.assertEqual(completed['processed'], 3)
+        self.assertEqual(completed['matched'], 1)
+        self.assertEqual(completed['unmatched'], 1)
+        self.assertEqual(completed['review_required'], 1)
+        self.assertEqual(completed['failed'], 0)
+        self.assertEqual(completed['skipped'], 0)
+        self.assertEqual(completed['last_terminal_volume_id'], 3)
+
+    def test_delete_backfill_cancels_delayed_resume_and_persists_terminal_state(self):
+        import frontend.api as api_mod
+        from backend.features import tasks
+
+        class FakeTimer:
+            def __init__(self, delay, callback, args=()):
+                self.callback = callback
+                self.args = args
+                self.cancelled = False
+                self.daemon = False
+
+            def start(self):
+                pass
+
+            def cancel(self):
+                self.cancelled = True
+
+        settings = MagicMock()
+        settings.sv.auth_password = None
+        settings.sv.api_key = 'test-key'
+        handler = tasks.TaskHandler()
+        old_delayed = tasks.TaskHandler.delayed_tasks
+        tasks.TaskHandler.delayed_tasks = {}
+        try:
+            with self.app.app_context():
+                get_db().execute("""INSERT INTO metron_backfill_state(
+                    id, status, total, total_estimate, processed, current_volume_id,
+                    last_terminal_volume_id, rate_limit_paused_until, resume_time,
+                    cancel_requested, started_at, updated_at)
+                    VALUES(1, 'rate_limit_paused', 3, 3, 1, 2, 1, 160, 160, 0, 10, 20);""")
+                commit()
+                with patch.object(tasks, 'Timer', FakeTimer), patch.object(tasks, 'time', return_value=100):
+                    handler.schedule_delayed(tasks.MetronBackfillTask, 160)
+                timer = tasks.TaskHandler.delayed_tasks['metron_backfill']['timer']
+
+            app = Flask(__name__)
+            app.register_blueprint(api_mod.api, url_prefix='/api')
+            with patch.object(api_mod, 'request', flask_request), \
+                    patch.object(api_mod, 'Settings', return_value=settings), \
+                    patch.object(api_mod.StartTypeHandlers, 'diffuse_timer'):
+                first = app.test_client().delete(
+                    '/api/metadata/metron/backfill',
+                    headers={'X-Api-Key': 'test-key'},
+                )
+                second = app.test_client().delete(
+                    '/api/metadata/metron/backfill',
+                    headers={'X-Api-Key': 'test-key'},
+                )
+
+            self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+            self.assertEqual(first.get_json()['result'], {
+                'status': 'cancelled',
+                'active_task_cancelled': False,
+                'delayed_task_cancelled': True,
+            })
+            self.assertEqual(second.status_code, 200, second.get_data(as_text=True))
+            self.assertEqual(second.get_json()['result'], {
+                'status': 'cancelled',
+                'active_task_cancelled': False,
+                'delayed_task_cancelled': False,
+            })
+            self.assertTrue(timer.cancelled)
+            with patch.object(handler, 'add') as add:
+                timer.callback(*timer.args)
+            add.assert_not_called()
+            with self.app.app_context():
+                state = self._backfill_state()
+            self.assertEqual(state['status'], 'cancelled')
+            self.assertEqual(state['cancel_requested'], 1)
+            self.assertIsNotNone(state['completed_at'])
+            self.assertIsNotNone(state['updated_at'])
+            self.assertIsNone(state['current_volume_id'])
+            self.assertIsNone(state['rate_limit_paused_until'])
+            self.assertIsNone(state['resume_time'])
+        finally:
+            tasks.TaskHandler.delayed_tasks = old_delayed
+
+    def test_backfill_pause_releases_queue_for_unrelated_task(self):
+        from backend.features.tasks import MetronBackfillTask, TaskHandler
+
+        started = []
+
+        class NextThread:
+            def start(self):
+                started.append('unrelated')
+
+        task = MetronBackfillTask()
+        handler = TaskHandler()
+        old_queue = TaskHandler.queue
+        TaskHandler.queue = [
+            {'task': task, 'id': 1, 'status': 'running', 'queued_at': 1,
+             'started_at': 2, 'thread': None},
+            {'task': type('UnrelatedTask', (), {'action': 'unrelated'})(),
+             'id': 2, 'status': 'queued', 'queued_at': 2,
+             'started_at': None, 'thread': NextThread()},
+        ]
+        try:
+            with patch('backend.features.tasks.time', return_value=300), \
+                    patch('backend.features.tasks.sleep') as sleeper, \
+                    patch('backend.features.tasks._emit_task_event'), \
+                    patch.object(TaskHandler, 'schedule_delayed', return_value=True), \
+                    patch('backend.features.metron_enrichment.MetronEnrichmentService.refresh_volume',
+                          side_effect=MetronPausedError('quota exhausted')), \
+                    patch('backend.implementations.metron.get_rate_limit_state', return_value={'resume_at': 360}):
+                handler._TaskHandler__run_task(task)
+        finally:
+            TaskHandler.queue = old_queue
+
+        sleeper.assert_not_called()
+        self.assertEqual(started, ['unrelated'])
+
+    def test_backfill_does_not_retry_authentication_failures(self):
+        from backend.features.tasks import MetronBackfillTask
+
+        calls = []
+
+        def refresh(volume_id):
+            calls.append(volume_id)
+            raise MetronAuthenticationError('invalid token')
+
+        with self.app.app_context(), \
+                patch('backend.features.tasks.sleep') as sleeper, \
+                patch('backend.features.tasks._emit_task_event'), \
+                patch('backend.features.metron_enrichment.MetronEnrichmentService.refresh_volume', side_effect=refresh):
+            MetronBackfillTask().run()
+            state = self._backfill_state()
+
+        self.assertEqual(calls, [1])
+        sleeper.assert_not_called()
+        self.assertEqual(state['status'], 'completed')
+        self.assertEqual(state['processed'], 1)
+        self.assertEqual(state['failed'], 1)
 
 
 class MetronTestConnectionFlowTests(unittest.TestCase):

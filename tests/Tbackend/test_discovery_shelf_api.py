@@ -51,6 +51,70 @@ class DiscoveryShelfApiTests(unittest.TestCase):
         self.assertIn('result', body)
         return body['result']
 
+    def test_metron_backfill_post_is_suppressed_during_delayed_pause(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        handler = MagicMock()
+        handler.has_pending_action.return_value = True
+        with request_patch, settings_patch, timer_patch, \
+                patch('backend.features.tasks.TaskHandler', return_value=handler):
+            response = self._client().post(
+                '/api/metadata/metron/backfill',
+                headers={'X-Api-Key': 'test-key'},
+            )
+
+        self.assertEqual(response.status_code, 202, response.get_data(as_text=True))
+        result = response.get_json()['result']
+        self.assertTrue(result['duplicate'])
+        self.assertEqual(result['status'], 'already_queued')
+        handler.add.assert_not_called()
+
+    def test_metron_backfill_delete_preserves_completed_state_when_nothing_is_active(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        handler = MagicMock()
+        handler.cancel_action.return_value = (False, False)
+        query = MagicMock()
+        query.fetchonedict.return_value = {'status': 'completed'}
+        db = MagicMock()
+        db.execute.return_value = query
+        with request_patch, settings_patch, timer_patch, \
+                patch('backend.features.tasks.TaskHandler', return_value=handler), \
+                patch.object(api_mod, 'get_db', return_value=db), \
+                patch.object(api_mod, 'commit') as commit:
+            response = self._client().delete(
+                '/api/metadata/metron/backfill',
+                headers={'X-Api-Key': 'test-key'},
+            )
+
+        result = self._assert_envelope(response)
+        self.assertEqual(result, {
+            'status': 'completed',
+            'active_task_cancelled': False,
+            'delayed_task_cancelled': False,
+        })
+        commit.assert_not_called()
+
+    def test_metron_backfill_delete_uses_atomic_action_cancellation(self):
+        request_patch, settings_patch, timer_patch = self._auth_patches()
+        handler = MagicMock()
+        handler.cancel_action.return_value = (True, False)
+        query = MagicMock()
+        query.fetchonedict.return_value = {'status': 'rate_limit_paused'}
+        db = MagicMock()
+        db.execute.return_value = query
+        with request_patch, settings_patch, timer_patch, \
+                patch('backend.features.tasks.TaskHandler', return_value=handler), \
+                patch.object(api_mod, 'get_db', return_value=db), \
+                patch.object(api_mod, 'commit'):
+            response = self._client().delete(
+                '/api/metadata/metron/backfill',
+                headers={'X-Api-Key': 'test-key'},
+            )
+
+        result = self._assert_envelope(response)
+        handler.cancel_action.assert_called_once_with('metron_backfill')
+        self.assertTrue(result['active_task_cancelled'])
+        self.assertFalse(result['delayed_task_cancelled'])
+
     def test_supported_shelf_combinations_return_envelopes(self):
         cases = [
             ('comic', 'recently-started', False),

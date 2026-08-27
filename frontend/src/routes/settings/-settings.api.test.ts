@@ -7,6 +7,7 @@ vi.mock('@/app/api-client', () => ({
 
 import { apiClient, readJson } from '@/app/api-client';
 import {
+  cancelMetronBackfill,
   deleteExternalClient,
   deleteNzbIndexer,
   deleteRemoteMapping,
@@ -35,5 +36,16 @@ describe('destructive settings adapters', () => {
       'rootfolder/4',
     ]);
     expect(parse.mock.calls.map(call => call[0])).toEqual(responses);
+  });
+
+  it('cancels a Metron backfill through the delete endpoint', async () => {
+    const response = {} as Response;
+    vi.mocked(apiClient.delete).mockResolvedValue(response as never);
+    vi.mocked(readJson).mockResolvedValue({ status: 'cancelling' });
+
+    await expect(cancelMetronBackfill()).resolves.toEqual({ status: 'cancelling' });
+
+    expect(apiClient.delete).toHaveBeenCalledWith('metadata/metron/backfill');
+    expect(readJson).toHaveBeenCalledWith(response);
   });
 });

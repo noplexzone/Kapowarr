@@ -164,6 +164,10 @@ export async function startMetronBackfill(): Promise<{task_id: number | null; st
   return apiClient.post('metadata/metron/backfill').then(res => readJson<{task_id: number | null; status?: string; duplicate?: boolean}>(res));
 }
 
+export async function cancelMetronBackfill(): Promise<{status: string}> {
+  return apiClient.delete('metadata/metron/backfill').then(res => readJson<{status: string}>(res));
+}
+
 export async function fetchMetronReviews(): Promise<MetronReviewsResponse> {
   return apiClient.get('metadata/metron/reviews').then(res => readJson<MetronReviewsResponse>(res));
 }

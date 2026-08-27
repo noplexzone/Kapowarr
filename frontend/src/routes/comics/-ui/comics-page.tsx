@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'react';
 import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
@@ -68,13 +68,89 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
   const selectionScopeKey = getSelectionScopeKey(section, search);
 
   // Local search text for instant typing; debounced sync to URL/query
-  const [searchText, setSearchText] = useState(search.search ?? '');
+  const initialSearchText = search.search ?? '';
+  const [searchText, setSearchText] = useState(initialSearchText);
+  const searchTextRef = useRef(initialSearchText);
+  const routeSearchRef = useRef(initialSearchText);
+  const searchDirtyRef = useRef(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchNavigationSequenceRef = useRef(0);
+  const latestSettledSearchSequenceRef = useRef(0);
+  const externalSearchNavigationRef = useRef<string | null>(null);
+  const pendingSearchNavigationsRef = useRef<Array<{
+    sequence: number;
+    value: string;
+  }>>([]);
 
-  // Sync external URL search into local state (e.g. browser back/forward)
+  const navigateSearch = useCallback((trimmed: string) => {
+    const sequence = searchNavigationSequenceRef.current + 1;
+    searchNavigationSequenceRef.current = sequence;
+    pendingSearchNavigationsRef.current.push({ sequence, value: trimmed });
+    setStorageVal(STORAGE_KEY_SEARCH, trimmed || undefined);
+    navigate({
+      to: route,
+      search: (prev: any) => canonical
+        ? ({ ...prev, section, q: trimmed || undefined, page: 1 })
+        : ({ ...prev, search: trimmed || undefined, offset: 0 }),
+    });
+  }, [canonical, navigate, route, section]);
+
   useEffect(() => {
-    setSearchText(search.search ?? '');
-  }, [search.search]);
+    const markExternalNavigation = () => {
+      const params = new URLSearchParams(window.location.search);
+      externalSearchNavigationRef.current = params.get(
+        canonical ? 'q' : 'search',
+      ) ?? '';
+    };
+    window.addEventListener('popstate', markExternalNavigation);
+    return () => window.removeEventListener('popstate', markExternalNavigation);
+  }, [canonical]);
+
+  // Sync genuine external URL changes, but never replace a newer local draft.
+  useEffect(() => {
+    const routeSearch = search.search ?? '';
+    routeSearchRef.current = routeSearch;
+
+    const externalSearch = externalSearchNavigationRef.current;
+    if (externalSearch !== null) {
+      externalSearchNavigationRef.current = null;
+      if (externalSearch === routeSearch) {
+        pendingSearchNavigationsRef.current = [];
+        latestSettledSearchSequenceRef.current = searchNavigationSequenceRef.current;
+        searchDirtyRef.current = false;
+        searchTextRef.current = routeSearch;
+        setSearchText(routeSearch);
+        return;
+      }
+    }
+
+    const pending = pendingSearchNavigationsRef.current;
+    let pendingIndex = -1;
+    for (let index = pending.length - 1; index >= 0; index -= 1) {
+      if (pending[index].value === routeSearch) {
+        pendingIndex = index;
+        break;
+      }
+    }
+    if (pendingIndex >= 0) {
+      const [settled] = pending.splice(pendingIndex, 1);
+      if (settled.sequence < latestSettledSearchSequenceRef.current) {
+        const desiredSearch = searchTextRef.current.trim();
+        if (routeSearch !== desiredSearch) navigateSearch(desiredSearch);
+        return;
+      }
+      latestSettledSearchSequenceRef.current = settled.sequence;
+    }
+
+    if (searchTextRef.current.trim() === routeSearch) {
+      searchDirtyRef.current = false;
+      return;
+    }
+    if (searchDirtyRef.current) return;
+
+    searchTextRef.current = routeSearch;
+    setSearchText(routeSearch);
+  }, [navigateSearch, search.search]);
 
   useEffect(() => {
     setView(search.view);
@@ -103,19 +179,13 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => {
       const trimmed = searchText.trim();
-      const current = search.search ?? '';
-      if (trimmed !== current) {
-        setStorageVal(STORAGE_KEY_SEARCH, trimmed || undefined);
-        navigate({
-          to: route,
-          search: (prev: any) => canonical ? ({ ...prev, section, q: trimmed || undefined, page: 1 }) : ({ ...prev, search: trimmed || undefined, offset: 0 }),
-        });
-      }
+      const current = routeSearchRef.current;
+      if (trimmed !== current) navigateSearch(trimmed);
     }, 350);
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-  }, [searchText]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [navigateSearch, searchText]);
 
   const updateSearch = useCallback(
     (patch: Record<string, unknown>) => {
@@ -216,7 +286,12 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
               type="search"
               placeholder={`Search ${section === 'comic' ? 'comics' : 'manga'}…`}
               value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                const nextSearchText = e.target.value;
+                searchTextRef.current = nextSearchText;
+                searchDirtyRef.current = nextSearchText.trim() !== routeSearchRef.current;
+                setSearchText(nextSearchText);
+              }}
             />
             {search.search && <span className={styles.searchCount}>{total} results</span>}
           </div>

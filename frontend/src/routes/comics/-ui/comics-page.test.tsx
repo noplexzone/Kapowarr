@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const navigateMock = vi.fn();
 let searchState: Record<string, unknown>;
@@ -92,6 +92,7 @@ function renderPage(section: 'comic' | 'manga' = 'comic', canonical = false) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.history.replaceState({}, '', '/');
   searchState = {
     sort: 'title',
     filter: '',
@@ -99,6 +100,10 @@ beforeEach(() => {
     search: undefined,
     offset: 0,
   };
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('ComicsPage poster-first manage mode', () => {
@@ -177,6 +182,130 @@ describe('ComicsPage poster-first manage mode', () => {
       expect(navigation.to).toBe('/library');
       expect(navigation.search({})).toMatchObject({ section: 'manga', q: 'Berserk', page: 1 });
     });
+  });
+
+  it('keeps a newer focused draft when an earlier debounced route value settles', () => {
+    vi.useFakeTimers();
+    searchState = {
+      section: 'comic', sort: 'title', status: 'all', monitoring: 'all',
+      view: 'grid', q: undefined, page: 3,
+    };
+    const { rerender } = renderPage('comic', true);
+    const input = screen.getByRole('searchbox', { name: 'Search library' });
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'Bat' } });
+    act(() => vi.advanceTimersByTime(350));
+    const firstNavigation = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0];
+    expect(firstNavigation.search({})).toMatchObject({ section: 'comic', q: 'Bat', page: 1 });
+
+    fireEvent.change(input, { target: { value: 'Batman' } });
+    searchState = { ...searchState, q: 'Bat', page: 1 };
+    rerender(<ComicsPage section="comic" canonical />);
+
+    expect(input).toHaveProperty('value', 'Batman');
+    act(() => vi.advanceTimersByTime(350));
+    const finalNavigation = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0];
+    expect(finalNavigation.search({})).toMatchObject({ section: 'comic', q: 'Batman', page: 1 });
+  });
+
+  it('ignores and repairs an older route settlement that arrives after the newest one', () => {
+    vi.useFakeTimers();
+    searchState = {
+      section: 'comic', sort: 'title', status: 'all', monitoring: 'all',
+      view: 'grid', q: undefined, page: 3,
+    };
+    const { rerender } = renderPage('comic', true);
+    const input = screen.getByRole('searchbox', { name: 'Search library' });
+
+    fireEvent.change(input, { target: { value: 'Bat' } });
+    act(() => vi.advanceTimersByTime(350));
+    fireEvent.change(input, { target: { value: 'Batman' } });
+    act(() => vi.advanceTimersByTime(350));
+
+    searchState = { ...searchState, q: 'Batman', page: 1 };
+    rerender(<ComicsPage section="comic" canonical />);
+    expect(input).toHaveProperty('value', 'Batman');
+
+    searchState = { ...searchState, q: 'Bat', page: 1 };
+    rerender(<ComicsPage section="comic" canonical />);
+
+    expect(input).toHaveProperty('value', 'Batman');
+    const repairNavigation = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0];
+    expect(repairNavigation.search({})).toMatchObject({
+      section: 'comic', q: 'Batman', page: 1,
+    });
+  });
+
+  it('accepts browser back navigation even when it matches an abandoned local value', () => {
+    vi.useFakeTimers();
+    searchState = {
+      section: 'comic', sort: 'title', status: 'all', monitoring: 'all',
+      view: 'grid', q: undefined, page: 3,
+    };
+    const { rerender } = renderPage('comic', true);
+    const input = screen.getByRole('searchbox', { name: 'Search library' });
+
+    fireEvent.change(input, { target: { value: 'Bat' } });
+    act(() => vi.advanceTimersByTime(350));
+    fireEvent.change(input, { target: { value: 'Batman' } });
+    act(() => vi.advanceTimersByTime(350));
+    searchState = { ...searchState, q: 'Batman', page: 1 };
+    rerender(<ComicsPage section="comic" canonical />);
+
+    const navigationCount = navigateMock.mock.calls.length;
+    window.history.replaceState({}, '', '/library?q=Bat');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    searchState = { ...searchState, q: 'Bat', page: 1 };
+    rerender(<ComicsPage section="comic" canonical />);
+
+    expect(input).toHaveProperty('value', 'Bat');
+    expect(navigateMock).toHaveBeenCalledTimes(navigationCount);
+  });
+
+  it('does not let a non-search popstate disable later settlement sequencing', () => {
+    vi.useFakeTimers();
+    searchState = {
+      section: 'comic', sort: 'title', status: 'all', monitoring: 'all',
+      view: 'grid', q: undefined, page: 1,
+    };
+    const { rerender } = renderPage('comic', true);
+    const input = screen.getByRole('searchbox', { name: 'Search library' });
+
+    window.history.replaceState({}, '', '/library?page=2');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+
+    fireEvent.change(input, { target: { value: 'Bat' } });
+    act(() => vi.advanceTimersByTime(350));
+    fireEvent.change(input, { target: { value: 'Batman' } });
+    act(() => vi.advanceTimersByTime(350));
+    searchState = { ...searchState, q: 'Batman', page: 1 };
+    rerender(<ComicsPage section="comic" canonical />);
+    searchState = { ...searchState, q: 'Bat', page: 1 };
+    rerender(<ComicsPage section="comic" canonical />);
+
+    expect(input).toHaveProperty('value', 'Batman');
+  });
+
+  it('syncs a genuine external URL search while the settled input remains focused', () => {
+    vi.useFakeTimers();
+    searchState = {
+      section: 'comic', sort: 'title', status: 'all', monitoring: 'all',
+      view: 'grid', q: undefined, page: 1,
+    };
+    const { rerender } = renderPage('comic', true);
+    const input = screen.getByRole('searchbox', { name: 'Search library' });
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'Saga' } });
+    act(() => vi.advanceTimersByTime(350));
+    searchState = { ...searchState, q: 'Saga' };
+    rerender(<ComicsPage section="comic" canonical />);
+
+    searchState = { ...searchState, q: 'Berserk' };
+    rerender(<ComicsPage section="comic" canonical />);
+
+    expect(input).toHaveProperty('value', 'Berserk');
   });
 
   it('keeps discovery shortcuts out of the library header', () => {

@@ -157,6 +157,26 @@ test('Library switches directly between Comics and Manga', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Manga Library' })).toBeAttached();
   await expect(page.getByText('Acceptance Manga', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Manga', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
+  await page.getByRole('link', { name: 'Library', exact: true }).click();
+  await expect(page).toHaveURL(/\/library\?.*section=manga/);
+  await expect(page.getByText('Acceptance Manga', { exact: true })).toBeVisible();
+});
+
+test('initial Manga Library load repairs a stale primary Library target', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/**', mockApi);
+  await page.addInitScript(() => {
+    localStorage.setItem('kapowarr_section', JSON.stringify('comic'));
+  });
+
+  await page.goto('/library?section=manga');
+  const navigation = page.getByRole('navigation', { name: 'Mobile primary navigation' });
+  await expect(navigation.getByRole('link', { name: 'Library', exact: true })).toHaveAttribute(
+    'href',
+    /section=manga/,
+  );
 });
 
 test('mobile shell exposes six safe primary destinations without root overflow', async ({ page }) => {

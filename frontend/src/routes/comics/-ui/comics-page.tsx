@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'reac
 import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Button } from '@/components/primitives';
+import { LIBRARY_SEARCH_CHANGED_EVENT } from '@/platform/shell/navigation';
 import { Pagination } from '@/components/pagination/pagination';
 import { EmptyState, StatusBanner } from '@/components/patterns';
 import {
@@ -37,9 +38,12 @@ interface ComicsPageProps {
   canonical?: boolean;
 }
 
+const STORAGE_KEY_SECTION = 'kapowarr_section';
+
 function setStorageVal(key: string, val: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(val));
+    window.dispatchEvent(new Event(LIBRARY_SEARCH_CHANGED_EVENT));
   } catch { /* storage full, silently ignore */ }
 }
 
@@ -155,6 +159,10 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
   useEffect(() => {
     setView(search.view);
   }, [search.view]);
+
+  useEffect(() => {
+    setStorageVal(STORAGE_KEY_SECTION, section);
+  }, [section]);
 
   useEffect(() => {
     setSelectedIds(new Set());

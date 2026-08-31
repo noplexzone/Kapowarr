@@ -92,6 +92,15 @@ function renderPage(section: 'comic' | 'manga' = 'comic', canonical = false) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  const storage = new Map<string, string>();
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      clear: () => storage.clear(),
+    },
+  });
   window.history.replaceState({}, '', '/');
   searchState = {
     sort: 'title',
@@ -182,6 +191,12 @@ describe('ComicsPage poster-first manage mode', () => {
     expect(navigation.search(searchState)).toMatchObject({
       section: 'manga', q: 'Saga', page: 1,
     });
+  });
+
+  it('persists the active library section for primary navigation', () => {
+    renderPage('manga', true);
+
+    expect(window.localStorage.getItem('kapowarr_section')).toBe(JSON.stringify('manga'));
   });
 
   it('keeps canonical search text on the library route', async () => {

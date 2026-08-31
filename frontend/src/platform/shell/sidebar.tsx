@@ -1,9 +1,10 @@
+import { useEffect, useState } from 'react';
 import { runtimeConfig } from '@/app/runtime-config';
 import { Link, useLocation } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { systemAboutQueryOptions } from '@/routes/system/-system.api';
 import { NavIcon } from './nav-icons';
-import { getActivePrimary, getStoredLibrarySearch, PRIMARY_NAV } from './navigation';
+import { getActivePrimary, getStoredLibrarySearch, LIBRARY_SEARCH_CHANGED_EVENT, PRIMARY_NAV } from './navigation';
 import styles from './sidebar.module.css';
 
 interface ActiveNavItem {
@@ -64,6 +65,18 @@ export function SidebarSearch({
 export function Sidebar() {
   const { pathname } = useLocation();
   const active = getActivePrimary(pathname);
+  const [librarySearch, setLibrarySearch] = useState(getStoredLibrarySearch);
+
+  useEffect(() => {
+    const syncLibrarySearch = () => setLibrarySearch(getStoredLibrarySearch());
+    window.addEventListener(LIBRARY_SEARCH_CHANGED_EVENT, syncLibrarySearch);
+    window.addEventListener('storage', syncLibrarySearch);
+    syncLibrarySearch();
+    return () => {
+      window.removeEventListener(LIBRARY_SEARCH_CHANGED_EVENT, syncLibrarySearch);
+      window.removeEventListener('storage', syncLibrarySearch);
+    };
+  }, []);
 
   const { data: about } = useQuery(systemAboutQueryOptions());
 
@@ -80,7 +93,7 @@ export function Sidebar() {
             <Link
               key={item.label}
               to={item.to as never}
-              search={item.label === 'Library' ? { section: 'comic', ...getStoredLibrarySearch() } as never : undefined}
+              search={item.label === 'Library' ? librarySearch as never : undefined}
               activeOptions={item.parent ? { exact: true } : undefined}
               className={styles.navItem}
               data-active={isActive || undefined}

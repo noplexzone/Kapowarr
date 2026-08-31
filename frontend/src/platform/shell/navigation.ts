@@ -1,5 +1,7 @@
 export type PrimaryNavLabel = 'Home' | 'Library' | 'Discover' | 'Activity' | 'Settings';
 
+export const LIBRARY_SEARCH_CHANGED_EVENT = 'kapowarr-library-search-changed';
+
 export interface PrimaryNavItem {
   label: PrimaryNavLabel;
   to: string;
@@ -50,12 +52,14 @@ function readStoredString(key: string): string | undefined {
 }
 
 export function getStoredLibrarySearch() {
+  const section = readStoredString('kapowarr_section');
   const sort = readStoredString('kapowarr_sort');
   const view = readStoredString('kapowarr_view');
   const filter = readStoredString('kapowarr_filter');
   const q = readStoredString('kapowarr_search');
   const validFilter = filter && FILTER_OPTIONS.has(filter) ? filter : '';
   return {
+    section: section === 'manga' ? 'manga' : 'comic',
     sort: sort && SORT_OPTIONS.has(sort) ? sort : 'title',
     view: view && VIEW_OPTIONS.has(view) ? (view === 'table' ? 'list' : 'grid') : 'grid',
     status: validFilter === 'wanted' ? 'missing' : validFilter === 'upcoming' ? 'upcoming' : 'all',

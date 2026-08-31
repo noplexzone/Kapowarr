@@ -57,6 +57,7 @@ it('hydrates media nav targets from stored preferences', () => {
   window.localStorage.setItem('kapowarr_search', JSON.stringify('batman'));
 
   expect(getStoredLibrarySearch()).toEqual({
+    section: 'comic',
     sort: 'recently_added',
     view: 'list',
     status: 'missing',
@@ -64,6 +65,18 @@ it('hydrates media nav targets from stored preferences', () => {
     q: 'batman',
     page: 1,
   });
+});
+
+it('restores the last valid library section', () => {
+  window.localStorage.setItem('kapowarr_section', JSON.stringify('manga'));
+
+  expect(getStoredLibrarySearch()).toMatchObject({ section: 'manga' });
+});
+
+it('defaults an invalid stored library section to comics', () => {
+  window.localStorage.setItem('kapowarr_section', JSON.stringify('novels'));
+
+  expect(getStoredLibrarySearch()).toMatchObject({ section: 'comic' });
 });
 
 it('ignores invalid stored media nav preferences', () => {

@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Add a direct Comics/Manga switch to Library so Manga is reachable without routing through Home.
+- Add a direct Comics/Manga switch to Library and remember the selected section in primary navigation so Manga stays reachable without routing through Home.
 - Count date-less MangaDex volume entries as released and preserve truthful downloaded/missing completion totals.
 - Expand Suwayomi chapter bundles across MangaDex volume buckets when an English omnibus description spans multiple Japanese volumes.
 - Keep Library search drafts responsive and intact while debounced route queries and background volume loading settle.

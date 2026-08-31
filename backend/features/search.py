@@ -559,6 +559,43 @@ def _mangadex_chapters_for_issue(
             continue
         chapters = volume_chapter_map.get(calculated_issue_number)
         if chapters:
+            issue = next((
+                candidate for candidate in volume_issues
+                if candidate.calculated_issue_number == calculated_issue_number
+            ), None)
+            description_chapters = _parse_chapter_range_from_description(
+                getattr(issue, 'description', '') or ''
+            )
+            contiguous_description = (
+                len(description_chapters) >= 2
+                and all(number == int(number) for number in description_chapters)
+                and all(
+                    right - left == 1
+                    for left, right in zip(
+                        description_chapters, description_chapters[1:]
+                    )
+                )
+            )
+            if (
+                contiguous_description
+                and not set(description_chapters).issubset(set(chapters))
+            ):
+                first_chapter = description_chapters[0]
+                last_chapter = description_chapters[-1]
+                expanded = sorted({
+                    chapter
+                    for mapped_chapters in volume_chapter_map.values()
+                    for chapter in mapped_chapters
+                    if first_chapter <= chapter <= last_chapter
+                })
+                if set(description_chapters).issubset(set(expanded)):
+                    LOGGER.info(
+                        'Expanded MangaDex mapping for %s issue %.4g across '
+                        'omnibus chapter range %.4g–%.4g',
+                        volume_data.title, calculated_issue_number,
+                        first_chapter, last_chapter,
+                    )
+                    return expanded, False
             return chapters, False
         LOGGER.info(
             'MangaDex map for %s has no entry for issue %.4g; '

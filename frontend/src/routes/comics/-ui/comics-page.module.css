@@ -45,6 +45,20 @@
   gap: 0.25rem;
 }
 
+.sectionToggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+  padding: 0.2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.sectionToggle button {
+  min-width: 5.25rem;
+}
+
 .filterChip {
   background: color-mix(in srgb, var(--surface-raised) 82%, var(--accent) 18%);
   border-color: color-mix(in srgb, var(--border) 68%, var(--accent) 32%);
@@ -264,6 +278,15 @@
 
   .primaryControls {
     gap: 0.65rem;
+  }
+
+  .sectionToggle {
+    width: 100%;
+  }
+
+  .sectionToggle button {
+    width: 100%;
+    min-height: 2.65rem;
   }
 
   .toolbarRight {

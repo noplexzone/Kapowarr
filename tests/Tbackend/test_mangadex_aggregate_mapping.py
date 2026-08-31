@@ -128,6 +128,45 @@ class MangaDexCompatibilityTest(unittest.TestCase):
         self.assertIsNone(chapters)
         self.assertFalse(incompatible)
 
+    def test_english_omnibus_expands_across_mangadex_volume_buckets(self):
+        """Vinland Saga English volume 1 combines Japanese volumes 1 and 2."""
+        from backend.base.definitions import IssueData, SpecialVersion, VolumeData
+        from backend.features.search import _mangadex_chapters_for_issue
+
+        volume_data = VolumeData(
+            id=1, comicvine_id=1,
+            title='Vinland Saga', alt_title=None,
+            year=2013, volume_number=1,
+            description='', site_url='', publisher='Kodansha Comics USA',
+            monitored=True, monitor_new_issues=True,
+            root_folder=1, folder='', custom_folder=False,
+            special_version=SpecialVersion.NORMAL,
+            special_version_locked=False, last_cv_fetch=0,
+        )
+        issue = IssueData(
+            id=10, volume_id=1, comicvine_id=10,
+            issue_number='1', calculated_issue_number=1.0,
+            title='For Honor and Vengeance', date='2013-11-30',
+            description=' '.join(f'Chapter {number}' for number in range(1, 17)),
+            monitored=True, files=[],
+        )
+        mangadex_map = {
+            1.0: [1.0, 2.0, 3.0, 4.0],
+            2.0: [float(number) for number in range(5, 17)],
+            3.0: [17.0, 18.0, 19.0],
+        }
+
+        with patch(
+            'backend.features.search.get_mangadex_volume_chapter_map',
+            return_value=mangadex_map,
+        ):
+            chapters, incompatible = _mangadex_chapters_for_issue(
+                volume_data, [issue], 1.0,
+            )
+
+        self.assertEqual(chapters, [float(number) for number in range(1, 17)])
+        self.assertFalse(incompatible)
+
 
 class ManualSearchMangaDexGuardTest(unittest.TestCase):
     def _volume_data(self, title='Solo Leveling'):

@@ -148,7 +148,8 @@ class VolumePaginationTests(unittest.TestCase):
                 monitored INTEGER,
                 monitor_new_issues INTEGER,
                 root_folder INTEGER,
-                folder TEXT
+                folder TEXT,
+                metadata_source TEXT DEFAULT 'comicvine'
             );
             CREATE TABLE issues (
                 id INTEGER PRIMARY KEY,
@@ -165,12 +166,12 @@ class VolumePaginationTests(unittest.TestCase):
         )
         db_conn.executemany(
             """INSERT INTO volumes VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )""",
             [
-                (10, 100, 'Wanted Volume', 2020, 'Image', 1, '', '', 1, 1, 1, '/wanted'),
-                (11, 101, 'Complete Volume', 2020, 'Image', 1, '', '', 1, 1, 1, '/complete'),
-                (20, 200, 'Manga Wanted', 2020, 'Viz', 1, '', '', 1, 1, 2, '/manga'),
+                (10, 100, 'Wanted Volume', 2020, 'Image', 1, '', '', 1, 1, 1, '/wanted', 'comicvine'),
+                (11, 101, 'Complete Volume', 2020, 'Image', 1, '', '', 1, 1, 1, '/complete', 'comicvine'),
+                (20, 200, 'Manga Wanted', 2020, 'Viz', 1, '', '', 1, 1, 2, '/manga', 'comicvine'),
             ]
         )
         db_conn.executemany(
@@ -293,7 +294,8 @@ class VolumePaginationTests(unittest.TestCase):
             CREATE TABLE volumes (
                 id INTEGER PRIMARY KEY, comicvine_id INTEGER, title TEXT, year INTEGER,
                 publisher TEXT, volume_number INTEGER, description TEXT, special_version TEXT,
-                monitored INTEGER, monitor_new_issues INTEGER, root_folder INTEGER, folder TEXT
+                monitored INTEGER, monitor_new_issues INTEGER, root_folder INTEGER, folder TEXT,
+                metadata_source TEXT DEFAULT 'comicvine'
             );
             CREATE TABLE issues (id INTEGER PRIMARY KEY, volume_id INTEGER, monitored INTEGER, date TEXT);
             CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER, exists_on_disk INTEGER DEFAULT 1);
@@ -301,7 +303,7 @@ class VolumePaginationTests(unittest.TestCase):
         """)
         db_conn.execute("INSERT INTO root_folders VALUES (1, 'comic')")
         db_conn.executemany(
-            "INSERT INTO volumes VALUES (?, ?, ?, 2020, 'Image', 1, '', '', 1, 1, 1, '/v')",
+            "INSERT INTO volumes VALUES (?, ?, ?, 2020, 'Image', 1, '', '', 1, 1, 1, '/v', 'comicvine')",
             [(1, 1, 'Alpha'), (2, 2, 'Beta'), (3, 3, 'Gamma')],
         )
         db_conn.executemany('INSERT INTO issues VALUES (?, ?, 1, ?)', [
@@ -324,6 +326,51 @@ class VolumePaginationTests(unittest.TestCase):
         self.assertEqual(asc[0]['released_issues_downloaded'], 1)
         self.assertEqual(asc[0]['upcoming_issue_count'], 1)
         self.assertEqual([row['id'] for row in desc], [2, 1, 3])
+
+    def test_mangadex_null_date_issues_are_released_for_completion(self):
+        db_conn = sqlite3.connect(':memory:')
+        db_conn.row_factory = sqlite3.Row
+        db_conn.executescript("""
+            CREATE TABLE root_folders (id INTEGER PRIMARY KEY, section TEXT);
+            CREATE TABLE volumes (
+                id INTEGER PRIMARY KEY, comicvine_id INTEGER, title TEXT, year INTEGER,
+                publisher TEXT, volume_number INTEGER, description TEXT, special_version TEXT,
+                monitored INTEGER, monitor_new_issues INTEGER, root_folder INTEGER, folder TEXT,
+                metadata_source TEXT DEFAULT 'comicvine'
+            );
+            CREATE TABLE issues (id INTEGER PRIMARY KEY, volume_id INTEGER, monitored INTEGER, date TEXT);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER, exists_on_disk INTEGER DEFAULT 1);
+            CREATE TABLE issues_files (file_id INTEGER, issue_id INTEGER);
+        """)
+        db_conn.execute("INSERT INTO root_folders VALUES (2, 'manga')")
+        db_conn.execute(
+            "INSERT INTO volumes VALUES (4, -4, 'Jujutsu Kaisen Modulo', 2025, 'MangaDex', 1, '', '', 1, 1, 2, '/manga/modulo', 'mangadex')"
+        )
+        db_conn.executemany(
+            'INSERT INTO issues VALUES (?, 4, 1, NULL)',
+            [(41,), (42,), (43,)],
+        )
+        db_conn.executemany(
+            'INSERT INTO files(id, size) VALUES (?, 100)',
+            [(401,), (402,), (403,)],
+        )
+        db_conn.executemany(
+            'INSERT INTO issues_files VALUES (?, ?)',
+            [(401, 41), (402, 42), (403, 43)],
+        )
+        db_conn.commit()
+        try:
+            with patch('backend.implementations.volumes.get_db', return_value=_SqliteDB(db_conn)):
+                rows, total = Library.get_public_volumes_page(
+                    LibrarySorting.COMPLETION, None, 'manga', page=0, page_size=10,
+                )
+        finally:
+            db_conn.close()
+
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0]['released_issue_count'], 3)
+        self.assertEqual(rows[0]['released_issues_downloaded'], 3)
+        self.assertEqual(rows[0]['completion_percentage'], 100.0)
 
 
 if __name__ == '__main__':

@@ -38,7 +38,8 @@ class DashboardStatsTests(unittest.TestCase):
                 monitored INTEGER,
                 folder TEXT,
                 title TEXT,
-                publisher TEXT
+                publisher TEXT,
+                metadata_source TEXT DEFAULT 'comicvine'
             );
             CREATE TABLE issues (id INTEGER PRIMARY KEY, volume_id INTEGER, monitored INTEGER, date TEXT);
             CREATE TABLE files (id INTEGER PRIMARY KEY, size INTEGER, exists_on_disk INTEGER DEFAULT 1);
@@ -48,10 +49,10 @@ class DashboardStatsTests(unittest.TestCase):
             CREATE TABLE download_queue (id INTEGER PRIMARY KEY);
         ''')
         self.db.executemany('INSERT INTO root_folders VALUES (?, ?)', [(1, 'comic'), (2, 'manga')])
-        self.db.executemany('INSERT INTO volumes VALUES (?, ?, ?, ?, ?, ?)', [
-            (10, 1, 1, '/comics/Wrong Folder (2020)', 'Saga', 'Image'),
-            (11, 1, 1, '/comics/Invincible (2003)', 'Invincible', 'Image'),
-            (20, 2, 1, '/manga/Berserk (1989)', 'Berserk', 'Glénat'),
+        self.db.executemany('INSERT INTO volumes VALUES (?, ?, ?, ?, ?, ?, ?)', [
+            (10, 1, 1, '/comics/Wrong Folder (2020)', 'Saga', 'Image', 'comicvine'),
+            (11, 1, 1, '/comics/Invincible (2003)', 'Invincible', 'Image', 'comicvine'),
+            (20, 2, 1, '/manga/Berserk (1989)', 'Berserk', 'Glénat', 'comicvine'),
         ])
         self.db.executemany('INSERT INTO issues VALUES (?, ?, ?, ?)', [
             (101, 10, 1, '2020-01-01'),
@@ -122,6 +123,32 @@ class DashboardStatsTests(unittest.TestCase):
         self.assertEqual(stats['mismatches'], 1)
         self.assertEqual(stats['files'], 1)
         self.assertEqual(stats['total_file_size'], 300)
+
+    def test_mangadex_null_date_issues_count_as_released(self):
+        self.db.execute(
+            "INSERT INTO volumes VALUES (21, 2, 1, '/manga/Jujutsu Kaisen Modulo (2025)', 'Jujutsu Kaisen Modulo', 'MangaDex', 'mangadex')"
+        )
+        self.db.executemany(
+            'INSERT INTO issues VALUES (?, 21, 1, NULL)',
+            [(211,), (212,), (213,)],
+        )
+        self.db.executemany(
+            'INSERT INTO files VALUES (?, 100, 1)',
+            [(11,), (12,), (13,)],
+        )
+        self.db.executemany(
+            'INSERT INTO issues_files VALUES (?, ?)',
+            [(211, 11), (212, 12), (213, 13)],
+        )
+        self.db.commit()
+
+        cursor = _Cursor(self.db)
+        with patch('backend.implementations.volumes.get_db', return_value=cursor):
+            stats = Library.get_stats('manga')
+
+        self.assertEqual(stats['released_issues'], 4)
+        self.assertEqual(stats['downloaded_released_issues'], 4)
+        self.assertEqual(stats['completion_percentage'], 100.0)
 
     def test_section_value_cannot_inject_stats_predicates(self):
         cursor = _Cursor(self.db)

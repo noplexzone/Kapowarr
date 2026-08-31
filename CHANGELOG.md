@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Add a direct Comics/Manga switch to Library so Manga is reachable without routing through Home.
+- Count date-less MangaDex volume entries as released and preserve truthful downloaded/missing completion totals.
+- Expand Suwayomi chapter bundles across MangaDex volume buckets when an English omnibus description spans multiple Japanese volumes.
 - Keep Library search drafts responsive and intact while debounced route queries and background volume loading settle.
 - Defer quota-paused and HTTP 429 Metron backfills without blocking unrelated tasks, preserve exact progress, survive restarts, remain cancellable, and resume at the persisted reset time.
 - Fix Library searches hanging on unbounded in-memory filtering, restore Comic publication facts from ComicVine first-issue references and restart stale failed fact cursors, and tighten shared Recently Active comic/manga candidate classification.

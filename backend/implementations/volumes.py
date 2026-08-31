@@ -1093,16 +1093,19 @@ class Library:
                             AS issues_downloaded,
                         SUM(CASE WHEN i.monitored = 1 AND li.issue_id IS NOT NULL THEN 1 ELSE 0 END)
                             AS issues_downloaded_monitored,
-                        SUM(CASE WHEN i.date IS NOT NULL AND i.date <= date('now') THEN 1 ELSE 0 END)
+                        SUM(CASE WHEN (i.date IS NOT NULL AND i.date <= date('now'))
+                            OR (i.date IS NULL AND sv.metadata_source = 'mangadex') THEN 1 ELSE 0 END)
                             AS released_issue_count,
-                        SUM(CASE WHEN i.date IS NOT NULL AND i.date <= date('now') AND li.issue_id IS NOT NULL THEN 1 ELSE 0 END)
+                        SUM(CASE WHEN ((i.date IS NOT NULL AND i.date <= date('now'))
+                            OR (i.date IS NULL AND sv.metadata_source = 'mangadex'))
+                            AND li.issue_id IS NOT NULL THEN 1 ELSE 0 END)
                             AS released_issues_downloaded,
                         SUM(CASE WHEN i.date IS NOT NULL AND i.date > date('now') THEN 1 ELSE 0 END)
                             AS upcoming_issue_count,
                         MAX(CASE
                             WHEN i.monitored = 1
-                                AND i.date IS NOT NULL
-                                AND i.date <= date('now')
+                                AND ((i.date IS NOT NULL AND i.date <= date('now'))
+                                    OR (i.date IS NULL AND sv.metadata_source = 'mangadex'))
                                 AND li.issue_id IS NULL
                             THEN 1 ELSE 0
                         END) AS has_wanted,
@@ -1305,9 +1308,9 @@ class Library:
                     SELECT
                         COUNT(*) AS issues,
                         COUNT(DISTINCT CASE WHEN issue_links.issue_id IS NOT NULL AND f.exists_on_disk = 1 THEN i.id END) AS downloaded_issues,
-                        SUM(CASE WHEN i.date IS NOT NULL AND i.date <= date('now') THEN 1 ELSE 0 END) AS released_issues,
-                        SUM(CASE WHEN i.date IS NOT NULL AND i.date <= date('now') AND issue_links.issue_id IS NOT NULL AND f.exists_on_disk = 1 THEN 1 ELSE 0 END) AS downloaded_released_issues,
-                        SUM(CASE WHEN i.monitored = 1 AND i.date IS NOT NULL AND i.date <= date('now') AND NOT (issue_links.issue_id IS NOT NULL AND f.exists_on_disk = 1) THEN 1 ELSE 0 END) AS missing_monitored,
+                        SUM(CASE WHEN (i.date IS NOT NULL AND i.date <= date('now')) OR (i.date IS NULL AND vol.metadata_source = 'mangadex') THEN 1 ELSE 0 END) AS released_issues,
+                        SUM(CASE WHEN ((i.date IS NOT NULL AND i.date <= date('now')) OR (i.date IS NULL AND vol.metadata_source = 'mangadex')) AND issue_links.issue_id IS NOT NULL AND f.exists_on_disk = 1 THEN 1 ELSE 0 END) AS downloaded_released_issues,
+                        SUM(CASE WHEN i.monitored = 1 AND ((i.date IS NOT NULL AND i.date <= date('now')) OR (i.date IS NULL AND vol.metadata_source = 'mangadex')) AND NOT (issue_links.issue_id IS NOT NULL AND f.exists_on_disk = 1) THEN 1 ELSE 0 END) AS missing_monitored,
                         SUM(CASE WHEN i.monitored = 1 AND i.date > date('now') AND NOT (issue_links.issue_id IS NOT NULL AND f.exists_on_disk = 1) THEN 1 ELSE 0 END) AS upcoming_monitored,
                         SUM(CASE WHEN i.monitored = 0 THEN 1 ELSE 0 END) AS unmonitored_issues
                     FROM issues i

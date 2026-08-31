@@ -146,6 +146,19 @@ test('canonical internal navigation preserves the application shell and browser 
   expect(await shellHandle?.evaluate(node => node.isConnected)).toBe(true);
 });
 
+test('Library switches directly between Comics and Manga', async ({ page }) => {
+  await boot(page);
+  await page.getByRole('link', { name: 'Library', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Comics' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('button', { name: 'Manga', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/library\?.*section=manga/);
+  await expect(page.getByRole('heading', { name: 'Manga Library' })).toBeAttached();
+  await expect(page.getByText('Acceptance Manga', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Manga', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('mobile shell exposes six safe primary destinations without root overflow', async ({ page }) => {
   await boot(page, 390);
   const navigation = page.getByRole('navigation', { name: /primary/i });

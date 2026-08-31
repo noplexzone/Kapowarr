@@ -167,6 +167,23 @@ describe('ComicsPage poster-first manage mode', () => {
     expect(patchSearch({})).toMatchObject({ section: 'comic', status: 'missing', monitoring: 'all', page: 1 });
   });
 
+  it('switches directly between comic and manga library sections', () => {
+    searchState = {
+      section: 'comic', sort: 'title', status: 'all', monitoring: 'all',
+      view: 'grid', q: 'Saga', page: 3,
+    };
+    renderPage('comic', true);
+
+    expect(screen.getByRole('button', { name: 'Comics' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Manga' }));
+
+    const navigation = navigateMock.mock.calls[navigateMock.mock.calls.length - 1]?.[0];
+    expect(navigation.to).toBe('/library');
+    expect(navigation.search(searchState)).toMatchObject({
+      section: 'manga', q: 'Saga', page: 1,
+    });
+  });
+
   it('keeps canonical search text on the library route', async () => {
     searchState = {
       section: 'manga', sort: 'title', status: 'all', monitoring: 'all',

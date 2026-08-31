@@ -278,6 +278,25 @@ export function ComicsPage({ section = 'comic', canonical = false }: ComicsPageP
       <h1 className={styles.srOnly}>{section === 'comic' ? 'Comic Library' : 'Manga Library'}</h1>
       <div className={styles.libraryHeader}>
         <div className={styles.primaryControls}>
+          <div className={styles.sectionToggle} aria-label="Library section">
+            {(['comic', 'manga'] as const).map((option) => (
+              <Button
+                key={option}
+                variant={section === option ? 'primary' : 'ghost'}
+                aria-pressed={section === option}
+                onClick={() => navigate({
+                  to: '/library',
+                  search: (previous: any) => ({
+                    ...previous,
+                    section: option,
+                    page: 1,
+                  }),
+                })}
+              >
+                {option === 'comic' ? 'Comics' : 'Manga'}
+              </Button>
+            ))}
+          </div>
           <div className={styles.searchBar}>
             <label className={styles.srOnly} htmlFor={`${section}-library-search`}>Search library</label>
             <input

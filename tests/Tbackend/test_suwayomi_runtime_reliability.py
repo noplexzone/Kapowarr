@@ -1,12 +1,15 @@
 """Bounded Suwayomi execution and structured-failure regressions."""
 
 import base64
-import json
 import importlib.util
+import json
 import os
+import random
 import tempfile
 import time
 import unittest
+import zipfile
+from io import BytesIO
 from threading import Event, Timer
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -33,6 +36,29 @@ def _request_error(status):
     error = RequestException('sanitized test failure')
     error.response = SimpleNamespace(status_code=status)
     return error
+
+
+def _image_bytes(image_format, size=(32, 24), color=(20, 80, 140)):
+    from PIL import Image
+
+    image = Image.new('RGB', size, color)
+    output = BytesIO()
+    image.save(output, format=image_format)
+    return output.getvalue()
+
+
+def _noisy_png(size=(512, 512)):
+    from PIL import Image
+
+    randomizer = random.Random(567780)
+    pixels = bytes(
+        randomizer.getrandbits(8)
+        for _ in range(size[0] * size[1] * 3)
+    )
+    image = Image.frombytes('RGB', size, pixels)
+    output = BytesIO()
+    image.save(output, format='PNG')
+    return output.getvalue()
 
 
 class WaitForDownloadReliabilityTests(unittest.TestCase):
@@ -89,21 +115,23 @@ class PageRetryReliabilityTests(unittest.TestCase):
         self.client = SuwayomiClient.__new__(SuwayomiClient)
 
     def test_transient_500_then_success_uses_bounded_retries(self):
+        jpeg = _image_bytes('JPEG')
         self.client.get_page_image = MagicMock(side_effect=[
-            _request_error(500), _request_error(500), b'page',
+            _request_error(500), _request_error(500), jpeg,
         ])
         with patch.object(suwayomi, 'PAGE_RETRY_BACKOFF', (0.0, 0.0)):
             result = self.client._get_page_with_retry(1, 3, 0, Event())
-        self.assertEqual(result, b'page')
+        self.assertEqual(result, jpeg)
         self.assertEqual(self.client.get_page_image.call_count, 3)
 
     def test_429_is_retryable(self):
+        jpeg = _image_bytes('JPEG')
         self.client.get_page_image = MagicMock(side_effect=[
-            _request_error(429), b'page',
+            _request_error(429), jpeg,
         ])
         with patch.object(suwayomi, 'PAGE_RETRY_BACKOFF', (0.0, 0.0)):
             result = self.client._get_page_with_retry(1, 3, 0, Event())
-        self.assertEqual(result, b'page')
+        self.assertEqual(result, jpeg)
         self.assertEqual(self.client.get_page_image.call_count, 2)
 
     def test_404_fails_immediately_with_status_and_attempt(self):
@@ -118,6 +146,40 @@ class PageRetryReliabilityTests(unittest.TestCase):
         self.assertEqual(raised.exception.details['chapter_id'], 99)
         self.assertEqual(raised.exception.details['source_order'], 3)
         self.assertEqual(raised.exception.details['page_index'], 7)
+
+    def test_non_image_payload_is_rejected_as_sanitized_page_failure(self):
+        payload = b'<html>upstream gateway failure: secret-token</html>'
+        self.client.get_page_image = MagicMock(return_value=payload)
+
+        with self.assertRaises(SuwayomiDownloadError) as raised:
+            self.client._get_page_with_retry(
+                1, 3, 7, Event(), chapter_id=99,
+            )
+
+        self.assertEqual(raised.exception.details, {
+            'stage': 'page_fetch',
+            'type': 'invalid_image',
+            'manga_id': 1,
+            'chapter_id': 99,
+            'source_order': 3,
+            'page_index': 7,
+            'attempts': 1,
+        })
+        self.assertNotIn('secret-token', str(raised.exception))
+        self.assertNotIn('secret-token', json.dumps(raised.exception.details))
+
+    def test_single_chapter_cbz_preserves_original_image_payload(self):
+        png = _image_bytes('PNG')
+        self.client.get_page_image = MagicMock(return_value=png)
+
+        with tempfile.TemporaryDirectory() as folder:
+            destination = os.path.join(folder, 'chapter.cbz')
+            self.assertTrue(
+                self.client.create_cbz(1, 3, 1, destination, Event())
+            )
+            with zipfile.ZipFile(destination) as archive:
+                self.assertEqual(archive.namelist(), ['0001.png'])
+                self.assertEqual(archive.read('0001.png'), png)
 
     def test_failed_cbz_removes_partial_output(self):
         self.client.get_page_image = MagicMock(side_effect=[
@@ -155,7 +217,7 @@ class PdfDeadlineReliabilityTests(unittest.TestCase):
 class PdfWorkerReliabilityTests(unittest.TestCase):
     def test_hanging_conversion_is_killed_and_partial_output_removed(self):
         client = SuwayomiClient.__new__(SuwayomiClient)
-        client.get_page_image = MagicMock(return_value=b'not-an-image')
+        client.get_page_image = MagicMock(return_value=_image_bytes('JPEG'))
         with tempfile.TemporaryDirectory() as folder:
             destination = os.path.join(folder, 'volume.pdf')
             started = time.monotonic()
@@ -175,7 +237,7 @@ class PdfWorkerReliabilityTests(unittest.TestCase):
 
     def test_cancellation_kills_hanging_worker_without_success(self):
         client = SuwayomiClient.__new__(SuwayomiClient)
-        client.get_page_image = MagicMock(return_value=b'not-an-image')
+        client.get_page_image = MagicMock(return_value=_image_bytes('JPEG'))
         stopped = Event()
         timer = Timer(0.2, stopped.set)
         with tempfile.TemporaryDirectory() as folder:
@@ -213,6 +275,72 @@ class PdfWorkerReliabilityTests(unittest.TestCase):
             with open(destination, 'rb') as handle:
                 self.assertEqual(handle.read(4), b'%PDF')
             self.assertEqual(os.listdir(folder), ['volume.pdf'])
+
+    @unittest.skipUnless(
+        importlib.util.find_spec('pypdf'),
+        'pypdf is installed by project requirements',
+    )
+    def test_lossless_pages_are_bounded_jpeg_streams_in_pdf(self):
+        from pypdf import PdfReader
+
+        client = SuwayomiClient.__new__(SuwayomiClient)
+        png = _noisy_png()
+        client.get_page_image = MagicMock(return_value=png)
+
+        with tempfile.TemporaryDirectory() as folder:
+            destination = os.path.join(folder, 'volume.pdf')
+            self.assertTrue(client.create_pdf_from_chapters(
+                1, [(7, 3, 1)], destination, Event(),
+            ))
+
+            reader = PdfReader(destination)
+            self.assertEqual(len(reader.pages), 1)
+            image = next(iter(
+                reader.pages[0]['/Resources']['/XObject'].get_object().values()
+            )).get_object()
+            self.assertEqual(image['/Filter'], '/DCTDecode')
+            self.assertEqual((image['/Width'], image['/Height']), (512, 512))
+            self.assertLess(os.path.getsize(destination), len(png) * 0.6)
+
+    @unittest.skipUnless(
+        importlib.util.find_spec('pypdf'),
+        'pypdf is installed by project requirements',
+    )
+    def test_pdf_normalizes_png_gif_webp_but_keeps_jpeg_bytes(self):
+        from pypdf import PdfReader
+
+        jpeg = _image_bytes('JPEG', size=(31, 21), color=(200, 10, 10))
+        pages = [
+            jpeg,
+            _image_bytes('PNG', size=(32, 22), color=(10, 200, 10)),
+            _image_bytes('GIF', size=(33, 23), color=(10, 10, 200)),
+            _image_bytes('WEBP', size=(34, 24), color=(100, 100, 10)),
+        ]
+        client = SuwayomiClient.__new__(SuwayomiClient)
+        client.get_page_image = MagicMock(side_effect=pages)
+
+        with tempfile.TemporaryDirectory() as folder:
+            destination = os.path.join(folder, 'volume.pdf')
+            self.assertTrue(client.create_pdf_from_chapters(
+                1, [(7, 3, len(pages))], destination, Event(),
+            ))
+
+            reader = PdfReader(destination)
+            self.assertEqual(len(reader.pages), len(pages))
+            images = [
+                next(iter(
+                    page['/Resources']['/XObject'].get_object().values()
+                )).get_object()
+                for page in reader.pages
+            ]
+            self.assertEqual(
+                [(image['/Width'], image['/Height']) for image in images],
+                [(31, 21), (32, 22), (33, 23), (34, 24)],
+            )
+            self.assertTrue(all(
+                image['/Filter'] == '/DCTDecode' for image in images
+            ))
+            self.assertEqual(images[0]._data, jpeg)
 
 
 class StructuredHistoryFailureTests(unittest.TestCase):

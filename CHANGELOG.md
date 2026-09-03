@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Reject invalid Suwayomi page payloads and JPEG-normalize lossless volume pages to prevent oversized PDFs and assembly timeouts.
 - Add a direct Comics/Manga switch to Library and remember the selected section in primary navigation so Manga stays reachable without routing through Home.
 - Count date-less MangaDex volume entries as released and preserve truthful downloaded/missing completion totals.
 - Expand Suwayomi chapter bundles across MangaDex volume buckets when an English omnibus description spans multiple Japanese volumes.

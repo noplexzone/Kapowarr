@@ -102,12 +102,41 @@ def _pdf_assembly_worker(
     """Spawn-safe worker for killable image conversion and PDF merge."""
     try:
         import img2pdf
+        from PIL import Image
         from pypdf import PdfReader, PdfWriter
 
         batch_paths: List[str] = []
+        normalized_paths: List[str] = []
         try:
-            for batch_start in range(0, len(page_paths), 5):
-                batch = page_paths[batch_start:batch_start + 5]
+            pdf_page_paths: List[str] = []
+            for page_path in page_paths:
+                if page_path.lower().endswith(('.jpg', '.jpeg')):
+                    pdf_page_paths.append(page_path)
+                    continue
+
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix='.jpg', dir=artifact_dir,
+                ) as normalized_file:
+                    normalized_path = normalized_file.name
+                normalized_paths.append(normalized_path)
+                with Image.open(page_path) as image:
+                    image.seek(0)
+                    if image.mode in ('RGBA', 'LA') or (
+                        image.mode == 'P' and 'transparency' in image.info
+                    ):
+                        rgba = image.convert('RGBA')
+                        normalized = Image.new('RGB', rgba.size, 'white')
+                        normalized.paste(rgba, mask=rgba.getchannel('A'))
+                    else:
+                        normalized = image.convert('RGB')
+                    normalized.save(
+                        normalized_path, format='JPEG', quality=90,
+                        optimize=True,
+                    )
+                pdf_page_paths.append(normalized_path)
+
+            for batch_start in range(0, len(pdf_page_paths), 5):
+                batch = pdf_page_paths[batch_start:batch_start + 5]
                 data = img2pdf.convert(batch)
                 with tempfile.NamedTemporaryFile(
                     delete=False, suffix='.pdf', dir=artifact_dir,
@@ -127,6 +156,11 @@ def _pdf_assembly_worker(
             for batch_path in batch_paths:
                 try:
                     os.unlink(batch_path)
+                except OSError:
+                    pass
+            for normalized_path in normalized_paths:
+                try:
+                    os.unlink(normalized_path)
                 except OSError:
                     pass
     except BaseException as exc:
@@ -458,6 +492,15 @@ class SuwayomiClient:
                         source_order=chapter_source_order,
                         page_index=page_index, attempts=attempt,
                     )
+                try:
+                    _detect_image_ext(data)
+                except (TypeError, ValueError) as exc:
+                    raise SuwayomiDownloadError(
+                        'page_fetch', 'invalid_image', manga_id=manga_id,
+                        chapter_id=chapter_id,
+                        source_order=chapter_source_order,
+                        page_index=page_index, attempts=attempt,
+                    ) from exc
                 return data
             except RequestException as exc:
                 response = getattr(exc, 'response', None)
@@ -859,11 +902,15 @@ class SuwayomiClient:
 
 
 def _detect_image_ext(data: bytes) -> str:
-    """Guess image extension from magic bytes."""
+    """Return a supported image extension or reject unknown payloads."""
+    if not isinstance(data, bytes):
+        raise TypeError('image payload must be bytes')
+    if len(data) >= 4 and data[:3] == b"\xff\xd8\xff":
+        return "jpg"
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return "png"
     if data[:6] in (b"GIF87a", b"GIF89a"):
         return "gif"
     if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "webp"
-    return "jpg"
+    raise ValueError('unsupported image payload')

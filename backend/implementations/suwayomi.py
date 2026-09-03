@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import tempfile
 import zipfile
+from io import BytesIO
 from shutil import rmtree
 from dataclasses import dataclass
 from enum import Enum
@@ -39,6 +40,18 @@ PAGE_MAX_ATTEMPTS = 3
 PAGE_RETRY_BACKOFF = (1.0, 2.0)
 PDF_TOTAL_TIMEOUT = 600.0
 PDF_ASSEMBLY_TIMEOUT = 120.0
+PDF_IMAGE_MAX_DIMENSION = 16_384
+PDF_IMAGE_MAX_PIXELS = 40_000_000
+
+
+def _validate_pdf_image_dimensions(width: int, height: int) -> None:
+    """Reject lossless PDF pages that would expand beyond a safe bound."""
+    if width <= 0 or height <= 0:
+        raise ValueError('image dimensions must be positive')
+    if width > PDF_IMAGE_MAX_DIMENSION or height > PDF_IMAGE_MAX_DIMENSION:
+        raise ValueError('image dimension exceeds PDF page limit')
+    if width * height > PDF_IMAGE_MAX_PIXELS:
+        raise ValueError('image pixel count exceeds PDF page limit')
 
 
 class SuwayomiWaitStatus(Enum):
@@ -120,6 +133,7 @@ def _pdf_assembly_worker(
                     normalized_path = normalized_file.name
                 normalized_paths.append(normalized_path)
                 with Image.open(page_path) as image:
+                    _validate_pdf_image_dimensions(*image.size)
                     image.seek(0)
                     if image.mode in ('RGBA', 'LA') or (
                         image.mode == 'P' and 'transparency' in image.info
@@ -902,15 +916,25 @@ class SuwayomiClient:
 
 
 def _detect_image_ext(data: bytes) -> str:
-    """Return a supported image extension or reject unknown payloads."""
+    """Structurally verify an image and return its supported extension."""
     if not isinstance(data, bytes):
         raise TypeError('image payload must be bytes')
-    if len(data) >= 4 and data[:3] == b"\xff\xd8\xff":
-        return "jpg"
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return "png"
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        return "gif"
-    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "webp"
-    raise ValueError('unsupported image payload')
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(data)) as image:
+            image_format = image.format
+            image.verify()
+    except Exception as exc:
+        raise ValueError('invalid image payload') from exc
+
+    extensions = {
+        'JPEG': 'jpg',
+        'PNG': 'png',
+        'GIF': 'gif',
+        'WEBP': 'webp',
+    }
+    try:
+        return extensions[image_format]
+    except KeyError as exc:
+        raise ValueError('unsupported image payload') from exc

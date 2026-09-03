@@ -168,6 +168,36 @@ class PageRetryReliabilityTests(unittest.TestCase):
         self.assertNotIn('secret-token', str(raised.exception))
         self.assertNotIn('secret-token', json.dumps(raised.exception.details))
 
+    def test_spoofed_supported_signatures_are_sanitized_page_failures(self):
+        payloads = {
+            'jpeg': b'\xff\xd8\xffsignature-prefixed junk: secret-token',
+            'png': b'\x89PNG\r\n\x1a\nsignature-prefixed junk: secret-token',
+            'gif': b'GIF89asignature-prefixed junk: secret-token',
+            'webp': b'RIFF\x20\x00\x00\x00WEBPsignature-prefixed junk: secret-token',
+        }
+
+        for image_format, payload in payloads.items():
+            with self.subTest(image_format=image_format):
+                self.client.get_page_image = MagicMock(return_value=payload)
+                with self.assertRaises(SuwayomiDownloadError) as raised:
+                    self.client._get_page_with_retry(
+                        1, 3, 7, Event(), chapter_id=99,
+                    )
+
+                self.assertEqual(raised.exception.details, {
+                    'stage': 'page_fetch',
+                    'type': 'invalid_image',
+                    'manga_id': 1,
+                    'chapter_id': 99,
+                    'source_order': 3,
+                    'page_index': 7,
+                    'attempts': 1,
+                })
+                self.assertNotIn('secret-token', str(raised.exception))
+                self.assertNotIn(
+                    'secret-token', json.dumps(raised.exception.details),
+                )
+
     def test_single_chapter_cbz_preserves_original_image_payload(self):
         png = _image_bytes('PNG')
         self.client.get_page_image = MagicMock(return_value=png)
@@ -212,6 +242,62 @@ class PdfDeadlineReliabilityTests(unittest.TestCase):
             self.assertEqual(raised.exception.details['type'], 'timeout')
             self.assertFalse(os.path.exists(destination))
             self.assertEqual(os.listdir(folder), [])
+
+
+class PdfImageLimitTests(unittest.TestCase):
+    def test_pdf_image_limits_accept_boundaries_and_reject_oversized_pages(self):
+        suwayomi._validate_pdf_image_dimensions(
+            suwayomi.PDF_IMAGE_MAX_DIMENSION, 1,
+        )
+        suwayomi._validate_pdf_image_dimensions(8000, 5000)
+
+        with self.assertRaises(ValueError):
+            suwayomi._validate_pdf_image_dimensions(
+                suwayomi.PDF_IMAGE_MAX_DIMENSION + 1, 1,
+            )
+        with self.assertRaises(ValueError):
+            suwayomi._validate_pdf_image_dimensions(8000, 5001)
+
+    def test_pdf_worker_rejects_oversized_non_jpeg_before_conversion(self):
+        from queue import Queue
+
+        class OversizedImage:
+            size = (suwayomi.PDF_IMAGE_MAX_DIMENSION + 1, 1)
+            mode = 'RGB'
+            info = {}
+            converted = False
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def seek(self, frame):
+                return None
+
+            def convert(self, mode):
+                self.converted = True
+                raise AssertionError('oversized image reached full conversion')
+
+        image = OversizedImage()
+        result_queue = Queue(maxsize=1)
+        with tempfile.TemporaryDirectory() as folder:
+            page_path = os.path.join(folder, 'oversized.png')
+            with open(page_path, 'wb') as handle:
+                handle.write(b'placeholder')
+            output_path = os.path.join(folder, 'result.pdf')
+
+            with patch('PIL.Image.open', return_value=image):
+                suwayomi._pdf_assembly_worker(
+                    [page_path], output_path, result_queue, folder,
+                )
+
+        self.assertFalse(image.converted)
+        self.assertEqual(result_queue.get_nowait(), {
+            'ok': False,
+            'type': 'ValueError',
+        })
 
 
 class PdfWorkerReliabilityTests(unittest.TestCase):
